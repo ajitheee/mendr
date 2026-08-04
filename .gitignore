@@ -1,0 +1,7 @@
+node_modules
+dist
+.env
+
+# fixture sample repos install/build their own artifacts
+fixtures/**/node_modules
+fixtures/**/dist

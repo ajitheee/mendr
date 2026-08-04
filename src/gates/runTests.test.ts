@@ -1,0 +1,76 @@
+import { describe, it, expect, afterEach } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { runRepoTests } from './runTests.js';
+
+// Hermetic tests for the test gate. Each builds a throwaway "repo" in the OS
+// temp dir with a trivial package.json (and, where a run is expected, an empty
+// node_modules so the gate's junction has a target). No network, no real deps —
+// the test scripts are plain `node -e` one-liners.
+
+const created: string[] = [];
+
+afterEach(() => {
+  for (const dir of created.splice(0)) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* best effort */
+    }
+  }
+});
+
+/** Build a throwaway repo dir with the given package.json and (optionally) node_modules. */
+function makeRepo(pkg: Record<string, unknown>, withNodeModules = true): string {
+  const dir = mkdtempSync(join(tmpdir(), 'mendr-gate-test-'));
+  created.push(dir);
+  writeFileSync(join(dir, 'package.json'), JSON.stringify(pkg, null, 2));
+  if (withNodeModules) mkdirSync(join(dir, 'node_modules'));
+  return dir;
+}
+
+describe('runRepoTests (test gate)', () => {
+  it('returns pass when the repo test suite passes', async () => {
+    const repo = makeRepo({
+      name: 'pass-fixture',
+      scripts: { test: 'node -e "process.exit(0)"' },
+    });
+    const result = await runRepoTests(repo, []);
+    expect(result.status).toBe('pass');
+  });
+
+  it('returns fail when the repo test suite fails', async () => {
+    const repo = makeRepo({
+      name: 'fail-fixture',
+      scripts: { test: 'node -e "process.exit(1)"' },
+    });
+    const result = await runRepoTests(repo, []);
+    expect(result.status).toBe('fail');
+  });
+
+  it('returns inconclusive when there is no test script', async () => {
+    const repo = makeRepo({ name: 'no-test-fixture' }, false);
+    const result = await runRepoTests(repo, []);
+    expect(result.status).toBe('inconclusive');
+    expect(result.output).toBe('no test script');
+  });
+
+  it('overlays patched files into the temp copy (patched content decides pass/fail)', async () => {
+    // The test script asserts a marker file contains PATCHED. We supply that
+    // content only via patchedFiles, proving the overlay reached the sandbox.
+    const repo = makeRepo({
+      name: 'overlay-fixture',
+      scripts: {
+        test:
+          'node -e "const fs=require(\'fs\');const t=fs.readFileSync(\'marker.txt\',\'utf8\');process.exit(t.trim()===\'PATCHED\'?0:1)"',
+      },
+    });
+    writeFileSync(join(repo, 'marker.txt'), 'ORIGINAL');
+
+    const result = await runRepoTests(repo, [
+      { absPath: join(repo, 'marker.txt'), newText: 'PATCHED' },
+    ]);
+    expect(result.status).toBe('pass');
+  });
+});

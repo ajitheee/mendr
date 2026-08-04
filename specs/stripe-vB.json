@@ -1,0 +1,28 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Stripe (fixture)",
+    "version": "vB"
+  },
+  "components": {
+    "schemas": {
+      "Charge": {
+        "type": "object",
+        "properties": {
+          "card": {
+            "type": "object",
+            "properties": {
+              "cardholder_name": { "type": "string" },
+              "last4": { "type": "string" }
+            }
+          },
+          "amount_display": { "type": "number" },
+          "status": {
+            "type": "string",
+            "enum": ["succeeded", "pending", "canceled"]
+          }
+        }
+      }
+    }
+  }
+}

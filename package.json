@@ -1,0 +1,34 @@
+{
+  "name": "mendr",
+  "version": "0.0.0",
+  "description": "CLI that auto-fixes third-party API breaking changes (Stripe first) in a TypeScript repo.",
+  "type": "module",
+  "bin": {
+    "mendr": "dist/cli.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run",
+    "start": "node dist/cli.js"
+  },
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "stripe": "^22.4.0",
+    "tsx": "^4.23.5",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "@types/diff": "^7.0.2",
+    "commander": "^15.0.0",
+    "diff": "^9.0.0",
+    "execa": "^10.0.1",
+    "simple-git": "^3.36.0",
+    "ts-morph": "^28.0.0"
+  }
+}

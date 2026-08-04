@@ -1,0 +1,19 @@
+{
+  "name": "mendr-fixture-upgraded",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "State-t1 fixture: the SDK was upgraded (DemoCharge.card now has cardholder_name) but the source still reads the OLD charge.card.name. It does NOT compile as-is — that is the point. After Mendr patches .name -> .cardholder_name it compiles and its test passes.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "pretest": "tsc",
+    "test": "node --test dist"
+  },
+  "devDependencies": {
+    "stripe": "^17.0.0",
+    "typescript": "^5.6.0"
+  }
+}
