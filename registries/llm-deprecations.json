@@ -1,0 +1,37 @@
+[
+  {
+    "provider": "google",
+    "kind": "model_id",
+    "deprecated": "gemini-2.0-flash",
+    "replacement": "gemini-flash-latest",
+    "note": "gemini-2.0-flash retired"
+  },
+  {
+    "provider": "google",
+    "kind": "model_id",
+    "deprecated": "gemini-2.0-flash-001",
+    "replacement": "gemini-flash-latest",
+    "note": "gemini-2.0-flash-001 retired"
+  },
+  {
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-3.5-turbo-0301",
+    "replacement": "gpt-3.5-turbo",
+    "note": "dated gpt-3.5-turbo-0301 snapshot retired; use the rolling alias"
+  },
+  {
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4-0314",
+    "replacement": "gpt-4",
+    "note": "dated gpt-4-0314 snapshot retired; use the rolling alias"
+  },
+  {
+    "provider": "openai",
+    "kind": "param_rename",
+    "deprecated": "max_tokens",
+    "replacement": "max_completion_tokens",
+    "note": "o1/o3 models require max_completion_tokens instead of max_tokens"
+  }
+]

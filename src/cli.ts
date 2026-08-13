@@ -11,6 +11,9 @@ import { applyRenames, applyRenamesToProject } from './fix/apply.js';
 import { formatChange } from './detect/changeModel.js';
 import { checkTypes, formatDiagnostic } from './gates/typecheck.js';
 import { runRepoTests } from './gates/runTests.js';
+import { loadLlmRegistry } from './usage/llmRegistry.js';
+import { findModelIdLiterals } from './usage/scanLiterals.js';
+import { applyModelIdFixesToProject } from './fix/modelId.js';
 
 const program = new Command();
 
@@ -195,6 +198,125 @@ program
     console.log(
       `Summary: ${tierA} auto-fixed (Tier A), ` +
         `${tierC} flagged for review (Tier C).`,
+    );
+  });
+
+program
+  .command('fix-llm')
+  .argument('<repoPath>', 'path to the target TypeScript repo')
+  .option('--skip-gates', 'skip the type-check + test gates (assert Tier A without verifying)')
+  .description('(LLM mode) Output a GATED model-id codemod diff + earned confidence tier.')
+  .action(async (repoPath: string, opts: { skipGates?: boolean }) => {
+    const resolved = resolve(repoPath);
+
+    // Registry-driven detect: load the LLM deprecations registry, then locate
+    // every literal whose value exactly matches a deprecated model id.
+    const registry = loadLlmRegistry();
+    const scanProject = loadProject(resolved);
+    const matches = findModelIdLiterals(scanProject, registry);
+
+    if (matches.length === 0) {
+      console.log('No deprecated LLM model ids found in this repo. Nothing to fix.');
+      return;
+    }
+
+    // A distinct label per unique deprecated -> replacement swap the repo uses.
+    const swaps = new Map<string, string>();
+    for (const m of matches) {
+      swaps.set(m.deprecation.deprecated, m.deprecation.replacement);
+    }
+    const swapLabels = [...swaps].map(([from, to]) => `"${from}" -> "${to}"`).join(', ');
+
+    if (opts.skipGates) {
+      // Fast local mode: assert Tier A without verifying.
+      const { diff, changedFiles, siteCount } = applyModelIdFixesToProject(
+        loadProject(resolved),
+        registry,
+        resolved,
+      );
+      console.log('=== Tier A: auto-fixable model-id swaps (codemod) ===');
+      console.log('');
+      console.log(diff);
+      console.log(
+        `Tier A: ${swaps.size} model-id swap${swaps.size === 1 ? '' : 's'} ` +
+          `(${swapLabels}) applied at ${siteCount} site${siteCount === 1 ? '' : 's'} ` +
+          `across ${changedFiles.length} file${changedFiles.length === 1 ? '' : 's'}. ` +
+          `(gates skipped — tier asserted, not verified)`,
+      );
+      return;
+    }
+
+    // Build an unpatched baseline + a patched project from the same repo,
+    // in-memory. The baseline anchors the type-check gate; the patched project
+    // supplies the diff + gate inputs.
+    const baselineProject = loadProject(resolved);
+    const patchedProject = loadProject(resolved);
+    const { diff, changedFiles, siteCount } = applyModelIdFixesToProject(
+      patchedProject,
+      registry,
+      resolved,
+    );
+
+    // Gate 1 (REQUIRED): baseline-relative type-check (in-memory, no subprocess).
+    const typeResult = checkTypes(baselineProject, patchedProject);
+
+    // Gate 2 (BEST-EFFORT): run the repo's tests against the patched files in a
+    // temp copy. A hard test FAILURE downgrades; inconclusive (no script / not
+    // installed) does NOT block Tier A, since tests are best-effort here.
+    const patchedFiles = changedFiles.map((absPath) => ({
+      absPath,
+      newText: patchedProject.getSourceFileOrThrow(absPath).getFullText(),
+    }));
+    const testResult = await runRepoTests(resolved, patchedFiles);
+
+    const typeLabel = typeResult.passed ? 'pass' : 'fail';
+    const gatesPassed = typeResult.passed && testResult.status !== 'fail';
+    const tier: 'A' | 'C' = gatesPassed ? 'A' : 'C';
+
+    let downgradeReason = '';
+    if (!gatesPassed) {
+      if (!typeResult.passed) {
+        const n = typeResult.newDiagnostics.length;
+        const first = typeResult.newDiagnostics[0];
+        downgradeReason =
+          `patched code introduces ${n} new type error${n === 1 ? '' : 's'}` +
+          (first ? `: ${formatDiagnostic(first)}` : '');
+      } else {
+        downgradeReason = 'repo tests failed against the patched code';
+      }
+    }
+
+    const heading =
+      tier === 'A'
+        ? '=== Tier A: auto-fixable model-id swaps (VERIFIED codemod) ==='
+        : '=== Tier A candidate -> DOWNGRADED to Tier C (unverified codemod) ===';
+    console.log(heading);
+    console.log('');
+    console.log(diff);
+    console.log('Gate summary:');
+    console.log(`  type-check: ${typeLabel} (required)`);
+    console.log(`  tests:      ${testResult.status} (best-effort)`);
+    console.log('');
+
+    if (tier === 'A') {
+      console.log(
+        `Tier A: ${swaps.size} model-id swap${swaps.size === 1 ? '' : 's'} ` +
+          `(${swapLabels}) applied at ${siteCount} site${siteCount === 1 ? '' : 's'} ` +
+          `across ${changedFiles.length} file${changedFiles.length === 1 ? '' : 's'}. ` +
+          `(verified: type-check passes${testResult.status === 'pass' ? ' + tests pass' : ''})`,
+      );
+    } else {
+      console.log(
+        `Tier C (downgraded): ${swaps.size} model-id swap${swaps.size === 1 ? '' : 's'} ` +
+          `(${swapLabels}) NOT applied — ${downgradeReason.replace(/\.+$/, '')}. ` +
+          `The diff above is shown for manual review only; it is not trusted.`,
+      );
+    }
+
+    console.log('');
+    console.log(
+      `Summary: ${tier === 'A' ? siteCount : 0} auto-fixed (Tier A), ` +
+        `${tier === 'C' ? siteCount : 0} flagged for review (Tier C).`,
     );
   });
 
