@@ -1,6 +1,6 @@
 import { SyntaxKind } from 'ts-morph';
 import type { NoSubstitutionTemplateLiteral, Project, StringLiteral } from 'ts-morph';
-import type { LlmDeprecation, LlmRegistry, SourceLocation } from '../types.js';
+import type { LlmModelIdDeprecation, LlmRegistry, SourceLocation } from '../types.js';
 import { modelIdEntries } from './llmRegistry.js';
 
 // LLM mode — locate.
@@ -35,7 +35,7 @@ export interface LiteralMatch {
   /** Where the literal sits in source, anchored at the node start. */
   location: SourceLocation;
   /** The registry entry this literal matched. */
-  deprecation: LlmDeprecation;
+  deprecation: LlmModelIdDeprecation;
 }
 
 /**
@@ -49,7 +49,7 @@ export interface LiteralMatch {
 export function findModelIdLiterals(project: Project, registry: LlmRegistry): LiteralMatch[] {
   // Index model-id deprecations by their exact `deprecated` value for O(1)
   // lookup. A value maps to the FIRST entry that declares it.
-  const byValue = new Map<string, LlmDeprecation>();
+  const byValue = new Map<string, LlmModelIdDeprecation>();
   for (const dep of modelIdEntries(registry)) {
     if (!byValue.has(dep.deprecated)) byValue.set(dep.deprecated, dep);
   }

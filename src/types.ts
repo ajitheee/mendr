@@ -36,28 +36,77 @@ export type Tier = 'A' | 'C';
 // params, not typed object properties. A small hand-maintained registry drives
 // detection instead of a spec diff.
 
+// Mendr's LLM registry carries THREE distinct classes of breakage, and they do
+// not share one flat shape. `model_id` is a value-driven string swap (no model
+// coupling — the literal IS the model). The two param kinds are the opposite:
+// they are MODEL-COUPLED — a `temperature`/`max_tokens` key is only wrong on a
+// SPECIFIC set of models, so each param entry names the `on_models` it applies
+// to and the fix resolves the model AT THE CALL SITE before touching anything.
+// A discriminated union keeps each kind's fields honest at compile time.
+
 /** The class of LLM breakage a registry entry describes. */
-export type LlmDeprecationKind = 'model_id' | 'param_rename';
+export type LlmDeprecationKind = 'model_id' | 'param_rename' | 'param_removal';
 
 /**
- * A single LLM API deprecation: a provider's `deprecated` token and the
- * `replacement` to migrate to. For `model_id`, these are model-id string
- * literals (`"gemini-2.0-flash"` -> `"gemini-flash-latest"`). For
- * `param_rename`, they are request-parameter names (`max_tokens` ->
- * `max_completion_tokens`).
+ * A retired MODEL ID: a bare string literal to swap wholesale
+ * (`"gemini-2.0-flash"` -> `"gemini-flash-latest"`). Not model-coupled — the
+ * matched literal is itself the model.
  */
-export interface LlmDeprecation {
-  /** The LLM provider, e.g. `"google"` or `"openai"`. */
+export interface LlmModelIdDeprecation {
+  /** The LLM provider, e.g. `"google"`, `"openai"`, `"anthropic"`. */
   provider: string;
-  /** Whether this is a model-id swap or a request-param rename. */
-  kind: LlmDeprecationKind;
-  /** The retired/deprecated token (an exact value to match). */
+  kind: 'model_id';
+  /** The retired model-id token (an exact value to match). */
   deprecated: string;
-  /** The token to migrate to. */
+  /** The model id to migrate to. */
   replacement: string;
   /** Optional human note explaining the deprecation. */
   note?: string;
 }
+
+/**
+ * A MODEL-COUPLED request-parameter RENAME: on the models named in `on_models`,
+ * the `param` key must be renamed to `replacement` (e.g. OpenAI reasoning models
+ * require `max_tokens` -> `max_completion_tokens`). The SDK still types the old
+ * key, so only a runtime registry + call-site model resolution catches it.
+ */
+export interface LlmParamRenameDeprecation {
+  provider: string;
+  kind: 'param_rename';
+  /** The request-options key to rename (e.g. `"max_tokens"`). */
+  param: string;
+  /** The key to rename it to (e.g. `"max_completion_tokens"`). */
+  replacement: string;
+  /** Models this rename applies to; matched by {@link LlmRegistry} prefix rule. */
+  on_models: string[];
+  note?: string;
+}
+
+/**
+ * A MODEL-COUPLED request-parameter REMOVAL: on the models named in `on_models`,
+ * the `param` key must be DELETED from the request-options object (e.g. Anthropic
+ * Opus 4.7+ returns HTTP 400 for `temperature`/`top_p`/`top_k`). The SDK types
+ * still accept the key, so the compiler never warns — this is the flagship
+ * "AST beats regex" case.
+ */
+export interface LlmParamRemovalDeprecation {
+  provider: string;
+  kind: 'param_removal';
+  /** The request-options key to remove (e.g. `"temperature"`). */
+  param: string;
+  /** Models this removal applies to; matched by {@link LlmRegistry} prefix rule. */
+  on_models: string[];
+  note?: string;
+}
+
+/** Any param-transform entry (the two model-coupled kinds). */
+export type LlmParamDeprecation = LlmParamRenameDeprecation | LlmParamRemovalDeprecation;
+
+/** A single LLM API deprecation of any kind. */
+export type LlmDeprecation =
+  | LlmModelIdDeprecation
+  | LlmParamRenameDeprecation
+  | LlmParamRemovalDeprecation;
 
 /** The parsed `registries/llm-deprecations.json` registry. */
 export type LlmRegistry = LlmDeprecation[];

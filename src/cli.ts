@@ -13,7 +13,8 @@ import { checkTypes, formatDiagnostic } from './gates/typecheck.js';
 import { runRepoTests } from './gates/runTests.js';
 import { loadLlmRegistry } from './usage/llmRegistry.js';
 import { findModelIdLiterals } from './usage/scanLiterals.js';
-import { applyModelIdFixesToProject } from './fix/modelId.js';
+import { findParamSites } from './fix/paramFix.js';
+import { applyLlmFixesToProject } from './fix/llmFix.js';
 
 const program = new Command();
 
@@ -205,42 +206,59 @@ program
   .command('fix-llm')
   .argument('<repoPath>', 'path to the target TypeScript repo')
   .option('--skip-gates', 'skip the type-check + test gates (assert Tier A without verifying)')
-  .description('(LLM mode) Output a GATED model-id codemod diff + earned confidence tier.')
+  .description('(LLM mode) Output a GATED model-id + param codemod diff + earned confidence tier.')
   .action(async (repoPath: string, opts: { skipGates?: boolean }) => {
     const resolved = resolve(repoPath);
 
-    // Registry-driven detect: load the LLM deprecations registry, then locate
-    // every literal whose value exactly matches a deprecated model id.
+    // Registry-driven detect. Two locators run over the same scan project:
+    //   1. model-id literals whose value exactly matches a retired model id;
+    //   2. model-COUPLED param sites (options objects whose resolved model is in
+    //      an entry's on_models). A `temperature` on an accepting model is NOT a
+    //      site — the coupling is enforced in the locator, not just the fixer.
     const registry = loadLlmRegistry();
     const scanProject = loadProject(resolved);
-    const matches = findModelIdLiterals(scanProject, registry);
+    const modelMatches = findModelIdLiterals(scanProject, registry);
+    const paramMatches = findParamSites(scanProject, registry);
 
-    if (matches.length === 0) {
-      console.log('No deprecated LLM model ids found in this repo. Nothing to fix.');
+    if (modelMatches.length === 0 && paramMatches.length === 0) {
+      console.log('No deprecated LLM model ids or model-coupled params found. Nothing to fix.');
       return;
     }
 
-    // A distinct label per unique deprecated -> replacement swap the repo uses.
+    // Human labels. Model-id: one per unique deprecated -> replacement swap.
     const swaps = new Map<string, string>();
-    for (const m of matches) {
-      swaps.set(m.deprecation.deprecated, m.deprecation.replacement);
+    for (const m of modelMatches) swaps.set(m.deprecation.deprecated, m.deprecation.replacement);
+    // Params: one per unique transform (removal or rename), tagged with model.
+    const paramLabelSet = new Set<string>();
+    for (const p of paramMatches) {
+      paramLabelSet.add(
+        p.deprecation.kind === 'param_removal'
+          ? `remove "${p.deprecation.param}" (on ${p.model})`
+          : `rename "${p.deprecation.param}" -> "${p.deprecation.replacement}" (on ${p.model})`,
+      );
     }
-    const swapLabels = [...swaps].map(([from, to]) => `"${from}" -> "${to}"`).join(', ');
+    const labels = [
+      ...[...swaps].map(([from, to]) => `"${from}" -> "${to}"`),
+      ...paramLabelSet,
+    ].join(', ');
+
+    // Render a per-transform breakdown line from a fix result.
+    const breakdown = (r: { modelIdSites: number; paramsRemoved: number; paramsRenamed: number }) =>
+      [
+        `${r.modelIdSites} model-id swap${r.modelIdSites === 1 ? '' : 's'}`,
+        `${r.paramsRemoved} param${r.paramsRemoved === 1 ? '' : 's'} removed`,
+        `${r.paramsRenamed} param${r.paramsRenamed === 1 ? '' : 's'} renamed`,
+      ].join(', ');
 
     if (opts.skipGates) {
       // Fast local mode: assert Tier A without verifying.
-      const { diff, changedFiles, siteCount } = applyModelIdFixesToProject(
-        loadProject(resolved),
-        registry,
-        resolved,
-      );
-      console.log('=== Tier A: auto-fixable model-id swaps (codemod) ===');
+      const result = applyLlmFixesToProject(loadProject(resolved), registry, resolved);
+      console.log('=== Tier A: auto-fixable model-id + param codemod ===');
       console.log('');
-      console.log(diff);
+      console.log(result.diff);
       console.log(
-        `Tier A: ${swaps.size} model-id swap${swaps.size === 1 ? '' : 's'} ` +
-          `(${swapLabels}) applied at ${siteCount} site${siteCount === 1 ? '' : 's'} ` +
-          `across ${changedFiles.length} file${changedFiles.length === 1 ? '' : 's'}. ` +
+        `Tier A: ${breakdown(result)} (${labels}) across ` +
+          `${result.changedFiles.length} file${result.changedFiles.length === 1 ? '' : 's'}. ` +
           `(gates skipped — tier asserted, not verified)`,
       );
       return;
@@ -248,14 +266,11 @@ program
 
     // Build an unpatched baseline + a patched project from the same repo,
     // in-memory. The baseline anchors the type-check gate; the patched project
-    // supplies the diff + gate inputs.
+    // (BOTH passes applied) supplies the combined diff + gate inputs.
     const baselineProject = loadProject(resolved);
     const patchedProject = loadProject(resolved);
-    const { diff, changedFiles, siteCount } = applyModelIdFixesToProject(
-      patchedProject,
-      registry,
-      resolved,
-    );
+    const result = applyLlmFixesToProject(patchedProject, registry, resolved);
+    const totalSites = result.modelIdSites + result.paramsRemoved + result.paramsRenamed;
 
     // Gate 1 (REQUIRED): baseline-relative type-check (in-memory, no subprocess).
     const typeResult = checkTypes(baselineProject, patchedProject);
@@ -263,7 +278,7 @@ program
     // Gate 2 (BEST-EFFORT): run the repo's tests against the patched files in a
     // temp copy. A hard test FAILURE downgrades; inconclusive (no script / not
     // installed) does NOT block Tier A, since tests are best-effort here.
-    const patchedFiles = changedFiles.map((absPath) => ({
+    const patchedFiles = result.changedFiles.map((absPath) => ({
       absPath,
       newText: patchedProject.getSourceFileOrThrow(absPath).getFullText(),
     }));
@@ -288,11 +303,11 @@ program
 
     const heading =
       tier === 'A'
-        ? '=== Tier A: auto-fixable model-id swaps (VERIFIED codemod) ==='
+        ? '=== Tier A: auto-fixable model-id + param codemod (VERIFIED) ==='
         : '=== Tier A candidate -> DOWNGRADED to Tier C (unverified codemod) ===';
     console.log(heading);
     console.log('');
-    console.log(diff);
+    console.log(result.diff);
     console.log('Gate summary:');
     console.log(`  type-check: ${typeLabel} (required)`);
     console.log(`  tests:      ${testResult.status} (best-effort)`);
@@ -300,23 +315,22 @@ program
 
     if (tier === 'A') {
       console.log(
-        `Tier A: ${swaps.size} model-id swap${swaps.size === 1 ? '' : 's'} ` +
-          `(${swapLabels}) applied at ${siteCount} site${siteCount === 1 ? '' : 's'} ` +
-          `across ${changedFiles.length} file${changedFiles.length === 1 ? '' : 's'}. ` +
+        `Tier A: ${breakdown(result)} (${labels}) across ` +
+          `${result.changedFiles.length} file${result.changedFiles.length === 1 ? '' : 's'}. ` +
           `(verified: type-check passes${testResult.status === 'pass' ? ' + tests pass' : ''})`,
       );
     } else {
       console.log(
-        `Tier C (downgraded): ${swaps.size} model-id swap${swaps.size === 1 ? '' : 's'} ` +
-          `(${swapLabels}) NOT applied — ${downgradeReason.replace(/\.+$/, '')}. ` +
+        `Tier C (downgraded): ${breakdown(result)} (${labels}) NOT applied — ` +
+          `${downgradeReason.replace(/\.+$/, '')}. ` +
           `The diff above is shown for manual review only; it is not trusted.`,
       );
     }
 
     console.log('');
     console.log(
-      `Summary: ${tier === 'A' ? siteCount : 0} auto-fixed (Tier A), ` +
-        `${tier === 'C' ? siteCount : 0} flagged for review (Tier C).`,
+      `Summary: ${tier === 'A' ? totalSites : 0} auto-fixed (Tier A), ` +
+        `${tier === 'C' ? totalSites : 0} flagged for review (Tier C).`,
     );
   });
 
