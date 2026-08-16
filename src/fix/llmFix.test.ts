@@ -15,6 +15,7 @@ const REGISTRY: LlmRegistry = [
     deprecated: 'claude-3-opus-20240229',
     replacement: 'claude-opus-5',
     note: 'retired -> current opus',
+    verification: { status: 'verified' },
   },
   {
     provider: 'anthropic',

@@ -7,6 +7,8 @@ import type {
   LlmModelIdDeprecation,
   LlmParamDeprecation,
   LlmRegistry,
+  VerificationInfo,
+  VerificationStatus,
 } from '../types.js';
 
 // LLM mode: load the hand-maintained deprecations registry that drives literal
@@ -29,7 +31,7 @@ const VALID_KINDS: ReadonlySet<LlmDeprecationKind> = new Set([
 ]);
 
 /** Walk up from this module's directory to find the registry JSON on disk. */
-function resolveRegistryPath(): string {
+export function resolveRegistryPath(): string {
   let dir = dirname(fileURLToPath(import.meta.url));
   for (;;) {
     const candidate = join(dir, REGISTRY_RELATIVE);
@@ -63,6 +65,49 @@ function requireStringArray(e: Record<string, unknown>, field: string, index: nu
   return value as string[];
 }
 
+const VALID_STATUSES: ReadonlySet<VerificationStatus> = new Set([
+  'verified',
+  'unverified',
+  'unverifiable',
+]);
+
+/**
+ * Parse the optional `verification` block on a `model_id` entry. Absent is fine
+ * (treated as unverified by the gate). A present-but-malformed block is a hard
+ * error — a bad status must never be silently read as `verified`.
+ */
+function parseVerification(
+  e: Record<string, unknown>,
+  index: number,
+): VerificationInfo | undefined {
+  const v = e.verification;
+  if (v === undefined) return undefined;
+  if (typeof v !== 'object' || v === null) {
+    throw new Error(`llm registry entry #${index} has a non-object "verification"`);
+  }
+  const vo = v as Record<string, unknown>;
+  if (!VALID_STATUSES.has(vo.status as VerificationStatus)) {
+    throw new Error(
+      `llm registry entry #${index} has an invalid verification.status: ${String(vo.status)}`,
+    );
+  }
+  const info: VerificationInfo = { status: vo.status as VerificationStatus };
+  if (vo.checkedAt !== undefined) {
+    if (typeof vo.checkedAt !== 'string') {
+      throw new Error(`llm registry entry #${index} has a non-string verification.checkedAt`);
+    }
+    info.checkedAt = vo.checkedAt;
+  }
+  for (const field of ['sources', 'reasons'] as const) {
+    if (vo[field] === undefined) continue;
+    if (!Array.isArray(vo[field]) || !(vo[field] as unknown[]).every((s) => typeof s === 'string')) {
+      throw new Error(`llm registry entry #${index} has a non-string[] verification.${field}`);
+    }
+    info[field] = vo[field] as string[];
+  }
+  return info;
+}
+
 /**
  * Runtime shape guard: reject a malformed entry rather than mis-fix silently.
  *
@@ -94,6 +139,7 @@ function assertDeprecation(entry: unknown, index: number): LlmDeprecation {
       deprecated: requireString(e, 'deprecated', index),
       replacement: requireString(e, 'replacement', index),
       note,
+      verification: parseVerification(e, index),
     };
   }
 
@@ -156,4 +202,14 @@ export function paramEntries(registry: LlmRegistry): LlmParamDeprecation[] {
  */
 export function modelMatches(model: string, onModels: readonly string[]): boolean {
   return onModels.some((value) => model === value || model.startsWith(`${value}-`));
+}
+
+/**
+ * The ENGINE GATE predicate: is a model-id entry trustworthy enough to
+ * AUTO-APPLY? True iff it carries a `verification.status === 'verified'` stamp.
+ * A missing stamp (`unstamped`), `unverified`, or `unverifiable` all return
+ * false — the codemod must never swap on the strength of an unproven mapping.
+ */
+export function isVerified(entry: LlmModelIdDeprecation): boolean {
+  return entry.verification?.status === 'verified';
 }

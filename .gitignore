@@ -5,3 +5,6 @@ dist
 # fixture sample repos install/build their own artifacts
 fixtures/**/node_modules
 fixtures/**/dist
+
+# throwaway prototyper spikes
+spikes/

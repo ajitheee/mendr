@@ -3,6 +3,12 @@ import { createTwoFilesPatch } from 'diff';
 import type { Project } from 'ts-morph';
 import type { LlmRegistry } from '../types.js';
 import { loadProject } from '../usage/scanRepo.js';
+import {
+  findBlockedModelArgMatches,
+  findModelIdDataMatches,
+  type BlockedModelLocate,
+  type ModelIdDataLocate,
+} from '../usage/scanLiterals.js';
 import { applyModelIdFixes } from './modelId.js';
 import { applyParamFixes } from './paramFix.js';
 
@@ -35,6 +41,10 @@ export interface LlmFixResult {
   paramsRemoved: number;
   /** Number of param keys renamed (param_rename). */
   paramsRenamed: number;
+  /** Deprecated model ids matched in DATA positions — Tier C locate-only. */
+  dataMatches: ModelIdDataLocate[];
+  /** Deprecated ids in live model-arg positions blocked as not-verified — Tier C. */
+  blockedMatches: BlockedModelLocate[];
 }
 
 /**
@@ -54,6 +64,12 @@ export function applyLlmFixesToProject(
     if (sf.getFilePath().includes('/node_modules/')) continue;
     originals.set(sf.getFilePath(), sf.getFullText());
   }
+
+  // Capture data-position model-id matches AND not-verified (blocked) model-arg
+  // matches BEFORE either pass edits anything, so their line/column anchor the
+  // original source. Neither set is ever swapped.
+  const dataMatches = findModelIdDataMatches(project, registry);
+  const blockedMatches = findBlockedModelArgMatches(project, registry);
 
   // Pass 1: model-id swaps. Pass 2: model-coupled param transforms (which see
   // any model ids pass 1 just updated).
@@ -76,7 +92,15 @@ export function applyLlmFixesToProject(
     patches.push(createTwoFilesPatch(display, display, before, after, '', '', { context: 3 }));
   }
 
-  return { diff: patches.join('\n'), changedFiles, modelIdSites, paramsRemoved, paramsRenamed };
+  return {
+    diff: patches.join('\n'),
+    changedFiles,
+    modelIdSites,
+    paramsRemoved,
+    paramsRenamed,
+    dataMatches,
+    blockedMatches,
+  };
 }
 
 /**

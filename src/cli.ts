@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { resolve } from 'node:path';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { relative, resolve } from 'node:path';
 import { loadSpec } from './detect/fetchSpec.js';
 import { diffSpecs } from './detect/diffSpec.js';
 import { formatChangeSet } from './detect/changeModel.js';
@@ -11,10 +12,17 @@ import { applyRenames, applyRenamesToProject } from './fix/apply.js';
 import { formatChange } from './detect/changeModel.js';
 import { checkTypes, formatDiagnostic } from './gates/typecheck.js';
 import { runRepoTests } from './gates/runTests.js';
-import { loadLlmRegistry } from './usage/llmRegistry.js';
-import { findModelIdLiterals } from './usage/scanLiterals.js';
+import { isVerified, loadLlmRegistry, resolveRegistryPath } from './usage/llmRegistry.js';
+import {
+  findModelIdLiterals,
+  type BlockedModelLocate,
+  type ModelIdDataLocate,
+} from './usage/scanLiterals.js';
 import { findParamSites } from './fix/paramFix.js';
 import { applyLlmFixesToProject } from './fix/llmFix.js';
+import { classifyEntry } from './registry/verify.js';
+import { fetchOracles } from './registry/oracles.js';
+import type { LlmModelIdDeprecation, VerificationStatus } from './types.js';
 
 const program = new Command();
 
@@ -220,14 +228,29 @@ program
     const modelMatches = findModelIdLiterals(scanProject, registry);
     const paramMatches = findParamSites(scanProject, registry);
 
-    if (modelMatches.length === 0 && paramMatches.length === 0) {
+    // Split model-id matches by AST position AND verification status:
+    //   - `model_arg` + verified  -> Tier A swap candidates;
+    //   - `model_arg` + NOT verified -> Tier C locate-only (BLOCKED by the gate);
+    //   - `data`                  -> Tier C locate-only (never edited).
+    const modelArgMatches = modelMatches.filter((m) => m.position === 'model_arg');
+    const swapMatches = modelArgMatches.filter((m) => isVerified(m.deprecation));
+    const blockedCount = modelArgMatches.length - swapMatches.length;
+    const dataMatchCount = modelMatches.length - modelArgMatches.length;
+
+    if (
+      swapMatches.length === 0 &&
+      paramMatches.length === 0 &&
+      dataMatchCount === 0 &&
+      blockedCount === 0
+    ) {
       console.log('No deprecated LLM model ids or model-coupled params found. Nothing to fix.');
       return;
     }
 
-    // Human labels. Model-id: one per unique deprecated -> replacement swap.
+    // Human labels. Model-id: one per unique deprecated -> replacement swap,
+    // counting only swap-safe (`model_arg`) positions.
     const swaps = new Map<string, string>();
-    for (const m of modelMatches) swaps.set(m.deprecation.deprecated, m.deprecation.replacement);
+    for (const m of swapMatches) swaps.set(m.deprecation.deprecated, m.deprecation.replacement);
     // Params: one per unique transform (removal or rename), tagged with model.
     const paramLabelSet = new Set<string>();
     for (const p of paramMatches) {
@@ -250,16 +273,70 @@ program
         `${r.paramsRenamed} param${r.paramsRenamed === 1 ? '' : 's'} renamed`,
       ].join(', ');
 
+    // Tier C: deprecated model ids that MATCHED but sit in a DATA position (an
+    // object key, array element, pricing/encoding/normalization map) rather than
+    // a live model argument. These are surfaced for manual review and NEVER
+    // edited — the whole point of the call-site-aware swap.
+    const printModelIdDataMatches = (dataMatches: ModelIdDataLocate[]) => {
+      if (dataMatches.length === 0) return;
+      console.log('');
+      console.log('=== Tier C: locate-only — deprecated model id used as DATA (no patch) ===');
+      for (const d of dataMatches) {
+        const display = relative(resolved, d.location.file).replace(/\\/g, '/');
+        console.log('');
+        console.log(
+          `  deprecated model id "${d.value}" used as data at ` +
+            `${display}:${d.location.line}:${d.location.column} — review manually` +
+            ` (would map to "${d.replacement}" if it were a live model argument)`,
+        );
+      }
+    };
+
+    // Tier C: deprecated model ids in LIVE model-argument positions whose registry
+    // entry is NOT verified (stale/chained/unverifiable/unstamped). The gate
+    // refuses to auto-swap these — the replacement is not trustworthy — so they
+    // are surfaced for manual review instead of being applied.
+    const printBlockedModelArgMatches = (blockedMatches: BlockedModelLocate[]) => {
+      if (blockedMatches.length === 0) return;
+      console.log('');
+      console.log(
+        '=== Tier C: locate-only — deprecated model id with an UNVERIFIED replacement (no patch) ===',
+      );
+      for (const b of blockedMatches) {
+        const display = relative(resolved, b.location.file).replace(/\\/g, '/');
+        console.log('');
+        console.log(
+          `  deprecated model "${b.value}" found at ${display}:${b.location.line}:${b.location.column}, ` +
+            `but its replacement "${b.replacement}" is ${b.status} — review manually` +
+            ` (auto-apply withheld by the verification gate)`,
+        );
+        for (const reason of b.reasons ?? []) console.log(`      - ${reason}`);
+      }
+    };
+
     if (opts.skipGates) {
       // Fast local mode: assert Tier A without verifying.
       const result = applyLlmFixesToProject(loadProject(resolved), registry, resolved);
+      const totalSwaps = result.modelIdSites + result.paramsRemoved + result.paramsRenamed;
       console.log('=== Tier A: auto-fixable model-id + param codemod ===');
       console.log('');
       console.log(result.diff);
+      if (totalSwaps > 0) {
+        console.log(
+          `Tier A: ${breakdown(result)} (${labels}) across ` +
+            `${result.changedFiles.length} file${result.changedFiles.length === 1 ? '' : 's'}. ` +
+            `(gates skipped — tier asserted, not verified)`,
+        );
+      } else {
+        console.log('Tier A: nothing to swap (no live model-argument positions matched).');
+      }
+      printModelIdDataMatches(result.dataMatches);
+      printBlockedModelArgMatches(result.blockedMatches);
+      const tierCLocateOnly = result.dataMatches.length + result.blockedMatches.length;
+      console.log('');
       console.log(
-        `Tier A: ${breakdown(result)} (${labels}) across ` +
-          `${result.changedFiles.length} file${result.changedFiles.length === 1 ? '' : 's'}. ` +
-          `(gates skipped — tier asserted, not verified)`,
+        `Summary: ${totalSwaps} auto-fixed (Tier A), ` +
+          `${tierCLocateOnly} flagged for review (Tier C).`,
       );
       return;
     }
@@ -327,11 +404,89 @@ program
       );
     }
 
+    // Tier C: deprecated model ids in data positions, and ids whose replacement
+    // is unverified — always surfaced, never patched, regardless of the gate
+    // outcome above.
+    printModelIdDataMatches(result.dataMatches);
+    printBlockedModelArgMatches(result.blockedMatches);
+
+    const tierCReview =
+      (tier === 'C' ? totalSites : 0) + result.dataMatches.length + result.blockedMatches.length;
     console.log('');
     console.log(
       `Summary: ${tier === 'A' ? totalSites : 0} auto-fixed (Tier A), ` +
-        `${tier === 'C' ? totalSites : 0} flagged for review (Tier C).`,
+        `${tierCReview} flagged for review (Tier C).`,
     );
+  });
+
+program
+  .command('verify-registry')
+  .option('--write', 'stamp the computed verification.status back into the registry JSON')
+  .description(
+    '(LLM mode) Verify every model-id replacement against public catalogs + provider recommendations; print an audit.',
+  )
+  .action(async (opts: { write?: boolean }) => {
+    const registryPath = resolveRegistryPath();
+    // Operate on the RAW parsed JSON (not the typed loader) so param entries,
+    // ordering, and any unknown fields are preserved verbatim when we --write.
+    const raw = JSON.parse(readFileSync(registryPath, 'utf8')) as Record<string, unknown>[];
+
+    const oracles = await fetchOracles();
+    const checkedAt = new Date().toISOString().slice(0, 10);
+
+    console.log('='.repeat(74));
+    console.log('MENDR registry verification — public-oracle audit');
+    console.log('='.repeat(74));
+    console.log(`oracles: ${oracles.notes.join(' | ')}`);
+    console.log(`live catalog ids (canonical + family forms): ${oracles.liveIds.size}`);
+    console.log('');
+
+    const counts: Record<VerificationStatus, number> = {
+      verified: 0,
+      unverified: 0,
+      unverifiable: 0,
+    };
+    const blocked: { status: VerificationStatus; provider: string; from: string; to: string }[] = [];
+    let modelEntries = 0;
+
+    for (const entry of raw) {
+      if (entry.kind !== 'model_id') continue;
+      modelEntries++;
+      const model = entry as unknown as LlmModelIdDeprecation;
+      const { status, reasons } = classifyEntry(model, oracles);
+      counts[status]++;
+
+      console.log(`[${status.toUpperCase().padEnd(12)}] ${model.provider}: ${model.deprecated} -> ${model.replacement}`);
+      for (const reason of reasons) console.log(`               - ${reason}`);
+
+      if (status !== 'verified') {
+        blocked.push({ status, provider: model.provider, from: model.deprecated, to: model.replacement });
+      }
+      if (opts.write) {
+        entry.verification = { status, checkedAt, sources: oracles.sources, reasons };
+      }
+    }
+
+    console.log('');
+    console.log('-'.repeat(74));
+    console.log(`model_id entries: ${modelEntries}`);
+    console.log(`  verified     : ${counts.verified}  (auto-apply eligible — Tier A)`);
+    console.log(`  unverified   : ${counts.unverified}  (live but stale/chained/superseded — BLOCKED)`);
+    console.log(`  unverifiable : ${counts.unverifiable}  (out-of-class moderation/image/audio/tts — BLOCKED)`);
+
+    if (blocked.length > 0) {
+      console.log('');
+      console.log('BLOCKED from auto-apply (verification gate withholds Tier A):');
+      for (const b of blocked) {
+        console.log(`  * [${b.status}] ${b.provider}: ${b.from} -> ${b.to}`);
+      }
+    }
+
+    if (opts.write) {
+      writeFileSync(registryPath, `${JSON.stringify(raw, null, 2)}\n`);
+      console.log('');
+      console.log(`Stamped verification.status into ${modelEntries} model_id entries -> ${registryPath}`);
+    }
   });
 
 program.parse();

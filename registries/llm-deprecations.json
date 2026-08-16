@@ -4,212 +4,525 @@
     "kind": "model_id",
     "deprecated": "gemini-2.0-flash",
     "replacement": "gemini-flash-latest",
-    "note": "gemini-2.0-flash retired"
+    "note": "gemini-2.0-flash retired",
+    "verification": {
+      "status": "verified",
+      "checkedAt": "2026-08-16",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gemini-flash-latest\" is live in a public catalog"
+      ]
+    }
   },
   {
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-2.0-flash-001",
     "replacement": "gemini-flash-latest",
-    "note": "gemini-2.0-flash-001 retired"
+    "note": "gemini-2.0-flash-001 retired",
+    "verification": {
+      "status": "verified",
+      "checkedAt": "2026-08-16",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gemini-flash-latest\" is live in a public catalog"
+      ]
+    }
   },
   {
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-3.5-turbo-0301",
     "replacement": "gpt-3.5-turbo",
-    "note": "dated gpt-3.5-turbo-0301 snapshot retired; use the rolling alias"
+    "note": "dated gpt-3.5-turbo-0301 snapshot retired; use the rolling alias",
+    "verification": {
+      "status": "verified",
+      "checkedAt": "2026-08-16",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-3.5-turbo\" is live in a public catalog"
+      ]
+    }
   },
   {
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-3.5-turbo-0613",
     "replacement": "gpt-3.5-turbo",
-    "note": "gpt-3.5-turbo-0613 shut down 2024-09-13; use the rolling alias"
+    "note": "gpt-3.5-turbo-0613 shut down 2024-09-13; use the rolling alias",
+    "verification": {
+      "status": "verified",
+      "checkedAt": "2026-08-16",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-3.5-turbo\" is live in a public catalog",
+        "matches the provider's officially-recommended replacement \"gpt-3.5-turbo\""
+      ]
+    }
   },
   {
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-3.5-turbo-16k-0613",
     "replacement": "gpt-3.5-turbo",
-    "note": "gpt-3.5-turbo-16k-0613 shut down 2024-09-13; 16k folded into base model"
+    "note": "gpt-3.5-turbo-16k-0613 shut down 2024-09-13; 16k folded into base model",
+    "verification": {
+      "status": "verified",
+      "checkedAt": "2026-08-16",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-3.5-turbo\" is live in a public catalog"
+      ]
+    }
   },
   {
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4-0314",
     "replacement": "gpt-4",
-    "note": "dated gpt-4-0314 snapshot retired; use the rolling alias"
+    "note": "dated gpt-4-0314 snapshot retired; use the rolling alias",
+    "verification": {
+      "status": "verified",
+      "checkedAt": "2026-08-16",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-4\" is live in a public catalog"
+      ]
+    }
   },
   {
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4-0613",
     "replacement": "gpt-4",
-    "note": "dated gpt-4-0613 snapshot deprecated; use the rolling alias (or gpt-4o)"
+    "note": "dated gpt-4-0613 snapshot deprecated; use the rolling alias (or gpt-4o)",
+    "verification": {
+      "status": "unverified",
+      "checkedAt": "2026-08-16",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-4\" is live in a public catalog",
+        "the provider officially recommends \"gpt-5.6-sol\", but the registry uses \"gpt-4\" (live, but not the currently-recommended target — stale)"
+      ]
+    }
   },
   {
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4-32k-0314",
     "replacement": "gpt-4o",
-    "note": "gpt-4-32k retired; gpt-4o carries a larger 128k context"
+    "note": "gpt-4-32k retired; gpt-4o carries a larger 128k context",
+    "verification": {
+      "status": "verified",
+      "checkedAt": "2026-08-16",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-4o\" is live in a public catalog"
+      ]
+    }
   },
   {
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4-32k-0613",
     "replacement": "gpt-4o",
-    "note": "gpt-4-32k retired; gpt-4o carries a larger 128k context"
+    "note": "gpt-4-32k retired; gpt-4o carries a larger 128k context",
+    "verification": {
+      "status": "verified",
+      "checkedAt": "2026-08-16",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-4o\" is live in a public catalog"
+      ]
+    }
   },
   {
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4-vision-preview",
     "replacement": "gpt-4o",
-    "note": "vision-preview deprecated; vision folded into gpt-4o"
+    "note": "vision-preview deprecated; vision folded into gpt-4o",
+    "verification": {
+      "status": "verified",
+      "checkedAt": "2026-08-16",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-4o\" is live in a public catalog"
+      ]
+    }
   },
   {
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4-1106-vision-preview",
     "replacement": "gpt-4o",
-    "note": "vision-preview snapshot deprecated; vision folded into gpt-4o"
+    "note": "vision-preview snapshot deprecated; vision folded into gpt-4o",
+    "verification": {
+      "status": "verified",
+      "checkedAt": "2026-08-16",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-4o\" is live in a public catalog"
+      ]
+    }
   },
   {
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4.5-preview",
     "replacement": "gpt-4o",
-    "note": "gpt-4.5-preview deprecated; OpenAI recommends gpt-4o / gpt-4.1"
+    "note": "gpt-4.5-preview deprecated; OpenAI recommends gpt-4o / gpt-4.1",
+    "verification": {
+      "status": "verified",
+      "checkedAt": "2026-08-16",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-4o\" is live in a public catalog"
+      ]
+    }
   },
   {
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "o1-preview",
     "replacement": "o1",
-    "note": "o1-preview deprecated in favor of the GA o1 reasoning model"
+    "note": "o1-preview deprecated in favor of the GA o1 reasoning model",
+    "verification": {
+      "status": "unverified",
+      "checkedAt": "2026-08-16",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"o1\" is live in a public catalog",
+        "the provider officially recommends \"o3\", but the registry uses \"o1\" (live, but not the currently-recommended target — stale)"
+      ]
+    }
   },
   {
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "o1-mini",
     "replacement": "o4-mini",
-    "note": "o1-mini deprecated; OpenAI recommends o4-mini as the small reasoning model"
+    "note": "o1-mini deprecated; OpenAI recommends o4-mini as the small reasoning model",
+    "verification": {
+      "status": "verified",
+      "checkedAt": "2026-08-16",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"o4-mini\" is live in a public catalog",
+        "matches the provider's officially-recommended replacement \"o4-mini\""
+      ]
+    }
   },
   {
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "text-davinci-003",
     "replacement": "gpt-3.5-turbo-instruct",
-    "note": "legacy Completions model retired 2024-01-04; use gpt-3.5-turbo-instruct"
+    "note": "legacy Completions model retired 2024-01-04; use gpt-3.5-turbo-instruct",
+    "verification": {
+      "status": "unverified",
+      "checkedAt": "2026-08-16",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-3.5-turbo-instruct\" is ITSELF deprecated (chained deprecation); the provider now recommends \"gpt-5.6-terra\" beyond it"
+      ]
+    }
   },
   {
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "text-davinci-002",
     "replacement": "gpt-3.5-turbo-instruct",
-    "note": "legacy Completions model retired 2024-01-04; use gpt-3.5-turbo-instruct"
+    "note": "legacy Completions model retired 2024-01-04; use gpt-3.5-turbo-instruct",
+    "verification": {
+      "status": "unverified",
+      "checkedAt": "2026-08-16",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-3.5-turbo-instruct\" is ITSELF deprecated (chained deprecation); the provider now recommends \"gpt-5.6-terra\" beyond it"
+      ]
+    }
   },
   {
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "text-moderation-latest",
     "replacement": "omni-moderation-latest",
-    "note": "text-moderation-* deprecated; use the multimodal omni-moderation-latest"
+    "note": "text-moderation-* deprecated; use the multimodal omni-moderation-latest",
+    "verification": {
+      "status": "unverifiable",
+      "checkedAt": "2026-08-16",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"text-moderation-latest\" is a moderation model; public catalogs (models.dev, OpenRouter) do not list this class, so \"omni-moderation-latest\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)"
+      ]
+    }
   },
   {
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "text-moderation-stable",
     "replacement": "omni-moderation-latest",
-    "note": "text-moderation-* deprecated; use the multimodal omni-moderation-latest"
+    "note": "text-moderation-* deprecated; use the multimodal omni-moderation-latest",
+    "verification": {
+      "status": "unverifiable",
+      "checkedAt": "2026-08-16",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"text-moderation-stable\" is a moderation model; public catalogs (models.dev, OpenRouter) do not list this class, so \"omni-moderation-latest\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)"
+      ]
+    }
   },
   {
     "provider": "openai",
     "kind": "param_rename",
     "param": "max_tokens",
     "replacement": "max_completion_tokens",
-    "on_models": ["o1", "o3", "o4", "gpt-5"],
+    "on_models": [
+      "o1",
+      "o3",
+      "o4",
+      "gpt-5"
+    ],
     "note": "reasoning models require max_completion_tokens"
   },
-
   {
     "provider": "anthropic",
     "kind": "param_removal",
     "param": "temperature",
-    "on_models": ["claude-opus-4-7", "claude-opus-4-8", "claude-opus-5"],
+    "on_models": [
+      "claude-opus-4-7",
+      "claude-opus-4-8",
+      "claude-opus-5"
+    ],
     "note": "temperature rejected (HTTP 400) on Opus 4.7+ and newer; steer via prompt. VERIFY the exact model set against Anthropic's live docs before production."
   },
   {
     "provider": "anthropic",
     "kind": "param_removal",
     "param": "top_p",
-    "on_models": ["claude-opus-4-7", "claude-opus-4-8", "claude-opus-5"],
+    "on_models": [
+      "claude-opus-4-7",
+      "claude-opus-4-8",
+      "claude-opus-5"
+    ],
     "note": "top_p rejected (HTTP 400) on Opus 4.7+ and newer. VERIFY the exact model set against Anthropic's live docs before production."
   },
   {
     "provider": "anthropic",
     "kind": "param_removal",
     "param": "top_k",
-    "on_models": ["claude-opus-4-7", "claude-opus-4-8", "claude-opus-5"],
+    "on_models": [
+      "claude-opus-4-7",
+      "claude-opus-4-8",
+      "claude-opus-5"
+    ],
     "note": "top_k rejected (HTTP 400) on Opus 4.7+ and newer. VERIFY the exact model set against Anthropic's live docs before production."
   },
-
   {
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-3-opus-20240229",
     "replacement": "claude-opus-4-8",
-    "note": "Claude 3 Opus retired. Replacement id is a best-effort current Opus alias; VERIFY against Anthropic's live deprecation table before production."
+    "note": "Claude 3 Opus retired. Replacement id is a best-effort current Opus alias; VERIFY against Anthropic's live deprecation table before production.",
+    "verification": {
+      "status": "verified",
+      "checkedAt": "2026-08-16",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"claude-opus-4-8\" is live in a public catalog",
+        "matches the provider's officially-recommended replacement \"claude-opus-4-8\""
+      ]
+    }
   },
   {
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-3-5-sonnet-20240620",
-    "replacement": "claude-sonnet-4-5",
-    "note": "Claude 3.5 Sonnet (Jun 2024) retired. Replacement id best-effort; VERIFY against Anthropic's live deprecation table."
+    "replacement": "claude-sonnet-4-6",
+    "note": "Claude 3.5 Sonnet (Jun 2024) retired. Replacement is Anthropic's officially-recommended current Sonnet (corrected from claude-sonnet-4-5).",
+    "verification": {
+      "status": "verified",
+      "checkedAt": "2026-08-16",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"claude-sonnet-4-6\" is live in a public catalog",
+        "matches the provider's officially-recommended replacement \"claude-sonnet-4-6\""
+      ]
+    }
   },
   {
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-3-5-sonnet-20241022",
-    "replacement": "claude-sonnet-4-5",
-    "note": "Claude 3.5 Sonnet v2 (Oct 2024) retired. Replacement id best-effort; VERIFY against Anthropic's live deprecation table."
+    "replacement": "claude-sonnet-4-6",
+    "note": "Claude 3.5 Sonnet v2 (Oct 2024) retired. Replacement is Anthropic's officially-recommended current Sonnet (corrected from claude-sonnet-4-5).",
+    "verification": {
+      "status": "verified",
+      "checkedAt": "2026-08-16",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"claude-sonnet-4-6\" is live in a public catalog",
+        "matches the provider's officially-recommended replacement \"claude-sonnet-4-6\""
+      ]
+    }
   },
   {
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-3-7-sonnet-20250219",
-    "replacement": "claude-sonnet-4-5",
-    "note": "Claude 3.7 Sonnet retired. Replacement id best-effort; VERIFY against Anthropic's live deprecation table."
+    "replacement": "claude-sonnet-4-6",
+    "note": "Claude 3.7 Sonnet retired. Replacement is Anthropic's officially-recommended current Sonnet (corrected from claude-sonnet-4-5).",
+    "verification": {
+      "status": "verified",
+      "checkedAt": "2026-08-16",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"claude-sonnet-4-6\" is live in a public catalog",
+        "matches the provider's officially-recommended replacement \"claude-sonnet-4-6\""
+      ]
+    }
   },
   {
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-3-5-haiku-20241022",
-    "replacement": "claude-haiku-4-5",
-    "note": "Claude 3.5 Haiku retired. Replacement id best-effort; VERIFY against Anthropic's live deprecation table."
+    "replacement": "claude-haiku-4-5-20251001",
+    "note": "Claude 3.5 Haiku retired. Replacement is Anthropic's officially-recommended dated Haiku snapshot (corrected from the bare claude-haiku-4-5 alias).",
+    "verification": {
+      "status": "verified",
+      "checkedAt": "2026-08-16",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"claude-haiku-4-5-20251001\" is live in a public catalog",
+        "matches the provider's officially-recommended replacement \"claude-haiku-4-5-20251001\""
+      ]
+    }
   },
   {
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-sonnet-4-20250514",
-    "replacement": "claude-sonnet-4-5",
-    "note": "Claude Sonnet 4 (May 2025) retired. Replacement id best-effort; VERIFY against Anthropic's live deprecation table."
+    "replacement": "claude-sonnet-4-6",
+    "note": "Claude Sonnet 4 (May 2025) retired. Replacement is Anthropic's officially-recommended current Sonnet (corrected from claude-sonnet-4-5).",
+    "verification": {
+      "status": "verified",
+      "checkedAt": "2026-08-16",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"claude-sonnet-4-6\" is live in a public catalog",
+        "matches the provider's officially-recommended replacement \"claude-sonnet-4-6\""
+      ]
+    }
   },
   {
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-opus-4-20250514",
     "replacement": "claude-opus-4-8",
-    "note": "Claude Opus 4 (May 2025) retired. Replacement id best-effort; VERIFY against Anthropic's live deprecation table."
+    "note": "Claude Opus 4 (May 2025) retired. Replacement id best-effort; VERIFY against Anthropic's live deprecation table.",
+    "verification": {
+      "status": "verified",
+      "checkedAt": "2026-08-16",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"claude-opus-4-8\" is live in a public catalog",
+        "matches the provider's officially-recommended replacement \"claude-opus-4-8\""
+      ]
+    }
   },
   {
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-opus-4-1-20250805",
     "replacement": "claude-opus-4-8",
-    "note": "Claude Opus 4.1 (Aug 2025) retired. Replacement id best-effort; VERIFY against Anthropic's live deprecation table."
+    "note": "Claude Opus 4.1 (Aug 2025) retired. Replacement id best-effort; VERIFY against Anthropic's live deprecation table.",
+    "verification": {
+      "status": "verified",
+      "checkedAt": "2026-08-16",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"claude-opus-4-8\" is live in a public catalog",
+        "matches the provider's officially-recommended replacement \"claude-opus-4-8\""
+      ]
+    }
   }
 ]

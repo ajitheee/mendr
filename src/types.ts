@@ -47,6 +47,27 @@ export type Tier = 'A' | 'C';
 /** The class of LLM breakage a registry entry describes. */
 export type LlmDeprecationKind = 'model_id' | 'param_rename' | 'param_removal';
 
+// --- Registry verification ------------------------------------------------
+// A `model_id` replacement is only trustworthy enough to AUTO-APPLY once it has
+// been checked against public model catalogs + the provider's recommendation
+// table (see src/registry/). The verdict is stamped back onto the entry so the
+// engine gate can auto-apply ONLY `verified` swaps.
+
+/** Trust verdict for a model-id replacement. */
+export type VerificationStatus = 'verified' | 'unverified' | 'unverifiable';
+
+/** The stamped outcome of verifying a model-id replacement. */
+export interface VerificationInfo {
+  /** `verified` = auto-apply (Tier A); anything else is locate-only (Tier C). */
+  status: VerificationStatus;
+  /** ISO date (YYYY-MM-DD) the check ran, for staleness of the verdict itself. */
+  checkedAt?: string;
+  /** Which oracles corroborated the check (e.g. `["openrouter","models.dev"]`). */
+  sources?: string[];
+  /** Human-readable reasons behind the verdict (audit trail). */
+  reasons?: string[];
+}
+
 /**
  * A retired MODEL ID: a bare string literal to swap wholesale
  * (`"gemini-2.0-flash"` -> `"gemini-flash-latest"`). Not model-coupled — the
@@ -62,6 +83,12 @@ export interface LlmModelIdDeprecation {
   replacement: string;
   /** Optional human note explaining the deprecation. */
   note?: string;
+  /**
+   * The registry-verification verdict for `replacement`. The engine gate
+   * auto-applies (Tier A) ONLY when `verification.status === 'verified'`;
+   * missing or non-`verified` entries are surfaced Tier C locate-only.
+   */
+  verification?: VerificationInfo;
 }
 
 /**

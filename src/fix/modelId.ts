@@ -3,7 +3,14 @@ import { createTwoFilesPatch } from 'diff';
 import type { NoSubstitutionTemplateLiteral, Project, StringLiteral } from 'ts-morph';
 import type { LlmRegistry } from '../types.js';
 import { loadProject } from '../usage/scanRepo.js';
-import { findModelIdLiterals } from '../usage/scanLiterals.js';
+import { isVerified } from '../usage/llmRegistry.js';
+import {
+  findBlockedModelArgMatches,
+  findModelIdDataMatches,
+  findModelIdLiterals,
+  type BlockedModelLocate,
+  type ModelIdDataLocate,
+} from '../usage/scanLiterals.js';
 
 // LLM mode — fix (model-id swap).
 //
@@ -15,7 +22,10 @@ import { findModelIdLiterals } from '../usage/scanLiterals.js';
 // SAFETY (identical guarantees to apply.ts):
 //   1. We locate via findModelIdLiterals — the exact same value-driven scan the
 //      locator uses — so a fix targets EXACTLY the literals it found, no looser
-//      second pass that could drift.
+//      second pass that could drift. Of those, only literals CLASSIFIED as
+//      `model_arg` (a live model-argument position) are swapped; literals used as
+//      DATA (a pricing-table key, an encoding-list entry, a model-picker array
+//      element) are left byte-identical and surfaced Tier C locate-only.
 //   2. We re-scan after each edit (as rename.ts does). Replacing a deprecated
 //      value with its replacement changes the literal's value so it can never
 //      re-match, which both terminates the loop and sidesteps stale ts-morph
@@ -55,9 +65,20 @@ export function applyModelIdFixes(
 
   // Re-scan after each edit: the just-edited literal now holds the replacement
   // value, which is not a deprecated token, so it drops out of the next scan.
+  // Only `model_arg` (live model-argument) positions AND `verified` entries are
+  // swapped; `data` positions and non-`verified` entries never match this
+  // filter, so they persist unedited and the loop still terminates once every
+  // swap-safe, verified literal is done.
+  //
+  // THE ENGINE GATE: `isVerified(...)` is the load-bearing clause — an entry the
+  // registry has not stamped `verification.status === 'verified'` is NEVER
+  // auto-swapped here, no matter how confident the value match is.
   for (;;) {
     const next = findModelIdLiterals(project, registry).find(
-      (m) => m.value !== m.deprecation.replacement,
+      (m) =>
+        m.position === 'model_arg' &&
+        isVerified(m.deprecation) &&
+        m.value !== m.deprecation.replacement,
     );
     if (!next) break;
 
@@ -77,6 +98,10 @@ export interface ModelIdFixResult {
   changedFiles: string[];
   /** Number of individual literal sites edited across all files. */
   siteCount: number;
+  /** Matched-but-rejected literals (deprecated id used as data) — Tier C. */
+  dataMatches: ModelIdDataLocate[];
+  /** Live model-arg matches blocked because their entry is not verified — Tier C. */
+  blockedMatches: BlockedModelLocate[];
 }
 
 /**
@@ -100,6 +125,12 @@ export function applyModelIdFixesToProject(
     originals.set(sf.getFilePath(), sf.getFullText());
   }
 
+  // Capture the data-position matches AND the not-verified (blocked) model-arg
+  // matches BEFORE editing so their line/column anchor the original source (the
+  // codemod never touches either set of positions anyway).
+  const dataMatches = findModelIdDataMatches(project, registry);
+  const blockedMatches = findBlockedModelArgMatches(project, registry);
+
   const siteCount = applyModelIdFixes(project, registry).length;
 
   // Diff each file that actually changed against its captured original.
@@ -116,7 +147,7 @@ export function applyModelIdFixesToProject(
     patches.push(createTwoFilesPatch(display, display, before, after, '', '', { context: 3 }));
   }
 
-  return { diff: patches.join('\n'), changedFiles, siteCount };
+  return { diff: patches.join('\n'), changedFiles, siteCount, dataMatches, blockedMatches };
 }
 
 /**
