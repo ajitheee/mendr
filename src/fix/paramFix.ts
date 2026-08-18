@@ -10,6 +10,7 @@ import type {
 import type { LlmParamDeprecation, LlmRegistry, SourceLocation } from '../types.js';
 import { loadProject } from '../usage/scanRepo.js';
 import { modelMatches, paramEntries } from '../usage/llmRegistry.js';
+import { isTestPath } from '../usage/scanLiterals.js';
 
 // LLM mode — fix (MODEL-COUPLED param transform). This is the flagship
 // "AST beats regex" case, and the ONE correctness property that matters is:
@@ -130,6 +131,7 @@ export function findParamSites(project: Project, registry: LlmRegistry): ParamMa
     if (sf.isDeclarationFile()) continue;
     const file = sf.getFilePath();
     if (file.includes('/node_modules/')) continue;
+    if (isTestPath(file)) continue;
 
     for (const object of sf.getDescendantsOfKind(SyntaxKind.ObjectLiteralExpression)) {
       const modelProp = object.getProperty('model');

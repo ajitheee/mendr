@@ -49,12 +49,12 @@ const REGISTRY: LlmRegistry = [
   },
 ];
 
-/** Every deprecated id sits in a genuine `model:` argument position. */
+/** Every deprecated id sits in a genuine `model:` argument OF A CALL. */
 const SOURCE = `
-export const a = { model: "claude-3-opus-20240229" };  // verified     -> SWAP
-export const b = { model: "text-davinci-003" };         // unverified   -> BLOCK
-export const c = { model: "text-moderation-latest" };   // unverifiable -> BLOCK
-export const d = { model: "gemini-2.0-flash" };         // unstamped    -> BLOCK
+export const a = create({ model: "claude-3-opus-20240229" });  // verified     -> SWAP
+export const b = create({ model: "text-davinci-003" });         // unverified   -> BLOCK
+export const c = create({ model: "text-moderation-latest" });   // unverifiable -> BLOCK
+export const d = create({ model: "gemini-2.0-flash" });         // unstamped    -> BLOCK
 `.trimStart();
 
 function inMemoryProject(fileName: string, source: string): Project {
@@ -113,7 +113,7 @@ describe('engine gate: auto-apply only verified entries', () => {
     // Same unverified id, but as an object KEY (data) — belongs to the data
     // surface, not the blocked-model-arg surface.
     const src = `
-export const use = { model: "text-davinci-003" };  // model_arg + unverified -> blocked
+export const use = create({ model: "text-davinci-003" });  // model_arg + unverified -> blocked
 export const PRICES = { "text-davinci-003": 1 };    // data key -> NOT a blocked model-arg
 `.trimStart();
     const project = inMemoryProject('src/mixed.ts', src);

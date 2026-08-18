@@ -201,7 +201,9 @@ export const MODEL_NAME = "gemini-2.0-flash";
 // MUST SWAP (c): direct string argument to a model factory.
 export const gModel = google("gemini-2.0-flash");
 
-// MUST SWAP (a + fallback): literal inside a || fallback of a model: value.
+// MUST NOT SWAP: a model id in a STANDALONE returned object (not passed to a
+// call). Same shape as a catalog entry, so the conservative call-flow rule
+// leaves it as data rather than risk a catalog-corrupting swap. Surfaced Tier C.
 export function pickModel(opts: { model?: string }) {
   return { model: opts.model || "claude-3-opus-20240229" };
 }
@@ -219,29 +221,31 @@ export const NORMALIZE = { premium: "claude-3-5-sonnet-20241022" };
 `.trimStart();
 
 describe('call-site awareness: swap live model arguments, skip data', () => {
-  it('SWAPS all four genuine model-argument positions', () => {
+  it('SWAPS the three genuine call-flow positions', () => {
     const project = inMemoryProject('src/callsites.ts', CALL_SITE_SOURCE);
     const result = applyModelIdFixesToProject(project, CALL_SITE_REGISTRY);
     const text = project.getSourceFileOrThrow('src/callsites.ts').getFullText();
 
-    // (a) model: property value.
+    // (a) model: property value of an object PASSED TO A CALL.
     expect(text).toContain('{ model: "gpt-4o" }');
     // (b) model-named const.
     expect(text).toContain('export const MODEL_NAME = "gemini-flash-latest";');
     // (c) model-factory argument.
     expect(text).toContain('google("gemini-flash-latest")');
-    // (a + ||) fallback inside a model: value.
-    expect(text).toContain('model: opts.model || "claude-opus-4-8"');
 
-    // Exactly the four live positions were edited (the 3 data ids were skipped).
-    expect(result.siteCount).toBe(4);
+    // Exactly the three call-flow positions were edited; the standalone returned
+    // config and the 3 data ids were skipped.
+    expect(result.siteCount).toBe(3);
   });
 
-  it('LEAVES every data position byte-identical (no key/array/map edits)', () => {
+  it('LEAVES every data position byte-identical (no key/array/map/catalog edits)', () => {
     const project = inMemoryProject('src/callsites.ts', CALL_SITE_SOURCE);
     applyModelIdFixesToProject(project, CALL_SITE_REGISTRY);
     const text = project.getSourceFileOrThrow('src/callsites.ts').getFullText();
 
+    // Standalone returned config object (not a call argument): untouched.
+    expect(text).toContain('model: opts.model || "claude-3-opus-20240229"');
+    expect(text).not.toContain('claude-opus-4-8');
     // Pricing-table KEY: untouched (swapping it would collide / corrupt).
     expect(text).toContain('"claude-3-5-sonnet-20241022": { price: 3 }');
     // Model-picker ARRAY element: untouched.
@@ -257,13 +261,14 @@ describe('call-site awareness: swap live model arguments, skip data', () => {
     const project = inMemoryProject('src/callsites.ts', CALL_SITE_SOURCE);
     const result = applyModelIdFixesToProject(project, CALL_SITE_REGISTRY);
 
-    // Three data-position matches: the pricing key, the array element, the map
-    // value — reported for manual review, not swapped.
-    expect(result.dataMatches).toHaveLength(3);
+    // Four data-position matches: the standalone returned config, the pricing
+    // key, the array element, the map value — reported for review, not swapped.
+    expect(result.dataMatches).toHaveLength(4);
     const values = result.dataMatches.map((d) => d.value).sort();
     expect(values).toEqual([
       'claude-3-5-sonnet-20241022',
       'claude-3-5-sonnet-20241022',
+      'claude-3-opus-20240229',
       'o1-mini',
     ]);
     // Each carries the replacement it WOULD map to (context only) + a location.
@@ -279,7 +284,64 @@ describe('call-site awareness: swap live model arguments, skip data', () => {
 
     const swaps = matches.filter((m) => m.position === 'model_arg');
     const data = matches.filter((m) => m.position === 'data');
-    expect(swaps).toHaveLength(4);
-    expect(data).toHaveLength(3);
+    expect(swaps).toHaveLength(3);
+    expect(data).toHaveLength(4);
+  });
+});
+
+// --- CATALOG + TEST-FILE HARDENING (real-repo regressions) ------------------
+//
+// From the 15-repo scan: chatbot-ui had `const GPT4_VISION = { modelId, modelName,
+// hostedId }` catalog entries (swapping modelId alone corrupts the entry), and
+// Continue had 29 ids to swap, every one in a `*.test.ts` or a mock class (must
+// be skipped outright). Both had produced "sendable" diffs that were unsendable.
+
+describe('catalog + test-file hardening (real-repo regressions)', () => {
+  it('does NOT swap a model id in a standalone catalog object (chatbot-ui pattern)', () => {
+    const src =
+      'export const GPT4_VISION = {\n' +
+      '  modelId: "gpt-4-vision-preview",\n' +
+      '  modelName: "GPT-4 Vision",\n' +
+      '  hostedId: "gpt-4-vision-preview",\n' +
+      '};\n';
+    const project = inMemoryProject('src/openai-llm-list.ts', src);
+    const result = applyModelIdFixesToProject(project, CALL_SITE_REGISTRY);
+    const text = project.getSourceFileOrThrow('src/openai-llm-list.ts').getFullText();
+
+    expect(text).toContain('modelId: "gpt-4-vision-preview"');
+    expect(text).not.toContain('gpt-4o');
+    expect(result.siteCount).toBe(0);
+    // Both occurrences are surfaced Tier C for manual review, never edited.
+    expect(result.dataMatches.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('DOES swap the same id when the object is actually passed to a call', () => {
+    const src =
+      'export async function run(client: any) {\n' +
+      '  return client.chat.completions.create({ model: "gpt-4-vision-preview" });\n' +
+      '}\n';
+    const project = inMemoryProject('src/route.ts', src);
+    const result = applyModelIdFixesToProject(project, CALL_SITE_REGISTRY);
+    const text = project.getSourceFileOrThrow('src/route.ts').getFullText();
+
+    expect(text).toContain('{ model: "gpt-4o" }');
+    expect(result.siteCount).toBe(1);
+  });
+
+  it('skips test files entirely (Continue pattern: ids in *.test.ts / mocks)', () => {
+    const src =
+      'class MockLLM { model = "gpt-4-vision-preview"; }\n' +
+      'export async function t(client: any) {\n' +
+      '  return client.chat.completions.create({ model: "gemini-2.0-flash" });\n' +
+      '}\n';
+    const project = inMemoryProject('src/streamLazyApply.test.ts', src);
+    const result = applyModelIdFixesToProject(project, CALL_SITE_REGISTRY);
+    const text = project.getSourceFileOrThrow('src/streamLazyApply.test.ts').getFullText();
+
+    // Nothing in a test file is touched, not even the real call site.
+    expect(text).toContain('model: "gemini-2.0-flash"');
+    expect(text).not.toContain('gemini-flash-latest');
+    expect(result.siteCount).toBe(0);
+    expect(result.dataMatches).toHaveLength(0); // file skipped outright
   });
 });

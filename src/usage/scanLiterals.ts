@@ -164,11 +164,34 @@ function calleeLastIdentifier(call: CallExpression): string | undefined {
 }
 
 /**
+ * Is the object literal that directly contains `prop` passed as an ARGUMENT to a
+ * call, e.g. `create({ model: "…" })`? Only then is a model-keyed property a live
+ * model argument we trust enough to swap. A model id in a STANDALONE object
+ * literal (a `const X = { modelId: "…" }` catalog entry, a returned config, an
+ * element of a definitions array) is left as data. Without seeing the object
+ * flow into a call, a swap risks corrupting a catalog — the real chatbot-ui
+ * failure, where `modelId` changed but the sibling `hostedId` and the
+ * `modelName: "Claude 3 Opus"` label did not, leaving an incoherent entry.
+ */
+function isEnclosingObjectACallArgument(prop: Node): boolean {
+  const obj = prop.getParent();
+  if (!obj || !Node.isObjectLiteralExpression(obj)) return false;
+  let node: Node = obj;
+  let parent = node.getParent();
+  while (parent && isValueTransparent(parent, node)) {
+    node = parent;
+    parent = node.getParent();
+  }
+  return !!parent && Node.isCallExpression(parent) && parent.getArguments().includes(node);
+}
+
+/**
  * Classify a matched model-id literal by its AST position.
  *
  * ACCEPT (`model_arg`, swap) when the literal is any of:
- *   (a) the VALUE of a property whose key is model-like (`model`, `modelId`,
- *       `deployment`, …) — including inside a `||`/`??` fallback in that value;
+ *   (a) the VALUE of a model-like property (`model`, `modelId`, `deployment`, …)
+ *       OF AN OBJECT PASSED TO A CALL (`create({ model: "…" })`), including inside
+ *       a `||`/`??` fallback — a model id in a standalone/catalog object is data;
  *   (b) the initializer of a variable/property whose NAME is model-like
  *       (`const MODEL_NAME = "…"`, `defaultModel: "…"`);
  *   (c) a direct string argument to a known model-factory call
@@ -190,12 +213,19 @@ export function classifyLiteralPosition(
   }
   if (!parent) return 'data';
 
-  // (a) + (b, property form): value side of a model-like property.
+  // (a) value side of a model-like property — but ONLY when the enclosing object
+  // literal is actually passed to a call (`create({ model: "…" })`). A model id
+  // in a standalone object (a catalog entry, a returned config) is left as data:
+  // we will not risk a catalog-corrupting swap on an object we can't see used.
   if (Node.isPropertyAssignment(parent)) {
-    if (parent.getInitializer() === node && isModelLikeName(propertyKeyName(parent.getNameNode()))) {
+    if (
+      parent.getInitializer() === node &&
+      isModelLikeName(propertyKeyName(parent.getNameNode())) &&
+      isEnclosingObjectACallArgument(parent)
+    ) {
       return 'model_arg';
     }
-    return 'data'; // includes the literal being the KEY (initializer !== node)
+    return 'data'; // KEY position, or a standalone / catalog object -> never swap
   }
 
   // (b) variable form: `const modelName = "…"`.
@@ -227,9 +257,23 @@ export function classifyLiteralPosition(
 }
 
 /**
+ * Test-support files whose model ids are fixtures/mocks, not live app calls.
+ * Skipped by default: rewriting a project's test model ids is never a change
+ * worth proposing (noise at best, breaks their suite at worst — the Continue
+ * scan wanted to swap 29 ids, every one in a `*.test.ts` or a mock class).
+ */
+export function isTestPath(file: string): boolean {
+  const f = file.replace(/\\/g, '/');
+  return (
+    /\.(test|spec|vitest|e2e)\.[mc]?[jt]sx?$/.test(f) ||
+    /(^|\/)(__tests__|__mocks__|__fixtures__)\//.test(f)
+  );
+}
+
+/**
  * Find every string/template literal in `project` whose value EXACTLY equals a
- * registry `model_id` deprecated token. Declaration files and `node_modules`
- * are skipped, mirroring the Stripe locator.
+ * registry `model_id` deprecated token. Declaration files, `node_modules`, and
+ * test-support files are skipped, mirroring the Stripe locator.
  *
  * Only `kind: "model_id"` entries participate — `param_rename` is not a literal
  * match (see TODO in modelId.ts).
@@ -249,6 +293,7 @@ export function findModelIdLiterals(project: Project, registry: LlmRegistry): Li
     if (sf.isDeclarationFile()) continue;
     const file = sf.getFilePath();
     if (file.includes('/node_modules/')) continue;
+    if (isTestPath(file)) continue;
 
     const literals = [
       ...sf.getDescendantsOfKind(SyntaxKind.StringLiteral),
