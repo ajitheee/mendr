@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { readFileSync, writeFileSync } from 'node:fs';
+import type { Project } from 'ts-morph';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { loadSpec } from './detect/fetchSpec.js';
 import { diffSpecs } from './detect/diffSpec.js';
 import { formatChangeSet } from './detect/changeModel.js';
-import { loadProject } from './usage/scanRepo.js';
+import { countAnalyzableSourceFiles, loadProject } from './usage/scanRepo.js';
 import { buildUsageMap, formatUsageMap } from './usage/usageMap.js';
 import { intersect, formatAffectedSites } from './intersect/intersect.js';
 import { applyRenames, applyRenamesToProject } from './fix/apply.js';
@@ -28,15 +29,44 @@ const program = new Command();
 
 program
   .name('mendr')
-  .description('Auto-fix third-party API breaking changes (Stripe first) in a TypeScript repo.')
-  .version('0.0.0');
+  .description('Auto-fix third-party API breaking changes: deprecated LLM model ids + Stripe renames.')
+  .version('0.1.0');
+
+/** Resolve a repo path, exiting non-zero if it is missing or not a directory. */
+function resolveRepoOrExit(repoPath: string): string {
+  const resolved = resolve(repoPath);
+  if (!existsSync(resolved) || !statSync(resolved).isDirectory()) {
+    console.error(`mendr: path not found or not a directory: ${repoPath}`);
+    process.exit(2);
+  }
+  return resolved;
+}
+
+/**
+ * Guard the dangerous FALSE-CLEAN case. A mistyped path, a pure-JS repo, or a
+ * tsconfig whose `include` matched nothing loads 0 analyzable source files — and
+ * the old code then printed "Nothing to fix" with a success exit, which a user
+ * cannot tell apart from a genuinely clean repo. Fail loudly instead, and return
+ * the count so a real "clean" can say how many files it actually scanned.
+ */
+function assertAnalyzable(project: Project, resolved: string): number {
+  const fileCount = countAnalyzableSourceFiles(project);
+  if (fileCount === 0) {
+    console.error(
+      `mendr: found no analyzable .ts/.tsx/.mts/.cts files under ${resolved}.\n` +
+        `is this the repo root? pure-JS repos are not supported yet (TypeScript only for now).`,
+    );
+    process.exit(2);
+  }
+  return fileCount;
+}
 
 program
   .command('scan')
   .argument('<repoPath>', 'path to the target TypeScript repo')
   .description('(Phase 2) List the Stripe API surface used by a repo.')
   .action((repoPath: string) => {
-    const resolved = resolve(repoPath);
+    const resolved = resolveRepoOrExit(repoPath);
     const project = loadProject(resolved);
     const usage = buildUsageMap(project);
     console.log(formatUsageMap(usage));
@@ -63,7 +93,7 @@ program
 
     // With --repo, run the Phase-2 usage scan and intersect: report only the
     // changes the repo actually touches, plus how many were dropped as unused.
-    const resolved = resolve(opts.repo);
+    const resolved = resolveRepoOrExit(opts.repo);
     const usage = buildUsageMap(loadProject(resolved));
     const affected = intersect(changes, usage);
     console.log(formatAffectedSites(changes, affected));
@@ -77,7 +107,7 @@ program
   .option('--skip-gates', 'skip the type-check + test gates (assert Tier A without verifying)')
   .description('(Phase 5) Output a GATED rename codemod diff + earned confidence tier.')
   .action(async (repoPath: string, opts: { from: string; to: string; skipGates?: boolean }) => {
-    const resolved = resolve(repoPath);
+    const resolved = resolveRepoOrExit(repoPath);
 
     // detect -> scan -> intersect: only the changes this repo actually touches.
     const [specA, specB] = await Promise.all([loadSpec(opts.from), loadSpec(opts.to)]);
@@ -214,9 +244,11 @@ program
   .command('fix-llm')
   .argument('<repoPath>', 'path to the target TypeScript repo')
   .option('--skip-gates', 'skip the type-check + test gates (assert Tier A without verifying)')
+  .option('--write', 'apply the VERIFIED Tier A diff to your working tree (default: print only)')
+  .option('-o, --output <file>', 'also write the combined diff to a file')
   .description('(LLM mode) Output a GATED model-id + param codemod diff + earned confidence tier.')
-  .action(async (repoPath: string, opts: { skipGates?: boolean }) => {
-    const resolved = resolve(repoPath);
+  .action(async (repoPath: string, opts: { skipGates?: boolean; write?: boolean; output?: string }) => {
+    const resolved = resolveRepoOrExit(repoPath);
 
     // Registry-driven detect. Two locators run over the same scan project:
     //   1. model-id literals whose value exactly matches a retired model id;
@@ -225,6 +257,7 @@ program
     //      site — the coupling is enforced in the locator, not just the fixer.
     const registry = loadLlmRegistry();
     const scanProject = loadProject(resolved);
+    const fileCount = assertAnalyzable(scanProject, resolved);
     const modelMatches = findModelIdLiterals(scanProject, registry);
     const paramMatches = findParamSites(scanProject, registry);
 
@@ -243,7 +276,10 @@ program
       dataMatchCount === 0 &&
       blockedCount === 0
     ) {
-      console.log('No deprecated LLM model ids or model-coupled params found. Nothing to fix.');
+      console.log(
+        `Scanned ${fileCount} source file${fileCount === 1 ? '' : 's'}. ` +
+          'No deprecated LLM model ids or model-coupled params found. Nothing to fix.',
+      );
       return;
     }
 
@@ -338,6 +374,16 @@ program
         `Summary: ${totalSwaps} auto-fixed (Tier A), ` +
           `${tierCLocateOnly} flagged for review (Tier C).`,
       );
+      if (opts.output && result.diff) {
+        writeFileSync(resolve(opts.output), result.diff);
+        console.log(`\nWrote diff to ${opts.output}.`);
+      }
+      if (opts.write) {
+        console.log(
+          '\nnote: --write applies only the VERIFIED (gated) fix. ' +
+            're-run without --skip-gates to write.',
+        );
+      }
       return;
     }
 
@@ -417,6 +463,35 @@ program
       `Summary: ${tier === 'A' ? totalSites : 0} auto-fixed (Tier A), ` +
         `${tierCReview} flagged for review (Tier C).`,
     );
+
+    if (opts.output && result.diff) {
+      writeFileSync(resolve(opts.output), result.diff);
+      console.log('');
+      console.log(`Wrote diff to ${opts.output}.`);
+    }
+
+    if (opts.write) {
+      if (tier === 'A' && patchedFiles.length > 0) {
+        for (const f of patchedFiles) writeFileSync(f.absPath, f.newText);
+        console.log('');
+        console.log(
+          `Applied the verified Tier A fix to ${patchedFiles.length} ` +
+            `file${patchedFiles.length === 1 ? '' : 's'} in ${resolved}.`,
+        );
+      } else if (tier === 'C') {
+        console.log('');
+        console.log(
+          'Refusing to --write: the fix was downgraded to Tier C (not verified). ' +
+            'Review the diff above and apply by hand if it is correct.',
+        );
+      } else {
+        console.log('');
+        console.log('Nothing to --write (no verified Tier A changes).');
+      }
+    } else if (tier === 'A' && result.diff) {
+      console.log('');
+      console.log('To apply: re-run with --write, or pipe the diff above into `git apply`.');
+    }
   });
 
 program

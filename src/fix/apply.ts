@@ -1,5 +1,5 @@
 import { relative } from 'node:path';
-import { createTwoFilesPatch } from 'diff';
+import { gitUnifiedPatch } from '../report/diff.js';
 import type { Project } from 'ts-morph';
 import type { AffectedSite } from '../types.js';
 import { loadProject } from '../usage/scanRepo.js';
@@ -63,7 +63,7 @@ export function applyRenamesToProject(
 
     changedFiles.push(file);
     const display = rootDir ? relative(rootDir, file).replace(/\\/g, '/') : file;
-    patches.push(createTwoFilesPatch(display, display, before, after, '', '', { context: 3 }));
+    patches.push(gitUnifiedPatch(display, before, after));
   }
 
   return { diff: patches.join('\n'), changedFiles, siteCount };

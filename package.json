@@ -1,11 +1,17 @@
 {
   "name": "mendr",
-  "version": "0.0.0",
-  "description": "CLI that auto-fixes third-party API breaking changes (Stripe first) in a TypeScript repo.",
+  "version": "0.1.0",
+  "description": "CLI that auto-fixes third-party API breaking changes: deprecated LLM model ids and coupled params (OpenAI/Anthropic/Google), plus Stripe renames. It prints a verified diff and never writes your working tree on its own.",
   "type": "module",
   "bin": {
     "mendr": "dist/cli.js"
   },
+  "files": [
+    "dist",
+    "registries",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=20"
   },
@@ -13,9 +19,35 @@
     "build": "tsc",
     "dev": "tsx src/cli.ts",
     "test": "vitest run",
-    "start": "node dist/cli.js"
+    "start": "node dist/cli.js",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run build && npm test"
   },
-  "license": "UNLICENSED",
+  "keywords": [
+    "cli",
+    "codemod",
+    "breaking-changes",
+    "deprecation",
+    "api-migration",
+    "stripe",
+    "openai",
+    "anthropic",
+    "gemini",
+    "llm",
+    "model-id"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ajitheee/mendr.git"
+  },
+  "homepage": "https://github.com/ajitheee/mendr#readme",
+  "bugs": {
+    "url": "https://github.com/ajitheee/mendr/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
   "devDependencies": {
     "@types/node": "^26.1.2",
     "stripe": "^22.4.0",
