@@ -1,4 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mendr — auto-fix retired LLM model ids</title>
+<meta name="description" content="A CLI that finds deprecated LLM model ids and the coupled params that die with them, then hands you the exact diff, verified before it touches your code. TypeScript first.">
+<meta property="og:title" content="mendr — auto-fix retired LLM model ids">
+<meta property="og:description" content="A CLI that finds deprecated LLM model ids and coupled params and hands you the exact diff, verified before it touches your code.">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🩹</text></svg>">
 <style>
   :root {
     /* light palette (also the un-stamped default under a light OS) */
@@ -384,6 +395,8 @@
     .term .row.add, .term .row.del, .term .stamp { animation: none; }
   }
 </style>
+</head>
+<body>
 
 <div class="wrap">
   <header class="bar">
@@ -543,3 +556,5 @@
     });
   })();
 </script>
+</body>
+</html>
