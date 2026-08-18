@@ -69,6 +69,13 @@ export interface VerificationInfo {
 }
 
 /**
+ * Lifecycle of the SOURCE model id, from the provider's own deprecation pages.
+ * `retired` = calls fail today (fix now). `deprecated` = still live but the
+ * provider has announced a shutdown (early-warning fix, see `shutdownDate`).
+ */
+export type ModelLifecycle = 'retired' | 'deprecated';
+
+/**
  * A retired MODEL ID: a bare string literal to swap wholesale
  * (`"gemini-2.0-flash"` -> `"gemini-flash-latest"`). Not model-coupled — the
  * matched literal is itself the model.
@@ -81,6 +88,15 @@ export interface LlmModelIdDeprecation {
   deprecated: string;
   /** The model id to migrate to. */
   replacement: string;
+  /**
+   * Source-id lifecycle per the provider's deprecation docs. Absent = status
+   * unknown (never claimed dead) — recall audits fill this in over time.
+   */
+  status?: ModelLifecycle;
+  /** ISO date (YYYY-MM-DD) calls stop(ped) working, when the provider published one. */
+  shutdownDate?: string;
+  /** The provider documentation page this verdict was read from. */
+  sourceUrl?: string;
   /** Optional human note explaining the deprecation. */
   note?: string;
   /**

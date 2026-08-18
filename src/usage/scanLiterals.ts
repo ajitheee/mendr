@@ -266,7 +266,8 @@ export function isTestPath(file: string): boolean {
   const f = file.replace(/\\/g, '/');
   return (
     /\.(test|spec|vitest|e2e)\.[mc]?[jt]sx?$/.test(f) ||
-    /(^|\/)(__tests__|__mocks__|__fixtures__)\//.test(f)
+    /(^|\/)(__tests__|__mocks__|__fixtures__|tests?|test-helpers?|test-utils|testing|mocks?|fixtures?|e2e)\//.test(f) ||
+    /(^|\/)mock[-.][^/]*$|[-.]mocks?\.[mc]?[jt]sx?$/.test(f)
   );
 }
 

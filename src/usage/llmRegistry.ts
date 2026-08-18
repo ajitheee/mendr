@@ -7,6 +7,7 @@ import type {
   LlmModelIdDeprecation,
   LlmParamDeprecation,
   LlmRegistry,
+  ModelLifecycle,
   VerificationInfo,
   VerificationStatus,
 } from '../types.js';
@@ -133,11 +134,25 @@ function assertDeprecation(entry: unknown, index: number): LlmDeprecation {
   const kind = e.kind as LlmDeprecationKind;
 
   if (kind === 'model_id') {
+    // Optional lifecycle fields (from the provider's own deprecation pages).
+    // A present-but-malformed value is a hard error, same posture as the
+    // verification block — bad data must never be silently read as trusted.
+    if (e.status !== undefined && e.status !== 'retired' && e.status !== 'deprecated') {
+      throw new Error(`llm registry entry #${index} has an invalid "status": ${String(e.status)}`);
+    }
+    for (const field of ['shutdownDate', 'sourceUrl'] as const) {
+      if (e[field] !== undefined && e[field] !== null && typeof e[field] !== 'string') {
+        throw new Error(`llm registry entry #${index} has a non-string "${field}"`);
+      }
+    }
     return {
       provider,
       kind,
       deprecated: requireString(e, 'deprecated', index),
       replacement: requireString(e, 'replacement', index),
+      status: (e.status ?? undefined) as ModelLifecycle | undefined,
+      shutdownDate: (e.shutdownDate ?? undefined) as string | undefined,
+      sourceUrl: (e.sourceUrl ?? undefined) as string | undefined,
       note,
       verification: parseVerification(e, index),
     };

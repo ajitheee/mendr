@@ -19,7 +19,9 @@ function projectFrom(fileName: string, source: string): Project {
   return project;
 }
 
-describe('checkTypes (baseline-relative type-check gate)', () => {
+// Each test runs full program diagnostics on TWO in-memory projects, which can
+// take several seconds on a loaded machine — give them a realistic budget.
+describe('checkTypes (baseline-relative type-check gate)', { timeout: 60_000 }, () => {
   it('passes when the patched code is valid (the migrated field exists)', () => {
     // baseline: reads the OLD name and the type has cardholder_name -> broken.
     const baseline = projectFrom(

@@ -284,9 +284,10 @@ program
     }
 
     // Human labels. Model-id: one per unique deprecated -> replacement swap,
-    // counting only swap-safe (`model_arg`) positions.
-    const swaps = new Map<string, string>();
-    for (const m of swapMatches) swaps.set(m.deprecation.deprecated, m.deprecation.replacement);
+    // counting only swap-safe (`model_arg`) positions. Carry the lifecycle so
+    // the label says WHY: already retired, or dying on a known date.
+    const swaps = new Map<string, LlmModelIdDeprecation>();
+    for (const m of swapMatches) swaps.set(m.deprecation.deprecated, m.deprecation);
     // Params: one per unique transform (removal or rename), tagged with model.
     const paramLabelSet = new Set<string>();
     for (const p of paramMatches) {
@@ -297,7 +298,15 @@ program
       );
     }
     const labels = [
-      ...[...swaps].map(([from, to]) => `"${from}" -> "${to}"`),
+      ...[...swaps.values()].map((d) => {
+        const when =
+          d.status === 'retired'
+            ? ' [retired]'
+            : d.status === 'deprecated' && d.shutdownDate
+              ? ` [shuts down ${d.shutdownDate}]`
+              : '';
+        return `"${d.deprecated}" -> "${d.replacement}"${when}`;
+      }),
       ...paramLabelSet,
     ].join(', ');
 
