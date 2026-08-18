@@ -1,0 +1,89 @@
+name: "Mendr - fix deprecated LLM model ids"
+description: >-
+  Scan a TypeScript repo for retired LLM model ids and their coupled params and
+  open a verified, idempotent pull request. Mendr runs its gates (a required
+  type-check plus YOUR test suite) inside YOUR CI runner and only applies a fix
+  it can verify. It never edits your default branch.
+author: "Mendr"
+branding:
+  icon: "git-pull-request"
+  color: "green"
+
+inputs:
+  working-directory:
+    description: "Path to the repo/package root Mendr scans."
+    required: false
+    default: "."
+  mendr-spec:
+    description: "npm spec for the Mendr CLI that runs in your CI (pins the version)."
+    required: false
+    default: "mendr@^0.1"
+  install-command:
+    description: "Command to install the target repo's deps so Mendr's test gate can run. Empty = auto-detect from the lockfile."
+    required: false
+    default: ""
+  node-version:
+    description: "Node.js version (Mendr needs >=20)."
+    required: false
+    default: "20"
+  branch:
+    description: "Stable branch Mendr updates each run to keep a single idempotent PR."
+    required: false
+    default: "mendr/deprecated-model-ids"
+  base:
+    description: "Base branch for the PR. Empty = the repo's default branch."
+    required: false
+    default: ""
+  pr-labels:
+    description: "Comma-separated labels applied to the PR."
+    required: false
+    default: "dependencies,mendr,automated"
+  github-token:
+    description: "Token used to push the branch and open the PR. The default GITHUB_TOKEN is enough."
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  outcome:
+    description: "clean | fixes-proposed"
+    value: ${{ steps.mendr.outputs.outcome }}
+  pr-url:
+    description: "URL of the opened/updated PR (empty when clean)."
+    value: ${{ steps.mendr.outputs.pr_url }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Install target-repo dependencies (enables Mendr's test gate)
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        set -euo pipefail
+        if [ -n "${{ inputs.install-command }}" ]; then
+          eval "${{ inputs.install-command }}"
+        elif [ -f pnpm-lock.yaml ]; then
+          corepack enable && pnpm install --frozen-lockfile
+        elif [ -f yarn.lock ]; then
+          corepack enable && yarn install --frozen-lockfile
+        elif [ -f package-lock.json ]; then
+          npm ci
+        else
+          npm install
+        fi
+
+    - name: Run Mendr and open a PR
+      id: mendr
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        MENDR_SPEC: ${{ inputs.mendr-spec }}
+        MENDR_BRANCH: ${{ inputs.branch }}
+        MENDR_BASE: ${{ inputs.base }}
+        MENDR_LABELS: ${{ inputs.pr-labels }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/run-mendr.sh"

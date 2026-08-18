@@ -1,0 +1,23 @@
+# Drop this file into your repo at .github/workflows/mendr.yml
+# It runs Mendr weekly (and on demand) and opens a verified PR if a model id
+# your code calls has been retired.
+
+name: mendr
+
+on:
+  schedule:
+    - cron: "0 8 * * 1" # every Monday 08:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  llm-deprecations:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the mendr/deprecated-model-ids branch
+      pull-requests: write # open/update the Mendr PR
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ajitheee/mendr/mendr-action@v1
+        # with:
+        #   working-directory: packages/api   # if your code isn't at the repo root
+        #   node-version: "20"
