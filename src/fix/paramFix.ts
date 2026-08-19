@@ -179,30 +179,46 @@ function renameKey(paramProp: PropertyAssignment, replacement: string): void {
  * {@link ParamEdit} per site edited. The project is mutated in place but NEVER
  * saved.
  *
- * We re-scan after each edit (as modelId.ts / rename.ts do): a removal deletes
- * the `param` key and a rename changes it, so the just-edited site can never
- * re-match. That both terminates the loop and sidesteps stale ts-morph node
- * references after positions shift.
+ * ONE scan (as modelId.ts now does), then per-file edits applied in DESCENDING
+ * position order: every edit lands at an offset BEFORE the previous one, so
+ * earlier offsets never shift and no pending ts-morph node reference goes
+ * stale. `precomputed`, when given, reuses a caller's `findParamSites` result
+ * from this same (not-yet-edited) project instead of scanning again.
  */
-export function applyParamFixes(project: Project, registry: LlmRegistry): ParamEdit[] {
+export function applyParamFixes(
+  project: Project,
+  registry: LlmRegistry,
+  precomputed?: ParamMatch[],
+): ParamEdit[] {
   const edits: ParamEdit[] = [];
 
-  for (;;) {
-    const next = findParamSites(project, registry)[0];
-    if (!next) break;
+  const sites = precomputed ?? findParamSites(project, registry);
+  const byFile = new Map<string, ParamMatch[]>();
+  for (const s of sites) {
+    const list = byFile.get(s.location.file);
+    if (list) list.push(s);
+    else byFile.set(s.location.file, [s]);
+  }
 
-    const { deprecation, paramProp, model } = next;
-    if (deprecation.kind === 'param_removal') {
-      paramProp.remove();
-      edits.push({ kind: 'param_removal', param: deprecation.param, model });
-    } else {
-      renameKey(paramProp, deprecation.replacement);
-      edits.push({
-        kind: 'param_rename',
-        param: deprecation.param,
-        replacement: deprecation.replacement,
-        model,
-      });
+  for (const fileSites of byFile.values()) {
+    fileSites.sort((a, b) => b.paramProp.getStart() - a.paramProp.getStart());
+    for (const site of fileSites) {
+      const { deprecation, paramProp, model } = site;
+      // Two registry entries can target the SAME property (duplicate/overlapping
+      // param entries); once the first edit consumed it, skip the stale site.
+      if (paramProp.wasForgotten()) continue;
+      if (deprecation.kind === 'param_removal') {
+        paramProp.remove();
+        edits.push({ kind: 'param_removal', param: deprecation.param, model });
+      } else {
+        renameKey(paramProp, deprecation.replacement);
+        edits.push({
+          kind: 'param_rename',
+          param: deprecation.param,
+          replacement: deprecation.replacement,
+          model,
+        });
+      }
     }
   }
 

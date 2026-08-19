@@ -321,6 +321,42 @@ export function findModelIdLiterals(project: Project, registry: LlmRegistry): Li
 }
 
 /**
+ * Project a pre-computed literal scan down to its DATA-position matches, as
+ * plain snapshots for Tier C locate-only reporting. Extracted so a caller that
+ * already holds a `findModelIdLiterals` result can derive this view without
+ * paying for a second full scan.
+ */
+export function toModelIdDataMatches(matches: LiteralMatch[]): ModelIdDataLocate[] {
+  return matches
+    .filter((m) => m.position === 'data')
+    .map((m) => ({
+      value: m.value,
+      replacement: m.deprecation.replacement,
+      location: m.location,
+      note: m.deprecation.note,
+    }));
+}
+
+/**
+ * Project a pre-computed literal scan down to its BLOCKED matches: deprecated
+ * ids sitting in LIVE model-argument positions whose entry is NOT `verified` —
+ * i.e. matches the engine gate REFUSES to swap. Extracted for the same
+ * single-scan reuse as {@link toModelIdDataMatches}.
+ */
+export function toBlockedModelArgMatches(matches: LiteralMatch[]): BlockedModelLocate[] {
+  return matches
+    .filter((m) => m.position === 'model_arg' && !isVerified(m.deprecation))
+    .map((m) => ({
+      value: m.value,
+      replacement: m.deprecation.replacement,
+      status: m.deprecation.verification?.status ?? 'unstamped',
+      location: m.location,
+      note: m.deprecation.note,
+      reasons: m.deprecation.verification?.reasons,
+    }));
+}
+
+/**
  * The matched-but-rejected literals (deprecated ids used as DATA), captured as
  * plain snapshots for Tier C locate-only reporting. Call this against the
  * pre-edit project so line/column anchor the original source; the codemod never
@@ -330,14 +366,7 @@ export function findModelIdDataMatches(
   project: Project,
   registry: LlmRegistry,
 ): ModelIdDataLocate[] {
-  return findModelIdLiterals(project, registry)
-    .filter((m) => m.position === 'data')
-    .map((m) => ({
-      value: m.value,
-      replacement: m.deprecation.replacement,
-      location: m.location,
-      note: m.deprecation.note,
-    }));
+  return toModelIdDataMatches(findModelIdLiterals(project, registry));
 }
 
 /**
@@ -351,14 +380,5 @@ export function findBlockedModelArgMatches(
   project: Project,
   registry: LlmRegistry,
 ): BlockedModelLocate[] {
-  return findModelIdLiterals(project, registry)
-    .filter((m) => m.position === 'model_arg' && !isVerified(m.deprecation))
-    .map((m) => ({
-      value: m.value,
-      replacement: m.deprecation.replacement,
-      status: m.deprecation.verification?.status ?? 'unstamped',
-      location: m.location,
-      note: m.deprecation.note,
-      reasons: m.deprecation.verification?.reasons,
-    }));
+  return toBlockedModelArgMatches(findModelIdLiterals(project, registry));
 }

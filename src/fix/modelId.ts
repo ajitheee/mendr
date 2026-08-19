@@ -9,6 +9,7 @@ import {
   findModelIdDataMatches,
   findModelIdLiterals,
   type BlockedModelLocate,
+  type LiteralMatch,
   type ModelIdDataLocate,
 } from '../usage/scanLiterals.js';
 
@@ -26,11 +27,12 @@ import {
 //      `model_arg` (a live model-argument position) are swapped; literals used as
 //      DATA (a pricing-table key, an encoding-list entry, a model-picker array
 //      element) are left byte-identical and surfaced Tier C locate-only.
-//   2. We re-scan after each edit (as rename.ts does). Replacing a deprecated
-//      value with its replacement changes the literal's value so it can never
-//      re-match, which both terminates the loop and sidesteps stale ts-morph
-//      node references after positions shift. (Registry entries are assumed
-//      acyclic — a replacement is never itself a deprecated model id.)
+//   2. ONE scan, then per-file edits applied in DESCENDING position order: every
+//      edit lands at an offset BEFORE the previous one, so no applied edit can
+//      shift (and thereby invalidate) a node still waiting its turn. This
+//      replaced the old rescan-after-each-edit loop, which re-walked the whole
+//      project once per site. (Registry entries are assumed acyclic — a
+//      replacement is never itself a deprecated model id.)
 //   3. All edits are made in-memory on the passed Project; NOTHING is ever
 //      saved. Diffing is against a captured pre-edit snapshot.
 //
@@ -56,35 +58,48 @@ function requote(originalText: string, newValue: string): string {
  * Replace every matching deprecated model-id literal in `project` with its
  * replacement. Returns the edited literal nodes (useful for a site count). The
  * project is mutated in place but NEVER saved.
+ *
+ * `precomputed`, when given, is a `findModelIdLiterals` result from an earlier
+ * scan of this same (not-yet-edited) project — the caller's single scan is
+ * reused instead of scanning the whole project again.
  */
 export function applyModelIdFixes(
   project: Project,
   registry: LlmRegistry,
+  precomputed?: LiteralMatch[],
 ): (StringLiteral | NoSubstitutionTemplateLiteral)[] {
   const edited: (StringLiteral | NoSubstitutionTemplateLiteral)[] = [];
 
-  // Re-scan after each edit: the just-edited literal now holds the replacement
-  // value, which is not a deprecated token, so it drops out of the next scan.
-  // Only `model_arg` (live model-argument) positions AND `verified` entries are
-  // swapped; `data` positions and non-`verified` entries never match this
-  // filter, so they persist unedited and the loop still terminates once every
-  // swap-safe, verified literal is done.
+  // ONE scan, filtered down to the swap-safe sites. Only `model_arg` (live
+  // model-argument) positions AND `verified` entries are swapped; `data`
+  // positions and non-`verified` entries are dropped here and persist unedited.
   //
   // THE ENGINE GATE: `isVerified(...)` is the load-bearing clause — an entry the
   // registry has not stamped `verification.status === 'verified'` is NEVER
   // auto-swapped here, no matter how confident the value match is.
-  for (;;) {
-    const next = findModelIdLiterals(project, registry).find(
-      (m) =>
-        m.position === 'model_arg' &&
-        isVerified(m.deprecation) &&
-        m.value !== m.deprecation.replacement,
-    );
-    if (!next) break;
+  const swaps = (precomputed ?? findModelIdLiterals(project, registry)).filter(
+    (m) =>
+      m.position === 'model_arg' &&
+      isVerified(m.deprecation) &&
+      m.value !== m.deprecation.replacement,
+  );
 
-    const newText = requote(next.node.getText(), next.deprecation.replacement);
-    next.node.replaceWithText(newText);
-    edited.push(next.node);
+  // Group per file, then edit each file's sites in DESCENDING start order: every
+  // edit lands at an offset BEFORE the previous one, so earlier offsets never
+  // shift and no pending ts-morph node reference goes stale.
+  const byFile = new Map<string, LiteralMatch[]>();
+  for (const m of swaps) {
+    const list = byFile.get(m.location.file);
+    if (list) list.push(m);
+    else byFile.set(m.location.file, [m]);
+  }
+  for (const matches of byFile.values()) {
+    matches.sort((a, b) => b.node.getStart() - a.node.getStart());
+    for (const m of matches) {
+      const newText = requote(m.node.getText(), m.deprecation.replacement);
+      m.node.replaceWithText(newText);
+      edited.push(m.node);
+    }
   }
 
   return edited;

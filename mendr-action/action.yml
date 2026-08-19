@@ -15,7 +15,7 @@ inputs:
     required: false
     default: "."
   mendr-spec:
-    description: "npm spec for the Mendr CLI that runs in your CI (pins the version)."
+    description: "npm spec for the Mendr CLI that runs in your CI (pins the version). Local specs must use the file: protocol (e.g. file:/path/to/mendr.tgz) — npm silently no-ops on raw absolute paths."
     required: false
     default: "mendr@^0.1"
   install-command:
@@ -45,7 +45,7 @@ inputs:
 
 outputs:
   outcome:
-    description: "clean | fixes-proposed"
+    description: "clean | fixes-proposed | error (error = Mendr never completed a scan; the job fails red and no existing PR is touched)"
     value: ${{ steps.mendr.outputs.outcome }}
   pr-url:
     description: "URL of the opened/updated PR (empty when clean)."

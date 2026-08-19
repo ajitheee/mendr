@@ -53,10 +53,10 @@
     "stripe": "^22.4.0",
     "tsx": "^4.23.5",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "@types/diff": "^7.0.2"
   },
   "dependencies": {
-    "@types/diff": "^7.0.2",
     "commander": "^15.0.0",
     "diff": "^9.0.0",
     "execa": "^10.0.1",

@@ -4,8 +4,9 @@ import type { Project } from 'ts-morph';
 import type { LlmRegistry } from '../types.js';
 import { loadProject } from '../usage/scanRepo.js';
 import {
-  findBlockedModelArgMatches,
-  findModelIdDataMatches,
+  findModelIdLiterals,
+  toBlockedModelArgMatches,
+  toModelIdDataMatches,
   type BlockedModelLocate,
   type ModelIdDataLocate,
 } from '../usage/scanLiterals.js';
@@ -65,15 +66,17 @@ export function applyLlmFixesToProject(
     originals.set(sf.getFilePath(), sf.getFullText());
   }
 
-  // Capture data-position model-id matches AND not-verified (blocked) model-arg
-  // matches BEFORE either pass edits anything, so their line/column anchor the
-  // original source. Neither set is ever swapped.
-  const dataMatches = findModelIdDataMatches(project, registry);
-  const blockedMatches = findBlockedModelArgMatches(project, registry);
+  // ONE literal scan feeds everything below: the Tier C data/blocked views AND
+  // the model-id fix pass (each used to re-run the identical full scan). It runs
+  // BEFORE either pass edits anything, so line/column anchor the original source
+  // and the match nodes are still valid when pass 1 consumes them.
+  const literalMatches = findModelIdLiterals(project, registry);
+  const dataMatches = toModelIdDataMatches(literalMatches);
+  const blockedMatches = toBlockedModelArgMatches(literalMatches);
 
-  // Pass 1: model-id swaps. Pass 2: model-coupled param transforms (which see
-  // any model ids pass 1 just updated).
-  const modelIdSites = applyModelIdFixes(project, registry).length;
+  // Pass 1: model-id swaps (reusing the single scan). Pass 2: model-coupled
+  // param transforms — scanned AFTER pass 1 so they see the models it updated.
+  const modelIdSites = applyModelIdFixes(project, registry, literalMatches).length;
   const paramEdits = applyParamFixes(project, registry);
   const paramsRemoved = paramEdits.filter((e) => e.kind === 'param_removal').length;
   const paramsRenamed = paramEdits.filter((e) => e.kind === 'param_rename').length;

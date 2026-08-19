@@ -12,12 +12,16 @@ set -euo pipefail
 
 REPORT="$(mktemp)"
 
-# Run Mendr. It applies a verified fix in place, or changes nothing. Don't let a
-# non-zero exit (e.g. a pure-JS repo Mendr can't analyze yet) abort the job; the
-# git-diff check below is the real decision.
-set +o pipefail
-npx --yes "$MENDR_SPEC" fix-llm . --write | tee "$REPORT"
-set -o pipefail
+# Run Mendr and capture its exit status EXPLICITLY. mendr exits 0 only when a
+# scan actually ran (clean or fixes); nonzero means it never analyzed the repo
+# (registry outage, bad spec, unsupported repo). A failed run must NEVER be
+# reported as "clean" — that would green-light a broken build and, worse, close
+# a legitimate open fix PR below.
+set +e
+npx --yes "$MENDR_SPEC" fix-llm . --write >"$REPORT" 2>&1
+MENDR_STATUS=$?
+set -e
+cat "$REPORT"
 
 {
   echo "### Mendr - deprecated LLM model ids"
@@ -27,12 +31,22 @@ set -o pipefail
   echo '```'
 } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
 
+# Guard: if mendr did not complete (nonzero exit) or produced no output at all
+# (e.g. npx silently no-ops on a malformed spec), report an error, exit red, and
+# do NOT touch any existing PR.
+if [ "$MENDR_STATUS" -ne 0 ] || [ ! -s "$REPORT" ]; then
+  echo "outcome=error" >> "$GITHUB_OUTPUT"
+  echo "pr_url=" >> "$GITHUB_OUTPUT"
+  echo "Mendr did not complete (exit $MENDR_STATUS). Leaving any open Mendr PR untouched." >&2
+  exit 1
+fi
+
 # Did Mendr actually apply a verified fix to any tracked file?
 if git diff --quiet --exit-code; then
   echo "outcome=clean" >> "$GITHUB_OUTPUT"
   echo "pr_url=" >> "$GITHUB_OUTPUT"
   # Tidy up: if a previous Mendr PR is open but the repo is clean now, close it.
-  old=$(gh pr list --head "$MENDR_BRANCH" --state open --json number -q '.[0].number' 2>/dev/null || true)
+  old=$(gh pr list --head "$MENDR_BRANCH" --state open --json number -q '.[0].number // empty' 2>/dev/null || true)
   if [ -n "${old:-}" ]; then
     gh pr close "$old" --comment "Mendr: no deprecated model ids remain; closing." --delete-branch || true
   fi
@@ -71,13 +85,20 @@ BODY="$(mktemp)"
 } > "$BODY"
 
 # Make sure the labels exist (ignore "already exists"), then upsert exactly one
-# PR keyed by the head branch.
+# PR keyed by the head branch. Labels are trimmed; an empty list skips --label
+# entirely (gh errors on --label "").
+LABEL_ARGS=()
+CLEAN_LABELS=""
 IFS=',' read -ra LABELS <<< "$MENDR_LABELS"
 for lab in "${LABELS[@]}"; do
+  lab="$(echo "$lab" | xargs)" # trim whitespace
+  [ -n "$lab" ] || continue
   gh label create "$lab" --color ededed >/dev/null 2>&1 || true
+  CLEAN_LABELS="${CLEAN_LABELS:+$CLEAN_LABELS,}$lab"
 done
+[ -n "$CLEAN_LABELS" ] && LABEL_ARGS=(--label "$CLEAN_LABELS")
 
-existing=$(gh pr list --head "$MENDR_BRANCH" --state open --json url -q '.[0].url' 2>/dev/null || true)
+existing=$(gh pr list --head "$MENDR_BRANCH" --state open --json url -q '.[0].url // empty' 2>/dev/null || true)
 if [ -n "${existing:-}" ]; then
   gh pr edit "$existing" --body-file "$BODY"
   echo "pr_url=$existing" >> "$GITHUB_OUTPUT"
@@ -85,7 +106,7 @@ if [ -n "${existing:-}" ]; then
 else
   url=$(gh pr create --base "$BASE" --head "$MENDR_BRANCH" \
     --title "chore(deps): fix deprecated LLM model ids (Mendr)" \
-    --body-file "$BODY" --label "$MENDR_LABELS")
+    --body-file "$BODY" "${LABEL_ARGS[@]}")
   echo "pr_url=$url" >> "$GITHUB_OUTPUT"
   echo "Opened Mendr PR: $url"
 fi
