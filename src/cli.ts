@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import type { Project } from 'ts-morph';
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, relative, resolve } from 'node:path';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, relative, resolve } from 'node:path';
+import { simpleGit } from 'simple-git';
 import { loadSpec } from './detect/fetchSpec.js';
 import { diffSpecs } from './detect/diffSpec.js';
 import { formatChangeSet } from './detect/changeModel.js';
@@ -35,6 +37,30 @@ program
   .name('mendr')
   .description('Auto-fix third-party API breaking changes: deprecated LLM model ids + Stripe renames.')
   .version('0.1.0');
+
+/** Is the target a remote git URL (GitHub link etc.) rather than a local path? */
+function isRemoteRepoUrl(target: string): boolean {
+  return /^(https?:\/\/|git@)/i.test(target);
+}
+
+/**
+ * fix-llm accepts a GitHub/git URL as well as a local path. A URL is shallow-
+ * cloned into a throwaway temp dir and analyzed there — the real repo is never
+ * touched. --write is refused for URLs, since it would only edit the temp copy.
+ */
+async function cloneRemoteOrExit(url: string): Promise<string> {
+  const dest = mkdtempSync(join(tmpdir(), 'mendr-clone-'));
+  console.log(`Cloning ${url} (shallow, read-only copy)...`);
+  try {
+    await simpleGit().clone(url, dest, ['--depth', '1']);
+  } catch (err) {
+    console.error(
+      `mendr: could not clone ${url}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    process.exit(2);
+  }
+  return dest;
+}
 
 /** Resolve a repo path, exiting non-zero if it is missing or not a directory. */
 function resolveRepoOrExit(repoPath: string): string {
@@ -85,13 +111,21 @@ function writeDiffOrExit(outputPath: string, diff: string): void {
 
 program
   .command('fix-llm')
-  .argument('<repoPath>', 'path to the target TypeScript repo')
+  .argument('<repoPath>', 'path to the target TypeScript repo, or a GitHub/git URL to scan a copy of')
   .option('--skip-gates', 'skip the type-check + test gates (assert Tier A without verifying)')
   .option('--write', 'apply the VERIFIED Tier A diff to your working tree (default: print only)')
   .option('-o, --output <file>', 'also write the combined diff to a file')
   .description('Find and fix deprecated LLM model ids (prints a verified diff)')
   .action(async (repoPath: string, opts: { skipGates?: boolean; write?: boolean; output?: string }) => {
-    const resolved = resolveRepoOrExit(repoPath);
+    const isRemote = isRemoteRepoUrl(repoPath);
+    if (isRemote && opts.write) {
+      console.error(
+        'mendr: --write is not allowed with a repo URL (it would only edit a temp copy).\n' +
+          'clone the repo yourself and run mendr on the local folder to apply the fix.',
+      );
+      process.exit(2);
+    }
+    const resolved = isRemote ? await cloneRemoteOrExit(repoPath) : resolveRepoOrExit(repoPath);
 
     // Registry-driven detect. Two locators run over the same scan project:
     //   1. model-id literals whose value exactly matches a retired model id;

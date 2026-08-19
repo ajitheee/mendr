@@ -14,6 +14,12 @@ npx mendr fix-llm .
 
 Point it at a repo and it prints a unified diff of the fixes it wants to make. Read the patch. If it's right, apply it.
 
+You can also point it straight at a GitHub link. mendr clones a throwaway copy and scans that, so the real repo is never touched:
+
+```sh
+npx mendr fix-llm https://github.com/someone/their-repo
+```
+
 It never writes to your working tree on its own. The default is print-only. When you're ready to apply:
 
 ```sh
