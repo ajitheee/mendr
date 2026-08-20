@@ -9,6 +9,7 @@
   "files": [
     "dist",
     "registries",
+    "wasm",
     "README.md",
     "LICENSE"
   ],
@@ -49,18 +50,20 @@
   },
   "license": "MIT",
   "devDependencies": {
+    "@types/diff": "^7.0.2",
     "@types/node": "^26.1.2",
     "stripe": "^22.4.0",
+    "tree-sitter-python": "^0.25.0",
     "tsx": "^4.23.5",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.10",
-    "@types/diff": "^7.0.2"
+    "vitest": "^4.1.10"
   },
   "dependencies": {
     "commander": "^15.0.0",
     "diff": "^9.0.0",
     "execa": "^10.0.1",
     "simple-git": "^3.36.0",
-    "ts-morph": "^28.0.0"
+    "ts-morph": "^28.0.0",
+    "web-tree-sitter": "^0.26.12"
   }
 }

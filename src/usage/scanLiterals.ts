@@ -100,9 +100,13 @@ export interface BlockedModelLocate {
  * Property-key / variable names that mark a value as a model argument. `/model/i`
  * covers `model`, `modelId`, `modelName`, `model_name`, `MODEL_NAME`,
  * `defaultModel`, etc.; the extra set covers the Azure-style names that do not
- * contain "model".
+ * contain "model" (`deployment_name` is the same Azure key in Python snake_case).
  */
-const MODEL_KEY_EXTRA: ReadonlySet<string> = new Set(['deployment', 'deploymentName']);
+const MODEL_KEY_EXTRA: ReadonlySet<string> = new Set([
+  'deployment',
+  'deploymentName',
+  'deployment_name',
+]);
 
 /**
  * Callee last-identifier names that construct/select a model directly from a
@@ -122,8 +126,12 @@ const MODEL_FACTORIES: ReadonlySet<string> = new Set([
   'chat',
 ]);
 
-/** Is a property-key / declaration name a model-argument name? */
-function isModelLikeName(name: string): boolean {
+/**
+ * Is a property-key / declaration name a model-argument name? Exported so the
+ * Python scanner (src/python/scanPy.ts) applies the IDENTICAL rule — one source
+ * of truth for what counts as "model-like" across both languages.
+ */
+export function isModelLikeName(name: string): boolean {
   return /model/i.test(name) || MODEL_KEY_EXTRA.has(name);
 }
 
