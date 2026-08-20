@@ -169,6 +169,21 @@ describe('python call-site awareness: swap live model arguments, skip data', () 
     expect(swaps).toHaveLength(4);
     expect(data).toHaveLength(5);
   });
+
+  it('tags each data match with a purpose (mirrors the TS purpose labels)', async () => {
+    const matches = await findPyModelIdLiterals([src('app/llm.py', CALL_SITE_SOURCE)], REGISTRY);
+    const data = matches.filter((m) => m.position === 'data');
+    const byPurpose = (p: string) => data.filter((m) => m.purpose === p).map((m) => m.value);
+
+    // Standalone dict value -> config/catalog entry.
+    expect(byPurpose('catalog_entry')).toEqual(['claude-3-opus-20240229']);
+    // Pricing-table key -> lookup key.
+    expect(byPurpose('lookup_key')).toEqual(['claude-3-5-sonnet-20241022']);
+    // Model-picker list element -> list entry.
+    expect(byPurpose('list_entry')).toEqual(['o1-mini']);
+    // `==` operand AND the `in ("…",)` tuple element both gate runtime logic.
+    expect(byPurpose('comparison').sort()).toEqual(['claude-3-opus-20240229', 'o1-mini']);
+  });
 });
 
 describe('python engine gate: unverified replacements are BLOCKED, never swapped', () => {
@@ -185,6 +200,32 @@ describe('python engine gate: unverified replacements are BLOCKED, never swapped
       replacement: 'o4-mini',
       status: 'unverified',
     });
+  });
+});
+
+describe('python azure deployment keys: dedicated locate surface, never a swap', () => {
+  it('does NOT swap deployment keywords/assignments; routes them to the azure surface', async () => {
+    const source = [
+      'client = AzureOpenAI(deployment_name="gpt-4-vision-preview")',
+      'resp = client.post("/v1", json={"deployment": "gemini-2.0-flash"})',
+      'deployment = "gpt-4-vision-preview"',
+      '',
+    ].join('\n');
+    const result = await applyPyModelIdFixesToSources([src('app/azure.py', source)], REGISTRY);
+
+    // Nothing swapped: a deployment name is an alias for a provisioned
+    // deployment, not a model id — the fix is provisioning, not a codemod.
+    expect(result.siteCount).toBe(0);
+    expect(result.patchedFiles).toHaveLength(0);
+    expect(result.azureMatches).toHaveLength(3);
+    expect(result.azureMatches.map((a) => a.value).sort()).toEqual([
+      'gemini-2.0-flash',
+      'gpt-4-vision-preview',
+      'gpt-4-vision-preview',
+    ]);
+    // Not double-reported on the data or blocked surfaces.
+    expect(result.dataMatches).toHaveLength(0);
+    expect(result.blockedMatches).toHaveLength(0);
   });
 });
 

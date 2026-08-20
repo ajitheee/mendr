@@ -5,8 +5,12 @@ import { Language, Parser, type Node as PyNode, type Tree } from 'web-tree-sitte
 import type { LlmModelIdDeprecation, LlmRegistry, SourceLocation } from '../types.js';
 import { isVerified, modelIdEntries } from '../usage/llmRegistry.js';
 import {
+  isAzureDeploymentName,
   isModelLikeName,
+  AZURE_DEPLOYMENT_REASON,
+  type AzureDeploymentLocate,
   type BlockedModelLocate,
+  type DataPurpose,
   type LiteralPosition,
   type ModelIdDataLocate,
 } from '../usage/scanLiterals.js';
@@ -72,6 +76,10 @@ export interface PyLiteralMatch {
   deprecation: LlmModelIdDeprecation;
   /** CST-classified position: `model_arg` is swap-eligible, `data` is locate-only. */
   position: LiteralPosition;
+  /** For `data` positions: WHY it is data (purpose-aware Tier C language). */
+  purpose?: DataPurpose;
+  /** A per-match override of the generic review advice, when a guard fired. */
+  reason?: string;
 }
 
 // --- Parser bootstrap -------------------------------------------------------
@@ -347,11 +355,17 @@ function isEnclosingDictACallArgument(pair: PyNode): boolean {
  *   (d) a direct string argument to a known model-factory call
  *       (`genai.GenerativeModel("…")`, `ChatOpenAI("…")`).
  *
- * REJECT (`data`, locate-only) otherwise — a dict KEY, a list/tuple/set
- * element, a comparison operand (`m == "…"`, `m in ("…",)`), a standalone dict
- * value, or any position not matching an ACCEPT rule.
+ * REJECT (`data`, locate-only) otherwise — a dict KEY (`lookup_key`), a
+ * list/tuple/set element (`list_entry`), a comparison operand (`m == "…"`,
+ * `m in ("…",)` — `comparison`), a standalone dict value (`catalog_entry`), or
+ * any position not matching an ACCEPT rule (`generic`). The purpose rides
+ * along so the CLI's Tier C language can say WHY, mirroring the TS scanner.
  */
-export function classifyPyLiteralPosition(literal: PyNode): LiteralPosition {
+export function classifyPyLiteral(literal: PyNode): {
+  position: LiteralPosition;
+  purpose?: DataPurpose;
+  reason?: string;
+} {
   // Climb through value-transparent wrappers so a literal inside a fallback /
   // parenthesis / conditional branch is judged by its real enclosing position.
   let node: PyNode = literal;
@@ -360,15 +374,22 @@ export function classifyPyLiteralPosition(literal: PyNode): LiteralPosition {
     node = parent;
     parent = node.parent;
   }
-  if (!parent) return 'data';
+  if (!parent) return { position: 'data', purpose: 'generic' };
 
   // (a) model-like keyword argument, in ANY call. Unlike a dict pair there is
   // no call-flow question to settle — a keyword argument IS a call argument.
+  // Azure deployment keywords (`deployment_name=` etc.) route to their own
+  // locate surface: the value is a deployment alias, not a model id.
   if (parent.type === 'keyword_argument') {
     const name = parent.childForFieldName('name');
     const value = parent.childForFieldName('value');
-    if (name && value?.equals(node) && isModelLikeName(name.text)) return 'model_arg';
-    return 'data';
+    if (name && value?.equals(node)) {
+      if (isAzureDeploymentName(name.text)) {
+        return { position: 'azure_deployment', reason: AZURE_DEPLOYMENT_REASON };
+      }
+      if (isModelLikeName(name.text)) return { position: 'model_arg' };
+    }
+    return { position: 'data', purpose: 'generic' };
   }
 
   // (b) value side of a model-like string key — ONLY when the enclosing dict is
@@ -377,15 +398,20 @@ export function classifyPyLiteralPosition(literal: PyNode): LiteralPosition {
   if (parent.type === 'pair') {
     const key = parent.childForFieldName('key');
     const value = parent.childForFieldName('value');
-    if (
-      key &&
-      value?.equals(node) &&
-      isModelLikeStringKey(key) &&
-      isEnclosingDictACallArgument(parent)
-    ) {
-      return 'model_arg';
+    if (key?.equals(node)) {
+      return { position: 'data', purpose: 'lookup_key' };
     }
-    return 'data';
+    if (key && value?.equals(node)) {
+      const keyContent = plainStringContent(key);
+      if (keyContent && isAzureDeploymentName(keyContent.value)) {
+        return { position: 'azure_deployment', reason: AZURE_DEPLOYMENT_REASON };
+      }
+      if (isModelLikeStringKey(key) && isEnclosingDictACallArgument(parent)) {
+        return { position: 'model_arg' };
+      }
+      return { position: 'data', purpose: 'catalog_entry' };
+    }
+    return { position: 'data', purpose: 'generic' };
   }
 
   // (c) assignment to a model-like name: `MODEL = "…"` / `self.model = "…"`.
@@ -394,13 +420,18 @@ export function classifyPyLiteralPosition(literal: PyNode): LiteralPosition {
     const left = parent.childForFieldName('left');
     const right = parent.childForFieldName('right');
     if (left && right?.equals(node)) {
-      if (left.type === 'identifier' && isModelLikeName(left.text)) return 'model_arg';
-      if (left.type === 'attribute') {
-        const attr = left.childForFieldName('attribute');
-        if (attr && isModelLikeName(attr.text)) return 'model_arg';
+      const name =
+        left.type === 'identifier'
+          ? left.text
+          : left.type === 'attribute'
+            ? left.childForFieldName('attribute')?.text
+            : undefined;
+      if (name && isAzureDeploymentName(name)) {
+        return { position: 'azure_deployment', reason: AZURE_DEPLOYMENT_REASON };
       }
+      if (name && isModelLikeName(name)) return { position: 'model_arg' };
     }
-    return 'data';
+    return { position: 'data', purpose: 'generic' };
   }
 
   // (c) parameter-default form: `def ask(prompt, model="…")` — with or without
@@ -408,18 +439,42 @@ export function classifyPyLiteralPosition(literal: PyNode): LiteralPosition {
   if (parent.type === 'default_parameter' || parent.type === 'typed_default_parameter') {
     const name = parent.childForFieldName('name');
     const value = parent.childForFieldName('value');
-    if (name && value?.equals(node) && isModelLikeName(name.text)) return 'model_arg';
-    return 'data';
+    if (name && value?.equals(node)) {
+      if (isAzureDeploymentName(name.text)) {
+        return { position: 'azure_deployment', reason: AZURE_DEPLOYMENT_REASON };
+      }
+      if (isModelLikeName(name.text)) return { position: 'model_arg' };
+    }
+    return { position: 'data', purpose: 'generic' };
   }
 
   // (d) direct positional argument to a known model factory.
   if (parent.type === 'argument_list' && parent.parent?.type === 'call') {
     const factory = calleeLastIdentifier(parent.parent);
-    if (factory && PY_MODEL_FACTORIES.has(factory)) return 'model_arg';
-    return 'data';
+    if (factory && PY_MODEL_FACTORIES.has(factory)) return { position: 'model_arg' };
+    return { position: 'data', purpose: 'generic' };
   }
 
-  return 'data';
+  // Comparison operand: `m == "gpt-4"` may gate runtime logic. A literal inside
+  // the tuple/list of an `in` membership test (`m in ("gpt-4",)`) is the same
+  // runtime-gating story, so the collection is looked through when its parent
+  // is the comparison itself.
+  if (parent.type === 'comparison_operator') {
+    return { position: 'data', purpose: 'comparison' };
+  }
+  if (parent.type === 'list' || parent.type === 'tuple' || parent.type === 'set') {
+    if (parent.parent?.type === 'comparison_operator') {
+      return { position: 'data', purpose: 'comparison' };
+    }
+    return { position: 'data', purpose: 'list_entry' };
+  }
+
+  return { position: 'data', purpose: 'generic' };
+}
+
+/** Position-only view of {@link classifyPyLiteral} (kept for call-site brevity). */
+export function classifyPyLiteralPosition(literal: PyNode): LiteralPosition {
+  return classifyPyLiteral(literal).position;
 }
 
 // --- Scan --------------------------------------------------------------------
@@ -457,6 +512,7 @@ export async function findPyModelIdLiterals(
         const deprecation = byValue.get(content.value);
         if (!deprecation) continue; // exact-value guard: no substring matching
 
+        const classification = classifyPyLiteral(node);
         out.push({
           file: source.path,
           value: content.value,
@@ -468,7 +524,9 @@ export async function findPyModelIdLiterals(
             column: node.startPosition.column + 1,
           },
           deprecation,
-          position: classifyPyLiteralPosition(node),
+          position: classification.position,
+          purpose: classification.purpose,
+          reason: classification.reason,
         });
       }
     } finally {
@@ -487,6 +545,23 @@ export async function findPyModelIdLiterals(
 export function toPyModelIdDataMatches(matches: PyLiteralMatch[]): ModelIdDataLocate[] {
   return matches
     .filter((m) => m.position === 'data')
+    .map((m) => ({
+      value: m.value,
+      replacement: m.deprecation.replacement,
+      location: m.location,
+      note: m.deprecation.note,
+      purpose: m.purpose,
+      reason: m.reason,
+    }));
+}
+
+/**
+ * Project a Python scan down to its AZURE-DEPLOYMENT matches — the same
+ * never-swapped locate surface as the TS `toAzureDeploymentMatches`.
+ */
+export function toPyAzureDeploymentMatches(matches: PyLiteralMatch[]): AzureDeploymentLocate[] {
+  return matches
+    .filter((m) => m.position === 'azure_deployment')
     .map((m) => ({
       value: m.value,
       replacement: m.deprecation.replacement,

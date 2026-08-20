@@ -41,8 +41,25 @@ import { isVerified, modelIdEntries } from './llmRegistry.js';
 //   sitting in a genuine model-argument position are `model_arg` (safe to swap);
 //   everything else is `data` (surfaced Tier C locate-only, never edited).
 
-/** Where a matched model-id literal sits: a live model argument, or plain data. */
-export type LiteralPosition = 'model_arg' | 'data';
+/**
+ * Where a matched model-id literal sits: a live model argument, plain data, or
+ * under an Azure deployment key (a deployment ALIAS, not a model id — its own
+ * locate surface, never swap-eligible).
+ */
+export type LiteralPosition = 'model_arg' | 'data' | 'azure_deployment';
+
+/**
+ * WHY a data-position literal is data — the purpose-aware refinement of the old
+ * flat "used as DATA" label. Classified only where the AST makes it CHEAP and
+ * unambiguous (accuracy over recall, as everywhere in this module); anything
+ * not provably one of the specific purposes stays `generic`.
+ */
+export type DataPurpose =
+  | 'comparison' // `m == "gpt-4"` / `===` — may gate runtime logic
+  | 'lookup_key' // object/dict key (pricing table, normalization map)
+  | 'list_entry' // array element (model-picker list)
+  | 'catalog_entry' // value in a standalone object (config/catalog shape)
+  | 'generic'; // data, but no cheap structural story
 
 /** A literal node whose value matches a registry `model_id` deprecation. */
 export interface LiteralMatch {
@@ -56,6 +73,10 @@ export interface LiteralMatch {
   deprecation: LlmModelIdDeprecation;
   /** AST-classified position: `model_arg` is swap-safe, `data` is locate-only. */
   position: LiteralPosition;
+  /** For `data` positions: WHY it is data (purpose-aware Tier C language). */
+  purpose?: DataPurpose;
+  /** A per-match override of the generic review advice (e.g. the cast guard). */
+  reason?: string;
 }
 
 /** A matched-but-rejected literal (used as data), for Tier C locate-only reporting. */
@@ -65,6 +86,26 @@ export interface ModelIdDataLocate {
   /** The replacement it WOULD swap to, shown for context only (never applied). */
   replacement: string;
   /** Where the data literal sits in source. */
+  location: SourceLocation;
+  /** The registry entry's human note, if any. */
+  note?: string;
+  /** WHY the literal is data, when the AST made that cheap to see. */
+  purpose?: DataPurpose;
+  /** A per-match override of the generic review advice (e.g. the cast guard). */
+  reason?: string;
+}
+
+/**
+ * A deprecated model id sitting under an Azure deployment key. Reported like a
+ * blocked match (with {@link AZURE_DEPLOYMENT_REASON}) but NEVER swap-eligible:
+ * the value is a deployment alias, and the fix is provisioning, not a codemod.
+ */
+export interface AzureDeploymentLocate {
+  /** The deprecated-looking value found under a deployment key. */
+  value: string;
+  /** The replacement the registry WOULD propose, shown for context only. */
+  replacement: string;
+  /** Where the literal sits in source. */
   location: SourceLocation;
   /** The registry entry's human note, if any. */
   note?: string;
@@ -97,16 +138,32 @@ export interface BlockedModelLocate {
 // provably in a model-argument slot; anything else is left byte-identical.
 
 /**
- * Property-key / variable names that mark a value as a model argument. `/model/i`
- * covers `model`, `modelId`, `modelName`, `model_name`, `MODEL_NAME`,
- * `defaultModel`, etc.; the extra set covers the Azure-style names that do not
- * contain "model" (`deployment_name` is the same Azure key in Python snake_case).
+ * Azure-style deployment keys. These USED to be swap-eligible model-key names,
+ * which was wrong twice over: an Azure deployment name is a user-chosen alias
+ * for a provisioned deployment, NOT a model id (it merely often LOOKS like
+ * one), and swapping it points the code at a deployment that does not exist —
+ * fixing nothing and breaking a working call. Matches under these keys are
+ * therefore a dedicated locate-only surface (never auto-swapped): the honest
+ * fix is provisioning a new deployment, which no codemod can do.
  */
-const MODEL_KEY_EXTRA: ReadonlySet<string> = new Set([
+const AZURE_DEPLOYMENT_KEYS: ReadonlySet<string> = new Set([
   'deployment',
   'deploymentName',
   'deployment_name',
 ]);
+
+/** The fixed explanation printed with every azure-deployment locate finding. */
+export const AZURE_DEPLOYMENT_REASON =
+  'azure deployment alias -- a deployment name is not a model id; swapping requires provisioning. never auto-swapped';
+
+/**
+ * The cast-guard explanation: a non-string `as` cast means the repo maintains
+ * its OWN model-id union/registry that a raw string swap would silently bypass
+ * (the chatbot-ui failure: `model: ("gpt-4" as LLMID)` swapped to an id the
+ * repo's LLMID union had never heard of).
+ */
+export const TYPE_CAST_REASON =
+  "type-cast masks the model-id union -- swap could bypass the repo's own type registry; review manually";
 
 /**
  * Callee last-identifier names that construct/select a model directly from a
@@ -129,10 +186,20 @@ const MODEL_FACTORIES: ReadonlySet<string> = new Set([
 /**
  * Is a property-key / declaration name a model-argument name? Exported so the
  * Python scanner (src/python/scanPy.ts) applies the IDENTICAL rule — one source
- * of truth for what counts as "model-like" across both languages.
+ * of truth for what counts as "model-like" across both languages. Azure
+ * deployment keys are deliberately NOT model-like: they route to their own
+ * locate surface via {@link isAzureDeploymentName}.
  */
 export function isModelLikeName(name: string): boolean {
-  return /model/i.test(name) || MODEL_KEY_EXTRA.has(name);
+  return /model/i.test(name);
+}
+
+/**
+ * Is a property-key / declaration name an Azure deployment alias? Exported so
+ * the Python scanner routes `deployment_name=` etc. to the same locate surface.
+ */
+export function isAzureDeploymentName(name: string): boolean {
+  return AZURE_DEPLOYMENT_KEYS.has(name);
 }
 
 /**
@@ -193,11 +260,30 @@ function isEnclosingObjectACallArgument(prop: Node): boolean {
   return !!parent && Node.isCallExpression(parent) && parent.getArguments().includes(node);
 }
 
+/** The full classification of a matched literal: position + (for data) purpose. */
+export interface LiteralClassification {
+  position: LiteralPosition;
+  /** Present for `data` positions: the cheapest honest story for WHY. */
+  purpose?: DataPurpose;
+  /** Present when a specific guard (not just position) forced `data`. */
+  reason?: string;
+}
+
+/** Is a binary-operator token an equality comparison (`==`/`===`/`!=`/`!==`)? */
+function isEqualityOperator(kind: SyntaxKind): boolean {
+  return (
+    kind === SyntaxKind.EqualsEqualsToken ||
+    kind === SyntaxKind.EqualsEqualsEqualsToken ||
+    kind === SyntaxKind.ExclamationEqualsToken ||
+    kind === SyntaxKind.ExclamationEqualsEqualsToken
+  );
+}
+
 /**
  * Classify a matched model-id literal by its AST position.
  *
  * ACCEPT (`model_arg`, swap) when the literal is any of:
- *   (a) the VALUE of a model-like property (`model`, `modelId`, `deployment`, …)
+ *   (a) the VALUE of a model-like property (`model`, `modelId`, …)
  *       OF AN OBJECT PASSED TO A CALL (`create({ model: "…" })`), including inside
  *       a `||`/`??` fallback — a model id in a standalone/catalog object is data;
  *   (b) the initializer of a variable/property whose NAME is model-like
@@ -205,63 +291,125 @@ function isEnclosingObjectACallArgument(prop: Node): boolean {
  *   (c) a direct string argument to a known model-factory call
  *       (`google("…")`, `getGenerativeModel("…")`, `provider.chat("…")`).
  *
- * REJECT (`data`, locate-only) otherwise — a property KEY, an array element, or
- * any position not matching an ACCEPT rule.
+ * REJECT (`data`, locate-only) otherwise — a property KEY (`lookup_key`), an
+ * array element (`list_entry`), an equality operand (`comparison`), a value in
+ * a standalone object (`catalog_entry`), or any position not matching an ACCEPT
+ * rule (`generic`). The purpose rides along so the CLI's Tier C language can
+ * say WHY instead of a flat "used as data".
+ *
+ * Two guards OVERRIDE an accept:
+ *   - AZURE (`azure_deployment`): a value under a deployment key is an alias
+ *     for a provisioned deployment, not a model id — its own locate surface.
+ *   - CAST BLINDNESS: an `as` cast to a NON-string-keyword type between the
+ *     literal and its enclosing property/call (`model: ("gpt-4" as LLMID)`)
+ *     means the repo keeps its own model-id union; a raw string swap would
+ *     silently bypass it, so the match is demoted to data with a reason.
+ *     `as string` and `as const` mask nothing and stay swap-transparent.
  */
-export function classifyLiteralPosition(
+export function classifyLiteral(
   literal: StringLiteral | NoSubstitutionTemplateLiteral,
-): LiteralPosition {
+): LiteralClassification {
   // Climb through value-transparent wrappers so a literal inside a fallback /
-  // parenthesis / cast / ternary is judged by its real enclosing position.
+  // parenthesis / cast / ternary is judged by its real enclosing position —
+  // remembering any union-masking `as` cast passed on the way up.
+  let maskingCast = false;
   let node: Node = literal;
   let parent = node.getParent();
   while (parent && isValueTransparent(parent, node)) {
+    if (Node.isAsExpression(parent)) {
+      const typeText = parent.getTypeNode()?.getText().trim();
+      if (typeText && typeText !== 'string' && typeText !== 'const') maskingCast = true;
+    }
     node = parent;
     parent = node.getParent();
   }
-  if (!parent) return 'data';
+
+  const base = classifyByEnclosure(node, parent);
+  if (base.position === 'model_arg' && maskingCast) {
+    return { position: 'data', purpose: 'generic', reason: TYPE_CAST_REASON };
+  }
+  return base;
+}
+
+/** The position/purpose earned by the (climbed-to) enclosing construct alone. */
+function classifyByEnclosure(node: Node, parent: Node | undefined): LiteralClassification {
+  if (!parent) return { position: 'data', purpose: 'generic' };
 
   // (a) value side of a model-like property — but ONLY when the enclosing object
   // literal is actually passed to a call (`create({ model: "…" })`). A model id
   // in a standalone object (a catalog entry, a returned config) is left as data:
   // we will not risk a catalog-corrupting swap on an object we can't see used.
   if (Node.isPropertyAssignment(parent)) {
-    if (
-      parent.getInitializer() === node &&
-      isModelLikeName(propertyKeyName(parent.getNameNode())) &&
-      isEnclosingObjectACallArgument(parent)
-    ) {
-      return 'model_arg';
+    if (parent.getNameNode() === node) {
+      // KEY position (pricing table, normalization map) -> never swap:
+      // rewriting a key risks duplicate-key corruption.
+      return { position: 'data', purpose: 'lookup_key' };
     }
-    return 'data'; // KEY position, or a standalone / catalog object -> never swap
+    if (parent.getInitializer() === node) {
+      const keyName = propertyKeyName(parent.getNameNode());
+      if (isAzureDeploymentName(keyName)) {
+        return { position: 'azure_deployment', reason: AZURE_DEPLOYMENT_REASON };
+      }
+      if (isModelLikeName(keyName) && isEnclosingObjectACallArgument(parent)) {
+        return { position: 'model_arg' };
+      }
+      // A property VALUE that is not a proven live model argument sits in a
+      // standalone / catalog-shaped object (the chatbot-ui failure mode).
+      return { position: 'data', purpose: 'catalog_entry' };
+    }
+    return { position: 'data', purpose: 'generic' };
   }
 
   // (b) variable form: `const modelName = "…"`.
   if (Node.isVariableDeclaration(parent)) {
-    if (parent.getInitializer() === node && isModelLikeName(parent.getName())) {
-      return 'model_arg';
+    if (parent.getInitializer() === node) {
+      if (isAzureDeploymentName(parent.getName())) {
+        return { position: 'azure_deployment', reason: AZURE_DEPLOYMENT_REASON };
+      }
+      if (isModelLikeName(parent.getName())) return { position: 'model_arg' };
     }
-    return 'data';
+    return { position: 'data', purpose: 'generic' };
   }
 
   // (b) class-property form: `defaultModel = "…"`.
   if (Node.isPropertyDeclaration(parent)) {
-    if (parent.getInitializer() === node && isModelLikeName(parent.getName())) {
-      return 'model_arg';
+    if (parent.getInitializer() === node) {
+      if (isAzureDeploymentName(parent.getName())) {
+        return { position: 'azure_deployment', reason: AZURE_DEPLOYMENT_REASON };
+      }
+      if (isModelLikeName(parent.getName())) return { position: 'model_arg' };
     }
-    return 'data';
+    return { position: 'data', purpose: 'generic' };
   }
 
   // (c) direct string argument to a known model factory.
   if (Node.isCallExpression(parent)) {
     if (parent.getArguments().includes(node)) {
       const factory = calleeLastIdentifier(parent);
-      if (factory && MODEL_FACTORIES.has(factory)) return 'model_arg';
+      if (factory && MODEL_FACTORIES.has(factory)) return { position: 'model_arg' };
     }
-    return 'data';
+    return { position: 'data', purpose: 'generic' };
   }
 
-  return 'data';
+  // Array element: a model-picker / allow-list entry.
+  if (Node.isArrayLiteralExpression(parent)) {
+    return { position: 'data', purpose: 'list_entry' };
+  }
+
+  // Equality operand: `m == "gpt-4"` may gate runtime logic — worth flagging
+  // as a comparison rather than burying it under generic data.
+  if (Node.isBinaryExpression(parent) && isEqualityOperator(parent.getOperatorToken().getKind())) {
+    return { position: 'data', purpose: 'comparison' };
+  }
+
+  return { position: 'data', purpose: 'generic' };
+}
+
+/** Position-only view of {@link classifyLiteral} (kept for call-site brevity). */
+export function classifyLiteralPosition(
+  literal: StringLiteral | NoSubstitutionTemplateLiteral,
+): LiteralPosition {
+  return classifyLiteral(literal).position;
 }
 
 /**
@@ -315,12 +463,15 @@ export function findModelIdLiterals(project: Project, registry: LlmRegistry): Li
       if (!deprecation) continue; // exact-value guard: no substring matching
 
       const { line, column } = sf.getLineAndColumnAtPos(node.getStart());
+      const classification = classifyLiteral(node);
       out.push({
         node,
         value,
         location: { file, line, column },
         deprecation,
-        position: classifyLiteralPosition(node),
+        position: classification.position,
+        purpose: classification.purpose,
+        reason: classification.reason,
       });
     }
   }
@@ -342,6 +493,8 @@ export function toModelIdDataMatches(matches: LiteralMatch[]): ModelIdDataLocate
       replacement: m.deprecation.replacement,
       location: m.location,
       note: m.deprecation.note,
+      purpose: m.purpose,
+      reason: m.reason,
     }));
 }
 
@@ -361,6 +514,23 @@ export function toBlockedModelArgMatches(matches: LiteralMatch[]): BlockedModelL
       location: m.location,
       note: m.deprecation.note,
       reasons: m.deprecation.verification?.reasons,
+    }));
+}
+
+/**
+ * Project a pre-computed literal scan down to its AZURE-DEPLOYMENT matches:
+ * deprecated-looking values under a deployment key. Reported like blocked
+ * matches (with {@link AZURE_DEPLOYMENT_REASON}) and NEVER swapped — the value
+ * is a deployment alias, and the fix is provisioning, not a codemod.
+ */
+export function toAzureDeploymentMatches(matches: LiteralMatch[]): AzureDeploymentLocate[] {
+  return matches
+    .filter((m) => m.position === 'azure_deployment')
+    .map((m) => ({
+      value: m.value,
+      replacement: m.deprecation.replacement,
+      location: m.location,
+      note: m.deprecation.note,
     }));
 }
 

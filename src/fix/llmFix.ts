@@ -5,8 +5,10 @@ import type { LlmRegistry } from '../types.js';
 import { loadProject } from '../usage/scanRepo.js';
 import {
   findModelIdLiterals,
+  toAzureDeploymentMatches,
   toBlockedModelArgMatches,
   toModelIdDataMatches,
+  type AzureDeploymentLocate,
   type BlockedModelLocate,
   type ModelIdDataLocate,
 } from '../usage/scanLiterals.js';
@@ -46,6 +48,8 @@ export interface LlmFixResult {
   dataMatches: ModelIdDataLocate[];
   /** Deprecated ids in live model-arg positions blocked as not-verified — Tier C. */
   blockedMatches: BlockedModelLocate[];
+  /** Values under Azure deployment keys — locate-only, never swap-eligible. */
+  azureMatches: AzureDeploymentLocate[];
 }
 
 /**
@@ -73,6 +77,7 @@ export function applyLlmFixesToProject(
   const literalMatches = findModelIdLiterals(project, registry);
   const dataMatches = toModelIdDataMatches(literalMatches);
   const blockedMatches = toBlockedModelArgMatches(literalMatches);
+  const azureMatches = toAzureDeploymentMatches(literalMatches);
 
   // Pass 1: model-id swaps (reusing the single scan). Pass 2: model-coupled
   // param transforms — scanned AFTER pass 1 so they see the models it updated.
@@ -103,6 +108,7 @@ export function applyLlmFixesToProject(
     paramsRenamed,
     dataMatches,
     blockedMatches,
+    azureMatches,
   };
 }
 

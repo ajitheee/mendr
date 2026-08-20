@@ -25,6 +25,14 @@ import type {
 // That is robust to the module living under either `src/` or `dist/`.
 
 const REGISTRY_RELATIVE = join('registries', 'llm-deprecations.json');
+
+/**
+ * The date the shipped registry was last verified against the public oracles
+ * (`mendr verify-registry --write` stamps per-entry `verification.checkedAt`;
+ * this constant is the human headline for the CLI's report footer). Update it
+ * whenever a re-verification is stamped into the registry JSON.
+ */
+export const REGISTRY_VERIFIED_AT = '2026-08-18';
 const VALID_KINDS: ReadonlySet<LlmDeprecationKind> = new Set([
   'model_id',
   'param_rename',
@@ -227,4 +235,32 @@ export function modelMatches(model: string, onModels: readonly string[]): boolea
  */
 export function isVerified(entry: LlmModelIdDeprecation): boolean {
   return entry.verification?.status === 'verified';
+}
+
+/** Days after which the registry's newest verification stamp counts as stale. */
+export const REGISTRY_STALE_DAYS = 30;
+
+/**
+ * Freshness guard: model catalogs churn monthly, so a registry whose NEWEST
+ * `verification.checkedAt` is more than {@link REGISTRY_STALE_DAYS} days old
+ * may be recommending replacements that have themselves moved on. Returns the
+ * one-line warning to print, or undefined when the registry is fresh (or
+ * carries no stamps at all — the per-entry engine gate already blocks those).
+ */
+export function staleRegistryWarning(
+  registry: LlmRegistry,
+  now = new Date(),
+): string | undefined {
+  let newest: string | undefined;
+  for (const entry of modelIdEntries(registry)) {
+    const checkedAt = entry.verification?.checkedAt;
+    // ISO yyyy-mm-dd dates order correctly as strings.
+    if (checkedAt && (!newest || checkedAt > newest)) newest = checkedAt;
+  }
+  if (!newest) return undefined;
+  const ageMs = now.getTime() - new Date(`${newest}T00:00:00Z`).getTime();
+  if (Number.isNaN(ageMs) || ageMs <= REGISTRY_STALE_DAYS * 24 * 60 * 60 * 1000) {
+    return undefined;
+  }
+  return `warning: registry last verified ${newest} -- run mendr verify-registry for current data.`;
 }

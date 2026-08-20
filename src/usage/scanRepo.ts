@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import {
   Project,
@@ -7,7 +7,9 @@ import {
   ScriptTarget,
   ts,
 } from 'ts-morph';
-import type { UsageMap } from '../types.js';
+import type { LlmRegistry, UsageMap } from '../types.js';
+import { modelIdEntries, paramEntries } from './llmRegistry.js';
+import { isTestPath } from './scanLiterals.js';
 import { buildUsageMap } from './usageMap.js';
 
 // Phase 2: load a target TypeScript repo with ts-morph so its own installed
@@ -60,6 +62,137 @@ export function loadProject(repoPath: string): Project {
   return project;
 }
 
+// --- fix-llm pre-filter -----------------------------------------------------
+//
+// A full ts-morph load parses EVERY source file, but on a real repo only a
+// handful of files even CONTAIN a registry token — LibreChat is ~900 files and
+// two hits. So fix-llm walks the repo itself, text-tests each file against one
+// compiled regex of every registry token, and builds its scan Project from the
+// hit files ONLY. Correctness is preserved by construction: the literal scan
+// matches EXACT registry values and the param scan needs a same-file resolvable
+// model that starts with an `on_models` prefix, so any file with a finding must
+// contain one of the regex's tokens as a substring. A regex FALSE positive just
+// means one extra file gets parsed; a miss is impossible for these locators.
+
+/**
+ * Directory names the fix-llm walker never descends into: vendored code,
+ * build output, and coverage artifacts. Test FILES are skipped via
+ * `isTestPath` — the same rule the literal scan applies — so the walked total
+ * and the scan agree on scope by construction.
+ */
+const SCAN_EXCLUDED_DIRS: ReadonlySet<string> = new Set([
+  'node_modules',
+  '.git',
+  'dist',
+  'build',
+  'out',
+  '.next',
+  'coverage',
+]);
+
+/**
+ * Every scannable {ts,tsx,mts,cts} file under `repoPath`: the ONE walker behind
+ * the fix-llm scan scope, its "Scanned N source files" count, AND
+ * `findUncoveredSourceFiles` — a single source of truth so the printed counts
+ * can never disagree with what was actually visited.
+ */
+export function collectTsSourceFiles(repoPath: string): string[] {
+  const abs = resolve(repoPath);
+  const out: string[] = [];
+  const walk = (dir: string): void => {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return; // unreadable directory — skip it rather than fail the whole scan
+    }
+    for (const entry of entries) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!SCAN_EXCLUDED_DIRS.has(entry.name)) walk(full);
+      } else if (
+        entry.isFile() &&
+        /\.(ts|tsx|mts|cts)$/.test(entry.name) &&
+        !entry.name.endsWith('.d.ts') &&
+        !isTestPath(full)
+      ) {
+        out.push(full);
+      }
+    }
+  };
+  walk(abs);
+  return out;
+}
+
+/**
+ * One compiled regex matching every registry token that could possibly anchor
+ * a finding: each `model_id` deprecated value, plus each param entry's
+ * `on_models` prefix (a param site requires a same-file model literal that
+ * equals or starts with one of those). Plain substring alternation — false
+ * positives only cost a parse. Returns undefined for a token-less registry.
+ */
+export function buildRegistryPrefilter(registry: LlmRegistry): RegExp | undefined {
+  const tokens = new Set<string>();
+  for (const dep of modelIdEntries(registry)) tokens.add(dep.deprecated);
+  for (const param of paramEntries(registry)) {
+    for (const model of param.on_models) tokens.add(model);
+  }
+  if (tokens.size === 0) return undefined;
+  const escaped = [...tokens].map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  return new RegExp(escaped.join('|'));
+}
+
+/** A pre-filtered fix-llm scan project plus the honest coverage counts. */
+export interface PrefilteredScan {
+  /** Project containing ONLY the files that matched the pre-filter. */
+  project: Project;
+  /** Total files the walker visited (the honest "Scanned N" number). */
+  totalFiles: number;
+  /** How many of those matched the registry pre-filter and were parsed. */
+  matchedFiles: number;
+}
+
+/**
+ * Build the fix-llm scan Project: walk the repo, keep only files whose TEXT
+ * contains a registry token, and parse just those. The Stripe commands still
+ * use {@link loadProject} — their locator is type-driven and needs the repo's
+ * own tsconfig/module resolution; this pre-filter is value-driven like the
+ * scan it feeds.
+ */
+export function loadPrefilteredProject(
+  repoPath: string,
+  prefilter: RegExp | undefined,
+): PrefilteredScan {
+  const files = collectTsSourceFiles(repoPath);
+  const hits: string[] = [];
+  if (prefilter) {
+    for (const file of files) {
+      try {
+        if (prefilter.test(readFileSync(file, 'utf8'))) hits.push(file);
+      } catch {
+        // Unreadable file: counted as walked, cannot be scanned. Same
+        // permissions edge case the Python reader tolerates.
+      }
+    }
+  }
+  // Same compiler options as the no-tsconfig fallback loader: the literal +
+  // param locators are syntax-driven (no cross-file type resolution), so the
+  // repo's own tsconfig adds nothing but load time here.
+  const project = new Project({
+    compilerOptions: {
+      target: ScriptTarget.ES2022,
+      module: ModuleKind.NodeNext,
+      moduleResolution: ModuleResolutionKind.NodeNext,
+      jsx: ts.JsxEmit.Preserve,
+      strict: true,
+      skipLibCheck: true,
+      esModuleInterop: true,
+    },
+  });
+  for (const file of hits) project.addSourceFileAtPath(file);
+  return { project, totalFiles: files.length, matchedFiles: hits.length };
+}
+
 /**
  * Count the source files Mendr can actually analyze in a loaded project — real
  * source, not declaration files or anything under node_modules. Used to tell a
@@ -76,10 +209,14 @@ export function countAnalyzableSourceFiles(project: Project): number {
 
 /**
  * The {ts,tsx,mts,cts} files under `repoPath` that the loaded `project` does
- * NOT contain — real TypeScript source sitting outside the tsconfig `include`,
- * which a tsconfig-driven load silently skips. Returned repo-relative so the
- * CLI can print an honest coverage warning. `node_modules`, `.git`, and
- * declaration files are ignored, mirroring the glob loader's exclusions.
+ * NOT contain — real TypeScript source a tsconfig-driven load silently skips.
+ * Returned repo-relative so a caller can print an honest coverage warning.
+ *
+ * Enumerates the disk through {@link collectTsSourceFiles} — the SAME walker
+ * behind the fix-llm scan — so any coverage number derived here can never
+ * disagree with the scan's own counts. (fix-llm itself no longer needs this
+ * warning: its walker-driven pre-filter sees every file on disk by
+ * construction; this remains for tsconfig-driven flows.)
  */
 export function findUncoveredSourceFiles(project: Project, repoPath: string): string[] {
   const abs = resolve(repoPath);
@@ -88,31 +225,9 @@ export function findUncoveredSourceFiles(project: Project, repoPath: string): st
   const canonical = (p: string): string => p.replace(/\\/g, '/').toLowerCase();
   const covered = new Set(project.getSourceFiles().map((sf) => canonical(sf.getFilePath())));
 
-  const uncovered: string[] = [];
-  const walk = (dir: string): void => {
-    let entries;
-    try {
-      entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return; // unreadable directory — skip it rather than fail the whole scan
-    }
-    for (const entry of entries) {
-      const full = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name === 'node_modules' || entry.name === '.git') continue;
-        walk(full);
-      } else if (
-        entry.isFile() &&
-        /\.(ts|tsx|mts|cts)$/.test(entry.name) &&
-        !entry.name.endsWith('.d.ts') &&
-        !covered.has(canonical(full))
-      ) {
-        uncovered.push(relative(abs, full).replace(/\\/g, '/'));
-      }
-    }
-  };
-  walk(abs);
-  return uncovered;
+  return collectTsSourceFiles(abs)
+    .filter((full) => !covered.has(canonical(full)))
+    .map((full) => relative(abs, full).replace(/\\/g, '/'));
 }
 
 /** Convenience: load a repo and build its Stripe usage map in one call. */

@@ -5,9 +5,11 @@ import type { LlmRegistry } from '../types.js';
 import { loadProject } from '../usage/scanRepo.js';
 import { isVerified } from '../usage/llmRegistry.js';
 import {
-  findBlockedModelArgMatches,
-  findModelIdDataMatches,
   findModelIdLiterals,
+  toAzureDeploymentMatches,
+  toBlockedModelArgMatches,
+  toModelIdDataMatches,
+  type AzureDeploymentLocate,
   type BlockedModelLocate,
   type LiteralMatch,
   type ModelIdDataLocate,
@@ -117,6 +119,8 @@ export interface ModelIdFixResult {
   dataMatches: ModelIdDataLocate[];
   /** Live model-arg matches blocked because their entry is not verified — Tier C. */
   blockedMatches: BlockedModelLocate[];
+  /** Values under Azure deployment keys — locate-only, never swap-eligible. */
+  azureMatches: AzureDeploymentLocate[];
 }
 
 /**
@@ -140,13 +144,15 @@ export function applyModelIdFixesToProject(
     originals.set(sf.getFilePath(), sf.getFullText());
   }
 
-  // Capture the data-position matches AND the not-verified (blocked) model-arg
-  // matches BEFORE editing so their line/column anchor the original source (the
-  // codemod never touches either set of positions anyway).
-  const dataMatches = findModelIdDataMatches(project, registry);
-  const blockedMatches = findBlockedModelArgMatches(project, registry);
+  // ONE scan BEFORE editing, projected into the data / blocked / azure views so
+  // their line/column anchor the original source (the codemod never touches any
+  // of those positions anyway), then reused by the fix pass itself.
+  const scan = findModelIdLiterals(project, registry);
+  const dataMatches = toModelIdDataMatches(scan);
+  const blockedMatches = toBlockedModelArgMatches(scan);
+  const azureMatches = toAzureDeploymentMatches(scan);
 
-  const siteCount = applyModelIdFixes(project, registry).length;
+  const siteCount = applyModelIdFixes(project, registry, scan).length;
 
   // Diff each file that actually changed against its captured original.
   const changedFiles: string[] = [];
@@ -162,7 +168,7 @@ export function applyModelIdFixesToProject(
     patches.push(gitUnifiedPatch(display, before, after));
   }
 
-  return { diff: patches.join('\n'), changedFiles, siteCount, dataMatches, blockedMatches };
+  return { diff: patches.join('\n'), changedFiles, siteCount, dataMatches, blockedMatches, azureMatches };
 }
 
 /**

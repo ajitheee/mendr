@@ -1,0 +1,57 @@
+# Weekly registry health check. The verification gate is only as good as the
+# registry behind it, so once a week the public-oracle audit re-runs and the
+# job FAILS if any entry that ships as `verified` no longer classifies as
+# verified — the exact regression that would let a stale replacement auto-apply.
+# Newly-added (never-verified) entries do not fail the job: they are already
+# blocked from Tier A by the engine gate.
+name: registry-verify
+
+on:
+  schedule:
+    - cron: '0 6 * * 1' # Mondays 06:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - name: Run the public-oracle audit
+        run: node dist/cli.js verify-registry | tee verify-out.txt
+
+      - name: Fail on regressions (previously-verified entries now unverified)
+        run: |
+          node -e '
+            const fs = require("fs");
+            // What the SHIPPED registry claims is verified...
+            const reg = JSON.parse(fs.readFileSync("registries/llm-deprecations.json", "utf8"));
+            const prevVerified = new Set(
+              reg
+                .filter((e) => e.kind === "model_id" && e.verification?.status === "verified")
+                .map((e) => `${e.provider}: ${e.deprecated} -> ${e.replacement}`),
+            );
+            // ...vs what the audit just classified as NOT verified.
+            const lines = fs.readFileSync("verify-out.txt", "utf8").split(/\r?\n/);
+            const regressions = [];
+            for (const line of lines) {
+              const m = line.match(/^\[(UNVERIFIED|UNVERIFIABLE)\s*\]\s+(.+)$/);
+              if (m && prevVerified.has(m[2].trim())) regressions.push(m[2].trim());
+            }
+            if (regressions.length > 0) {
+              console.error(`registry regression: ${regressions.length} previously-verified entries no longer verify:`);
+              for (const r of regressions) console.error(`  * ${r}`);
+              console.error("run `mendr verify-registry --write` locally, review, and re-stamp the registry.");
+              process.exit(1);
+            }
+            console.log("no regressions: every previously-verified entry still verifies.");
+          '

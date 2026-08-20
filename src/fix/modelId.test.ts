@@ -287,6 +287,25 @@ describe('call-site awareness: swap live model arguments, skip data', () => {
     expect(swaps).toHaveLength(3);
     expect(data).toHaveLength(4);
   });
+
+  it('tags each data match with a purpose (purpose-aware Tier C language)', () => {
+    const src = `
+export function pick(m: string) {
+  if (m === "claude-3-opus-20240229") return m;      // comparison
+  return { model: "claude-3-opus-20240229" };        // standalone object value
+}
+export const PRICES = { "o1-mini": 1 };              // lookup key
+export const CHOICES = ["gemini-2.0-flash"];         // list entry
+`.trimStart();
+    const project = inMemoryProject('src/purposes.ts', src);
+    const matches = findModelIdLiterals(project, CALL_SITE_REGISTRY);
+    const byLine = new Map(matches.map((m) => [m.location.line, m.purpose]));
+
+    expect(byLine.get(2)).toBe('comparison');
+    expect(byLine.get(3)).toBe('catalog_entry');
+    expect(byLine.get(5)).toBe('lookup_key');
+    expect(byLine.get(6)).toBe('list_entry');
+  });
 });
 
 // --- CATALOG + TEST-FILE HARDENING (real-repo regressions) ------------------
@@ -343,5 +362,79 @@ describe('catalog + test-file hardening (real-repo regressions)', () => {
     expect(text).not.toContain('gemini-flash-latest');
     expect(result.siteCount).toBe(0);
     expect(result.dataMatches).toHaveLength(0); // file skipped outright
+  });
+});
+
+// --- SAFETY GUARDS (chatbot-ui failure mirror) -------------------------------
+//
+// Two ways the old classifier said "live model argument" when a swap was in
+// fact unsafe:
+//   1. CAST BLINDNESS: `model: ("gpt-4-vision-preview" as LLMID)` — the repo
+//      keeps its OWN model-id union, and a raw string swap writes an id that
+//      union has never heard of, silently bypassing the repo's type registry.
+//   2. AZURE DEPLOYMENT KEYS: `deployment: "gpt-4"` — an Azure deployment name
+//      is a user-chosen ALIAS for a provisioned deployment, not a model id;
+//      swapping it points the code at a deployment that does not exist.
+
+describe('cast blindness: `as SomeUnion` demotes a would-be swap to data', () => {
+  it('does NOT swap `model: ("x" as LLMID)` inside a call (chatbot-ui mirror)', () => {
+    // NOTE: the union spells only LIVE ids — a deprecated id inside the type
+    // itself would be a second (data) match and muddy the assertion.
+    const src =
+      'type LLMID = "gpt-4o" | "gpt-4o-mini";\n' +
+      'export async function run(client: any) {\n' +
+      '  return client.chat.completions.create({ model: ("gpt-4-vision-preview" as LLMID) });\n' +
+      '}\n';
+    const project = inMemoryProject('src/cast.ts', src);
+    const result = applyModelIdFixesToProject(project, CALL_SITE_REGISTRY);
+    const text = project.getSourceFileOrThrow('src/cast.ts').getFullText();
+
+    expect(text).toContain('("gpt-4-vision-preview" as LLMID)');
+    expect(result.siteCount).toBe(0);
+    // Surfaced as data, carrying the cast-guard reason for the CLI to print.
+    expect(result.dataMatches).toHaveLength(1);
+    expect(result.dataMatches[0].reason).toMatch(/type-cast masks the model-id union/);
+  });
+
+  it('still swaps through `as string` and `as const` (nothing is masked)', () => {
+    const src =
+      'export async function run(client: any) {\n' +
+      '  return client.chat.completions.create({ model: ("gpt-4-vision-preview" as string) });\n' +
+      '}\n' +
+      'export const MODEL_NAME = "gemini-2.0-flash" as const;\n';
+    const project = inMemoryProject('src/stringcast.ts', src);
+    const result = applyModelIdFixesToProject(project, CALL_SITE_REGISTRY);
+    const text = project.getSourceFileOrThrow('src/stringcast.ts').getFullText();
+
+    expect(text).toContain('("gpt-4o" as string)');
+    expect(text).toContain('"gemini-flash-latest" as const');
+    expect(result.siteCount).toBe(2);
+  });
+});
+
+describe('azure deployment keys: a dedicated locate surface, never a swap', () => {
+  it('does NOT swap `deployment: "gpt-4-vision-preview"` even in a call argument', () => {
+    const src =
+      'export async function run(client: any) {\n' +
+      '  return client.getChatCompletions({ deployment: "gpt-4-vision-preview" });\n' +
+      '}\n' +
+      'const opts = { deploymentName: "gemini-2.0-flash" };\n';
+    const project = inMemoryProject('src/azure.ts', src);
+    const result = applyModelIdFixesToProject(project, CALL_SITE_REGISTRY);
+    const text = project.getSourceFileOrThrow('src/azure.ts').getFullText();
+
+    // Both values stay byte-identical: a deployment name is not a model id.
+    expect(text).toContain('deployment: "gpt-4-vision-preview"');
+    expect(text).toContain('deploymentName: "gemini-2.0-flash"');
+    expect(result.siteCount).toBe(0);
+
+    // They land on the azure surface — not data, not blocked.
+    expect(result.azureMatches).toHaveLength(2);
+    expect(result.azureMatches.map((a) => a.value).sort()).toEqual([
+      'gemini-2.0-flash',
+      'gpt-4-vision-preview',
+    ]);
+    expect(result.dataMatches).toHaveLength(0);
+    expect(result.blockedMatches).toHaveLength(0);
   });
 });

@@ -17,8 +17,12 @@ REPORT="$(mktemp)"
 # (registry outage, bad spec, unsupported repo). A failed run must NEVER be
 # reported as "clean" — that would green-light a broken build and, worse, close
 # a legitimate open fix PR below.
+#
+# --fail-on none is passed EXPLICITLY: this script gates on exit 0 and treats
+# only exit 2 as "mendr never ran", so a future default change to --fail-on
+# must never turn a findings-bearing scan into a phantom error here.
 set +e
-npx --yes "$MENDR_SPEC" fix-llm . --write >"$REPORT" 2>&1
+npx --yes "$MENDR_SPEC" fix-llm . --write --fail-on none >"$REPORT" 2>&1
 MENDR_STATUS=$?
 set -e
 cat "$REPORT"

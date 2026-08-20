@@ -1,13 +1,18 @@
 import { gitUnifiedPatch } from '../report/diff.js';
 import type { LlmModelIdDeprecation, LlmRegistry } from '../types.js';
 import { isVerified } from '../usage/llmRegistry.js';
-import type { BlockedModelLocate, ModelIdDataLocate } from '../usage/scanLiterals.js';
+import type {
+  AzureDeploymentLocate,
+  BlockedModelLocate,
+  ModelIdDataLocate,
+} from '../usage/scanLiterals.js';
 import {
   countSyntaxErrors,
   displayPath,
   findPyModelIdLiterals,
   parsePython,
   readPythonSources,
+  toPyAzureDeploymentMatches,
   toPyBlockedModelArgMatches,
   toPyModelIdDataMatches,
   type PyLiteralMatch,
@@ -53,6 +58,8 @@ export interface PyModelIdFixResult {
   dataMatches: ModelIdDataLocate[];
   /** Live model-arg matches blocked because their entry is not verified — Tier C. */
   blockedMatches: BlockedModelLocate[];
+  /** Values under Azure deployment keys — locate-only, never swap-eligible. */
+  azureMatches: AzureDeploymentLocate[];
   /**
    * The syntax gate verdict: `passed` iff NO patched file parses with more
    * ERROR/MISSING nodes than its unpatched baseline. `failures` carries one
@@ -64,6 +71,8 @@ export interface PyModelIdFixResult {
   patchedFiles: { absPath: string; newText: string }[];
   /** The registry entries actually applied, unique by deprecated id (labels). */
   swapDeprecations: LlmModelIdDeprecation[];
+  /** Every individual applied swap site (per-file detail for the JSON report). */
+  swapMatches: PyLiteralMatch[];
 }
 
 /**
@@ -113,6 +122,7 @@ export async function applyPyModelIdFixesToSources(
   const matches = await findPyModelIdLiterals(sources, registry);
   const dataMatches = toPyModelIdDataMatches(matches);
   const blockedMatches = toPyBlockedModelArgMatches(matches);
+  const azureMatches = toPyAzureDeploymentMatches(matches);
 
   // THE ENGINE GATE: `isVerified` is the load-bearing clause — an entry the
   // registry has not stamped `verification.status === 'verified'` is NEVER
@@ -173,9 +183,11 @@ export async function applyPyModelIdFixesToSources(
     siteCount: swaps.length,
     dataMatches,
     blockedMatches,
+    azureMatches,
     syntaxGate: { passed: failures.length === 0, failures },
     patchedFiles,
     swapDeprecations: [...uniqueSwaps.values()],
+    swapMatches: swaps,
   };
 }
 
