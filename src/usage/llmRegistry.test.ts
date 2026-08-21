@@ -27,7 +27,7 @@ describe('staleRegistryWarning', () => {
     const warning = staleRegistryWarning(registry, new Date('2026-04-01T00:00:00Z'));
     // The NEWEST stamp is named, not the oldest.
     expect(warning).toBe(
-      'warning: registry last verified 2026-02-01 -- run mendr verify-registry for current data.',
+      'warning: registry last rechecked 2026-02-01 -- run mendr verify-registry for current data.',
     );
   });
 

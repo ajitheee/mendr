@@ -115,12 +115,12 @@ describe('fix-llm eval gate wiring', () => {
       const { exitCode, stdout } = await runFixLlm([repo, '--write']);
 
       expect(exitCode).toBe(1);
-      expect(stdout).toContain('DOWNGRADED to Tier C');
+      expect(stdout).toContain('NOT APPLIED (gates failed, review only)');
       expect(stdout).toContain(
         'behavioral verification: fail (your eval command: node eval.js, exit 1)',
       );
       expect(stdout).toContain('your eval command failed against the patched code');
-      expect(stdout).toContain('Refusing to --write the downgraded (Tier C) portion');
+      expect(stdout).toContain('Refusing to --write the Tier A candidates that failed their gates');
       // THE POINT: a behavioral regression never reaches the working tree.
       expect(chatText(repo)).toBe(before);
       expect(chatText(repo)).toContain('gpt-4-0613');
@@ -227,12 +227,12 @@ describe('fix-llm eval gate: fails CLOSED when a configured eval cannot run', ()
       expect(exitCode).toBe(1);
       expect(chatText(repo)).toBe(before);
       expect(chatText(repo)).toContain('gpt-4-0613');
-      expect(stdout).toContain('DOWNGRADED to Tier C');
+      expect(stdout).toContain('NOT APPLIED (gates failed, review only)');
       // Names the CASE, not just "something went wrong".
       expect(stdout).toContain('your eval command was configured but did not complete');
       expect(stdout).toContain('timed out after 1500ms');
       expect(stdout).toContain('mendr will not apply a fix it could not behaviorally verify');
-      expect(stdout).toContain('Refusing to --write the downgraded (Tier C) portion');
+      expect(stdout).toContain('Refusing to --write the Tier A candidates that failed their gates');
       expect(stderr).toContain('the fix is NOT applied');
     },
     120_000,
@@ -252,8 +252,8 @@ describe('fix-llm eval gate: fails CLOSED when a configured eval cannot run', ()
 
       expect(exitCode).toBe(1);
       expect(chatText(repo)).toBe(before);
-      expect(stdout).toContain('DOWNGRADED to Tier C');
-      expect(stdout).toContain('Refusing to --write the downgraded (Tier C) portion');
+      expect(stdout).toContain('NOT APPLIED (gates failed, review only)');
+      expect(stdout).toContain('Refusing to --write the Tier A candidates that failed their gates');
       expect(stdout).not.toContain('Applied the verified Tier A fix');
       // The report tells that user where to look instead of alleging a regression.
       expect(stdout).toContain('a command that could not run');

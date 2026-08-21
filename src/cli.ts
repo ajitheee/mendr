@@ -24,9 +24,9 @@ import {
   isVerified,
   loadLlmRegistry,
   modelIdEntries,
+  registryProvenance,
   resolveRegistryPath,
   staleRegistryWarning,
-  REGISTRY_VERIFIED_AT,
 } from './usage/llmRegistry.js';
 import {
   findModelIdLiterals,
@@ -35,13 +35,15 @@ import {
   toBlockedModelArgMatches,
   toModelIdDataMatches,
   AZURE_DEPLOYMENT_REASON,
+  TYPE_CAST_REASON,
+  USAGE_UNVERIFIED_REASON,
 } from './usage/scanLiterals.js';
 import {
   formatCatalogLine,
   formatDataFileGroupLine,
   formatDataHitLine,
   formatGateSummary,
-  formatUsageUnverifiedLine,
+  formatRegistryProvenanceLines,
   groupDataFindingsByFile,
   replacementFamily,
   swapLabel,
@@ -50,6 +52,16 @@ import {
   type DataFindingView,
   type GateSummaryFacts,
 } from './report/llmReport.js';
+import {
+  formatFoundLines,
+  formatSummaryLines,
+  formatTierBSection,
+  orderTierB,
+  tierBFinding,
+  tierBJson,
+  type TierBFinding,
+  type TierCounts,
+} from './report/tiers.js';
 import { writeAllOrNothing, type PendingWrite } from './fix/atomicWrite.js';
 import { findParamSites } from './fix/paramFix.js';
 import { applyLlmFixesToProject, type LlmFixResult } from './fix/llmFix.js';
@@ -172,8 +184,17 @@ function writeDiffOrExit(outputPath: string, diff: string): void {
   }
 }
 
-/** The classes `--fail-on` accepts. `none` (the default) never gates the exit. */
-const FAIL_ON_CLASSES = new Set(['tierA', 'blocked', 'none']);
+/**
+ * The classes `--fail-on` accepts. `none` (the default) never gates the exit.
+ *
+ * `blocked` is the DEPRECATED alias for `tierB`. It used to name one surface
+ * (a live call with an unverified replacement); that surface is now one reason
+ * code inside Tier B, and Tier B is the class a CI job actually wants to gate
+ * on. The alias keeps existing workflows exiting non-zero — on a WIDER set
+ * than before, which is why using it prints a one-line notice on stderr rather
+ * than resolving silently.
+ */
+const FAIL_ON_CLASSES = new Set(['tierA', 'tierB', 'blocked', 'none']);
 
 program
   .command('fix-llm')
@@ -183,7 +204,11 @@ program
   .option('-o, --output <file>', 'also write the combined diff to a file')
   .option('--verbose', 'print every informational data hit (default: one line per file)')
   .option('--json', 'emit a machine-readable JSON report on stdout instead of the human one')
-  .option('--fail-on <class>', 'exit 1 when the named finding class is non-empty: tierA | blocked | none', 'none')
+  .option(
+    '--fail-on <class>',
+    'exit 1 when the named tier is non-empty: tierA | tierB | none (blocked = deprecated alias for tierB)',
+    'none',
+  )
   .option(
     '--eval-command <cmd>',
     `run YOUR evaluation against the patched code (overrides "evalCommand" in ${REPO_CONFIG_FILENAME})`,
@@ -202,11 +227,25 @@ program
         evalCommand?: string;
       },
     ) => {
-    const failOn = opts.failOn ?? 'none';
-    if (!FAIL_ON_CLASSES.has(failOn)) {
-      console.error(`mendr: invalid --fail-on value "${failOn}" (expected tierA, blocked, or none)`);
+    const rawFailOn = opts.failOn ?? 'none';
+    if (!FAIL_ON_CLASSES.has(rawFailOn)) {
+      console.error(
+        `mendr: invalid --fail-on value "${rawFailOn}" (expected tierA, tierB, or none; ` +
+          `"blocked" is accepted as a deprecated alias for tierB)`,
+      );
       process.exit(2);
     }
+    if (rawFailOn === 'blocked') {
+      // Stderr, so it survives --json. Naming the WIDENING is the point: a job
+      // that only wanted to gate on unverified replacements now also gates on
+      // deployment aliases and unproven assignments.
+      console.error(
+        'mendr: --fail-on blocked is deprecated -- it now means --fail-on tierB, which covers ' +
+          'every review-required finding (unverified replacements, platform aliases, ' +
+          'usage-unverified assignments, type-cast-masked ids).',
+      );
+    }
+    const failOn = rawFailOn === 'blocked' ? 'tierB' : rawFailOn;
     const json = !!opts.json;
     // In --json mode stdout carries EXCLUSIVELY the JSON document — every human
     // report line goes through say() and is suppressed (warnings use stderr).
@@ -311,10 +350,14 @@ program
     // languages — a pure-Python repo must not read as "clean" here.
     const pyResult = await applyPyModelIdFixesToSources(pySources, registry, resolved);
 
-    // Split TS model-id matches by AST position AND verification status:
-    //   - `model_arg` + verified  -> Tier A swap candidates;
-    //   - `model_arg` + NOT verified -> Tier C locate-only (BLOCKED by the gate);
-    //   - `data`                  -> informational locate-only (never edited).
+    // Split TS model-id matches by AST position AND verification status into
+    // the THREE tiers:
+    //   - `model_arg` + verified     -> Tier A, a safe automatic patch;
+    //   - `model_arg` + NOT verified -> Tier B, `replacement_unverified`;
+    //   - `azure_deployment`         -> Tier B, `platform_blocked`;
+    //   - model-like assignment, no sink -> Tier B, `usage_unverified` (py);
+    //   - `data` behind an `as` cast -> Tier B, `type_cast_masked`;
+    //   - `data` otherwise           -> Tier C, informational (never edited).
     const modelArgMatches = modelMatches.filter((m) => m.position === 'model_arg');
     const swapMatches = modelArgMatches.filter((m) => isVerified(m.deprecation));
     const blockedAll = [...toBlockedModelArgMatches(modelMatches), ...pyResult.blockedMatches];
@@ -322,7 +365,7 @@ program
     // Usage-unverified candidates (Python sink rule): model-like assignments
     // never traced to an in-file sink. Manual review only — never auto-applied.
     const usageUnverifiedAll = pyResult.usageUnverifiedMatches;
-    const dataViews: DataFindingView[] = [
+    const allDataViews: DataFindingView[] = [
       ...toModelIdDataMatches(modelMatches),
       ...pyResult.dataMatches,
     ].map((d) => ({
@@ -334,15 +377,98 @@ program
       purpose: d.purpose,
       reason: d.reason,
     }));
+    // The cast guard's matches ride in the DATA stream (the classifier demotes
+    // them there so the codemod cannot touch them), but they are not
+    // informational: the id is in a live-looking position and only the repo's
+    // own type union stands in the way. They are the one data-stream surface
+    // that graduates to Tier B; everything else stays Tier C.
+    const castMaskedViews = allDataViews.filter((d) => d.reason === TYPE_CAST_REASON);
+    const dataViews = allDataViews.filter((d) => d.reason !== TYPE_CAST_REASON);
     const dataGroups = groupDataFindingsByFile(dataViews);
+
+    /**
+     * TIER B, assembled from the four EXISTING detection surfaces. Nothing new
+     * is detected here — each finding already existed, it just used to be
+     * reported under a heading of its own with prose instead of a reason code.
+     * Ordering is applied once, in report/tiers.ts, so every surface (human,
+     * JSON, --fail-on) sees the same list.
+     */
+    const tierBFindings: TierBFinding[] = orderTierB([
+      ...blockedAll.map((b) =>
+        tierBFinding(
+          {
+            file: rel(b.location.file),
+            line: b.location.line,
+            column: b.location.column,
+            modelId: b.value,
+            replacement: b.replacement,
+            status: b.status,
+            // The verification gate's own audit trail, preserved verbatim.
+            detail: b.reasons,
+          },
+          'replacement_unverified',
+        ),
+      ),
+      ...azureAll.map((a) =>
+        tierBFinding(
+          {
+            file: rel(a.location.file),
+            line: a.location.line,
+            column: a.location.column,
+            modelId: a.value,
+            replacement: a.replacement,
+          },
+          'platform_blocked',
+        ),
+      ),
+      ...usageUnverifiedAll.map((u) =>
+        tierBFinding(
+          {
+            file: rel(u.location.file),
+            line: u.location.line,
+            column: u.location.column,
+            modelId: u.value,
+            replacement: u.replacement,
+          },
+          'usage_unverified',
+        ),
+      ),
+      ...castMaskedViews.map((d) =>
+        tierBFinding(
+          {
+            file: d.file,
+            line: d.line,
+            column: d.column,
+            modelId: d.value,
+            replacement: d.replacement,
+          },
+          'type_cast_masked',
+        ),
+      ),
+    ]);
 
     const tsSwapCandidates = swapMatches.length + paramMatches.length;
     const autoFixableCount = tsSwapCandidates + pyResult.siteCount;
+    /**
+     * The three numbers the report prints, derived from the very arrays the
+     * sections list. Building them here — once — is what keeps the counts line
+     * and the Summary from disagreeing with each other or with the sections.
+     */
+    const tierCounts: TierCounts = {
+      tierA: autoFixableCount,
+      tierB: tierBFindings.length,
+      tierC: dataViews.length,
+    };
 
-    /** The (g) footer: registry provenance + the exact commit that was scanned. */
+    /**
+     * The (g) footer: registry provenance + the exact commit that was scanned.
+     * Every number is COMPUTED from the registry that was actually loaded for
+     * this run — see registryProvenance() for why the old one-line
+     * "N entries, verified <date>" was a claim the data did not support.
+     */
     const printFooter = async (): Promise<void> => {
       say('');
-      say(`registry: ${modelIdEntries(registry).length} entries, verified ${REGISTRY_VERIFIED_AT}`);
+      for (const line of formatRegistryProvenanceLines(registryProvenance(registry))) say(line);
       // Best-effort commit anchor — a non-git directory skips this silently.
       try {
         const sha = (await simpleGit(resolved).revparse(['--short', 'HEAD'])).trim();
@@ -352,19 +478,17 @@ program
       }
     };
 
-    /** Apply the --fail-on gate (exitCode, not exit, so stdout flushes). */
+    /**
+     * Apply the --fail-on gate (exitCode, not exit, so stdout flushes). Both
+     * classes read the SAME counts the report printed — a job that failed must
+     * be able to point at the number on screen that failed it.
+     */
     const applyFailOn = (): void => {
-      if (failOn === 'tierA' && autoFixableCount > 0) process.exitCode = 1;
-      if (failOn === 'blocked' && blockedAll.length > 0) process.exitCode = 1;
+      if (failOn === 'tierA' && tierCounts.tierA > 0) process.exitCode = 1;
+      if (failOn === 'tierB' && tierCounts.tierB > 0) process.exitCode = 1;
     };
 
-    if (
-      autoFixableCount === 0 &&
-      blockedAll.length === 0 &&
-      dataViews.length === 0 &&
-      azureAll.length === 0 &&
-      usageUnverifiedAll.length === 0
-    ) {
+    if (tierCounts.tierA === 0 && tierCounts.tierB === 0 && tierCounts.tierC === 0) {
       say('No deprecated LLM model ids or model-coupled params found. Nothing to fix.');
       // Annotated catalogs are still NAMED (expected content, not debt) so a
       // clean repo's report explains where its known ids live.
@@ -379,6 +503,12 @@ program
             {
               summary: {
                 tierA: 0,
+                tierB: 0,
+                tierC: 0,
+                // DEPRECATED (see README): kept for one release so existing
+                // consumers keep parsing. They are the same zeroes as the tier
+                // counts here, and on a non-empty scan they are DERIVED from
+                // the tier arrays rather than tallied separately.
                 blocked: 0,
                 informational: 0,
                 usageUnverified: 0,
@@ -390,6 +520,7 @@ program
                 behavioralVerification: 'not-tested',
               },
               tierA: [],
+              tierB: [],
               blocked: [],
               azure: [],
               informational: [],
@@ -416,22 +547,12 @@ program
         ? ` -- mostly in ${catalogGroups.length} catalog-like file${catalogGroups.length === 1 ? '' : 's'}`
         : '';
     say('');
-    say(
-      `Found: ${autoFixableCount} auto-fixable (verified replacement), ` +
-        `${blockedAll.length} blocked (live call, unverified replacement),`,
-    );
-    say(`       ${dataViews.length} informational (deprecated ids in data positions${catalogCtx}).`);
-    if (azureAll.length > 0) {
-      say(
-        `       ${azureAll.length} azure deployment alias${azureAll.length === 1 ? '' : 'es'} (never auto-swapped).`,
-      );
-    }
-    if (usageUnverifiedAll.length > 0) {
-      say(
-        `       ${usageUnverifiedAll.length} usage-unverified candidate${usageUnverifiedAll.length === 1 ? '' : 's'} ` +
-          `(model-like assignment, no in-file sink -- manual review).`,
-      );
-    }
+    // Three tiers, three numbers, plus the Tier B reason breakdown. The old
+    // shape listed "azure deployment aliases" and "usage-unverified
+    // candidates" as extra classes alongside the counts; both are now reason
+    // codes INSIDE Tier B, so the breakdown line carries them without
+    // reintroducing a fourth and fifth top-level bucket.
+    for (const line of formatFoundLines(tierCounts, tierBFindings, catalogCtx)) say(line);
 
     // Human labels. Model-id: one per unique deprecated -> replacement swap,
     // counting only swap-safe (`model_arg`) positions. Carry the lifecycle so
@@ -664,7 +785,12 @@ program
           ? opts.skipGates
             ? '=== Tier A: auto-fixable model-id + param codemod ==='
             : '=== Tier A: auto-fixable model-id + param codemod (VERIFIED) ==='
-          : '=== Tier A candidate -> DOWNGRADED to Tier C (unverified codemod) ===';
+          : // NOT "downgraded to Tier C": under the three-tier vocabulary Tier C
+            // means an informational DATA occurrence, and a reader who counted
+            // the Tier C findings would never find these among them. A gate
+            // failure is a disposition of a Tier A candidate, not a
+            // reclassification of what was detected.
+            '=== Tier A candidate -> NOT APPLIED (gates failed, review only) ===';
       say('');
       say(heading);
       say('');
@@ -685,7 +811,7 @@ program
         );
       } else {
         say(
-          `Tier C (downgraded): ${breakdown(tsResult)} (${labels}) NOT applied -- ` +
+          `Tier A (NOT applied): ${breakdown(tsResult)} (${labels}) -- ` +
             `${downgradeReason.replace(/\.+$/, '')}. ` +
             `The diff above is shown for manual review only; it is not trusted.`,
         );
@@ -702,7 +828,7 @@ program
       const heading =
         pyTier === 'A'
           ? '=== Tier A (python): auto-fixable model-id codemod ==='
-          : '=== Tier A candidate (python) -> DOWNGRADED to Tier C (unverified codemod) ===';
+          : '=== Tier A candidate (python) -> NOT APPLIED (gates failed, review only) ===';
       say('');
       say(heading);
       say('');
@@ -734,8 +860,8 @@ program
         );
       } else {
         say(
-          `Tier C (python, downgraded): ${n} model-id swap${n === 1 ? '' : 's'} (${pyLabels}) ` +
-            `NOT applied -- ${pyDowngradeReason}. ` +
+          `Tier A (python, NOT applied): ${n} model-id swap${n === 1 ? '' : 's'} (${pyLabels}) ` +
+            `-- ${pyDowngradeReason}. ` +
             'The diff above is shown for manual review only; it is not trusted.',
         );
       }
@@ -763,66 +889,27 @@ program
       );
     }
 
-    // --- Section 2: blocked model-args (the most valuable manual findings —
-    // live call positions whose replacement the gate refuses to trust). ------
-    if (blockedAll.length > 0) {
+    // --- Section 2: TIER B, the whole middle class in one place. These used
+    // to be three sections (blocked model args, azure deployment aliases,
+    // usage-unverified assignments) plus a cast-guard line buried in the
+    // informational stream. They share one shape — a known dead id, a known
+    // replacement, and a specific missing proof — so they share one section,
+    // one machine-readable reason code each, and one flat statement that no
+    // patch exists. Ordered between Tier A and Tier C by actionability.
+    if (tierBFindings.length > 0) {
       say('');
-      say('=== Blocked: live model args with an UNVERIFIED replacement (review first -- no patch) ===');
-      for (const b of blockedAll) {
-        say('');
-        say(
-          `  deprecated model "${b.value}" found at ${rel(b.location.file)}:${b.location.line}:${b.location.column}, ` +
-            `but its replacement "${b.replacement}" is ${b.status} -- review manually` +
-            ` (auto-apply withheld by the verification gate)`,
-        );
-        for (const reason of b.reasons ?? []) say(`      - ${reason}`);
-      }
+      for (const line of formatTierBSection(tierBFindings)) say(line);
     }
 
-    // --- Section 2b: Azure deployment aliases — reported like blocked matches
-    // (they need a human), but with a provisioning story, not a verification one.
-    if (azureAll.length > 0) {
-      say('');
-      say('=== Azure deployment aliases (never auto-swapped -- no patch) ===');
-      for (const a of azureAll) {
-        say('');
-        say(
-          `  deprecated-looking value "${a.value}" under a deployment key at ` +
-            `${rel(a.location.file)}:${a.location.line}:${a.location.column}`,
-        );
-        say(`      - ${AZURE_DEPLOYMENT_REASON}`);
-      }
-    }
-
-    // --- Section 2c: usage-unverified candidates — model-like assignments the
-    // Python sink rule could not tie to any live call in the same file. The
-    // value is a known deprecated id and the replacement is known, but the
-    // assignment may be event/log/fixture data wearing a model-like name (the
-    // simulator failure), so these are never auto-applied and never --written.
-    if (usageUnverifiedAll.length > 0) {
-      say('');
-      say('=== Usage-unverified candidates (manual review -- no patch, never auto-applied) ===');
-      for (const u of usageUnverifiedAll) {
-        say('');
-        say(
-          `  ${formatUsageUnverifiedLine({
-            file: rel(u.location.file),
-            value: u.value,
-            replacement: u.replacement,
-            line: u.location.line,
-            column: u.location.column,
-          })}`,
-        );
-      }
-    }
-
-    // --- Section 3 (least urgent, so last + collapsed): informational data
-    // findings, ONE line per file. Full per-hit detail lives behind --verbose;
-    // the file list is capped so a catalog-heavy repo cannot flood the report.
+    // --- Section 3 (least urgent, so last + collapsed): TIER C informational
+    // data findings, ONE line per file. Full per-hit detail lives behind
+    // --verbose; the file list is capped so a catalog-heavy repo cannot flood
+    // the report.
     if (dataViews.length > 0) {
       say('');
       say(
-        `=== Informational: deprecated ids in data positions (${dataViews.length} hit${dataViews.length === 1 ? '' : 's'} ` +
+        `=== Tier C: informational -- deprecated ids in data positions ` +
+          `(${dataViews.length} hit${dataViews.length === 1 ? '' : 's'} ` +
           `in ${dataGroups.length} file${dataGroups.length === 1 ? '' : 's'}; --verbose for every hit) ===`,
       );
       if (opts.verbose) {
@@ -844,21 +931,37 @@ program
       for (const c of catalogFiles) say(`  ${formatCatalogLine(c)}`);
     }
 
-    // Combined cross-language summary.
+    // Combined cross-language summary, in the SAME three-tier vocabulary and
+    // carrying the SAME three numbers as the `Found:` block — so a reader can
+    // check the top of the report against the bottom and find them equal.
+    // Tier A is the only tier with a disposition: its candidates either landed
+    // as a verified patch or were downgraded by a failing gate. (The downgraded
+    // ones stay Tier A candidates in the count; they are printed under their
+    // own DOWNGRADED heading, not folded into Tier B, which is a detection
+    // class rather than a gate outcome.)
     const tsApplied = tsTier === 'A' ? tsTotalSites : 0;
     const pyApplied = pyTier === 'A' ? pyResult.siteCount : 0;
-    const tierCReview =
-      (tsTier === 'C' ? tsTotalSites : 0) +
-      (pyTier === 'C' ? pyResult.siteCount : 0) +
-      blockedAll.length +
-      azureAll.length +
-      usageUnverifiedAll.length +
-      dataViews.length;
+    // The tier NUMBER is the locator's count (what `Found:` printed); the
+    // disposition splits it. The clamp exists because the gated path re-loads
+    // the FULL tsconfig project and tallies applied sites there, while the
+    // count came from the pre-filtered scan project — they agree in practice
+    // (the pre-filter cannot miss a finding) but the split must never be able
+    // to print a negative, or claim a disposition for more sites than were
+    // counted.
+    const gatedSites = Math.min(tsApplied + pyApplied, tierCounts.tierA);
+    // "auto-fixed" means the working tree CHANGED, so it may only be claimed by
+    // a run that actually writes: --write, with the gates really run. Without
+    // it the patch exists only on screen, and the Summary used to print
+    // "N auto-fixed" three lines above "To apply: re-run with --write".
+    const thisRunWrites = !!opts.write && !opts.skipGates;
     say('');
-    say(
-      `Summary: ${tsApplied + pyApplied} auto-fixed (Tier A), ` +
-        `${tierCReview} flagged for review (Tier C).`,
-    );
+    for (const line of formatSummaryLines(tierCounts, {
+      applied: thisRunWrites ? gatedSites : 0,
+      ready: thisRunWrites ? 0 : gatedSites,
+      downgraded: tierCounts.tierA - gatedSites,
+    })) {
+      say(line);
+    }
 
     // -o keeps the TS diff regardless of tier (long-standing behavior: the
     // console labels its trust), but a downgraded python diff FAILED its syntax
@@ -938,9 +1041,9 @@ program
           // "did not pass its gates" rather than the old "was not verified":
           // a FAILING eval or test gate is a verification that came back
           // negative, which "not verified" reads as merely unchecked.
-          'Refusing to --write the downgraded (Tier C) portion: it did not pass its gates ' +
+          'Refusing to --write the Tier A candidates that failed their gates ' +
             '(reason above). ' +
-            'Review its diff above and apply by hand if it is correct.',
+            'Review their diff above and apply by hand if it is correct.',
         );
       }
       if (pending.length === 0 && !downgraded) {
@@ -972,10 +1075,19 @@ program
         JSON.stringify(
           {
             summary: {
-              tierA: autoFixableCount,
-              blocked: blockedAll.length,
-              informational: dataViews.length,
-              usageUnverified: usageUnverifiedAll.length,
+              // The three-tier counts — the same three numbers the human
+              // `Found:` and `Summary:` blocks print, from the same object.
+              tierA: tierCounts.tierA,
+              tierB: tierCounts.tierB,
+              tierC: tierCounts.tierC,
+              // DEPRECATED (see README): the pre-three-tier keys, kept for one
+              // release so existing consumers keep parsing. They are DERIVED
+              // from the tier arrays — filtering `tierB` by reason code and
+              // reading `tierC`'s length — rather than tallied independently,
+              // so they cannot drift away from the tier counts above.
+              blocked: tierBFindings.filter((f) => f.reason === 'replacement_unverified').length,
+              informational: tierCounts.tierC,
+              usageUnverified: tierBFindings.filter((f) => f.reason === 'usage_unverified').length,
               filesScanned: totalFiles,
               tsFiles: tsFileCount,
               pyFiles: pyFiles.length,
@@ -1011,32 +1123,47 @@ program
                 shutdownDate: m.deprecation.shutdownDate ?? null,
               })),
             ],
-            blocked: blockedAll.map((b) => ({
-              file: rel(b.location.file),
-              from: b.value,
-              to: b.replacement,
-              status: b.status,
-              line: b.location.line,
-              reasons: b.reasons ?? [],
-            })),
-            azure: azureAll.map((a) => ({
-              file: rel(a.location.file),
-              value: a.value,
-              line: a.location.line,
-              reason: AZURE_DEPLOYMENT_REASON,
-            })),
+            // TIER B, first-class: every review-required finding, each with the
+            // machine-readable reason code AND its plain-English sentence. This
+            // is the array to consume; the three below it are the legacy views.
+            tierB: tierBFindings.map(tierBJson),
+            // --- DEPRECATED for one release (see README) ---------------------
+            // All three are PROJECTIONS of `tierB` (filtered by reason code) or
+            // of the Tier C data views — never a second tally. That is what
+            // stops the old keys and the new tiers disagreeing about the same
+            // repo. New consumers should read `tierB` + `summary.tierB`.
+            blocked: tierBFindings
+              .filter((f) => f.reason === 'replacement_unverified')
+              .map((f) => ({
+                file: f.file,
+                from: f.modelId,
+                to: f.replacement,
+                status: f.status,
+                line: f.line,
+                reasons: f.detail ?? [],
+              })),
+            azure: tierBFindings
+              .filter((f) => f.reason === 'platform_blocked')
+              .map((f) => ({
+                file: f.file,
+                value: f.modelId,
+                line: f.line,
+                reason: AZURE_DEPLOYMENT_REASON,
+              })),
             informational: dataGroups.map((g) => ({
               file: g.file,
               count: g.hits,
               ids: [...g.idCounts.keys()],
             })),
-            usageUnverified: usageUnverifiedAll.map((u) => ({
-              file: rel(u.location.file),
-              from: u.value,
-              to: u.replacement,
-              line: u.location.line,
-              reason: u.reason,
-            })),
+            usageUnverified: tierBFindings
+              .filter((f) => f.reason === 'usage_unverified')
+              .map((f) => ({
+                file: f.file,
+                from: f.modelId,
+                to: f.replacement,
+                line: f.line,
+                reason: USAGE_UNVERIFIED_REASON,
+              })),
             catalogs: catalogFiles,
             ignoredFiles,
             // Present only when the eval gate actually ran, so a consumer can

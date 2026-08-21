@@ -5,8 +5,9 @@ set -euo pipefail
 #
 # The trust model is deliberately simple: we let Mendr's own verification gate
 # decide. `mendr fix-llm . --write` applies ONLY a Tier A fix it verified (the
-# type-check passed and your test suite ran as the gate). A downgraded (Tier C)
-# or a clean result writes nothing. So "did any tracked file change?" is an
+# type-check passed and your test suite ran as the gate). A Tier A candidate that
+# failed its gates, a Tier B review-only finding, or a clean result all write
+# nothing. So "did any tracked file change?" is an
 # exact, honest signal for "was there a verified fix?". We never parse stdout to
 # decide what to apply, and we never touch the default branch.
 

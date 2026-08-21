@@ -67,7 +67,7 @@ to charge the standing hosted subscription, six things get built, in this order,
 5. a dashboard with org and team accounts and a one-screen exposure view (3-5 weeks, where scope balloons, gated behind real paying demand).
 6. python support, a second detection engine with its own verify gate (4-8 weeks). do not attempt this before a paying typescript customer exists.
 
-**already built and real:** call-site-aware model-id and param fixes for openai/anthropic/google plus stripe renames (76 tests, 0 wrong edits across 26 repos), the verify-before-apply gate, a verified registry with a live-oracle verification pipeline, and the end-to-end github action. **not built:** any server, app, accounts, dashboard, billing, alerting, dated data, or python. realistically 3 to 5 months of focused build for the hosted product, and that is not the risky part. the risky part is proof that anyone pays.
+**already built and real:** call-site-aware model-id and param fixes for openai/anthropic/google plus stripe renames (342 tests; 0 wrong edits across the 26 repos measured in the aug-2026 recall audit), the verify-before-apply gate, a dated registry carrying a per-entry verdict from a live-oracle check (94 of 106 stamped `verified` today, the rest blocked from auto-apply; a handful carry a recheck date with a note that the id was not researched on that pass), and the end-to-end github action. **not built:** any server, app, accounts, dashboard, billing, alerting, dated data, or python. realistically 3 to 5 months of focused build for the hosted product, and that is not the risky part. the risky part is proof that anyone pays.
 
 ## the 90-day plan
 

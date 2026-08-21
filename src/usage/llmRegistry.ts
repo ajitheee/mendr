@@ -31,13 +31,6 @@ const REGISTRY_RELATIVE = join('registries', 'llm-deprecations.json');
 /** `sha256:` + 64 lowercase hex. Anything else is not a hash we produced. */
 const CONTENT_HASH_RE = /^sha256:[0-9a-f]{64}$/;
 
-/**
- * The date the shipped registry was last verified against the public oracles
- * (`mendr verify-registry --write` stamps per-entry `verification.checkedAt`;
- * this constant is the human headline for the CLI's report footer). Update it
- * whenever a re-verification is stamped into the registry JSON.
- */
-export const REGISTRY_VERIFIED_AT = '2026-08-18';
 const VALID_KINDS: ReadonlySet<LlmDeprecationKind> = new Set([
   'model_id',
   'param_rename',
@@ -310,6 +303,81 @@ export function isVerified(entry: LlmModelIdDeprecation): boolean {
   return entry.verification?.status === 'verified';
 }
 
+// --- provenance (what the footer is allowed to claim) ----------------------
+//
+// The old footer read `registry: 106 entries, verified 2026-08-18`, which says
+// "all 106 replacements were fully verified that day". Two separate things
+// actually happened, and neither is that:
+//   1. a CATALOG RECHECK — every replacement was re-classified against the
+//      public catalogs, and the run stamped its date onto each entry;
+//   2. PER-ENTRY VERIFICATION — each entry carries its own verdict, and 12 of
+//      them did NOT come back `verified`.
+// Rolling those into one sentence turns a partial result into a blanket
+// guarantee. Everything below is COMPUTED from the loaded registry so the
+// footer cannot outlive the data: no constant to forget to bump, and a stamp
+// that changes shows up in the printed line on the next run.
+
+/** Every verdict an entry can carry, including "carries no verdict at all". */
+export type EntryVerificationState = VerificationStatus | 'unstamped';
+
+/** What the loaded registry actually says about itself. All counts, no claims. */
+export interface RegistryProvenance {
+  /** Active `model_id` entries — the ones the fix engine can match. */
+  activeEntries: number;
+  /** Per-state entry counts (`verified`, `unverified`, `unverifiable`, `unstamped`). */
+  statusCounts: Record<EntryVerificationState, number>;
+  /** Oldest `verification.checkedAt` across stamped entries, if any. */
+  oldestCheckedAt?: string;
+  /** Newest `verification.checkedAt` across stamped entries, if any. */
+  newestCheckedAt?: string;
+  /** Entries carrying no recheck date at all — the gap the dates cannot cover. */
+  undatedEntries: number;
+}
+
+/** The order footer/report surfaces list verification states in. */
+export const ENTRY_VERIFICATION_STATES: readonly EntryVerificationState[] = [
+  'verified',
+  'unverified',
+  'unverifiable',
+  'unstamped',
+];
+
+/**
+ * Compute the registry's own provenance from the loaded entries. Pure over the
+ * registry it is handed, so a test can drive it with a three-entry fixture and
+ * get the same arithmetic the shipped 106-entry registry gets.
+ */
+export function registryProvenance(registry: LlmRegistry): RegistryProvenance {
+  const entries = modelIdEntries(registry);
+  const statusCounts: Record<EntryVerificationState, number> = {
+    verified: 0,
+    unverified: 0,
+    unverifiable: 0,
+    unstamped: 0,
+  };
+  let oldest: string | undefined;
+  let newest: string | undefined;
+  let undated = 0;
+  for (const entry of entries) {
+    statusCounts[entry.verification?.status ?? 'unstamped']++;
+    const checkedAt = entry.verification?.checkedAt;
+    // ISO yyyy-mm-dd dates order correctly as strings.
+    if (!checkedAt) {
+      undated++;
+      continue;
+    }
+    if (!oldest || checkedAt < oldest) oldest = checkedAt;
+    if (!newest || checkedAt > newest) newest = checkedAt;
+  }
+  return {
+    activeEntries: entries.length,
+    statusCounts,
+    oldestCheckedAt: oldest,
+    newestCheckedAt: newest,
+    undatedEntries: undated,
+  };
+}
+
 /** Days after which the registry's newest verification stamp counts as stale. */
 export const REGISTRY_STALE_DAYS = 30;
 
@@ -335,5 +403,8 @@ export function staleRegistryWarning(
   if (Number.isNaN(ageMs) || ageMs <= REGISTRY_STALE_DAYS * 24 * 60 * 60 * 1000) {
     return undefined;
   }
-  return `warning: registry last verified ${newest} -- run mendr verify-registry for current data.`;
+  // "rechecked", not "verified": this date is the newest CATALOG RECHECK stamp,
+  // and says nothing about how many entries came back verified — the same
+  // conflation the report footer used to make (see RegistryProvenance).
+  return `warning: registry last rechecked ${newest} -- run mendr verify-registry for current data.`;
 }

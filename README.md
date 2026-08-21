@@ -52,9 +52,69 @@ Run any command with `--help` for its flags.
 
 mendr is call-site aware. It only swaps a model string when that string is actually an argument to a recognized LLM call, so it won't touch a model id sitting in a pricing table, a model-picker array, or a lookup map. For param fixes it traces the model at each call site and only removes or renames a param when that specific model requires it, so a `claude-opus` call can lose `temperature` while a sibling `haiku` call keeps it.
 
-Replacements come from a deprecation registry that's verified against the live public model catalogs, so it isn't guessing from a blog post. If a replacement can't be verified, mendr locates the spot and refuses to auto-apply rather than risk a bad patch.
+Replacements come from a deprecation registry that carries a per-entry verdict from a check against the live public model catalogs, so it isn't guessing from a blog post. Verification is **per entry, not registry-wide** — some entries carry a `verified` verdict, some carry `unverified`, and a few carry a recheck date with a note saying that id was not researched on that pass. The report footer prints the split rather than a blanket claim, and only a `verified` entry is ever auto-applied. If a replacement isn't verified, mendr locates the spot and refuses to auto-apply rather than risk a bad patch.
+
+Every report ends with the registry's own provenance, computed from the registry that was actually loaded — never a hardcoded date:
+
+```
+registry: 106 active entries
+catalog recheck: 2026-08-18
+entry verification: 94 verified, 12 unverified (per entry, see `mendr evidence <id>`)
+```
+
+Those are two different facts and the footer keeps them apart. The **catalog recheck** date is the newest `checkedAt` stamp the entries carry (if entries carry different dates, the line names the newest *and* the oldest rather than implying one date covers all, and it names any entry carrying no date at all). The **entry verification** line is the per-entry verdict, and it is the one that decides what can be auto-applied.
+
+`mendr evidence <id>` prints what a single entry actually rests on: its lifecycle and shutdown date, the oracles consulted, the verdict, and the reviewer's reasons in full — including reasons that undercut the verdict, which is the point of reading it. Stored evidence snapshots (fetched page, content hash, quoted excerpt) exist for entries promoted through `mendr candidates promote`; the entries hand-seeded into the shipped registry have none, and `mendr evidence` says so per entry rather than implying otherwise.
 
 Being precise about what "verified" covers, because it's two different checks: an entry is auto-applied only if the **replacement** is live in a public catalog and isn't contradicted by the provider's own recommendation table, *and* the **deprecation claim** is self-consistent and quote-backed — it states a lifecycle, doesn't claim a model is retired while the catalogs still list it live, carries a shutdown date when the deprecation is only announced, quotes an excerpt that actually names the model, and has the fetched page stored on disk behind it. What mendr does **not** do is independently confirm with the provider that a model was retired. No public oracle answers that, so mendr doesn't pretend to. New entries reach the registry only when a human runs `mendr candidates promote <id>` and clears both checks.
+
+## the three tiers
+
+Every finding lands in exactly one tier, and the tier tells you what mendr is willing to do about it.
+
+| tier | what it means | does mendr patch it? |
+| --- | --- | --- |
+| **A** | safe automatic patch: a live model argument whose replacement is verified, and the patched code cleared the gates | yes, with `--write` |
+| **B** | potential migration requiring review: the id is dead and the replacement is known, but something specific is missing | **never** — no patch is generated, and `--write` will not touch it |
+| **C** | informational data occurrence: a deprecated id sitting in a pricing table, a model-picker list, a lookup key, a comparison | no, and nothing to do |
+
+Tier B is the one worth reading. Each finding names *what is missing* with a machine-readable reason code, so you can route or suppress a whole class without grepping English:
+
+| reason code | what's missing |
+| --- | --- |
+| `replacement_unverified` | it's a live model argument, but the registry's replacement hasn't cleared verification against the public catalogs |
+| `platform_blocked` | the value sits under a `deployment` / `deploymentName` / `deployment_name` key instead of a model argument — on Azure and similar platforms that names a provisioned deployment, so it's likely a provisioning change rather than a code change (mendr reads the key, not the value, so confirm which you have) |
+| `usage_unverified` | a model-like assignment with no traced sink — the value is a known dead id, but nothing proves it's ever passed to a model call |
+| `type_cast_masked` | the model argument is wrapped in an `as` cast to a named type, so the repo may constrain model ids with a type of its own and swapping the raw string could bypass that check (any cast other than `as string` / `as const` triggers this, including `as any`) |
+
+Two further codes, `dynamic_model_value` and `insufficient_dataflow`, exist in the type for future detectors and are never emitted today.
+
+A Tier B finding prints like this — location, both ids, both forms of the reason, and an explicit statement that no patch exists:
+
+```
+=== Tier B: review required ===
+
+agent_app/simulator.py:166:13
+  found:       "gpt-4"
+  replacement: "gpt-5.6-sol"
+  reason:      usage_unverified -- assigned to a model-like variable, but no
+               supported SDK call or parameter sink was found in this file.
+  action:      no patch generated.
+```
+
+### gating CI on a tier
+
+```sh
+npx mendr fix-llm . --fail-on tierB
+```
+
+`--fail-on` takes `tierA`, `tierB`, or `none` (the default). `blocked` still works as a **deprecated alias for `tierB`** and prints a notice on stderr — note that it now covers every review-required finding, not just unverified replacements.
+
+### `--json`
+
+`--json` emits `tierB` as a first-class array of `{ file, line, column, modelId, replacement, reason, reasonText }`, and `summary` carries `{ tierA, tierB, tierC }`.
+
+**Deprecated for one release:** the pre-three-tier keys `blocked`, `azure`, `informational` and `usageUnverified` (and `summary.blocked` / `summary.informational` / `summary.usageUnverified`) are still emitted so existing consumers keep parsing. They are now *projections* of the tier data — `blocked` is `tierB` filtered to `replacement_unverified`, `azure` to `platform_blocked`, `usageUnverified` to `usage_unverified` — so they cannot drift from the tier counts. One behavior change worth knowing: type-cast-masked findings used to be counted as `informational` and are now Tier B. Move to `tierB` + `summary.tierB`; the old keys will be removed.
 
 ## verify behavior, not just code
 

@@ -27,8 +27,51 @@ export interface AffectedSite {
   locations: SourceLocation[];
 }
 
-/** Confidence tier for an auto-generated fix. */
-export type Tier = 'A' | 'C';
+/**
+ * Confidence tier for a finding.
+ *
+ * THREE classes, not two. `A` and `C` used to carry everything, which flattened
+ * two very different things into one bucket: a KNOWN-deprecated id with a KNOWN
+ * replacement whose usage context is uncertain (a human should look at it) read
+ * the same as a model id sitting in a pricing table (nothing to do). `B` is
+ * that middle class — actionable, but never auto-applied and never written.
+ *   A = safe automatic patch (gated, applied by --write)
+ *   B = potential migration requiring review (no patch is ever generated)
+ *   C = informational data occurrence (no action)
+ */
+export type Tier = 'A' | 'B' | 'C';
+
+/**
+ * WHY a finding is Tier B rather than A or C — a machine-readable code, so a
+ * consumer can route (or suppress) one class of review without regex-matching
+ * English. Each code names the SPECIFIC missing proof, never a vague "unsure":
+ *
+ *   `usage_unverified`       a model-like assignment with no traced sink — the
+ *                            value is a known dead id, but nothing proves it is
+ *                            ever passed to a model call (Python sink rule).
+ *   `replacement_unverified` a LIVE model argument whose registry replacement
+ *                            did not clear the verification gate.
+ *   `platform_blocked`       the position is a platform alias (an Azure
+ *                            deployment name), so the fix is provisioning.
+ *   `dynamic_model_value`    the model is assembled at runtime; no single
+ *                            literal can carry the swap. RESERVED — no detector
+ *                            emits this today.
+ *   `insufficient_dataflow`  the value could not be traced to a definite use.
+ *                            RESERVED — no detector emits this today.
+ *   `type_cast_masked`       an `as` cast hides the repo's own model-id union,
+ *                            so a raw string swap would bypass its type gate.
+ *
+ * CONSTRAINT: the two RESERVED codes exist in the union for future detectors
+ * and must NOT be emitted until a real surface maps onto them — a fabricated
+ * finding is worse than a missing one.
+ */
+export type TierBReason =
+  | 'usage_unverified'
+  | 'replacement_unverified'
+  | 'platform_blocked'
+  | 'dynamic_model_value'
+  | 'insufficient_dataflow'
+  | 'type_cast_masked';
 
 // --- LLM-mode (Phase: fix-llm) --------------------------------------------
 // Mendr's LLM mode targets a different failure surface than the Stripe mode:

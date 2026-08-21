@@ -1,6 +1,10 @@
 import { basename } from 'node:path';
 import type { LlmModelIdDeprecation } from '../types.js';
 import type { DataPurpose } from '../usage/scanLiterals.js';
+import {
+  ENTRY_VERIFICATION_STATES,
+  type RegistryProvenance,
+} from '../usage/llmRegistry.js';
 
 // LLM mode — report shaping. The raw scan of a real repo produces 100+ data
 // findings (LibreChat, ChatGPT-Next-Web are typical), and a per-hit listing
@@ -161,32 +165,6 @@ export function formatCatalogLine(catalog: { file: string; ids: string[] }): str
   return (
     `${catalog.file} -- known migration catalog: ${n} deprecated id${n === 1 ? '' : 's'} ` +
     `(expected registry content, no action)`
-  );
-}
-
-/** A usage-unverified candidate, reduced to a display view for one report line. */
-export interface UsageUnverifiedView {
-  /** Repo-relative display path (forward slashes). */
-  file: string;
-  /** The deprecated model-id value in the unproven assignment. */
-  value: string;
-  /** The replacement it WOULD map to (context only, never applied). */
-  replacement: string;
-  line: number;
-  column: number;
-}
-
-/**
- * One line for a usage-unverified candidate: a model-like assignment the sink
- * rule could not tie to any in-file model sink (the simulator failure). The
- * review phrase is fixed wording — never auto-applied, never in --write.
- */
-export function formatUsageUnverifiedLine(u: UsageUnverifiedView): string {
-  return (
-    `deprecated model id "${u.value}" assigned at ${u.file}:${u.line}:${u.column} -- ` +
-    `model-like data assignment, replacement known, usage purpose uncertain, ` +
-    `manual review required (would map to "${u.replacement}" if a live usage is ` +
-    `confirmed; never auto-applied)`
   );
 }
 
@@ -356,6 +334,48 @@ export function formatGateSummary(
     'Code verification (what mendr checked):',
     ...rows,
     ...behavioralVerificationLines(behavioral),
+  ];
+}
+
+// --- the registry footer ---------------------------------------------------
+//
+// THE FOOTER IS A CLAIM, so it gets the same treatment as the gate summary:
+// say the two things that happened, separately, and never let one date stand
+// in for a verdict it did not produce. See RegistryProvenance in
+// usage/llmRegistry.ts for why `verified <date>` was wrong.
+
+/**
+ * Render the registry footer from computed provenance:
+ *
+ *   registry: 106 active entries
+ *   catalog recheck: 2026-08-18
+ *   entry verification: 94 verified, 12 unverified (per entry, see `mendr evidence <id>`)
+ *
+ * The recheck line adapts to what the stamps support: one date when every
+ * entry shares it, `<newest> (oldest entry checked <oldest>)` when they differ
+ * — implying one date covers all of them is exactly the overclaim this
+ * replaced — and an explicit "never recorded" when nothing is stamped. Entries
+ * with no date at all are named on the same line, because a fresh-looking date
+ * over undated entries is the same lie in a different shape.
+ */
+export function formatRegistryProvenanceLines(p: RegistryProvenance): string[] {
+  const recheck = (): string => {
+    if (!p.newestCheckedAt || !p.oldestCheckedAt) return 'never recorded';
+    const dates =
+      p.oldestCheckedAt === p.newestCheckedAt
+        ? p.newestCheckedAt
+        : `${p.newestCheckedAt} (oldest entry checked ${p.oldestCheckedAt})`;
+    return p.undatedEntries > 0
+      ? `${dates}; ${p.undatedEntries} entr${p.undatedEntries === 1 ? 'y carries' : 'ies carry'} no recheck date`
+      : dates;
+  };
+  const breakdown = ENTRY_VERIFICATION_STATES.filter((s) => p.statusCounts[s] > 0)
+    .map((s) => `${p.statusCounts[s]} ${s}`)
+    .join(', ');
+  return [
+    `registry: ${p.activeEntries} active entr${p.activeEntries === 1 ? 'y' : 'ies'}`,
+    `catalog recheck: ${recheck()}`,
+    `entry verification: ${breakdown || 'no entries'} (per entry, see \`mendr evidence <id>\`)`,
   ];
 }
 

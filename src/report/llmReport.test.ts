@@ -4,7 +4,6 @@ import {
   formatDataFileGroupLine,
   formatDataHitLine,
   formatGateSummary,
-  formatUsageUnverifiedLine,
   groupDataFindingsByFile,
   isCatalogLike,
   purposePhrase,
@@ -174,23 +173,6 @@ describe('formatCatalogLine (annotated model-catalog files)', () => {
       'src/registry/oracles.ts -- known migration catalog: 2 deprecated ids ' +
         '(expected registry content, no action)',
     );
-  });
-});
-
-describe('formatUsageUnverifiedLine (sink-rule demotions)', () => {
-  it('carries the exact manual-review phrase and the location', () => {
-    const line = formatUsageUnverifiedLine({
-      file: 'sim/simulator.py',
-      value: 'gpt-4',
-      replacement: 'gpt-5.6-sol',
-      line: 2,
-      column: 13,
-    });
-    expect(line).toContain('sim/simulator.py:2:13');
-    expect(line).toContain(
-      'model-like data assignment, replacement known, usage purpose uncertain, manual review required',
-    );
-    expect(line).toContain('never auto-applied');
   });
 });
 

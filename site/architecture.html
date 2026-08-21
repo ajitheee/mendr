@@ -99,11 +99,11 @@
 
   <h1>mendr — how it works</h1>
   <p class="sub">Three diagrams: the pipeline that turns a retired model id into a verified diff, the decision that decides whether code is touched at all, and the two ways a user runs it.</p>
-  <p class="meta">registry: 106 dated entries · OpenAI, Anthropic, Google · TypeScript + Python · 144 tests</p>
+  <p class="meta">registry: 106 active entries, 94 verified per entry · OpenAI, Anthropic, Google · TypeScript + Python · 342 tests</p>
 
   <h2>1 · the pipeline</h2>
   <figure>
-    <svg viewBox="0 0 940 430" role="img" aria-label="Pipeline: provider deprecation pages feed a verified registry; the repo is text-prefiltered then parsed to an AST; the intersection of registry and call sites produces candidates, which pass a verification gate before becoming a diff the human applies.">
+    <svg viewBox="0 0 940 430" role="img" aria-label="Pipeline: provider deprecation pages feed a dated registry whose entries are verified one by one; the repo is text-prefiltered then parsed to an AST; the intersection of registry and call sites produces candidates, which pass a verification gate before becoming a diff the human applies.">
       <defs>
         <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
           <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
@@ -126,8 +126,8 @@
       <text class="sv-a" x="226" y="66" text-anchor="middle">researched</text>
 
       <rect class="sv-accent" x="252" y="46" width="196" height="58" rx="7"/>
-      <text class="sv-tb" x="350" y="70" text-anchor="middle">verified registry</text>
-      <text class="sv-s" x="350" y="88" text-anchor="middle">106 entries · status + date + source</text>
+      <text class="sv-tb" x="350" y="70" text-anchor="middle">dated registry</text>
+      <text class="sv-s" x="350" y="88" text-anchor="middle">106 entries · 94 verified per entry</text>
 
       <!-- code lane -->
       <rect class="sv-box" x="20" y="216" width="180" height="58" rx="7"/>
