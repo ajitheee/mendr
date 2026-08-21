@@ -67,6 +67,7 @@ Then `mendr` is on your path. Requires Node 20 or newer.
 - TypeScript and TSX first. Pure-JS repos aren't scanned yet, and mendr will tell you it found nothing analyzable rather than pretend a JS repo is clean.
 - It catches inline literal model strings and one-hop consts. A model id built from an env var or string concatenation is invisible on purpose, because guessing there would risk corrupting your code.
 - Coverage is OpenAI, Anthropic, and Google model ids and coupled params, plus Stripe renames. More providers are coming.
+- **It verifies code, not behavior.** The gates prove the patched code still compiles, still parses, and still passes your tests. They say nothing about whether the replacement model *behaves* like the one it replaced — output quality, latency, cost, and response shape are never exercised. A Tier A pass means the swap is safe to build, not that it's safe to ship. Evaluate the new model yourself.
 - It's early. If you run it and it does something dumb, that's exactly the feedback worth sending.
 
 ## license

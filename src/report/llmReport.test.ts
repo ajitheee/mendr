@@ -3,6 +3,7 @@ import {
   formatCatalogLine,
   formatDataFileGroupLine,
   formatDataHitLine,
+  formatGateSummary,
   formatUsageUnverifiedLine,
   groupDataFindingsByFile,
   isCatalogLike,
@@ -187,6 +188,65 @@ describe('formatUsageUnverifiedLine (sink-rule demotions)', () => {
       'model-like data assignment, replacement known, usage purpose uncertain, manual review required',
     );
     expect(line).toContain('never auto-applied');
+  });
+});
+
+describe('formatGateSummary (code vs behavioral verification)', () => {
+  // The whole point of the two-group summary: a reader must not be able to
+  // mistake "type-check + tests passed" for "the new model behaves the same".
+  const TS_FACTS = {
+    usageClassification: 'call-site',
+    typeCheck: 'pass (no new errors; 3 pre-existing ignored)',
+    tests: 'pass (npm test, 42 passed, 0 failed)',
+  };
+
+  it('names both groups, and marks the behavioral one NOT checked', () => {
+    const lines = formatGateSummary(TS_FACTS);
+    expect(lines[0]).toBe('Code verification (what mendr checked):');
+    expect(lines).toContain('Behavioral verification (NOT checked):');
+    const text = lines.join('\n');
+    expect(text).toMatch(/output quality, latency, cost and response/);
+    // Code claims come FIRST, the disclaimer last — a disclaimer above the
+    // evidence reads as boilerplate and gets skipped.
+    expect(text.indexOf('type-check')).toBeLessThan(text.indexOf('Behavioral verification'));
+  });
+
+  it('keeps the measurable test counts verbatim', () => {
+    expect(formatGateSummary(TS_FACTS).join('\n')).toMatch(
+      /^ {2}tests: +pass \(npm test, 42 passed, 0 failed\)$/m,
+    );
+  });
+
+  it('lists only the gates that exist for the language', () => {
+    expect(formatGateSummary(TS_FACTS).join('\n')).toContain('type-check:');
+
+    // Python has no compiler: a syntax re-parse plus an explicit "not
+    // configured" static-type row, never a silently-passed type gate.
+    const py = formatGateSummary({
+      usageClassification: 'verified-sink',
+      syntax: 'pass',
+      staticTypeGate: 'not configured or not detected',
+      tests: 'not run (no supported test command detected)',
+    }).join('\n');
+    expect(py).not.toContain('type-check:');
+    expect(py).toMatch(/^ {2}syntax: +pass$/m);
+    expect(py).toMatch(/^ {2}static type gate: +not configured or not detected$/m);
+    expect(py).toMatch(/^ {2}usage classification: +verified-sink$/m);
+  });
+
+  it('always claims the mapping was verified against live catalogs', () => {
+    expect(formatGateSummary(TS_FACTS).join('\n')).toMatch(
+      /^ {2}replacement mapping: +verified against live catalogs$/m,
+    );
+  });
+
+  it('aligns every gate value in one column, so the rows read as one table', () => {
+    const lines = formatGateSummary(TS_FACTS);
+    const gateRows = lines.slice(1, lines.indexOf('Behavioral verification (NOT checked):'));
+    expect(gateRows).toHaveLength(4);
+    // Every row's value starts at the same column (labels padded to one width).
+    const valueColumns = new Set(gateRows.map((row) => /^ {2}[\w -]+: +/.exec(row)![0].length));
+    expect(valueColumns.size).toBe(1);
   });
 });
 

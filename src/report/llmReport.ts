@@ -190,6 +190,76 @@ export function formatUsageUnverifiedLine(u: UsageUnverifiedView): string {
   );
 }
 
+// --- gate summary ----------------------------------------------------------
+//
+// THE HONESTY SPLIT. mendr's gates prove things about CODE: that the swapped id
+// is a real replacement in a live catalog, that the literal sat in a genuine
+// call position, that the patched file still type-checks (TS) or still parses
+// (Python), and that the repo's own tests still pass. Not one of those says
+// anything about whether the NEW MODEL BEHAVES LIKE THE OLD ONE — its output
+// quality, its latency, its cost per token, the shape of its response. A single
+// flat "Gate summary" list invited exactly that misreading, so the summary is
+// split into two NAMED groups and the second one is a disclaimer, not a result.
+
+/** The measurable per-gate lines for one language's summary. */
+export interface GateSummaryFacts {
+  /** How the literal was proven to be a live model argument. */
+  usageClassification: string;
+  /** Baseline-relative type-check verdict (TypeScript only). */
+  typeCheck?: string;
+  /** Baseline-relative syntax re-parse verdict (Python only). */
+  syntax?: string;
+  /** Static type-gate note (Python only — there is no compiler to consult). */
+  staticTypeGate?: string;
+  /** Test-gate label, carrying real counts wherever the runner output allowed. */
+  tests: string;
+}
+
+/** Column at which every gate VALUE starts, so the two groups align as one table. */
+const GATE_LABEL_WIDTH = 22;
+
+/**
+ * The behavioral disclaimer, verbatim. Kept as an exported constant so the CLI,
+ * the report and any future surface state the boundary in exactly one wording —
+ * a disclaimer that drifts between surfaces is a disclaimer nobody trusts.
+ */
+export const BEHAVIORAL_VERIFICATION_LINES: readonly string[] = [
+  'Behavioral verification (NOT checked):',
+  "  the replacement model's output quality, latency, cost and response",
+  '  shape are not tested. verify those yourself before shipping.',
+];
+
+/**
+ * One short restatement of the boundary for the end of a Tier A report. It
+ * points AT the gate summary rather than re-listing what passed: the gates that
+ * actually ran vary by language and by repo (a repo with no test runner gets
+ * "not run"), so a note that spelled out "your tests still pass" would itself
+ * overclaim in exactly the cases this note exists to prevent.
+ */
+export const BEHAVIORAL_VERIFICATION_NOTE =
+  'note: mendr verified the CODE only -- see the gate summary above for what was ' +
+  "actually checked. It did NOT verify BEHAVIOR: the replacement model's output " +
+  'quality, latency, cost and response shape are untested. Check those before you ship.';
+
+/**
+ * Render the two-group gate summary. Only the gates that actually ran for this
+ * language appear — an absent field is a gate that does not exist here (Python
+ * has no type-check), never a silently-passed one.
+ */
+export function formatGateSummary(facts: GateSummaryFacts): string[] {
+  const row = (label: string, value: string): string =>
+    `  ${`${label}:`.padEnd(GATE_LABEL_WIDTH)}${value}`;
+  const rows = [
+    row('replacement mapping', 'verified against live catalogs'),
+    row('usage classification', facts.usageClassification),
+    ...(facts.typeCheck ? [row('type-check', facts.typeCheck)] : []),
+    ...(facts.syntax ? [row('syntax', facts.syntax)] : []),
+    ...(facts.staticTypeGate ? [row('static type gate', facts.staticTypeGate)] : []),
+    row('tests', facts.tests),
+  ];
+  return ['Code verification (what mendr checked):', ...rows, ...BEHAVIORAL_VERIFICATION_LINES];
+}
+
 /**
  * A model id's FAMILY: everything up to and including its first digit run
  * (`gpt-4.1` -> `gpt-4`, `gpt-5.6-sol` -> `gpt-5`, `claude-opus-4-8` ->

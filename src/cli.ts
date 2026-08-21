@@ -38,12 +38,15 @@ import {
   formatCatalogLine,
   formatDataFileGroupLine,
   formatDataHitLine,
+  formatGateSummary,
   formatUsageUnverifiedLine,
   groupDataFindingsByFile,
   replacementFamily,
   swapLabel,
+  BEHAVIORAL_VERIFICATION_NOTE,
   type DataFindingView,
 } from './report/llmReport.js';
+import { writeAllOrNothing, type PendingWrite } from './fix/atomicWrite.js';
 import { findParamSites } from './fix/paramFix.js';
 import { applyLlmFixesToProject, type LlmFixResult } from './fix/llmFix.js';
 import { collectPythonFiles, readPythonSources, scanPyAnnotations } from './python/scanPy.js';
@@ -342,6 +345,9 @@ program
                 filesScanned: totalFiles,
                 tsFiles: tsFileCount,
                 pyFiles: pyFiles.length,
+                // Machine consumers get the same boundary the human report
+                // prints: mendr's gates cover code, never model behavior.
+                behavioralVerification: 'not-tested',
               },
               tierA: [],
               blocked: [],
@@ -422,7 +428,10 @@ program
     // and informational findings need no codemod and no gates). -------------
     let tsResult: LlmFixResult | undefined;
     let tsTier: 'A' | 'C' = 'A';
-    let tsPatchedFiles: { absPath: string; newText: string }[] = [];
+    // Carries `originalText` as well as the patch: --write is all-or-nothing
+    // and needs the exact text the codemod read, to prove at write time that
+    // the file on disk has not changed under us since the scan.
+    let tsPatchedFiles: PendingWrite[] = [];
     let downgradeReason = '';
     let gateLines: string[] = [];
     let tsTestsPassed = false;
@@ -451,6 +460,10 @@ program
         tsPatchedFiles = tsResult.changedFiles.map((absPath) => ({
           absPath,
           newText: patchedProject.getSourceFileOrThrow(absPath).getFullText(),
+          // The UNPATCHED baseline load of the same repo IS what the codemod
+          // read, so it is the right drift reference — not a fresh disk read,
+          // which would happily accept a file someone edited meanwhile.
+          originalText: baselineProject.getSourceFileOrThrow(absPath).getFullText(),
         }));
         const testResult = await runRepoTests(resolved, tsPatchedFiles);
         tsTestsPassed = testResult.status === 'pass';
@@ -474,11 +487,14 @@ program
           typeResult.passed && typeResult.baselineCount > 0
             ? `pass (no new errors; ${typeResult.baselineCount} pre-existing ignored)`
             : `${typeResult.passed ? 'pass' : 'fail'} (required)`;
-        gateLines = [
-          'Gate summary:',
-          `  type-check: ${typeNote}`,
-          `  tests:      ${testResult.status} (best-effort)`,
-        ];
+        // Two NAMED groups: what was checked (code) and what was not
+        // (behavior). The tests row carries real parsed counts wherever the
+        // runner's summary allowed — a bare "pass" is not a measurable claim.
+        gateLines = formatGateSummary({
+          usageClassification: 'call-site',
+          typeCheck: typeNote,
+          tests: testGateLabel(testResult),
+        });
       }
     }
     const tsTotalSites = tsResult
@@ -559,12 +575,14 @@ program
       say(heading);
       say('');
       say(pyResult.diff);
-      say('Gate summary:');
-      say('  replacement mapping:  verified');
-      say('  usage classification: verified-sink');
-      say(`  syntax:               ${pyResult.syntaxGate.passed ? 'pass' : 'fail'}`);
-      say('  static type gate:     not configured or not detected');
-      say(`  tests:                ${pyTestLabel}`);
+      for (const line of formatGateSummary({
+        usageClassification: 'verified-sink',
+        syntax: pyResult.syntaxGate.passed ? 'pass' : 'fail',
+        staticTypeGate: 'not configured or not detected',
+        tests: pyTestLabel,
+      })) {
+        say(line);
+      }
       say('');
 
       const pyLabels = pyResult.swapDeprecations.map(swapLabel).join(', ');
@@ -730,23 +748,56 @@ program
           're-run without --skip-gates to write.',
       );
     } else if (opts.write) {
-      // Each language writes on ITS OWN earned tier: a TS downgrade must not
-      // block a verified python fix, and vice versa.
-      const wrote: string[] = [];
+      // Each language still EARNS its own tier separately — a TS downgrade must
+      // not block a verified python fix, and vice versa — but the WRITE itself
+      // is ONE all-or-nothing transaction across both. A TS+Python repo whose
+      // TS files land and whose .py files fail is the half-migrated state that
+      // is strictly worse than not running mendr at all (see fix/atomicWrite).
+      const pyOriginalByPath = new Map(pySources.map((s) => [s.path, s.text]));
+      const pending: PendingWrite[] = [];
+      const languages: string[] = [];
       if (tsTier === 'A' && tsPatchedFiles.length > 0) {
-        for (const f of tsPatchedFiles) writeFileSync(f.absPath, f.newText);
-        wrote.push(`${tsPatchedFiles.length} ts file${tsPatchedFiles.length === 1 ? '' : 's'}`);
+        pending.push(...tsPatchedFiles);
+        languages.push(`${tsPatchedFiles.length} ts`);
       }
       if (pyTier === 'A' && pyResult.patchedFiles.length > 0) {
-        for (const f of pyResult.patchedFiles) writeFileSync(f.absPath, f.newText);
-        wrote.push(
-          `${pyResult.patchedFiles.length} py file${pyResult.patchedFiles.length === 1 ? '' : 's'}`,
-        );
+        // Every patched path came from `pySources` by construction — the fix
+        // pass only edits text it was handed.
+        for (const f of pyResult.patchedFiles) {
+          pending.push({ ...f, originalText: pyOriginalByPath.get(f.absPath)! });
+        }
+        languages.push(`${pyResult.patchedFiles.length} py`);
       }
       const downgraded = (tsTier === 'C' && tsTotalSites > 0) || pyTier === 'C';
-      if (wrote.length > 0) {
+
+      const writeResult = writeAllOrNothing(pending);
+      if (writeResult.written.length > 0) {
+        const n = writeResult.written.length;
         say('');
-        say(`Applied the verified Tier A fix to ${wrote.join(' + ')} in ${resolved}.`);
+        say(
+          `Applied the verified Tier A fix to ${n} file${n === 1 ? '' : 's'} ` +
+            `(${languages.join(' + ')}) in ${resolved} -- all-or-nothing: every file ` +
+            `landed, or none would have.`,
+        );
+        if (writeResult.error) {
+          // Fully written, but mendr could not clean up after itself. Warn —
+          // do NOT claim failure, because the migration did land.
+          console.error(`mendr: ${writeResult.error}`);
+        }
+      } else if (writeResult.error) {
+        // A failed --write is never silent and never partial. STDERR, so the
+        // failure is visible in --json mode too (where stdout is the document).
+        console.error('');
+        console.error(`mendr: --write aborted -- ${writeResult.error}`);
+        if (writeResult.restoreFailures?.length) {
+          console.error(
+            'YOUR WORKING TREE IS IN A MIXED STATE -- restore the files named above ' +
+              'from version control before you build or ship.',
+          );
+        } else {
+          console.error('no files were changed.');
+        }
+        process.exitCode = 1;
       }
       if (downgraded) {
         say('');
@@ -755,7 +806,7 @@ program
             'Review its diff above and apply by hand if it is correct.',
         );
       }
-      if (wrote.length === 0 && !downgraded) {
+      if (pending.length === 0 && !downgraded) {
         say('');
         say('Nothing to --write (no verified Tier A changes).');
       }
@@ -765,6 +816,15 @@ program
     ) {
       say('');
       say('To apply: re-run with --write, or pipe the diff above into `git apply`.');
+    }
+
+    // The boundary, restated once at the very end of a Tier A report. The gate
+    // summary already names it, but the summary scrolls past — this is the last
+    // thing a reader sees before acting on the diff. Human mode only: machine
+    // consumers get the same fact as `summary.behavioralVerification` below.
+    if ((tsTier === 'A' && tsTotalSites > 0) || (pyTier === 'A' && pyResult.siteCount > 0)) {
+      say('');
+      say(BEHAVIORAL_VERIFICATION_NOTE);
     }
 
     await printFooter();
@@ -782,6 +842,12 @@ program
               filesScanned: totalFiles,
               tsFiles: tsFileCount,
               pyFiles: pyFiles.length,
+              // The honesty split, machine-readable: every gate mendr runs
+              // judges CODE (compiles / parses / tests pass). The replacement
+              // model's output quality, latency, cost and response shape are
+              // never exercised, so no consumer can read Tier A as behavioral
+              // approval.
+              behavioralVerification: 'not-tested',
             },
             tierA: [
               ...swapMatches.map((m) => ({
