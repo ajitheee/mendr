@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type {
+  EvidenceRef,
   LlmDeprecation,
   LlmDeprecationKind,
   LlmModelIdDeprecation,
@@ -11,6 +12,7 @@ import type {
   VerificationInfo,
   VerificationStatus,
 } from '../types.js';
+import { EVIDENCE_EXCERPT_MAX_CHARS } from '../types.js';
 
 // LLM mode: load the hand-maintained deprecations registry that drives literal
 // detection. Unlike the Stripe mode (which diffs two live spec snapshots), the
@@ -26,6 +28,9 @@ import type {
 
 const REGISTRY_RELATIVE = join('registries', 'llm-deprecations.json');
 
+/** `sha256:` + 64 lowercase hex. Anything else is not a hash we produced. */
+const CONTENT_HASH_RE = /^sha256:[0-9a-f]{64}$/;
+
 /**
  * The date the shipped registry was last verified against the public oracles
  * (`mendr verify-registry --write` stamps per-entry `verification.checkedAt`;
@@ -39,19 +44,29 @@ const VALID_KINDS: ReadonlySet<LlmDeprecationKind> = new Set([
   'param_removal',
 ]);
 
-/** Walk up from this module's directory to find the registry JSON on disk. */
-export function resolveRegistryPath(): string {
+/**
+ * Walk up from this module's directory to find a shipped `registries/` asset.
+ * Shared by every registry-adjacent data file (the active registry, the
+ * candidate queue, the evidence snapshot directory) so they are all discovered
+ * by the SAME rule under both `src/` (tsx) and `dist/` (built).
+ */
+export function resolveRegistryAsset(relative: string): string {
   let dir = dirname(fileURLToPath(import.meta.url));
   for (;;) {
-    const candidate = join(dir, REGISTRY_RELATIVE);
+    const candidate = join(dir, relative);
     if (existsSync(candidate)) return candidate;
     const parent = dirname(dir);
     if (parent === dir) break; // reached filesystem root
     dir = parent;
   }
   throw new Error(
-    `could not locate ${REGISTRY_RELATIVE} by walking up from ${dirname(fileURLToPath(import.meta.url))}`,
+    `could not locate ${relative} by walking up from ${dirname(fileURLToPath(import.meta.url))}`,
   );
+}
+
+/** Walk up from this module's directory to find the registry JSON on disk. */
+export function resolveRegistryPath(): string {
+  return resolveRegistryAsset(REGISTRY_RELATIVE);
 }
 
 /** Require `e[field]` to be a non-empty string; throw a located error if not. */
@@ -118,6 +133,63 @@ function parseVerification(
 }
 
 /**
+ * Parse the optional `evidence` array on a `model_id` entry.
+ *
+ * Same posture as {@link parseVerification}: absent is fine (hand-seeded entry,
+ * no proof attached), but present-and-malformed is a HARD error. Evidence is
+ * the audit trail a reviewer trusts; a half-parsed EvidenceRef would let a
+ * broken hash or a truncated url read as provenance. `[]` is rejected too — it
+ * claims evidence and carries none.
+ */
+function parseEvidence(e: Record<string, unknown>, index: number): EvidenceRef[] | undefined {
+  const raw = e.evidence;
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw)) {
+    throw new Error(`llm registry entry #${index} has a non-array "evidence"`);
+  }
+  if (raw.length === 0) {
+    throw new Error(`llm registry entry #${index} has an empty "evidence" array`);
+  }
+  return raw.map((item, i) => {
+    if (typeof item !== 'object' || item === null) {
+      throw new Error(`llm registry entry #${index} evidence[${i}] is not an object`);
+    }
+    const ev = item as Record<string, unknown>;
+    for (const field of ['sourceUrl', 'contentHash', 'retrievedAt'] as const) {
+      if (typeof ev[field] !== 'string' || (ev[field] as string).length === 0) {
+        throw new Error(
+          `llm registry entry #${index} evidence[${i}] has a missing/invalid "${field}"`,
+        );
+      }
+    }
+    if (!CONTENT_HASH_RE.test(ev.contentHash as string)) {
+      throw new Error(
+        `llm registry entry #${index} evidence[${i}] has a malformed contentHash ` +
+          `(expected "sha256:<64 hex>"): ${String(ev.contentHash)}`,
+      );
+    }
+    const ref: EvidenceRef = {
+      sourceUrl: ev.sourceUrl as string,
+      contentHash: ev.contentHash as string,
+      retrievedAt: ev.retrievedAt as string,
+    };
+    if (ev.excerpt !== undefined) {
+      if (typeof ev.excerpt !== 'string') {
+        throw new Error(`llm registry entry #${index} evidence[${i}] has a non-string "excerpt"`);
+      }
+      if (ev.excerpt.length > EVIDENCE_EXCERPT_MAX_CHARS) {
+        throw new Error(
+          `llm registry entry #${index} evidence[${i}] has an excerpt of ${ev.excerpt.length} ` +
+            `chars (max ${EVIDENCE_EXCERPT_MAX_CHARS}) -- an excerpt is a quote, not a copy of the page`,
+        );
+      }
+      ref.excerpt = ev.excerpt;
+    }
+    return ref;
+  });
+}
+
+/**
  * Runtime shape guard: reject a malformed entry rather than mis-fix silently.
  *
  * Validation is per-kind because the three kinds carry different fields:
@@ -126,7 +198,7 @@ function parseVerification(
  * `replacement`). A `model_id`-shaped entry lacking `on_models` is fine; a
  * `param_removal` lacking `on_models` is rejected.
  */
-function assertDeprecation(entry: unknown, index: number): LlmDeprecation {
+export function assertDeprecation(entry: unknown, index: number): LlmDeprecation {
   if (typeof entry !== 'object' || entry === null) {
     throw new Error(`llm registry entry #${index} is not an object`);
   }
@@ -163,6 +235,7 @@ function assertDeprecation(entry: unknown, index: number): LlmDeprecation {
       sourceUrl: (e.sourceUrl ?? undefined) as string | undefined,
       note,
       verification: parseVerification(e, index),
+      evidence: parseEvidence(e, index),
     };
   }
 

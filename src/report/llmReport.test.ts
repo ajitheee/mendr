@@ -10,6 +10,9 @@ import {
   purposePhrase,
   replacementFamily,
   swapLabel,
+  behavioralVerificationLines,
+  behavioralVerificationNote,
+  BEHAVIORAL_VERIFICATION_NOTE,
   type DataFindingView,
 } from './llmReport.js';
 
@@ -247,6 +250,96 @@ describe('formatGateSummary (code vs behavioral verification)', () => {
     // Every row's value starts at the same column (labels padded to one width).
     const valueColumns = new Set(gateRows.map((row) => /^ {2}[\w -]+: +/.exec(row)![0].length));
     expect(valueColumns.size).toBe(1);
+  });
+});
+
+describe('behavioralVerificationLines (the configurable-eval boundary)', () => {
+  it('not-tested keeps the disclaimer AND says how to switch it on', () => {
+    const text = behavioralVerificationLines({ status: 'not-tested' }).join('\n');
+    expect(text).toContain('Behavioral verification (NOT checked):');
+    expect(text).toMatch(/output quality, latency, cost and response/);
+    // The actionable half: the limit is a CHOICE the user can reverse.
+    expect(text).toContain('"evalCommand" in mendr.config.json');
+    expect(text).toContain('--eval-command');
+    expect(text).toContain('run your own evaluation against the patched code');
+  });
+
+  it('not-tested WITH a reason names the case instead of advising a setup already done', () => {
+    // The configured-but-inconclusive case. Still "NOT checked" -- nothing was
+    // verified -- but "set evalCommand" would be wrong advice: they did, and
+    // that is precisely why the fix was blocked.
+    const text = behavioralVerificationLines({
+      status: 'not-tested',
+      reason: 'eval command timed out after 1500ms',
+    }).join('\n');
+    expect(text).toContain('Behavioral verification (NOT checked):');
+    expect(text).toContain(
+      'your eval command was configured but did not complete: eval command timed out after 1500ms',
+    );
+    expect(text).toContain('will not apply a fix it could not behaviorally verify');
+    expect(text).not.toContain('to check it: set "evalCommand"');
+  });
+
+  it('pass reports the command and exit code, and caps the claim there', () => {
+    const text = behavioralVerificationLines({
+      status: 'pass',
+      command: 'npm run eval',
+      exitCode: 0,
+    }).join('\n');
+    expect(text).toContain('behavioral verification: pass (your eval command: npm run eval, exit 0)');
+    // It must not inflate one passing command into model equivalence.
+    expect(text).toContain('YOUR eval passed against the patched code');
+    expect(text).toMatch(/quality, latency, cost -- is untested/);
+    expect(text).not.toMatch(/equivalent|safe to ship/i);
+  });
+
+  it('fail says the fix is blocked, in the same terms as a failed test gate', () => {
+    const text = behavioralVerificationLines({
+      status: 'fail',
+      command: 'npm run eval',
+      exitCode: 1,
+    }).join('\n');
+    expect(text).toContain('behavioral verification: fail (your eval command: npm run eval, exit 1)');
+    expect(text).toContain('NOT');
+    expect(text).toMatch(/blocks it exactly like a failing test gate/);
+  });
+
+  it('formatGateSummary defaults to the disclaimer when no result is passed', () => {
+    // A caller that forgets the argument must get "not checked", never a pass.
+    expect(formatGateSummary({ usageClassification: 'call-site', tests: 'pass' })).toContain(
+      'Behavioral verification (NOT checked):',
+    );
+  });
+
+  it('formatGateSummary swaps in the eval group when one ran', () => {
+    const text = formatGateSummary(
+      { usageClassification: 'call-site', typeCheck: 'pass', tests: 'pass (npm test)' },
+      { status: 'pass', command: 'npm run eval', exitCode: 0 },
+    ).join('\n');
+    expect(text).toContain('Behavioral verification (your own evaluation):');
+    expect(text).not.toContain('Behavioral verification (NOT checked):');
+    // The code rows survive unchanged — the eval ADDS a claim, it replaces none.
+    expect(text).toMatch(/^ {2}type-check: +pass$/m);
+  });
+});
+
+describe('behavioralVerificationNote (the closing line)', () => {
+  it('keeps the untested wording for everything except a passing eval', () => {
+    expect(behavioralVerificationNote({ status: 'not-tested' })).toBe(BEHAVIORAL_VERIFICATION_NOTE);
+    expect(behavioralVerificationNote({ status: 'fail', command: 'x', exitCode: 1 })).toBe(
+      BEHAVIORAL_VERIFICATION_NOTE,
+    );
+  });
+
+  it('names the passing eval but still refuses to generalize from it', () => {
+    const note = behavioralVerificationNote({
+      status: 'pass',
+      command: 'npm run eval',
+      exitCode: 0,
+    });
+    expect(note).toContain('ran YOUR eval command (npm run eval), which passed');
+    expect(note).toContain('the only behavioral claim it makes');
+    expect(note).toMatch(/is still untested/);
   });
 });
 

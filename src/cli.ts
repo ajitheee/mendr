@@ -18,6 +18,8 @@ import { applyRenames, applyRenamesToProject } from './fix/apply.js';
 import { formatChange } from './detect/changeModel.js';
 import { checkTypes, formatDiagnostic } from './gates/typecheck.js';
 import { runRepoTests } from './gates/runTests.js';
+import { runRepoEval, type EvalGateResult } from './gates/runEval.js';
+import { loadRepoConfig, REPO_CONFIG_FILENAME, type RepoConfig } from './config/repoConfig.js';
 import {
   isVerified,
   loadLlmRegistry,
@@ -43,8 +45,10 @@ import {
   groupDataFindingsByFile,
   replacementFamily,
   swapLabel,
-  BEHAVIORAL_VERIFICATION_NOTE,
+  behavioralVerificationNote,
+  type BehavioralVerificationView,
   type DataFindingView,
+  type GateSummaryFacts,
 } from './report/llmReport.js';
 import { writeAllOrNothing, type PendingWrite } from './fix/atomicWrite.js';
 import { findParamSites } from './fix/paramFix.js';
@@ -54,7 +58,25 @@ import { applyPyModelIdFixesToSources } from './python/fixPy.js';
 import type { TestGateResult } from './gates/runTests.js';
 import { classifyEntry } from './registry/verify.js';
 import { fetchOracles } from './registry/oracles.js';
-import type { LlmModelIdDeprecation, VerificationStatus } from './types.js';
+import {
+  loadCandidates,
+  promoteCandidates,
+  resolveCandidatesPath,
+  saveCandidates,
+} from './registry/candidates.js';
+import { resolveEvidenceDir, saveSnapshot, snapshotName } from './registry/evidence.js';
+import { canonicalizeId } from './registry/normalize.js';
+import {
+  DISCOVER_PROVIDERS,
+  discoverCandidates,
+  PROVIDER_SOURCES,
+  type DiscoverProvider,
+} from './registry/discover.js';
+import type {
+  CandidateEntry,
+  LlmModelIdDeprecation,
+  VerificationStatus,
+} from './types.js';
 
 const program = new Command();
 
@@ -162,6 +184,10 @@ program
   .option('--verbose', 'print every informational data hit (default: one line per file)')
   .option('--json', 'emit a machine-readable JSON report on stdout instead of the human one')
   .option('--fail-on <class>', 'exit 1 when the named finding class is non-empty: tierA | blocked | none', 'none')
+  .option(
+    '--eval-command <cmd>',
+    `run YOUR evaluation against the patched code (overrides "evalCommand" in ${REPO_CONFIG_FILENAME})`,
+  )
   .description('Find and fix deprecated LLM model ids (prints a verified diff)')
   .action(
     async (
@@ -173,6 +199,7 @@ program
         verbose?: boolean;
         json?: boolean;
         failOn?: string;
+        evalCommand?: string;
       },
     ) => {
     const failOn = opts.failOn ?? 'none';
@@ -196,6 +223,19 @@ program
       process.exit(2);
     }
     const resolved = isRemote ? await cloneRemoteOrExit(repoPath) : resolveRepoOrExit(repoPath);
+
+    // The TARGET repo's own config (optional). Loaded BEFORE any scanning so a
+    // malformed file fails immediately with one line naming it, rather than
+    // after a two-minute scan — and never silently, which would leave the user
+    // believing an eval ran when it did not. --eval-command beats the file.
+    let repoConfig: RepoConfig = {};
+    try {
+      repoConfig = loadRepoConfig(resolved);
+    } catch (err) {
+      console.error(`mendr: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(2);
+    }
+    const evalCommand = opts.evalCommand?.trim() || repoConfig.evalCommand;
 
     // Registry-driven detect. Three locators run over the repo:
     //   1. TS model-id literals whose value exactly matches a retired model id;
@@ -433,7 +473,10 @@ program
     // the file on disk has not changed under us since the scan.
     let tsPatchedFiles: PendingWrite[] = [];
     let downgradeReason = '';
-    let gateLines: string[] = [];
+    // The measurable gate ROWS, kept as data rather than rendered lines: the
+    // behavioral half of the summary is not known until the eval gate has run,
+    // and the eval gate cannot run until the code gates below have passed.
+    let tsGateFacts: GateSummaryFacts | undefined;
     let tsTestsPassed = false;
     if (tsSwapCandidates > 0) {
       if (opts.skipGates) {
@@ -490,11 +533,11 @@ program
         // Two NAMED groups: what was checked (code) and what was not
         // (behavior). The tests row carries real parsed counts wherever the
         // runner's summary allowed — a bare "pass" is not a measurable claim.
-        gateLines = formatGateSummary({
+        tsGateFacts = {
           usageClassification: 'call-site',
           typeCheck: typeNote,
           tests: testGateLabel(testResult),
-        });
+        };
       }
     }
     const tsTotalSites = tsResult
@@ -508,6 +551,7 @@ program
     // verification visible instead of blending it away.
     let pyTier: 'A' | 'C' | undefined;
     let pyTestLabel = 'not run (no supported test command detected)';
+    let pyDowngradeReason = '';
     if (pyResult.siteCount > 0) {
       // Best-effort test gate. Mendr's only runner today is `npm test`, so it
       // can only MEASURE anything when the repo has one — a pure-Python repo
@@ -527,7 +571,91 @@ program
       // re-parse is essentially free), even under --skip-gates: a patch we
       // KNOW breaks parsing must never be presented as Tier A.
       pyTier = pyResult.syntaxGate.passed && testResult.status !== 'fail' ? 'A' : 'C';
+      if (pyTier === 'C') {
+        pyDowngradeReason = !pyResult.syntaxGate.passed
+          ? `patched code introduces new syntax errors (${pyResult.syntaxGate.failures[0] ?? 'unknown file'})`
+          : 'repo tests failed against the patched code';
+      }
     }
+
+    // --- THE EVAL GATE: the only check in mendr that touches BEHAVIOR. -------
+    //
+    // It runs under three conditions, all of them deliberate:
+    //   1. ONLY when the team configured a command — mendr never invents a
+    //      quality metric, so an unconfigured repo stays honestly "not tested";
+    //   2. ONLY after the code gates passed — running someone's eval against a
+    //      patch that does not even compile wastes minutes to learn nothing;
+    //   3. ONCE, over the union of both languages' patched files, because the
+    //      eval judges the repo as a whole, not a language.
+    // A FAILING eval downgrades exactly like a failing test gate: the diff is
+    // shown, the fix is not applied, --write refuses. A behavioral regression
+    // that mendr was told how to detect must never be written to a working tree.
+    //
+    // THE GATE FAILS CLOSED. A configured eval that did not produce a clean
+    // pass — timed out, could not be spawned, died on infra — blocks the write
+    // exactly like a failing one. It used to warn on stderr and apply the fix
+    // anyway, which is the worst of both worlds: the user asked for behavioral
+    // verification, did not get it, and got the write regardless. "I could not
+    // check" is not a reason to proceed; it is the reason not to.
+    let evalResult: EvalGateResult = { status: 'not-configured' };
+    const codeGatesPassed =
+      (tsTotalSites === 0 || tsTier === 'A') && (pyResult.siteCount === 0 || pyTier === 'A');
+    const anyTierA =
+      (tsTier === 'A' && tsTotalSites > 0) || (pyTier === 'A' && pyResult.siteCount > 0);
+    if (evalCommand && !opts.skipGates && codeGatesPassed && anyTierA) {
+      // Progress goes to STDERR (an eval can take minutes, and with --json
+      // stdout must carry only the document).
+      console.error(`Running your evaluation against the patched code: ${evalCommand}`);
+      evalResult = await runRepoEval(
+        resolved,
+        [...tsPatchedFiles, ...pyResult.patchedFiles],
+        { command: evalCommand, timeoutMs: repoConfig.evalTimeoutMs },
+      );
+      if (evalResult.status === 'fail' || evalResult.status === 'inconclusive') {
+        const reason =
+          evalResult.status === 'fail'
+            ? `your eval command failed against the patched code ` +
+              `(${evalResult.command}, exit ${evalResult.exitCode})`
+            : // Names the CASE, not just the outcome: "timed out" and "could not
+              // be spawned" send a user to completely different fixes, and both
+              // are different again from "your model regressed".
+              `your eval command was configured but did not complete: ${evalResult.output} ` +
+              `-- mendr will not apply a fix it could not behaviorally verify`;
+        if (tsTotalSites > 0) {
+          tsTier = 'C';
+          downgradeReason = reason;
+        }
+        if (pyResult.siteCount > 0) {
+          pyTier = 'C';
+          pyDowngradeReason = reason;
+        }
+        // Hard signal, with or without --write: a script that ran mendr must be
+        // able to see in $? that the fix was not verified and not applied.
+        process.exitCode = 1;
+        if (evalResult.status === 'inconclusive') {
+          // Also on stderr, where it survives --json (stdout is the document).
+          console.error(`mendr: eval gate could not run -- ${evalResult.output}`);
+          console.error('mendr: the fix is NOT applied -- an eval that did not run verifies nothing.');
+        }
+      }
+    }
+
+    /**
+     * What the report may claim about behavior. Anything short of a completed
+     * passing/failing run is `not-tested` — an eval that timed out proves
+     * nothing, and must not read as a softer kind of pass.
+     */
+    const behavioral: BehavioralVerificationView =
+      evalResult.status === 'pass' || evalResult.status === 'fail'
+        ? { status: evalResult.status, command: evalResult.command, exitCode: evalResult.exitCode }
+        : {
+            status: 'not-tested',
+            // An inconclusive run is still `not-tested` — nothing was verified —
+            // but it carries WHY, so the disclaimer does not tell a user who
+            // configured an eval to go configure one.
+            ...(evalResult.status === 'inconclusive' ? { reason: evalResult.output } : {}),
+          };
+    const gateLines = tsGateFacts ? formatGateSummary(tsGateFacts, behavioral) : [];
 
     // --- Section 1 (most urgent): the Tier A diff. --------------------------
     if (tsTotalSites > 0 && tsResult) {
@@ -549,7 +677,11 @@ program
             `${tsResult.changedFiles.length} file${tsResult.changedFiles.length === 1 ? '' : 's'}. ` +
             (opts.skipGates
               ? '(gates skipped -- tier asserted, not verified)'
-              : `(verified: type-check passes${tsTestsPassed ? ' + tests pass' : ''})`),
+              : `(verified: type-check passes${tsTestsPassed ? ' + tests pass' : ''}` +
+                // The ONLY behavioral phrase Tier A is allowed: the team's own
+                // eval passed. Not "the model is equivalent", not "safe to
+                // ship" — mendr has no idea what their eval measures.
+                `${behavioral.status === 'pass' ? ' + your eval command passed' : ''})`),
         );
       } else {
         say(
@@ -575,12 +707,15 @@ program
       say(heading);
       say('');
       say(pyResult.diff);
-      for (const line of formatGateSummary({
-        usageClassification: 'verified-sink',
-        syntax: pyResult.syntaxGate.passed ? 'pass' : 'fail',
-        staticTypeGate: 'not configured or not detected',
-        tests: pyTestLabel,
-      })) {
+      for (const line of formatGateSummary(
+        {
+          usageClassification: 'verified-sink',
+          syntax: pyResult.syntaxGate.passed ? 'pass' : 'fail',
+          staticTypeGate: 'not configured or not detected',
+          tests: pyTestLabel,
+        },
+        behavioral,
+      )) {
         say(line);
       }
       say('');
@@ -594,15 +729,13 @@ program
             `${nf} file${nf === 1 ? '' : 's'}. ` +
             (opts.skipGates
               ? '(gates skipped -- tier asserted, not verified; syntax re-parse still ran)'
-              : '(gates: verified mapping + sink-verified usage + syntax re-parse -- weaker than the TS type gate)'),
+              : '(gates: verified mapping + sink-verified usage + syntax re-parse -- weaker than the TS type gate' +
+                `${behavioral.status === 'pass' ? '; your eval command passed' : ''})`),
         );
       } else {
-        const reason = !pyResult.syntaxGate.passed
-          ? `patched code introduces new syntax errors (${pyResult.syntaxGate.failures[0] ?? 'unknown file'})`
-          : 'repo tests failed against the patched code';
         say(
           `Tier C (python, downgraded): ${n} model-id swap${n === 1 ? '' : 's'} (${pyLabels}) ` +
-            `NOT applied -- ${reason}. ` +
+            `NOT applied -- ${pyDowngradeReason}. ` +
             'The diff above is shown for manual review only; it is not trusted.',
         );
       }
@@ -802,7 +935,11 @@ program
       if (downgraded) {
         say('');
         say(
-          'Refusing to --write the downgraded (Tier C) portion: it was not verified. ' +
+          // "did not pass its gates" rather than the old "was not verified":
+          // a FAILING eval or test gate is a verification that came back
+          // negative, which "not verified" reads as merely unchecked.
+          'Refusing to --write the downgraded (Tier C) portion: it did not pass its gates ' +
+            '(reason above). ' +
             'Review its diff above and apply by hand if it is correct.',
         );
       }
@@ -824,7 +961,7 @@ program
     // consumers get the same fact as `summary.behavioralVerification` below.
     if ((tsTier === 'A' && tsTotalSites > 0) || (pyTier === 'A' && pyResult.siteCount > 0)) {
       say('');
-      say(BEHAVIORAL_VERIFICATION_NOTE);
+      say(behavioralVerificationNote(behavioral));
     }
 
     await printFooter();
@@ -842,12 +979,12 @@ program
               filesScanned: totalFiles,
               tsFiles: tsFileCount,
               pyFiles: pyFiles.length,
-              // The honesty split, machine-readable: every gate mendr runs
-              // judges CODE (compiles / parses / tests pass). The replacement
-              // model's output quality, latency, cost and response shape are
-              // never exercised, so no consumer can read Tier A as behavioral
-              // approval.
-              behavioralVerification: 'not-tested',
+              // The honesty split, machine-readable. Every OTHER gate mendr
+              // runs judges CODE (compiles / parses / tests pass); this field
+              // is the one behavioral fact, and it is `not-tested` unless the
+              // repo configured an eval command that actually completed. No
+              // consumer can read Tier A alone as behavioral approval.
+              behavioralVerification: behavioral.status,
             },
             tierA: [
               ...swapMatches.map((m) => ({
@@ -902,6 +1039,26 @@ program
             })),
             catalogs: catalogFiles,
             ignoredFiles,
+            // Present only when the eval gate actually ran, so a consumer can
+            // tell "no eval configured" from "the eval was attempted": the
+            // inconclusive case still reports behavioralVerification
+            // "not-tested", and this object carries the reason it is.
+            ...(evalResult.status === 'not-configured'
+              ? {}
+              : {
+                  eval: {
+                    command: evalResult.command ?? null,
+                    exitCode: evalResult.exitCode ?? null,
+                    // `pass` | `fail` | `inconclusive`. The last one is the
+                    // fail-closed case: behavioralVerification stays
+                    // "not-tested" (nothing was verified) while `reason` says
+                    // why, and the fix was NOT applied either way.
+                    status: evalResult.status,
+                    ...(evalResult.status === 'inconclusive'
+                      ? { reason: evalResult.output ?? null }
+                      : {}),
+                  },
+                }),
             diff: combinedDiff,
           },
           null,
@@ -981,6 +1138,327 @@ program
       console.log('');
       console.log(`Stamped verification.status into ${modelEntries} model_id entries -> ${registryPath}`);
     }
+  });
+
+// --- Provenance + the human gate -----------------------------------------
+// Three commands that share ONE invariant: research produces CANDIDATES; only a
+// human promotes a candidate into the active registry. `evidence` shows why an
+// active entry is believed, `candidates` is the queue and its gate, `discover`
+// fills the queue and can touch nothing else.
+
+program
+  .command('evidence')
+  .argument('<modelId>', 'a deprecated model id present in the registry')
+  .description('Show the provenance behind a registry entry: sources, hashes, and quoted excerpts.')
+  .action((modelId: string) => {
+    const registry = loadLlmRegistry();
+    const entries = modelIdEntries(registry);
+    // Exact match first; canonical match second, so `GPT-4` or `openai/gpt-4`
+    // still finds the entry without ever matching a DIFFERENT model.
+    const entry =
+      entries.find((e) => e.deprecated === modelId) ??
+      entries.find((e) => canonicalizeId(e.deprecated) === canonicalizeId(modelId));
+    if (!entry) {
+      console.error(
+        `mendr: no registry entry for model id "${modelId}" ` +
+          `(${entries.length} model_id entries loaded from ${resolveRegistryPath()}).`,
+      );
+      process.exit(2);
+    }
+
+    console.log(`${entry.provider}: ${entry.deprecated} -> ${entry.replacement}`);
+    console.log(`  lifecycle    : ${entry.status ?? 'unknown (never claimed dead)'}`);
+    console.log(`  shutdown date: ${entry.shutdownDate ?? 'none published'}`);
+    console.log(`  source url   : ${entry.sourceUrl ?? 'none recorded'}`);
+    const verification = entry.verification;
+    console.log(`  verification : ${verification?.status ?? 'unstamped (blocked from auto-apply)'}`);
+    if (verification?.checkedAt) console.log(`    checked at : ${verification.checkedAt}`);
+    if (verification?.sources?.length) console.log(`    oracles    : ${verification.sources.join(', ')}`);
+    for (const reason of verification?.reasons ?? []) console.log(`    - ${reason}`);
+
+    console.log('');
+    const evidence = entry.evidence ?? [];
+    if (evidence.length === 0) {
+      // The honest answer to "why do you believe this?" is sometimes "a person
+      // typed it". Saying so is the point of the command.
+      console.log('no evidence captured for this entry -- it was hand-seeded.');
+      return;
+    }
+    console.log(`evidence (${evidence.length} captured document${evidence.length === 1 ? '' : 's'}):`);
+    const evidenceDir = resolveEvidenceDir();
+    for (const ref of evidence) {
+      console.log('');
+      console.log(`  url        : ${ref.sourceUrl}`);
+      console.log(`  retrieved  : ${ref.retrievedAt}`);
+      console.log(`  hash       : ${ref.contentHash}`);
+      // Say whether the snapshot IS THERE, never just where it would live. A
+      // bare path reads as "the audit trail exists, go open it" -- and an
+      // entry can carry a ref whose document was never captured (hand-added
+      // evidence, or a snapshot that was not committed). That gap is the whole
+      // thing this command exists to expose, so it must not be papered over.
+      const snapshotPath = join(evidenceDir, snapshotName(ref));
+      console.log(
+        `  snapshot   : ${
+          existsSync(snapshotPath)
+            ? snapshotPath
+            : `NOT STORED -- no snapshot on disk for this hash (expected ${snapshotPath}); ` +
+              'the ref is unbacked, so it cannot be checked offline'
+        }`,
+      );
+      if (ref.excerpt) console.log(`  excerpt    : "${ref.excerpt}"`);
+    }
+  });
+
+const candidates = program
+  .command('candidates')
+  .description('Inspect and promote proposed registry entries (the human gate).');
+
+/**
+ * The promote gate in one paragraph, reused wherever a surface describes it.
+ * ONE wording, because a gate described two ways is a gate nobody can hold to
+ * its word — and the second sentence is the one that must never go missing.
+ */
+const PROMOTE_GATE_SUMMARY =
+  'promote verifies that the replacement is live in a public catalog and that the ' +
+  'deprecation claim is self-consistent and quote-backed (stated lifecycle, no ' +
+  'contradiction with the live catalogs, shutdown date, an excerpt naming the model, ' +
+  'a stored snapshot). It does NOT independently confirm the provider retired the model.';
+
+/** Load the queue, exiting with one friendly line instead of a stack trace. */
+function loadCandidatesOrExit(): CandidateEntry[] {
+  try {
+    return loadCandidates();
+  } catch (err) {
+    console.error(`mendr: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(2);
+  }
+}
+
+candidates
+  .command('list')
+  .description('List pending candidates and the verification status each would carry.')
+  .action(() => {
+    const queue = loadCandidatesOrExit();
+    if (queue.length === 0) {
+      console.log(`No pending candidates (${resolveCandidatesPath()} is empty).`);
+      return;
+    }
+    console.log(`${queue.length} pending candidate${queue.length === 1 ? '' : 's'} -- none is active until promoted.`);
+    console.log('');
+    for (const c of queue) {
+      // The status shown is whatever is RECORDED IN THE QUEUE FILE. It is not
+      // recomputed here (`list` must stay offline and instant), and — this is
+      // the part worth stating — the queue is written by proposers, so a
+      // `verified` here may be one an LLM research run typed rather than one
+      // `candidates verify` computed. Nothing distinguishes the two on disk, so
+      // the line says "as recorded" and points at the gate that re-checks it.
+      // Promotion is unaffected either way: promoteCandidates() discards the
+      // recorded block and classifies against live oracles itself.
+      const status = c.verification
+        ? `${c.verification.status} (as recorded in the queue -- re-checked at promote)`
+        : 'not yet verified (run: mendr candidates verify)';
+      const evidence = c.evidence?.length ?? 0;
+      console.log(`  ${c.candidateId}`);
+      console.log(`      ${c.provider}: ${c.deprecated} -> ${c.replacement}`);
+      console.log(`      would-be status : ${status}`);
+      console.log(`      evidence        : ${evidence === 0 ? 'NONE (cannot be promoted)' : `${evidence} ref(s)`}`);
+      console.log(`      proposed        : ${c.proposedBy} at ${c.proposedAt}`);
+    }
+    console.log('');
+    console.log('To promote: mendr candidates promote <candidateId...> (explicit ids only).');
+    console.log(PROMOTE_GATE_SUMMARY);
+  });
+
+candidates
+  .command('verify')
+  .description('Classify every pending candidate against live oracles and stamp the result.')
+  .action(async () => {
+    const queue = loadCandidatesOrExit();
+    if (queue.length === 0) {
+      console.log('No pending candidates to verify.');
+      return;
+    }
+    const oracles = await fetchOracles();
+    const checkedAt = new Date().toISOString().slice(0, 10);
+    console.log(`oracles: ${oracles.notes.join(' | ')}`);
+    console.log('');
+
+    const stamped = queue.map((c) => {
+      const { status, reasons } = classifyEntry(c, oracles);
+      console.log(`[${status.toUpperCase().padEnd(12)}] ${c.candidateId}: ${c.deprecated} -> ${c.replacement}`);
+      for (const reason of reasons) console.log(`               - ${reason}`);
+      return { ...c, verification: { status, checkedAt, sources: oracles.sources, reasons } };
+    });
+
+    const path = saveCandidates(stamped);
+    console.log('');
+    console.log(`Stamped ${stamped.length} candidate${stamped.length === 1 ? '' : 's'} -> ${path}`);
+    console.log('Stamping changes NOTHING about what the fix engine does. Promotion is still manual.');
+    // `verify` runs classifyEntry, which only ever looks at the REPLACEMENT. A
+    // `verified` stamp here is half the gate, and a reader who thinks it is the
+    // whole gate is exactly how a live model gets promoted as retired.
+    console.log(
+      'Note: this classifies the REPLACEMENT only. The deprecation claim itself ' +
+        '(lifecycle, shutdown date, an excerpt naming the model, a stored snapshot) is ' +
+        'checked at promote.',
+    );
+  });
+
+candidates
+  .command('promote')
+  .argument('<candidateId...>', 'the candidateIds to promote (explicit -- there is no "promote all")')
+  .description('Move VERIFIED, evidence-backed candidates into the active registry.')
+  // What the gate checks, stated where a user meets it. Both halves, and the
+  // boundary: mendr has no oracle for "did the provider retire this", so it
+  // never claims one.
+  .addHelpText(
+    'after',
+    `\nThe gate verifies that the REPLACEMENT is live in a public catalog and not\n` +
+      `contradicted by the provider's recommendation table, AND that the DEPRECATION\n` +
+      `CLAIM is self-consistent and quote-backed: a stated lifecycle, no contradiction\n` +
+      `with the live catalogs, a shutdown date behind an announced deprecation, an\n` +
+      `excerpt that names the model, and a stored snapshot behind every evidence ref.\n` +
+      `It does NOT independently confirm that the provider retired the model -- no\n` +
+      `public oracle answers that. Refusals print their reason.\n`,
+  )
+  .action(async (ids: string[]) => {
+    const queue = loadCandidatesOrExit();
+    const registryPath = resolveRegistryPath();
+    // Operate on the RAW parsed JSON so existing entries (including the param
+    // kinds and any field the typed loader drops) survive the rewrite verbatim.
+    const raw = JSON.parse(readFileSync(registryPath, 'utf8')) as Record<string, unknown>[];
+
+    const oracles = await fetchOracles();
+    const result = promoteCandidates(queue, loadLlmRegistry(), {
+      ids,
+      oracles,
+      // The snapshot dir is a GATE INPUT, not a convenience: a candidate whose
+      // evidence has no stored snapshot here cannot be read back offline and is
+      // refused (see registry/claimCheck.ts rule (e)).
+      snapshotDir: resolveEvidenceDir(),
+      checkedAt: new Date().toISOString().slice(0, 10),
+      sources: oracles.sources,
+    });
+
+    for (const refusal of result.refused) {
+      console.log(`REFUSED  ${refusal.id}`);
+      console.log(`         ${refusal.reason}`);
+    }
+    if (result.refused.length > 0 && result.promoted.length > 0) console.log('');
+    for (const entry of result.promoted) {
+      console.log(`PROMOTED ${entry.provider}: ${entry.deprecated} -> ${entry.replacement}`);
+    }
+
+    if (result.promoted.length > 0) {
+      // Registry FIRST, queue second. If the second write fails, the candidate
+      // is merely still queued and the next promote refuses it as a duplicate —
+      // recoverable. The other order would lose the entry entirely.
+      raw.push(...(result.promoted as unknown as Record<string, unknown>[]));
+      writeFileSync(registryPath, `${JSON.stringify(raw, null, 2)}\n`);
+      saveCandidates(result.nextCandidates);
+    }
+
+    console.log('');
+    console.log(
+      `Promoted ${result.promoted.length}, refused ${result.refused.length}. ` +
+        `${result.nextCandidates.length} candidate${result.nextCandidates.length === 1 ? '' : 's'} still pending.`,
+    );
+    if (result.promoted.length > 0) {
+      // A promoted entry is one the fix engine will auto-apply, so the last
+      // line a promoter reads is the exact shape of what was checked -- and the
+      // part that was not. Overstating this here is how a live model ends up
+      // rewritten under a VERIFIED label.
+      console.log(
+        'What that verified: the replacement is live in a public catalog and uncontradicted, ' +
+          'and the deprecation claim is self-consistent + quote-backed by a stored snapshot. ' +
+          'It did NOT independently confirm with the provider that these ids are retired.',
+      );
+    }
+    // A refusal is the gate working, not a crash — but it must not read as
+    // success to a script either.
+    if (result.refused.length > 0) process.exitCode = 1;
+  });
+
+program
+  .command('discover')
+  .option('--provider <p>', `only this provider: ${DISCOVER_PROVIDERS.join(' | ')}`)
+  .option('--write', 'append what was found to registries/candidates.json (NOTHING else)')
+  .description('Scan provider deprecation pages for candidate entries (never touches the active registry).')
+  .action(async (opts: { provider?: string; write?: boolean }) => {
+    let providers: readonly DiscoverProvider[] = DISCOVER_PROVIDERS;
+    if (opts.provider) {
+      if (!(DISCOVER_PROVIDERS as readonly string[]).includes(opts.provider)) {
+        console.error(
+          `mendr: unknown provider "${opts.provider}" (expected ${DISCOVER_PROVIDERS.join(', ')})`,
+        );
+        process.exit(2);
+      }
+      providers = [opts.provider as DiscoverProvider];
+    }
+
+    const existing = loadCandidatesOrExit();
+    const result = await discoverCandidates(providers, {
+      // Dedupe corpus only. discover.ts holds no filesystem API and no
+      // reference to the registry file; the active registry reaches it as
+      // read-only DATA and leaves again as nothing.
+      activeRegistry: loadLlmRegistry(),
+      existingCandidates: existing,
+    });
+
+    for (const provider of providers) console.log(`source: ${provider} -> ${PROVIDER_SOURCES[provider]}`);
+    for (const note of result.notes) console.log(`  ${note}`);
+    console.log('');
+
+    if (result.candidates.length === 0) {
+      console.log('No new candidates found (everything readable is already in the registry or the queue).');
+    } else {
+      console.log(`${result.candidates.length} new candidate${result.candidates.length === 1 ? '' : 's'}:`);
+      for (const c of result.candidates) {
+        console.log(`  ${c.candidateId}: ${c.deprecated} -> ${c.replacement}` +
+          (c.shutdownDate ? ` (shutdown ${c.shutdownDate})` : ''));
+      }
+    }
+    if (result.skipped.length > 0) {
+      console.log('');
+      console.log(`Skipped ${result.skipped.length} row(s) that could not be read confidently (never guessed):`);
+      const MAX_SKIPS = 12;
+      for (const skip of result.skipped.slice(0, MAX_SKIPS)) {
+        console.log(`  [${skip.provider}] ${skip.reason}`);
+      }
+      if (result.skipped.length > MAX_SKIPS) {
+        console.log(`  +${result.skipped.length - MAX_SKIPS} more`);
+      }
+    }
+
+    if (!opts.write) {
+      console.log('');
+      console.log('Dry run. Re-run with --write to append these to registries/candidates.json.');
+      return;
+    }
+
+    // The ONLY write this command performs, plus the evidence snapshots that
+    // back it. The active registry has no write path from here — by design,
+    // that path exists only inside `candidates promote`.
+    const evidenceDir = resolveEvidenceDir();
+    for (const doc of result.documents) {
+      // Hand the snapshot writer the rows THIS document was cited for, so a
+      // page too big to store whole still keeps the region around every quoted
+      // row. Without it, a cited row deep in a long page is the first thing a
+      // head-only truncation throws away — see evidence.ts#buildSnapshotBody.
+      const excerpts = result.candidates
+        .flatMap((c) => c.evidence ?? [])
+        .filter((ref) => ref.contentHash === doc.ref.contentHash)
+        .map((ref) => ref.excerpt)
+        .filter((excerpt): excerpt is string => excerpt !== undefined);
+      saveSnapshot(evidenceDir, doc.ref, doc.text, { excerpts });
+    }
+    const path = saveCandidates([...existing, ...result.candidates]);
+    console.log('');
+    console.log(
+      `Wrote ${result.candidates.length} candidate${result.candidates.length === 1 ? '' : 's'} + ` +
+        `${result.documents.length} evidence snapshot${result.documents.length === 1 ? '' : 's'} -> ${path}`,
+    );
+    console.log('Nothing is active until a human runs `mendr candidates promote <candidateId...>`.');
   });
 
 program

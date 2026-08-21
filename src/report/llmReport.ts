@@ -219,6 +219,35 @@ export interface GateSummaryFacts {
 const GATE_LABEL_WIDTH = 22;
 
 /**
+ * What the eval gate actually established about behavior, reduced to the three
+ * states a report may claim. `not-tested` covers "no eval configured" AND "the
+ * configured eval could not be run" — from a reader's side those are the same
+ * fact, and only one of them may ever be dressed up as a result.
+ */
+export interface BehavioralVerificationView {
+  status: 'not-tested' | 'pass' | 'fail';
+  /** The eval command that ran (absent when nothing ran). */
+  command?: string;
+  exitCode?: number;
+  /**
+   * Why a CONFIGURED eval produced no verdict (timeout, spawn failure). Present
+   * only on `not-tested`, and it changes what the disclaimer may say: telling a
+   * user to "set evalCommand" when they already did — and when that is exactly
+   * why the fix was blocked — sends them looking for the wrong thing.
+   */
+  reason?: string;
+}
+
+/**
+ * The one-line instruction that turns the disclaimer into something actionable.
+ * Its presence is the difference between "mendr cannot check behavior" (false)
+ * and "mendr will check behavior if you tell it how" (true).
+ */
+export const BEHAVIORAL_VERIFICATION_HOWTO =
+  '  to check it: set "evalCommand" in mendr.config.json (or pass --eval-command) ' +
+  'to have mendr run your own evaluation against the patched code.';
+
+/**
  * The behavioral disclaimer, verbatim. Kept as an exported constant so the CLI,
  * the report and any future surface state the boundary in exactly one wording —
  * a disclaimer that drifts between surfaces is a disclaimer nobody trusts.
@@ -227,7 +256,52 @@ export const BEHAVIORAL_VERIFICATION_LINES: readonly string[] = [
   'Behavioral verification (NOT checked):',
   "  the replacement model's output quality, latency, cost and response",
   '  shape are not tested. verify those yourself before shipping.',
+  BEHAVIORAL_VERIFICATION_HOWTO,
 ];
+
+/**
+ * The behavioral group for a report, in whichever of the three shapes this run
+ * earned. The passing shape is deliberately cramped: it names the command and
+ * the exit code and then says what that does NOT cover, because "behavioral
+ * verification: pass" is exactly the phrase a reader would otherwise inflate
+ * into "the new model is equivalent".
+ */
+export function behavioralVerificationLines(view: BehavioralVerificationView): string[] {
+  if (view.status === 'not-tested') {
+    if (!view.reason) return [...BEHAVIORAL_VERIFICATION_LINES];
+    // A CONFIGURED eval that never produced a verdict. Same headline — nothing
+    // was verified — but the last two lines say which case it was and that the
+    // fix was blocked because of it, instead of advising a setup the user has
+    // already done.
+    return [
+      ...BEHAVIORAL_VERIFICATION_LINES.slice(0, 3),
+      `  your eval command was configured but did not complete: ${view.reason}`,
+      '  mendr will not apply a fix it could not behaviorally verify, so nothing',
+      '  was applied. fix the eval (or raise "evalTimeoutMs") and re-run.',
+    ];
+  }
+  const detail = `your eval command: ${view.command ?? 'unknown'}, exit ${view.exitCode ?? '?'}`;
+  if (view.status === 'pass') {
+    return [
+      'Behavioral verification (your own evaluation):',
+      `  behavioral verification: pass (${detail})`,
+      '  that is the whole claim: YOUR eval passed against the patched code.',
+      '  anything it does not measure -- quality, latency, cost -- is untested.',
+    ];
+  }
+  return [
+    'Behavioral verification (your own evaluation):',
+    `  behavioral verification: fail (${detail})`,
+    // NOT "your evaluation regressed": mendr reads an EXIT CODE and knows
+    // nothing about the cause. A command that does not exist, or that died on
+    // its own config, exits non-zero and lands here too -- and telling that
+    // user their model regressed sends them hunting a bug that isn't there.
+    '  your eval command exited non-zero against the patched code, so the fix',
+    '  is NOT applied -- mendr blocks it exactly like a failing test gate.',
+    '  mendr reads the exit code, not the cause: a command that could not run',
+    '  at all lands here too, so check the command before hunting a regression.',
+  ];
+}
 
 /**
  * One short restatement of the boundary for the end of a Tier A report. It
@@ -242,11 +316,32 @@ export const BEHAVIORAL_VERIFICATION_NOTE =
   'quality, latency, cost and response shape are untested. Check those before you ship.';
 
 /**
+ * The closing note, matched to what was actually established. With a passing
+ * eval the note may name it — and must still cap the claim at "your eval
+ * command passed", since the eval measures whatever its author chose to
+ * measure and mendr has no idea what that is.
+ */
+export function behavioralVerificationNote(view: BehavioralVerificationView): string {
+  if (view.status !== 'pass') return BEHAVIORAL_VERIFICATION_NOTE;
+  return (
+    'note: mendr verified the CODE (see the gate summary above) and ran YOUR eval ' +
+    `command (${view.command}), which passed. That is the only behavioral claim it ` +
+    "makes: whatever your eval does not measure -- the replacement model's output " +
+    'quality, latency, cost and response shape -- is still untested. Check those before you ship.'
+  );
+}
+
+/**
  * Render the two-group gate summary. Only the gates that actually ran for this
  * language appear — an absent field is a gate that does not exist here (Python
- * has no type-check), never a silently-passed one.
+ * has no type-check), never a silently-passed one. The second group is the
+ * behavioral one, and it defaults to the disclaimer: a caller that forgets to
+ * pass a result gets the honest "not checked", never a silent pass.
  */
-export function formatGateSummary(facts: GateSummaryFacts): string[] {
+export function formatGateSummary(
+  facts: GateSummaryFacts,
+  behavioral: BehavioralVerificationView = { status: 'not-tested' },
+): string[] {
   const row = (label: string, value: string): string =>
     `  ${`${label}:`.padEnd(GATE_LABEL_WIDTH)}${value}`;
   const rows = [
@@ -257,7 +352,11 @@ export function formatGateSummary(facts: GateSummaryFacts): string[] {
     ...(facts.staticTypeGate ? [row('static type gate', facts.staticTypeGate)] : []),
     row('tests', facts.tests),
   ];
-  return ['Code verification (what mendr checked):', ...rows, ...BEHAVIORAL_VERIFICATION_LINES];
+  return [
+    'Code verification (what mendr checked):',
+    ...rows,
+    ...behavioralVerificationLines(behavioral),
+  ];
 }
 
 /**

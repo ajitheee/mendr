@@ -1,0 +1,107 @@
+# Monthly deprecation discovery. Reads each provider's own deprecation page,
+# extracts the rows it can parse deterministically, and opens a PULL REQUEST
+# against registries/candidates.json.
+#
+# THE POINT OF THE PR: this job proposes, a human disposes. `discover --write`
+# can only append to candidates.json — a file the fix engine never reads — so
+# even a merged PR changes nothing about what mendr auto-applies. Entries become
+# active only when a maintainer runs `mendr candidates promote <candidateId...>`
+# with explicit ids, and only if the REPLACEMENT classifies `verified` against
+# the public catalogs AND the DEPRECATION CLAIM is self-consistent and
+# quote-backed. Neither check confirms the provider actually retired the model —
+# nothing public answers that — and the PR body says so in those words.
+name: registry-discover
+
+on:
+  schedule:
+    - cron: '0 7 1 * *' # 07:00 UTC on the 1st of each month
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - name: Discover candidates
+        run: node dist/cli.js discover --write | tee discover-out.txt
+
+      - name: Count what was found
+        id: count
+        run: |
+          node -e '
+            const fs = require("fs");
+            const candidates = JSON.parse(fs.readFileSync("registries/candidates.json", "utf8"));
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `count=${candidates.length}\n`);
+          '
+
+      # Belt and braces: the discover CLI path has no write access to the active
+      # registry by construction, so a diff here would mean the invariant broke.
+      # Fail the job rather than open a PR that quietly changes what auto-applies.
+      - name: Assert the active registry was NOT touched
+        run: |
+          if ! git diff --quiet -- registries/llm-deprecations.json; then
+            echo "INVARIANT VIOLATED: discover modified registries/llm-deprecations.json"
+            git diff -- registries/llm-deprecations.json
+            exit 1
+          fi
+          echo "active registry untouched, as required."
+
+      - name: Open a review PR
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: registry/discovered-candidates
+          base: main
+          add-paths: |
+            registries/candidates.json
+            registries/evidence
+          commit-message: 'registry: ${{ steps.count.outputs.count }} discovered candidates for review'
+          title: 'registry: ${{ steps.count.outputs.count }} discovered candidates for review'
+          body: |
+            Automated monthly discovery run over the curated provider deprecation pages.
+
+            **Nothing in this PR is active.** These are *candidates*: they live in
+            `registries/candidates.json`, which the fix engine never reads. Merging this PR
+            does not change a single thing `mendr fix-llm` will find, report, or apply.
+
+            A candidate becomes active only when a human runs:
+
+            ```
+            mendr candidates verify                       # classify against live catalogs
+            mendr candidates promote <candidateId...>     # explicit ids, never "promote all"
+            ```
+
+            `promote` checks two independent things, and refuses on either:
+
+            - the **replacement** is live in a public catalog and is not contradicted by the
+              provider's recommendation table (`verified`);
+            - the **deprecation claim** is self-consistent and quote-backed — a stated
+              lifecycle, no claim that a model is retired while the catalogs list it live, a
+              shutdown date behind an announced deprecation, an excerpt that actually names
+              the model, and a stored snapshot behind every evidence reference.
+
+            It does **not** independently confirm that the provider retired the model. There is
+            no public oracle for that, so nothing here should be read as one. Refusals print
+            their reason.
+
+            Every candidate carries an `EvidenceRef` (source url + sha256 of the fetched
+            document, normalized to strip per-response CSP nonces and script bodies, + the
+            quoted table row). The matching page snapshots are committed under
+            `registries/evidence/`. Run `mendr evidence <modelId>` after promotion to read the
+            provenance back.
+
+            Rows the parser could not read unambiguously were **skipped, not guessed** — see the
+            job log for each skip and its reason, and add those by hand if they matter.

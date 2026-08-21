@@ -56,6 +56,41 @@ export type LlmDeprecationKind = 'model_id' | 'param_rename' | 'param_removal';
 /** Trust verdict for a model-id replacement. */
 export type VerificationStatus = 'verified' | 'unverified' | 'unverifiable';
 
+// --- Evidence -------------------------------------------------------------
+// `sourceUrl` + `verification.reasons` is a CLAIM, not proof: nothing ties the
+// claim to what the page actually said, and nothing survives the page being
+// silently edited. An EvidenceRef closes that gap — it pins the document the
+// claim was read from, when it was read, and the sentence that supports it, so
+// a reviewer can judge an entry WITHOUT refetching (and can detect drift when
+// they do refetch: an EDITED document yields a different hash, while a page
+// that merely re-served itself with a fresh CSP nonce does not).
+
+/** Longest excerpt an EvidenceRef may carry. A quote, not a copy of the page. */
+export const EVIDENCE_EXCERPT_MAX_CHARS = 240;
+
+/** One audited fetch: the document a registry claim was read from. */
+export interface EvidenceRef {
+  /** The exact URL fetched. */
+  sourceUrl: string;
+  /**
+   * `sha256:<64 hex>` of the whole fetched document, NORMALIZED first
+   * (src/registry/evidence.ts#normalizeForHash strips CSP nonces, script
+   * bodies, SRI hashes and whitespace runs — the per-response noise that made
+   * every refetch of an unchanged page look like drift). Always the whole
+   * document, even when the stored snapshot was capped. Any comparison against
+   * this value must normalize the same way.
+   */
+  contentHash: string;
+  /** ISO timestamp of the fetch (from an injected clock, so runs are testable). */
+  retrievedAt: string;
+  /**
+   * The short quoted sentence/row from the source that supports the claim, at
+   * most {@link EVIDENCE_EXCERPT_MAX_CHARS} chars. This is what a reviewer
+   * reads to answer "why do you believe this?" without leaving the terminal.
+   */
+  excerpt?: string;
+}
+
 /** The stamped outcome of verifying a model-id replacement. */
 export interface VerificationInfo {
   /** `verified` = auto-apply (Tier A); anything else is locate-only (Tier C). */
@@ -105,6 +140,40 @@ export interface LlmModelIdDeprecation {
    * missing or non-`verified` entries are surfaced Tier C locate-only.
    */
   verification?: VerificationInfo;
+  /**
+   * Audited provenance for this entry: the documents the claim was read from.
+   * Absent means hand-seeded (a claim with no proof attached) — legal, and
+   * exactly what `mendr evidence <id>` reports so the gap is visible rather
+   * than assumed away. Never empty when present (the loader rejects `[]`).
+   */
+  evidence?: EvidenceRef[];
+}
+
+// --- Candidate entries (the human gate) -----------------------------------
+// Research — an LLM run, a scheduled discovery job, a human reading a docs page
+// — produces CANDIDATES. A candidate lives in `registries/candidates.json`,
+// which the fix engine NEVER reads. Only `mendr candidates promote <id...>`,
+// run by a person naming explicit ids, moves one into the active registry.
+// Nothing automated may write a `verified` entry into the active registry.
+
+/** Who proposed a candidate. Provenance for the reviewer, not a trust level. */
+export type CandidateProposer = 'llm-research' | 'human' | 'discovery';
+
+/**
+ * A proposed registry entry awaiting human promotion.
+ *
+ * CONSTRAINT: candidates are `model_id` entries only. The promote gate is
+ * classifyEntry(), which classifies a deprecated -> replacement model mapping
+ * against public catalogs; the model-COUPLED param kinds have no such oracle,
+ * so there is nothing a machine could gate them on and they stay hand-authored
+ * directly in the active registry.
+ */
+export interface CandidateEntry extends LlmModelIdDeprecation {
+  /** Stable id a human names on the promote command line (`provider:model`). */
+  candidateId: string;
+  proposedBy: CandidateProposer;
+  /** ISO timestamp the candidate was proposed. */
+  proposedAt: string;
 }
 
 /**
