@@ -2,16 +2,23 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { findingKey } from '../report/tiers.js';
+import {
+  crossTierCollisions,
+  findingKey,
+  multiTierNotes,
+  TIER_PRECEDENCE,
+  type Tier,
+} from '../report/tiers.js';
 import { collectPythonFiles, readPythonSources } from '../python/scanPy.js';
 import { applyPyModelIdFixesToSources } from '../python/fixPy.js';
-import { loadLlmRegistry } from './llmRegistry.js';
+import { isVerified, loadLlmRegistry } from './llmRegistry.js';
 import { buildRegistryPrefilter, loadPrefilteredProject } from './scanRepo.js';
 import {
   findModelIdLiterals,
   toAzureDeploymentMatches,
   toBlockedModelArgMatches,
   toModelIdDataMatches,
+  TYPE_CAST_REASON,
 } from './scanLiterals.js';
 
 // A REGRESSION LOCK, not a bug fix. A reviewer suspected mendr double-counts —
@@ -106,13 +113,51 @@ function makeRepo(): string {
       '',
     ].join('\n'),
   );
+  // THE TWO-GPT-4 SHAPE, copied from the Splunk-Agent repo that started this:
+  // `"gpt-4"` as a lookup-table KEY (Tier C, line 2) and `model = "gpt-4"` as
+  // an unproven assignment (Tier B, line 7). Two different literals, and the
+  // report was read twice as one literal counted twice.
+  writeFileSync(
+    join(dir, 'sim', 'simulator.py'),
+    [
+      'MODELS = {',
+      '    "gpt-4": {"cost": 0.03},',
+      '    "gemini-1.5-pro": {"cost": 0.01},',
+      '}',
+      '',
+      'def emit_event():',
+      '    model = "gpt-4"',
+      '    print(model)',
+      '',
+    ].join('\n'),
+  );
   return dir;
 }
 
+/**
+ * The TIER a finding class terminates in. This mirrors cli.ts's split exactly
+ * -- including the one case that is not obvious from the class name: the cast
+ * guard's matches ride in the DATA stream but graduate to Tier B, because the
+ * literal sits in a live-looking position and only the repo's own type stands
+ * in the way.
+ */
+function tierOf(cls: string, reason?: string): Tier {
+  if (cls.endsWith(':tierA')) return 'A';
+  if (cls.endsWith(':data')) return reason === TYPE_CAST_REASON ? 'B' : 'C';
+  return 'B';
+}
+
 /** Every finding the scanners produce, reduced to one comparable shape. */
-async function allFindings(
-  repo: string,
-): Promise<{ cls: string; file: string; line: number; column: number; modelId: string }[]> {
+async function allFindings(repo: string): Promise<
+  {
+    cls: string;
+    tier: Tier;
+    file: string;
+    line: number;
+    column: number;
+    modelId: string;
+  }[]
+> {
   const registry = loadLlmRegistry();
   const prefilter = buildRegistryPrefilter(registry);
   const { project } = loadPrefilteredProject(repo, prefilter);
@@ -121,14 +166,26 @@ async function allFindings(
   const pySources = readPythonSources(collectPythonFiles(repo));
   const py = await applyPyModelIdFixesToSources(pySources, registry, repo);
 
-  const rows: { cls: string; file: string; line: number; column: number; modelId: string }[] = [];
+  const rows: {
+    cls: string;
+    tier: Tier;
+    file: string;
+    line: number;
+    column: number;
+    modelId: string;
+  }[] = [];
   const push = (
     cls: string,
-    items: { value: string; location: { file: string; line: number; column: number } }[],
+    items: {
+      value: string;
+      reason?: string;
+      location: { file: string; line: number; column: number };
+    }[],
   ): void => {
     for (const i of items) {
       rows.push({
         cls,
+        tier: tierOf(cls, i.reason),
         file: i.location.file.replace(/\\/g, '/'),
         line: i.location.line,
         column: i.location.column,
@@ -137,9 +194,14 @@ async function allFindings(
     }
   };
 
+  // THE ENGINE GATE, called -- not re-implemented. This line used to read
+  // the raw `verification.status` stamp, which is a SECOND copy of the Tier A
+  // rule; the day the gate started refusing entries whose own reasons
+  // contradict their stamp, the copy kept promoting them and the fixture
+  // reported one occurrence in two tiers.
   push(
     'ts:tierA',
-    literals.filter((m) => m.position === 'model_arg' && m.deprecation.verification?.status === 'verified'),
+    literals.filter((m) => m.position === 'model_arg' && isVerified(m.deprecation)),
   );
   push('ts:blocked', toBlockedModelArgMatches(literals));
   push('ts:azure', toAzureDeploymentMatches(literals));
@@ -186,5 +248,61 @@ describe('finding uniqueness', () => {
     );
     expect(repeated.length).toBe(2);
     expect(repeated[0].column).not.toBe(repeated[1].column);
+  });
+});
+
+// --- CROSS-TIER DISJOINTNESS ----------------------------------------------
+//
+// Uniqueness within a finding class was never the whole property. What the
+// report actually claims -- when it prints three tier counts and then a note
+// saying two same-named findings are "different occurrences" -- is that each
+// occurrence has exactly ONE terminal tier, resolved A > B > C. If a single
+// (file, line, column, id) could reach two tiers, the counts really would
+// double-count it and the note would be a lie dressed as an explanation.
+//
+// So the property is asserted on the same real fixture, tier-tagged.
+describe('one occurrence, one terminal tier', () => {
+  it('never lets one (file, line, column, modelId) reach two tiers', async () => {
+    const rows = await allFindings(makeRepo());
+    // The fixture must actually populate all three tiers, or this passes for
+    // the wrong reason.
+    const tiers = new Set(rows.map((r) => r.tier));
+    expect([...tiers].sort()).toEqual([...TIER_PRECEDENCE]);
+    expect(crossTierCollisions(rows)).toEqual([]);
+  });
+
+  // THE SHAPE THAT WAS MISREAD, asserted on real scanner output rather than a
+  // hand-built pair: one `gpt-4` as a dict key, one `gpt-4` in an assignment,
+  // in one file, in two tiers -- and NOT one occurrence counted twice.
+  it('classifies the two gpt-4 literals in simulator.py as two occurrences in two tiers', async () => {
+    const rows = await allFindings(makeRepo());
+    const gpt4 = rows
+      .filter((r) => r.file.endsWith('sim/simulator.py') && r.modelId === 'gpt-4')
+      .sort((a, b) => a.line - b.line);
+
+    expect(gpt4.length).toBe(2);
+    // The lookup-table key is informational; the assignment is review-required.
+    expect(gpt4[0].line).toBe(2);
+    expect(gpt4[0].tier).toBe('C');
+    expect(gpt4[1].line).toBe(7);
+    expect(gpt4[1].tier).toBe('B');
+    // Two DIFFERENT literals: different positions, therefore different keys.
+    expect(findingKey(gpt4[0])).not.toBe(findingKey(gpt4[1]));
+    expect(crossTierCollisions(gpt4)).toEqual([]);
+
+    // ...and this is exactly the case the report explains out loud.
+    const notes = multiTierNotes(rows.filter((r) => r.modelId === 'gpt-4'));
+    expect(notes.length).toBe(1);
+    expect(notes[0]).toContain('these are different occurrences');
+    expect(notes[0]).toContain('tier B: L7');
+    expect(notes[0]).toContain('tier C: L2');
+  });
+
+  it('says nothing about an id that only ever lands in one tier', async () => {
+    const rows = await allFindings(makeRepo());
+    const single = rows.filter((r) => r.modelId === 'gemini-1.5-pro');
+    expect(single.length).toBeGreaterThan(0);
+    expect(new Set(single.map((r) => r.tier)).size).toBe(1);
+    expect(multiTierNotes(single)).toEqual([]);
   });
 });

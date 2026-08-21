@@ -19,24 +19,32 @@ import {
 // file (the acceptance bar is a ~30-line report on real repos), while --verbose
 // keeps every hit reachable with purpose-aware language.
 
-function hit(file: string, value: string, purpose?: DataFindingView['purpose']): DataFindingView {
-  return { file, value, replacement: 'x-replacement', line: 1, column: 1, purpose };
+function hit(
+  file: string,
+  value: string,
+  purpose?: DataFindingView['purpose'],
+  line = 1,
+): DataFindingView {
+  return { file, value, replacement: 'x-replacement', line, column: 1, purpose };
 }
 
 describe('groupDataFindingsByFile', () => {
-  it('collapses per-file with id occurrence counts, preserving first-sighting order', () => {
+  it('collapses per-file with the LINES of every id, in first-sighting order', () => {
     const groups = groupDataFindingsByFile([
-      hit('lib/limits.ts', 'gpt-4'),
-      hit('lib/limits.ts', 'gpt-4'),
-      hit('lib/limits.ts', 'gemini-pro'),
-      hit('app/other.ts', 'o1-mini'),
+      hit('lib/limits.ts', 'gpt-4', undefined, 12),
+      hit('lib/limits.ts', 'gpt-4', undefined, 30),
+      hit('lib/limits.ts', 'gemini-pro', undefined, 31),
+      hit('app/other.ts', 'o1-mini', undefined, 4),
     ]);
 
     expect(groups.map((g) => g.file)).toEqual(['lib/limits.ts', 'app/other.ts']);
     expect(groups[0].hits).toBe(3);
-    expect([...groups[0].idCounts.entries()]).toEqual([
-      ['gpt-4', 2],
-      ['gemini-pro', 1],
+    // The POSITION of every hit survives the collapse -- that is the whole
+    // point of the group: a reader must be able to tell this file's `gpt-4`
+    // from a `gpt-4` reported in another tier.
+    expect([...groups[0].idLines.entries()]).toEqual([
+      ['gpt-4', [12, 30]],
+      ['gemini-pro', [31]],
     ]);
     expect(groups[1].hits).toBe(1);
   });
@@ -77,24 +85,59 @@ describe('catalog heuristic', () => {
 });
 
 describe('formatDataFileGroupLine', () => {
-  it('renders the one-line-per-file summary with id counts and a cap', () => {
+  it('renders the one-line-per-file summary with per-id line numbers and a cap', () => {
     const groups = groupDataFindingsByFile([
-      hit('lib/limits.ts', 'gpt-4'),
-      hit('lib/limits.ts', 'gpt-4'),
-      hit('lib/limits.ts', 'gemini-pro'),
-      hit('lib/limits.ts', 'o1-mini'),
-      hit('lib/limits.ts', 'gpt-4-32k'),
-      hit('lib/limits.ts', 'text-davinci-003'),
+      hit('lib/limits.ts', 'gpt-4', undefined, 12),
+      hit('lib/limits.ts', 'gpt-4', undefined, 40),
+      hit('lib/limits.ts', 'gemini-pro', undefined, 41),
+      hit('lib/limits.ts', 'o1-mini', undefined, 42),
+      hit('lib/limits.ts', 'gpt-4-32k', undefined, 43),
+      hit('lib/limits.ts', 'text-davinci-003', undefined, 44),
     ]);
     const line = formatDataFileGroupLine(groups[0]);
 
-    expect(line).toContain('lib/limits.ts -- 6 hits across 5 model ids');
-    expect(line).toContain('gpt-4 x2');
-    // Only the first 4 ids are spelled out; the rest collapse to "...".
-    expect(line).toContain('...');
+    expect(line).toContain('lib/limits.ts -- 6 hits:');
+    // Each id says WHERE, so a collapsed hit is still a locatable one.
+    expect(line).toContain('gpt-4 (L12, L40)');
+    expect(line).toContain('gemini-pro (L41)');
+    // Only the first 4 ids are spelled out; the rest collapse to a count that
+    // still tells the reader how many were left unnamed.
+    expect(line).toContain('+1 more ids');
     expect(line).not.toContain('text-davinci-003');
     // "limits" basename -> catalog label.
     expect(line).toContain('[looks like a model catalog]');
+  });
+
+  // THE CASE THAT MISLED TWO REVIEWERS, in miniature: one id, two positions.
+  // Without the line numbers the collapsed line said `gpt-4 x2` and left the
+  // reader unable to tell two occurrences from one counted twice.
+  it('names both positions when one id appears twice in a file', () => {
+    const groups = groupDataFindingsByFile([
+      hit('agent_app/simulator.py', 'gpt-4', undefined, 12),
+      hit('agent_app/simulator.py', 'gemini-1.5-pro', undefined, 30),
+      hit('agent_app/simulator.py', 'gemini-1.5-pro', undefined, 127),
+    ]);
+    expect(formatDataFileGroupLine(groups[0])).toBe(
+      'agent_app/simulator.py -- 3 hits: gpt-4 (L12), gemini-1.5-pro (L30, L127)',
+    );
+  });
+
+  it('caps the LINES listed per id, so a catalog file stays one line', () => {
+    const groups = groupDataFindingsByFile(
+      [3, 5, 7, 9, 11, 13].map((line) => hit('src/routes/chat.ts', 'gpt-4', undefined, line)),
+    );
+    const line = formatDataFileGroupLine(groups[0]);
+    expect(line).toBe('src/routes/chat.ts -- 6 hits: gpt-4 (L3, L5, L7, L9, +2 more)');
+  });
+
+  // Two hits on ONE line collapse to a single `L`, and the `xN` is what keeps
+  // the id's share of the line agreeing with the file's hit total.
+  it('keeps the occurrence count visible when repeats share a line', () => {
+    const groups = groupDataFindingsByFile([
+      hit('src/aliases.ts', 'gpt-4', undefined, 4),
+      hit('src/aliases.ts', 'gpt-4', undefined, 4),
+    ]);
+    expect(formatDataFileGroupLine(groups[0])).toBe('src/aliases.ts -- 2 hits: gpt-4 x2 (L4)');
   });
 
   it('flags runtime comparisons on the collapsed line', () => {
@@ -219,10 +262,18 @@ describe('formatGateSummary (code vs behavioral verification)', () => {
     expect(py).toMatch(/^ {2}usage classification: +verified-sink$/m);
   });
 
-  it('always claims the mapping was verified against live catalogs', () => {
-    expect(formatGateSummary(TS_FACTS).join('\n')).toMatch(
-      /^ {2}replacement mapping: +verified against live catalogs$/m,
+  // This row sits under the heading "Code verification (what mendr checked)",
+  // so it may only name a check this PROCESS made. It used to read "verified
+  // against live catalogs" — a network check `fix-llm` never performs. What it
+  // reads is the `verification.status` stamp in the registry JSON, which is as
+  // old as its `checkedAt` and can disagree with a fresh `mendr verify-registry`
+  // run. Naming the stamp is the whole claim this row is entitled to.
+  it('names the registry stamp it read, not a live catalog check it never made', () => {
+    const rendered = formatGateSummary(TS_FACTS).join('\n');
+    expect(rendered).toMatch(
+      /^ {2}replacement mapping: +registry entry stamped verified \(not re-checked live this run\)$/m,
     );
+    expect(rendered).not.toContain('verified against live catalogs');
   });
 
   it('aligns every gate value in one column, so the rows read as one table', () => {

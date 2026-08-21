@@ -4,7 +4,19 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { LlmRegistry } from '../types.js';
 import { EVIDENCE_EXCERPT_MAX_CHARS } from '../types.js';
-import { loadLlmRegistry, modelIdEntries, staleRegistryWarning } from './llmRegistry.js';
+import {
+  effectiveVerificationState,
+  hasSelfContradictingReasons,
+  isVerified,
+  loadLlmRegistry,
+  modelIdEntries,
+  registryProvenance,
+  resolveRegistryPath,
+  selfContradictionMarkersIn,
+  staleRegistryWarning,
+  SELF_CONTRADICTION_MARKERS,
+} from './llmRegistry.js';
+import type { LlmModelIdDeprecation } from '../types.js';
 
 // The freshness guard: model catalogs churn monthly, so fix-llm warns when the
 // registry's NEWEST verification stamp is more than 30 days behind "now". The
@@ -116,5 +128,118 @@ describe('loadLlmRegistry — evidence', () => {
     const excerpt = 'x'.repeat(EVIDENCE_EXCERPT_MAX_CHARS);
     const [loaded] = modelIdEntries(loadLlmRegistry(registryFile([{ ...VALID_EVIDENCE, excerpt }])));
     expect(loaded.evidence?.[0].excerpt).toBe(excerpt);
+  });
+});
+
+
+// --- the self-contradiction fail-safe --------------------------------------
+//
+// THE DEFECT THIS EXISTS FOR, verbatim from the shipped registry:
+//
+//   "deprecated": "gemini-2.0-flash",
+//   "replacement": "gemini-flash-latest",
+//   "verification": { "status": "verified", "reasons": [
+//     "... Status unknown; likely retired given the rest of the 2.0 line but
+//      unverified -- DO NOT AUTO-APPLY. Target gemini-flash-latest is a rolling
+//      alias currently resolving to gemini-3-flash-preview, which is itself
+//      deprecated." ] }
+//
+// The stamp said Tier A. The sentence under the stamp said do not touch this.
+// The stamp won, and the swap was auto-applied to user code. The rule below is
+// a FAIL-SAFE, not a data fix: the data may lie, and the gate must not.
+
+/** A model_id entry carrying exactly the reasons under test. */
+function stamped(status: 'verified' | 'unverified', reasons: string[]): LlmModelIdDeprecation {
+  return {
+    provider: 'google',
+    kind: 'model_id',
+    deprecated: 'gemini-2.0-flash',
+    replacement: 'gemini-3.6-flash',
+    verification: { status, checkedAt: '2026-08-21', reasons },
+  };
+}
+
+describe('hasSelfContradictingReasons', () => {
+  it('fires on every documented marker, whatever the case', () => {
+    for (const marker of SELF_CONTRADICTION_MARKERS) {
+      const entry = stamped('verified', [`Provider-named. ${marker.toUpperCase()} here.`]);
+      expect(hasSelfContradictingReasons(entry), marker).toBe(true);
+      expect(selfContradictionMarkersIn(entry.verification!.reasons), marker).toContain(marker);
+    }
+  });
+
+  it('stays quiet for the sentences the classifier itself writes', () => {
+    // A genuinely clean re-stamp produces only these; if either ever tripped
+    // the rule, every verified entry in the registry would fall to Tier B.
+    const entry = stamped('verified', [
+      'replacement "gpt-5.6-sol" is live in a public catalog',
+      'matches the provider\'s officially-recommended replacement "gpt-5.6-sol"',
+    ]);
+    expect(hasSelfContradictingReasons(entry)).toBe(false);
+    expect(isVerified(entry)).toBe(true);
+  });
+
+  it('reports the state honestly instead of silently downgrading it', () => {
+    const contradicted = stamped('verified', ['Status unknown; do not auto-apply until verified.']);
+    // NOT reported as `unverified`: the file really does say `verified`, and a
+    // reader who runs `mendr evidence <id>` must not find the two disagreeing.
+    expect(effectiveVerificationState(contradicted)).toBe('self-contradicted');
+    expect(isVerified(contradicted)).toBe(false);
+  });
+
+  it('asks about the TEXT, so an already-unverified entry answers honestly too', () => {
+    expect(hasSelfContradictingReasons(stamped('unverified', ['status unknown']))).toBe(true);
+    expect(effectiveVerificationState(stamped('unverified', ['status unknown']))).toBe('unverified');
+  });
+
+  it('treats an entry with no reasons at all as merely unproven, not contradictory', () => {
+    const bare: LlmModelIdDeprecation = {
+      provider: 'openai',
+      kind: 'model_id',
+      deprecated: 'gpt-4-0613',
+      replacement: 'gpt-5.6-sol',
+      verification: { status: 'verified' },
+    };
+    expect(hasSelfContradictingReasons(bare)).toBe(false);
+    expect(isVerified(bare)).toBe(true);
+  });
+});
+
+// THE SHIPPED REGISTRY, not a fixture. The seven entries the audit named (and
+// the five the 2026-08-21 re-stamp lifted to `verified` over the same kind of
+// caveat) must be held back for real, in the file that actually ships.
+describe('the shipped registry', () => {
+  it('never lets an entry pass the gate while its own reasons argue against it', () => {
+    const entries = modelIdEntries(loadLlmRegistry(resolveRegistryPath()));
+    for (const entry of entries) {
+      if (!hasSelfContradictingReasons(entry)) continue;
+      expect(isVerified(entry), entry.deprecated).toBe(false);
+      expect(effectiveVerificationState(entry), entry.deprecated).toBe(
+        entry.verification?.status === 'verified' ? 'self-contradicted' : entry.verification!.status,
+      );
+    }
+  });
+
+  it('holds back gemini-2.0-flash, and points it at a stable id rather than an alias', () => {
+    const entries = modelIdEntries(loadLlmRegistry(resolveRegistryPath()));
+    for (const id of ['gemini-2.0-flash', 'gemini-2.0-flash-001']) {
+      const entry = entries.find((e) => e.deprecated === id)!;
+      expect(entry, id).toBeTruthy();
+      // A rolling alias is never a migration target: it resolves to whatever
+      // the provider points it at, including a deprecated preview.
+      expect(entry.replacement, id).not.toMatch(/-latest$/);
+      expect(isVerified(entry), id).toBe(false);
+    }
+  });
+
+  it('counts the held-back entries in its own provenance', () => {
+    const registry = loadLlmRegistry(resolveRegistryPath());
+    const provenance = registryProvenance(registry);
+    const held = modelIdEntries(registry).filter(
+      (e) => effectiveVerificationState(e) === 'self-contradicted',
+    ).length;
+    expect(provenance.selfContradictingEntries).toBe(held);
+    // The stamp counts still report the STAMPS -- the two facts stay separate.
+    expect(provenance.statusCounts.verified).toBeGreaterThanOrEqual(held);
   });
 });

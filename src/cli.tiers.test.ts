@@ -85,6 +85,29 @@ function makeRepo(): string {
   return dir;
 }
 
+/**
+ * A repo whose ONLY finding is `gemini-2.0-flash` in a live model argument —
+ * the entry that shipped stamped `verified` over reasons saying "do not
+ * auto-apply", and was auto-applied. Nothing else, so Tier A can be asserted
+ * to be empty.
+ */
+function makeContradictionRepo(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'mendr-contradiction-'));
+  created.push(dir);
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'contradiction' }, null, 2));
+  mkdirSync(join(dir, 'src'));
+  writeFileSync(
+    join(dir, 'src', 'gemini.ts'),
+    [
+      'export async function ask(client: any) {',
+      "  return client.chat.completions.create({ model: 'gemini-2.0-flash', messages: [] });",
+      '}',
+      '',
+    ].join('\n'),
+  );
+  return dir;
+}
+
 /** Run fix-llm from source. `reject: false` — a non-zero exit is data here. */
 async function runFixLlm(
   args: string[],
@@ -100,7 +123,16 @@ async function runFixLlm(
 interface JsonReport {
   summary: Record<string, number | string>;
   tierA: unknown[];
-  tierB: { file: string; line: number; column: number; modelId: string; reason: string }[];
+  tierB: {
+    file: string;
+    line: number;
+    column: number;
+    modelId: string;
+    replacement: string;
+    registryVerdict: string;
+    verdictCheckedAt: string | null;
+    reason: string;
+  }[];
   blocked: { file: string; line: number }[];
   azure: { file: string; line: number }[];
   informational: { file: string; count: number }[];
@@ -135,7 +167,9 @@ describe('fix-llm three-tier report', () => {
         'modelId',
         'reason',
         'reasonText',
+        'registryVerdict',
         'replacement',
+        'verdictCheckedAt',
       ]);
     }
   }, 120_000);
@@ -254,10 +288,99 @@ describe('fix-llm three-tier report', () => {
     const repo = makeRepo();
     const { stdout } = await runFixLlm([repo, '--skip-gates']);
     expect(stdout).toContain('sim/simulator.py:2:13');
-    expect(stdout).toContain('  found:       "gpt-4-0314"');
-    expect(stdout).toContain('  replacement: "gpt-5.6-sol"');
-    expect(stdout).toContain('  reason:      usage_unverified -- assigned to a model-like variable');
-    expect(stdout).toContain('  action:      no patch generated.');
+    expect(stdout).toContain('  found:                 "gpt-4-0314"');
+    // gpt-4-0314's registry entry is stamped `verified` and its own recorded
+    // reasons say "base gpt-4-0314 unverified", so the engine holds it back:
+    // the id is a CANDIDATE replacement -- the label changes, not just a row
+    // below it -- and the verdict row reports BOTH halves of the disagreement.
+    expect(stdout).toContain('  candidate replacement: "gpt-5.6-sol"');
+    expect(stdout.replace(/\s+/g, ' ')).toContain(
+      "registry verdict: stamped verified 2026-08-21, but withheld -- the entry's own " +
+        'recorded reasons contradict the stamp (see `mendr evidence gpt-4-0314`)',
+    );
+    expect(stdout).toContain('  reason:                usage_unverified -- assigned to a model-like');
+    expect(stdout).toContain('  action:                no patch generated.');
+  }, 120_000);
+
+  // WHAT TWO EXPERT READERS GOT WRONG. The fixture puts `gpt-4-0613` in all
+  // three tiers at three different positions. The old report printed the Tier C
+  // hit with no line number, so its `gpt-4-0613` was indistinguishable from the
+  // Tier B one -- and the counts looked like double counting. Both halves of
+  // the fix are asserted here, on the real CLI.
+  it('makes one id in several tiers legible: line numbers, and a note saying why', async () => {
+    const repo = makeRepo();
+    const { stdout } = await runFixLlm([repo, '--skip-gates']);
+
+    // (1) the clarifying note, naming the tiers and the positions.
+    const note = stdout
+      .split('\n')
+      .find((l) => l.startsWith('note: "gpt-4-0613" appears in more than one tier'));
+    expect(note, 'the multi-tier note must be printed').toBeTruthy();
+    expect(note).toContain('these are different occurrences');
+    expect(note).toContain('tier A: src/live.ts:2');
+    expect(note).toContain('tier B: src/azure.ts:1');
+    expect(note).toContain('tier C: src/prices.ts:2');
+
+    // (2) the collapsed Tier C line carries the LINE of every id it names, so
+    // its occurrence can be told apart from the ones above it.
+    expect(stdout).toContain(
+      'src/prices.ts -- 2 hits: gpt-4-0613 (L2), gemini-2.0-flash (L3)',
+    );
+
+    // (3) and the note stays quiet for an id that only ever lands in one tier.
+    expect(stdout).not.toContain('"gemini-2.0-flash" appears in more than one tier');
+  }, 120_000);
+
+  it('reports the registry verdict for every Tier B finding in --json', async () => {
+    const repo = makeRepo();
+    const { stdout } = await runFixLlm([repo, '--skip-gates', '--json']);
+    const report = JSON.parse(stdout) as JsonReport;
+
+    for (const f of report.tierB) {
+      expect(['verified', 'unverified', 'self-contradicted'], f.reason).toContain(
+        f.registryVerdict,
+      );
+      // A verdict a consumer cannot date is a verdict it cannot age out.
+      expect(f.verdictCheckedAt, f.modelId).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }
+    // gpt-4-0613's entry is stamped verified and says nothing against itself;
+    // gpt-4-0314's is stamped verified over reasons that contradict it. The
+    // field tracks the REGISTRY, not the tier.
+    const byReason = new Map(report.tierB.map((f) => [f.reason, f]));
+    expect(byReason.get('platform_blocked')!.registryVerdict).toBe('verified');
+    expect(byReason.get('type_cast_masked')!.registryVerdict).toBe('verified');
+    expect(byReason.get('replacement_unverified')!.registryVerdict).toBe('self-contradicted');
+    expect(byReason.get('usage_unverified')!.registryVerdict).toBe('self-contradicted');
+  }, 120_000);
+
+  // THE FAIL-SAFE, END TO END. `gemini-2.0-flash` shipped stamped `verified`
+  // over reasons that read "status unknown ... do not auto-apply", and the
+  // engine duly auto-applied it. It must now land in Tier B, with no patch,
+  // and the report must say which words held it back.
+  it('never auto-applies an entry whose own reasons contradict its stamp', async () => {
+    const repo = makeContradictionRepo();
+    const { stdout } = await runFixLlm([repo, '--skip-gates', '--json']);
+    const report = JSON.parse(stdout) as JsonReport & { diff: string };
+
+    expect(report.summary.tierA).toBe(0);
+    const finding = report.tierB.find((f) => f.modelId === 'gemini-2.0-flash');
+    expect(finding, 'gemini-2.0-flash must be reported as Tier B').toBeTruthy();
+    expect(finding!.reason).toBe('replacement_unverified');
+    expect(finding!.registryVerdict).toBe('self-contradicted');
+    // ...and no diff exists for it anywhere in the report.
+    expect(report.diff).not.toContain('gemini');
+  }, 120_000);
+
+  it('names the contradicting words under the held finding', async () => {
+    const repo = makeContradictionRepo();
+    const { stdout } = await runFixLlm([repo, '--skip-gates']);
+    const flat = stdout.replace(/\s+/g, ' ');
+    expect(flat).toContain(
+      'HELD BY MENDR: this entry is stamped verified, but its own reasons below say',
+    );
+    expect(flat).toContain('"do not auto-apply"');
+    expect(flat).toContain('"status unknown"');
+    expect(flat).toContain('action: no patch generated.');
   }, 120_000);
 });
 

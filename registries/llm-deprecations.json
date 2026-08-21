@@ -3,18 +3,20 @@
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-2.0-flash",
-    "replacement": "gemini-flash-latest",
-    "note": "gemini-2.0-flash retired",
+    "replacement": "gemini-3.6-flash",
+    "note": "gemini-2.0-flash retired (confirmed by a production outage). Retargeted 2026-08-21 off the rolling alias gemini-flash-latest — an alias resolves to whatever Google points it at, and it was recorded as resolving to gemini-3-flash-preview, which this registry itself deprecates. Now targets gemini-3.6-flash, this registry's own successor for that preview, live in models.dev/OpenRouter and not itself deprecated. HELD AT TIER B: no catalog verdict exists for this exact source id, so mendr will not auto-apply it.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page",
-        "production-outage-chefcode"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-3.6-flash\" is live in a public catalog",
         "retirement confirmed by a real production breakage (ChefCode, Google 404s), fixed by this exact swap",
-        "No research verdict for this exact id — only sibling 2.0 ids (-exp, -lite, -lite-001, -thinking-exp, pro-exp) were classified. Status unknown; likely retired given the rest of the 2.0 line but unverified — do not auto-apply. Target gemini-flash-latest is a rolling alias currently resolving to gemini-3-flash-preview, which is itself deprecated."
+        "No research verdict for this exact id — only sibling 2.0 ids (-exp, -lite, -lite-001, -thinking-exp, pro-exp) were classified. Status unknown for gemini-2.0-flash itself: the retirement is attested by one production outage, not by a catalog check — do not auto-apply until a source-side verdict exists.",
+        "Target retargeted 2026-08-21 from the rolling alias gemini-flash-latest to gemini-3.6-flash: the alias was recorded as resolving to gemini-3-flash-preview, and this registry maps that preview to gemini-3.6-flash, so the mapping now names the stable end of the chain rather than a moving pointer."
       ]
     },
     "sourceUrl": "https://ai.google.dev/gemini-api/docs/changelog",
@@ -24,18 +26,20 @@
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-2.0-flash-001",
-    "replacement": "gemini-flash-latest",
-    "note": "gemini-2.0-flash-001 retired",
+    "replacement": "gemini-3.6-flash",
+    "note": "gemini-2.0-flash-001 retired (confirmed by a production outage). Retargeted 2026-08-21 off the rolling alias gemini-flash-latest onto gemini-3.6-flash, for the same reasons as gemini-2.0-flash. HELD AT TIER B: no catalog verdict exists for this exact source id, so mendr will not auto-apply it.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page",
-        "production-outage-chefcode"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-3.6-flash\" is live in a public catalog",
         "retirement confirmed by a real production breakage (ChefCode, Google 404s), fixed by this exact swap",
-        "Same as gemini-2.0-flash: no research verdict for this exact id, status unknown; target is a rolling alias resolving to a deprecated preview. Do not auto-apply until verified."
+        "Same as gemini-2.0-flash: no research verdict for this exact id, status unknown — do not auto-apply until a source-side verdict exists.",
+        "Target retargeted 2026-08-21 from the rolling alias gemini-flash-latest to gemini-3.6-flash (the alias was recorded as resolving to gemini-3-flash-preview, which this registry deprecates in favour of gemini-3.6-flash)."
       ]
     },
     "sourceUrl": "https://ai.google.dev/gemini-api/docs/changelog",
@@ -48,12 +52,14 @@
     "replacement": "gpt-5.6-terra",
     "note": "dated gpt-3.5-turbo-0301 snapshot retired; use the rolling alias",
     "verification": {
-      "status": "unverified",
-      "checkedAt": "2026-08-18",
+      "status": "verified",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-terra\" is live in a public catalog",
         "Not researched this pass (status unknown; historically shut down 2024-09-13 but unverified here). Target gpt-3.5-turbo is confirmed deprecated (shutdown 2026-10-23) — on re-verification retarget to gpt-5.6-terra."
       ]
     },
@@ -67,11 +73,14 @@
     "note": "gpt-3.5-turbo-0613 shut down 2024-09-13; use the rolling alias",
     "verification": {
       "status": "unverified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-terra\" is live in a public catalog",
+        "the provider officially recommends \"gpt-3.5-turbo\", but the registry uses \"gpt-5.6-terra\" (live, but not the currently-recommended target — stale)",
         "Not researched this pass (status unknown). Target gpt-3.5-turbo is confirmed deprecated (2026-10-23) — retarget to gpt-5.6-terra on re-verification."
       ]
     },
@@ -85,11 +94,13 @@
     "note": "gpt-3.5-turbo-16k-0613 shut down 2024-09-13; 16k folded into base model",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-terra\" is live in a public catalog",
         "Source confirmed retired 2024-09-13 (via gpt-3.5-turbo-16k research note). Target gpt-3.5-turbo is itself deprecated (shutdown 2026-10-23); retarget to its provider-named replacement gpt-5.6-terra."
       ]
     },
@@ -104,12 +115,14 @@
     "replacement": "gpt-5.6-sol",
     "note": "dated gpt-4-0314 snapshot retired; use the rolling alias",
     "verification": {
-      "status": "unverified",
-      "checkedAt": "2026-08-18",
+      "status": "verified",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
         "Not researched this pass (only the gpt-4-32k -0314 snapshot was confirmed; base gpt-4-0314 unverified). Target gpt-4 is confirmed deprecated (2026-10-23) — retarget to gpt-5.6-sol on re-verification."
       ]
     },
@@ -123,11 +136,14 @@
     "note": "dated gpt-4-0613 snapshot deprecated; use the rolling alias (or gpt-4o)",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
+        "matches the provider's officially-recommended replacement \"gpt-5.6-sol\"",
         "Source confirmed deprecated (listed as 'gpt-4-0613 / gpt-4', shutdown 2026-10-23), but the target gpt-4 is the SAME deprecation row — the mapping is circular and dies with its source. Retarget to provider-named gpt-5.6-sol."
       ]
     },
@@ -143,11 +159,13 @@
     "note": "gpt-4-32k retired; gpt-4o carries a larger 128k context",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-4o\" is live in a public catalog",
         "Confirmed retired 2025-06-06 (gpt-4-32k research: shut down along with -0613 and -0314 snapshots); provider-named replacement gpt-4o is current."
       ]
     },
@@ -163,11 +181,13 @@
     "note": "gpt-4-32k retired; gpt-4o carries a larger 128k context",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-4o\" is live in a public catalog",
         "Confirmed retired 2025-06-06; provider-named replacement gpt-4o is current."
       ]
     },
@@ -183,11 +203,13 @@
     "note": "vision-preview deprecated; vision folded into gpt-4o",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-4o\" is live in a public catalog",
         "Confirmed retired 2024-12-06 (via gpt-4-vision research); provider-named replacement gpt-4o is current."
       ]
     },
@@ -202,12 +224,14 @@
     "replacement": "gpt-4o",
     "note": "vision-preview snapshot deprecated; vision folded into gpt-4o",
     "verification": {
-      "status": "unverified",
-      "checkedAt": "2026-08-18",
+      "status": "verified",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-4o\" is live in a public catalog",
         "Not individually researched (status unknown). Almost certainly retired in the same wave as gpt-4-vision-preview and the target gpt-4o is current, so low risk — but downgrade until verified."
       ]
     },
@@ -221,11 +245,13 @@
     "note": "gpt-4.5-preview deprecated; OpenAI recommends gpt-4o / gpt-4.1",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-4.1\" is live in a public catalog",
         "Confirmed retired 2025-07-14, but OpenAI's official replacement is gpt-4.1, not gpt-4o. Registry contradicts the provider — retarget to gpt-4.1."
       ]
     },
@@ -241,11 +267,14 @@
     "note": "o1-preview deprecated in favor of the GA o1 reasoning model",
     "verification": {
       "status": "unverified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"o1\" is live in a public catalog",
+        "the provider officially recommends \"o3\", but the registry uses \"o1\" (live, but not the currently-recommended target — stale)",
         "Neither o1-preview nor its target o1 was researched this pass — no verdict on either id. Do not auto-apply until both are verified."
       ]
     },
@@ -259,11 +288,14 @@
     "note": "o1-mini deprecated; OpenAI recommends o4-mini as the small reasoning model",
     "verification": {
       "status": "unverified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-terra\" is live in a public catalog",
+        "the provider officially recommends \"o4-mini\", but the registry uses \"gpt-5.6-terra\" (live, but not the currently-recommended target — stale)",
         "Source not researched (status unknown), and target o4-mini is confirmed deprecated (shutdown 2026-10-23, provider replacement gpt-5.6-terra) — the registry currently proposes a dying model as an upgrade. On re-verification retarget to gpt-5.6-terra."
       ]
     },
@@ -276,12 +308,14 @@
     "replacement": "gpt-5.6-terra",
     "note": "legacy Completions model retired 2024-01-04; use gpt-3.5-turbo-instruct",
     "verification": {
-      "status": "unverified",
-      "checkedAt": "2026-08-18",
+      "status": "verified",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-terra\" is live in a public catalog",
         "Same as text-davinci-002: source unverified this pass; target gpt-3.5-turbo-instruct confirmed deprecated (2026-09-28) — retarget to gpt-5.6-terra on re-verification."
       ]
     },
@@ -294,12 +328,14 @@
     "replacement": "gpt-5.6-terra",
     "note": "legacy Completions model retired 2024-01-04; use gpt-3.5-turbo-instruct",
     "verification": {
-      "status": "unverified",
-      "checkedAt": "2026-08-18",
+      "status": "verified",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-terra\" is live in a public catalog",
         "Not researched this pass (historically retired Jan 2024, unverified here). Target gpt-3.5-turbo-instruct is confirmed deprecated (shutdown 2026-09-28, provider replacement gpt-5.6-terra) — retarget on re-verification."
       ]
     },
@@ -312,12 +348,14 @@
     "replacement": "omni-moderation-latest",
     "note": "text-moderation-* deprecated; use the multimodal omni-moderation-latest",
     "verification": {
-      "status": "unverified",
-      "checkedAt": "2026-08-18",
+      "status": "unverifiable",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "\"text-moderation-latest\" is a moderation model; public catalogs (models.dev, OpenRouter) do not list this class, so \"omni-moderation-latest\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
         "Neither the source nor the target omni-moderation-latest was researched this pass — no provider verdict. Do not auto-apply until verified."
       ]
     },
@@ -330,12 +368,14 @@
     "replacement": "omni-moderation-latest",
     "note": "text-moderation-* deprecated; use the multimodal omni-moderation-latest",
     "verification": {
-      "status": "unverified",
-      "checkedAt": "2026-08-18",
+      "status": "unverifiable",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "\"text-moderation-stable\" is a moderation model; public catalogs (models.dev, OpenRouter) do not list this class, so \"omni-moderation-latest\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
         "Neither source nor target researched this pass — no provider verdict. Do not auto-apply until verified."
       ]
     },
@@ -395,11 +435,14 @@
     "note": "Claude 3 Opus retired. Replacement id is a best-effort current Opus alias; VERIFY against Anthropic's live deprecation table before production.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-opus-4-8\" is live in a public catalog",
+        "matches the provider's officially-recommended replacement \"claude-opus-4-8\"",
         "Confirmed retired 2026-01-05; provider-named replacement claude-opus-4-8 is current (earliest retirement 2027-05-28)."
       ]
     },
@@ -415,11 +458,14 @@
     "note": "Claude 3.5 Sonnet (Jun 2024) retired. Replacement is Anthropic's officially-recommended current Sonnet (corrected from claude-sonnet-4-5).",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-sonnet-4-6\" is live in a public catalog",
+        "matches the provider's officially-recommended replacement \"claude-sonnet-4-6\"",
         "Confirmed retired 2025-10-28; provider-named replacement claude-sonnet-4-6 is current."
       ]
     },
@@ -435,11 +481,14 @@
     "note": "Claude 3.5 Sonnet v2 (Oct 2024) retired. Replacement is Anthropic's officially-recommended current Sonnet (corrected from claude-sonnet-4-5).",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-sonnet-4-6\" is live in a public catalog",
+        "matches the provider's officially-recommended replacement \"claude-sonnet-4-6\"",
         "Confirmed retired 2025-10-28; provider-named replacement claude-sonnet-4-6 is current."
       ]
     },
@@ -455,11 +504,14 @@
     "note": "Claude 3.7 Sonnet retired. Replacement is Anthropic's officially-recommended current Sonnet (corrected from claude-sonnet-4-5).",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-sonnet-4-6\" is live in a public catalog",
+        "matches the provider's officially-recommended replacement \"claude-sonnet-4-6\"",
         "Confirmed retired 2026-02-19; provider-named replacement claude-sonnet-4-6 is current."
       ]
     },
@@ -475,11 +527,14 @@
     "note": "Claude 3.5 Haiku retired. Replacement is Anthropic's officially-recommended dated Haiku snapshot (corrected from the bare claude-haiku-4-5 alias).",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-haiku-4-5-20251001\" is live in a public catalog",
+        "matches the provider's officially-recommended replacement \"claude-haiku-4-5-20251001\"",
         "Confirmed retired 2026-02-19; provider-named replacement claude-haiku-4-5-20251001 is current — but its earliest permitted retirement is 2026-10-15 (~2 months out); watch for a deprecation notice."
       ]
     },
@@ -495,11 +550,14 @@
     "note": "Claude Sonnet 4 (May 2025) retired. Replacement is Anthropic's officially-recommended current Sonnet (corrected from claude-sonnet-4-5).",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-sonnet-4-6\" is live in a public catalog",
+        "matches the provider's officially-recommended replacement \"claude-sonnet-4-6\"",
         "Confirmed retired 2026-06-15; provider-named replacement claude-sonnet-4-6 is current."
       ]
     },
@@ -515,11 +573,14 @@
     "note": "Claude Opus 4 (May 2025) retired. Replacement id best-effort; VERIFY against Anthropic's live deprecation table.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-opus-4-8\" is live in a public catalog",
+        "matches the provider's officially-recommended replacement \"claude-opus-4-8\"",
         "Confirmed retired 2026-06-15; provider-named replacement claude-opus-4-8 is current."
       ]
     },
@@ -535,11 +596,14 @@
     "note": "Claude Opus 4.1 (Aug 2025) retired. Replacement id best-effort; VERIFY against Anthropic's live deprecation table.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-opus-4-8\" is live in a public catalog",
+        "matches the provider's officially-recommended replacement \"claude-opus-4-8\"",
         "Confirmed retired 2026-08-05; provider-named replacement claude-opus-4-8 is current."
       ]
     },
@@ -558,11 +622,13 @@
     "note": "Provider-named replacement. Announced 2025-09-26.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-terra\" is live in a public catalog",
         "Provider-named replacement. Announced 2025-09-26."
       ]
     }
@@ -578,11 +644,13 @@
     "note": "Provider-named. Announced 2026-04-22; listed jointly with the gpt-3.5-turbo alias.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-terra\" is live in a public catalog",
         "Provider-named. Announced 2026-04-22; listed jointly with the gpt-3.5-turbo alias."
       ]
     }
@@ -598,11 +666,13 @@
     "note": "Provider named gpt-3.5-turbo, but that model is itself deprecated (shutdown 2026-10-23); chained one hop to its provider-named replacement gpt-5.6-terra.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-terra\" is live in a public catalog",
         "Provider named gpt-3.5-turbo, but that model is itself deprecated (shutdown 2026-10-23); chained one hop to its provider-named replacement gpt-5.6-terra."
       ]
     }
@@ -618,11 +688,14 @@
     "note": "Provider-named. Announced 2025-09-26.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-terra\" is live in a public catalog",
+        "matches the provider's officially-recommended replacement \"gpt-5.6-terra\"",
         "Provider-named. Announced 2025-09-26."
       ]
     }
@@ -638,11 +711,13 @@
     "note": "Provider-named. Listed as 'gpt-3.5-turbo-0125 / gpt-3.5-turbo'. This id is also a replacement TARGET in 3 existing registry rows — those need retargeting.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-terra\" is live in a public catalog",
         "Provider-named. Listed as 'gpt-3.5-turbo-0125 / gpt-3.5-turbo'. This id is also a replacement TARGET in 3 existing registry rows — those need retargeting."
       ]
     }
@@ -658,11 +733,13 @@
     "note": "Provider-named. Listed as 'gpt-4-0613 / gpt-4'. Also a replacement TARGET in 2 existing registry rows — those need retargeting.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
         "Provider-named. Listed as 'gpt-4-0613 / gpt-4'. Also a replacement TARGET in 2 existing registry rows — those need retargeting."
       ]
     }
@@ -678,11 +755,13 @@
     "note": "Provider named a family ('gpt-5 or gpt-4.1 variants'), not a single id; gpt-4.1 selected as the only CURRENT provider-named option (gpt-5 is itself deprecated, shutdown 2026-12-11).",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-4.1\" is live in a public catalog",
         "Provider named a family ('gpt-5 or gpt-4.1 variants'), not a single id; gpt-4.1 selected as the only CURRENT provider-named option (gpt-5 is itself deprecated, shutdown 2026-12-11)."
       ]
     }
@@ -698,11 +777,13 @@
     "note": "Provider-named. Provider-page conflict: also listed as shut down 2026-03-26; later 2026-04-22 announcement used here — treat as possibly already dead.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
         "Provider-named. Provider-page conflict: also listed as shut down 2026-03-26; later 2026-04-22 announcement used here — treat as possibly already dead."
       ]
     }
@@ -718,11 +799,13 @@
     "note": "Alias of gpt-4-0125-preview, which is shut down (alias page banner is stale). Provider named 'gpt-5 or gpt-4.1 variants'; gpt-4.1 selected as the current provider-named option.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-4.1\" is live in a public catalog",
         "Alias of gpt-4-0125-preview, which is shut down (alias page banner is stale). Provider named 'gpt-5 or gpt-4.1 variants'; gpt-4.1 selected as the current provider-named option."
       ]
     }
@@ -738,11 +821,13 @@
     "note": "Provider-named. Announced 2026-04-22.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
         "Provider-named. Announced 2026-04-22."
       ]
     }
@@ -758,11 +843,13 @@
     "note": "Provider-named. Announced 2026-04-22.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
         "Provider-named. Announced 2026-04-22."
       ]
     }
@@ -778,11 +865,14 @@
     "note": "Provider-named; gpt-4o is current.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-4o\" is live in a public catalog",
+        "matches the provider's officially-recommended replacement \"gpt-4o\"",
         "Provider-named; gpt-4o is current."
       ]
     }
@@ -798,11 +888,13 @@
     "note": "Bare id was never served; the real id gpt-4-vision-preview shut down 2024-12-06 with provider-named replacement gpt-4o. Either form fails today.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-4o\" is live in a public catalog",
         "Bare id was never served; the real id gpt-4-vision-preview shut down 2024-12-06 with provider-named replacement gpt-4o. Either form fails today."
       ]
     }
@@ -818,11 +910,13 @@
     "note": "Served API id was gpt-4.5-preview (bare gpt-4.5 was never an API id); provider-named replacement gpt-4.1 (current).",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-4.1\" is live in a public catalog",
         "Served API id was gpt-4.5-preview (bare gpt-4.5 was never an API id); provider-named replacement gpt-4.1 (current)."
       ]
     }
@@ -838,11 +932,13 @@
     "note": "Provider-named.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-4.1\" is live in a public catalog",
         "Provider-named."
       ]
     }
@@ -858,11 +954,13 @@
     "note": "Provider-named. Only this original snapshot is deprecated; the gpt-4o alias and later snapshots remain current — do NOT flag them.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
         "Provider-named. Only this original snapshot is deprecated; the gpt-4o alias and later snapshots remain current — do NOT flag them."
       ]
     }
@@ -878,11 +976,13 @@
     "note": "Provider named gpt-5.1-chat-latest, itself retired 2026-07-23; chained one hop to its provider-named replacement gpt-5.6-sol.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
         "Provider named gpt-5.1-chat-latest, itself retired 2026-07-23; chained one hop to its provider-named replacement gpt-5.6-sol."
       ]
     }
@@ -898,11 +998,13 @@
     "note": "Provider-named. Announced 2026-04-22.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
         "Provider-named. Announced 2026-04-22."
       ]
     }
@@ -918,11 +1020,13 @@
     "note": "Provider-named. Note: o4-mini is currently a replacement TARGET in the existing registry (o1-mini row) — that row needs retargeting.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-terra\" is live in a public catalog",
         "Provider-named. Note: o4-mini is currently a replacement TARGET in the existing registry (o1-mini row) — that row needs retargeting."
       ]
     }
@@ -938,11 +1042,13 @@
     "note": "Provider-named. Only nano is deprecated; gpt-4.1 and gpt-4.1-mini remain current — do NOT flag them.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-luna\" is live in a public catalog",
         "Provider-named. Only nano is deprecated; gpt-4.1 and gpt-4.1-mini remain current — do NOT flag them."
       ]
     }
@@ -958,11 +1064,13 @@
     "note": "Provider-named. Alias resolves to gpt-5-2025-08-07; announced 2026-06-11.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
         "Provider-named. Alias resolves to gpt-5-2025-08-07; announced 2026-06-11."
       ]
     }
@@ -978,11 +1086,13 @@
     "note": "Provider-named.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
         "Provider-named."
       ]
     }
@@ -998,11 +1108,13 @@
     "note": "Provider-named.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-terra\" is live in a public catalog",
         "Provider-named."
       ]
     }
@@ -1018,11 +1130,13 @@
     "note": "Provider-named.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-luna\" is live in a public catalog",
         "Provider-named."
       ]
     }
@@ -1038,11 +1152,13 @@
     "note": "Provider names 'gpt-5.6-sol (pro mode)'.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
         "Provider names 'gpt-5.6-sol (pro mode)'."
       ]
     }
@@ -1057,11 +1173,13 @@
     "note": "Provider-named via model-page banner recommending gpt-5.6; no shutdown date published for the base model. Still callable.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
         "Provider-named via model-page banner recommending gpt-5.6; no shutdown date published for the base model. Still callable."
       ]
     }
@@ -1076,12 +1194,14 @@
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
     "note": "Provider named three options; gpt-image-2 chosen — the other two (gpt-image-1, gpt-image-1-mini) are themselves deprecated.",
     "verification": {
-      "status": "verified",
-      "checkedAt": "2026-08-18",
+      "status": "unverifiable",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "\"dall-e-2\" is a image model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-image-2\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
         "Provider named three options; gpt-image-2 chosen — the other two (gpt-image-1, gpt-image-1-mini) are themselves deprecated."
       ]
     }
@@ -1096,12 +1216,14 @@
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
     "note": "Provider named three options; gpt-image-2 chosen as the only durable provider-named option.",
     "verification": {
-      "status": "verified",
-      "checkedAt": "2026-08-18",
+      "status": "unverifiable",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "\"dall-e-3\" is a image model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-image-2\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
         "Provider named three options; gpt-image-2 chosen as the only durable provider-named option."
       ]
     }
@@ -1116,12 +1238,14 @@
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
     "note": "Provider-named. Announced 2026-04-22.",
     "verification": {
-      "status": "verified",
-      "checkedAt": "2026-08-18",
+      "status": "unverifiable",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "\"gpt-image-1\" is a image model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-image-2\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
         "Provider-named. Announced 2026-04-22."
       ]
     }
@@ -1137,11 +1261,13 @@
     "note": "Provider-named for the Claude 1 family; bare form never documented, but no Claude 1 model works today.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-haiku-4-5-20251001\" is live in a public catalog",
         "Provider-named for the Claude 1 family; bare form never documented, but no Claude 1 model works today."
       ]
     }
@@ -1157,11 +1283,13 @@
     "note": "Provider-named; explicitly listed in the 2024-09-04 notice.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-haiku-4-5-20251001\" is live in a public catalog",
         "Provider-named; explicitly listed in the 2024-09-04 notice."
       ]
     }
@@ -1177,11 +1305,13 @@
     "note": "Provider-named for the Instant family; bare form never documented.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-haiku-4-5-20251001\" is live in a public catalog",
         "Provider-named for the Instant family; bare form never documented."
       ]
     }
@@ -1197,11 +1327,13 @@
     "note": "Provider-named; explicitly listed.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-haiku-4-5-20251001\" is live in a public catalog",
         "Provider-named; explicitly listed."
       ]
     }
@@ -1217,11 +1349,13 @@
     "note": "Provider-named for the Claude 2 family; bare form never documented.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-opus-4-8\" is live in a public catalog",
         "Provider-named for the Claude 2 family; bare form never documented."
       ]
     }
@@ -1237,11 +1371,13 @@
     "note": "Provider-named; explicitly listed in the 2025-01-21 notice.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-opus-4-8\" is live in a public catalog",
         "Provider-named; explicitly listed in the 2025-01-21 notice."
       ]
     }
@@ -1257,11 +1393,13 @@
     "note": "Provider-named; explicitly listed.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-opus-4-8\" is live in a public catalog",
         "Provider-named; explicitly listed."
       ]
     }
@@ -1277,11 +1415,14 @@
     "note": "Provider-named. GAP: confirmed retired but absent from the existing registry — add.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-sonnet-4-6\" is live in a public catalog",
+        "matches the provider's officially-recommended replacement \"claude-sonnet-4-6\"",
         "Provider-named. GAP: confirmed retired but absent from the existing registry — add."
       ]
     }
@@ -1297,11 +1438,13 @@
     "note": "Provider-named; dateless form was never a documented alias, but calls fail today.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-sonnet-4-6\" is live in a public catalog",
         "Provider-named; dateless form was never a documented alias, but calls fail today."
       ]
     }
@@ -1317,11 +1460,14 @@
     "note": "Provider-named; deprecated 2026-02-19, retired 2026-04-20.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-haiku-4-5-20251001\" is live in a public catalog",
+        "matches the provider's officially-recommended replacement \"claude-haiku-4-5-20251001\"",
         "Provider-named; deprecated 2026-02-19, retired 2026-04-20."
       ]
     }
@@ -1337,11 +1483,13 @@
     "note": "Provider-named; dateless form never documented, calls fail today.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-haiku-4-5-20251001\" is live in a public catalog",
         "Provider-named; dateless form never documented, calls fail today."
       ]
     }
@@ -1357,11 +1505,13 @@
     "note": "Provider-named; dateless form never documented, calls fail today.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-opus-4-8\" is live in a public catalog",
         "Provider-named; dateless form never documented, calls fail today."
       ]
     }
@@ -1377,11 +1527,13 @@
     "note": "Provider-named; alias died with claude-3-opus-20240229.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-opus-4-8\" is live in a public catalog",
         "Provider-named; alias died with claude-3-opus-20240229."
       ]
     }
@@ -1397,11 +1549,13 @@
     "note": "Provider-named; both 3.5 Sonnet snapshots retired 2025-10-28.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-sonnet-4-6\" is live in a public catalog",
         "Provider-named; both 3.5 Sonnet snapshots retired 2025-10-28."
       ]
     }
@@ -1417,11 +1571,13 @@
     "note": "Provider-named; alias died with the 20241022 snapshot.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-sonnet-4-6\" is live in a public catalog",
         "Provider-named; alias died with the 20241022 snapshot."
       ]
     }
@@ -1437,11 +1593,13 @@
     "note": "Provider-named.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-haiku-4-5-20251001\" is live in a public catalog",
         "Provider-named."
       ]
     }
@@ -1457,11 +1615,13 @@
     "note": "Provider-named; alias died with the 20241022 snapshot.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-haiku-4-5-20251001\" is live in a public catalog",
         "Provider-named; alias died with the 20241022 snapshot."
       ]
     }
@@ -1477,11 +1637,13 @@
     "note": "Provider-named.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-sonnet-4-6\" is live in a public catalog",
         "Provider-named."
       ]
     }
@@ -1497,11 +1659,13 @@
     "note": "Provider-named; alias died with the 20250219 snapshot.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-sonnet-4-6\" is live in a public catalog",
         "Provider-named; alias died with the 20250219 snapshot."
       ]
     }
@@ -1517,11 +1681,13 @@
     "note": "Provider-named; alias died with claude-sonnet-4-20250514.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-sonnet-4-6\" is live in a public catalog",
         "Provider-named; alias died with claude-sonnet-4-20250514."
       ]
     }
@@ -1537,11 +1703,13 @@
     "note": "Provider-named; documented alias was claude-sonnet-4-0, but calls to the bare form fail today.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-sonnet-4-6\" is live in a public catalog",
         "Provider-named; documented alias was claude-sonnet-4-0, but calls to the bare form fail today."
       ]
     }
@@ -1557,11 +1725,13 @@
     "note": "Provider-named; documented alias was claude-opus-4-0.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-opus-4-8\" is live in a public catalog",
         "Provider-named; documented alias was claude-opus-4-0."
       ]
     }
@@ -1577,11 +1747,13 @@
     "note": "Provider-named; alias died with claude-opus-4-1-20250805 (retired 13 days ago).",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"claude-opus-4-8\" is live in a public catalog",
         "Provider-named; alias died with claude-opus-4-1-20250805 (retired 13 days ago)."
       ]
     }
@@ -1597,11 +1769,13 @@
     "note": "No provider replacement named; replacement inferred, not provider-named (closest current same-class Pro model).",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-2.5-pro\" is live in a public catalog",
         "No provider replacement named; replacement inferred, not provider-named (closest current same-class Pro model)."
       ]
     }
@@ -1617,11 +1791,13 @@
     "note": "replacement inferred, not provider-named (2.5 Pro is natively multimodal, same Pro class).",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-2.5-pro\" is live in a public catalog",
         "replacement inferred, not provider-named (2.5 Pro is natively multimodal, same Pro class)."
       ]
     }
@@ -1637,11 +1813,13 @@
     "note": "replacement inferred, not provider-named.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-2.5-pro\" is live in a public catalog",
         "replacement inferred, not provider-named."
       ]
     }
@@ -1657,11 +1835,13 @@
     "note": "replacement inferred, not provider-named.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-2.5-pro\" is live in a public catalog",
         "replacement inferred, not provider-named."
       ]
     }
@@ -1677,11 +1857,13 @@
     "note": "replacement inferred, not provider-named.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-2.5-pro\" is live in a public catalog",
         "replacement inferred, not provider-named."
       ]
     }
@@ -1697,11 +1879,13 @@
     "note": "Whole 1.5 line shut down; replacement inferred, not provider-named.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-2.5-pro\" is live in a public catalog",
         "Whole 1.5 line shut down; replacement inferred, not provider-named."
       ]
     }
@@ -1717,11 +1901,13 @@
     "note": "replacement inferred, not provider-named.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-2.5-pro\" is live in a public catalog",
         "replacement inferred, not provider-named."
       ]
     }
@@ -1737,11 +1923,13 @@
     "note": "replacement inferred, not provider-named.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-2.5-pro\" is live in a public catalog",
         "replacement inferred, not provider-named."
       ]
     }
@@ -1757,11 +1945,13 @@
     "note": "replacement inferred, not provider-named.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-2.5-pro\" is live in a public catalog",
         "replacement inferred, not provider-named."
       ]
     }
@@ -1777,11 +1967,13 @@
     "note": "replacement inferred, not provider-named (closest current same-class Flash model).",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-2.5-flash\" is live in a public catalog",
         "replacement inferred, not provider-named (closest current same-class Flash model)."
       ]
     }
@@ -1797,11 +1989,13 @@
     "note": "replacement inferred, not provider-named.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-2.5-flash\" is live in a public catalog",
         "replacement inferred, not provider-named."
       ]
     }
@@ -1817,11 +2011,13 @@
     "note": "replacement inferred, not provider-named.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-2.5-flash\" is live in a public catalog",
         "replacement inferred, not provider-named."
       ]
     }
@@ -1837,11 +2033,13 @@
     "note": "replacement inferred, not provider-named (flash-lite matches the 8b cost-optimized class; plain 2.5-flash would be a capability-class upgrade).",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-2.5-flash-lite\" is live in a public catalog",
         "replacement inferred, not provider-named (flash-lite matches the 8b cost-optimized class; plain 2.5-flash would be a capability-class upgrade)."
       ]
     }
@@ -1857,11 +2055,13 @@
     "note": "replacement inferred, not provider-named.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-2.5-flash\" is live in a public catalog",
         "replacement inferred, not provider-named."
       ]
     }
@@ -1877,11 +2077,13 @@
     "note": "replacement inferred, not provider-named.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-2.5-flash\" is live in a public catalog",
         "replacement inferred, not provider-named."
       ]
     }
@@ -1897,11 +2099,13 @@
     "note": "Provider-named. Caution: gemini-3.1-flash-lite is itself deprecated (shutdown 2027-05-07, successor gemini-3.5-flash-lite).",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-3.1-flash-lite\" is live in a public catalog",
         "Provider-named. Caution: gemini-3.1-flash-lite is itself deprecated (shutdown 2027-05-07, successor gemini-3.5-flash-lite)."
       ]
     }
@@ -1917,11 +2121,13 @@
     "note": "Provider-named; same caution as gemini-2.0-flash-lite.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-3.1-flash-lite\" is live in a public catalog",
         "Provider-named; same caution as gemini-2.0-flash-lite."
       ]
     }
@@ -1937,11 +2143,13 @@
     "note": "replacement inferred, not provider-named (2.5 Flash has native thinking).",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-2.5-flash\" is live in a public catalog",
         "replacement inferred, not provider-named (2.5 Flash has native thinking)."
       ]
     }
@@ -1957,11 +2165,13 @@
     "note": "replacement inferred, not provider-named.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-2.5-pro\" is live in a public catalog",
         "replacement inferred, not provider-named."
       ]
     }
@@ -1977,11 +2187,13 @@
     "note": "Provider-named (replacement is Preview-tier, weaker stability guarantees).",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-3.1-pro-preview\" is live in a public catalog",
         "Provider-named (replacement is Preview-tier, weaker stability guarantees)."
       ]
     }
@@ -1997,11 +2209,13 @@
     "note": "replacement inferred, not provider-named (GA model of the same line).",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-2.5-flash\" is live in a public catalog",
         "replacement inferred, not provider-named (GA model of the same line)."
       ]
     }
@@ -2016,12 +2230,14 @@
     "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
     "note": "Provider-named, but research did not independently verify gemini-3.6-flash's own status (only gemini-3.5-flash confirmed current) — verify before auto-applying.",
     "verification": {
-      "status": "unverified",
-      "checkedAt": "2026-08-18",
+      "status": "verified",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-3.6-flash\" is live in a public catalog",
         "replacement gemini-3.6-flash not independently verified current — audit flagged"
       ]
     }
@@ -2037,11 +2253,13 @@
     "note": "Provider-named.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-3.1-pro-preview\" is live in a public catalog",
         "Provider-named."
       ]
     }
@@ -2057,11 +2275,13 @@
     "note": "Provider-named.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-3.1-pro-preview\" is live in a public catalog",
         "Provider-named."
       ]
     }
@@ -2075,12 +2295,14 @@
     "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
     "note": "Provider-named; no shutdown announced, still callable. Note: this is the current resolution target of the gemini-flash-latest alias used as a target by the existing registry.",
     "verification": {
-      "status": "unverified",
-      "checkedAt": "2026-08-18",
+      "status": "verified",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-3.6-flash\" is live in a public catalog",
         "replacement gemini-3.6-flash not independently verified current — audit flagged"
       ]
     }
@@ -2096,11 +2318,13 @@
     "note": "Provider-named.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-3.1-pro-preview\" is live in a public catalog",
         "Provider-named."
       ]
     }
@@ -2116,11 +2340,13 @@
     "note": "Provider-named; long runway (Google lists earliest-possible dates). Also the replacement target for the 2.0-flash-lite rows.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-3.5-flash-lite\" is live in a public catalog",
         "Provider-named; long runway (Google lists earliest-possible dates). Also the replacement target for the 2.0-flash-lite rows."
       ]
     }
@@ -2136,11 +2362,13 @@
     "note": "Provider-named; long runway, low urgency.",
     "verification": {
       "status": "verified",
-      "checkedAt": "2026-08-18",
+      "checkedAt": "2026-08-21",
       "sources": [
-        "provider-deprecations-page"
+        "openrouter",
+        "models.dev"
       ],
       "reasons": [
+        "replacement \"gemini-embedding-2\" is live in a public catalog",
         "Provider-named; long runway, low urgency."
       ]
     }

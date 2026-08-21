@@ -118,3 +118,52 @@ export function classifyEntry(
   }
   return { status: 'verified', reasons };
 }
+
+// --- re-stamping without erasing the humans ---------------------------------
+//
+// `verify-registry --write` rewrites each entry's `verification` block from a
+// fresh classification. Left naive, that write is DESTRUCTIVE: every reason in
+// the shipped registry is hand-written research ("Confirmed retired
+// 2024-09-13…", "retirement confirmed by a real production breakage…", "do not
+// auto-apply until verified"), and a re-stamp would replace all of it with the
+// classifier's one-line catalog verdict.
+//
+// The dangerous half of that is not the lost provenance, it is the lost
+// CAVEATS. A hand-written "status unknown -- do not auto-apply" is exactly what
+// holds a self-contradicting entry at Tier B (see hasSelfContradictingReasons);
+// erasing it during a routine recheck would silently promote that entry to
+// auto-apply. So a re-stamp REPLACES the machine's own sentences and KEEPS
+// everything a person wrote.
+
+/**
+ * The sentences {@link classifyEntry} itself produces, as anchored patterns.
+ * Recognising them is what makes a re-stamp idempotent: the machine's previous
+ * verdict is regenerated rather than accumulated, while anything that does not
+ * match one of these was written by a human and is kept.
+ */
+const MACHINE_REASON_PATTERNS: readonly RegExp[] = [
+  /^"[^"]+" is a \w+ model; public catalogs \(models\.dev, OpenRouter\) do not list this class/,
+  /^replacement "[^"]+" is ITSELF deprecated \(chained deprecation\)/,
+  /^replacement "[^"]+" was not found live in any public catalog/,
+  /^replacement "[^"]+" is live in a public catalog$/,
+  /^the provider officially recommends "[^"]+"/,
+  /^matches the provider's officially-recommended replacement "[^"]+"/,
+];
+
+/** Was this reason written by the classifier (rather than by a person)? */
+export function isMachineReason(reason: string): boolean {
+  return MACHINE_REASON_PATTERNS.some((re) => re.test(reason.trim()));
+}
+
+/**
+ * The reason list a re-stamp should write: this run's machine verdict, then
+ * every human reason the entry already carried, in its original order and
+ * verbatim. Duplicates are dropped, so re-running is idempotent.
+ */
+export function mergeReasons(
+  fresh: readonly string[],
+  prior: readonly string[] | undefined,
+): string[] {
+  const carried = (prior ?? []).filter((r) => !isMachineReason(r) && !fresh.includes(r));
+  return [...fresh, ...carried];
+}

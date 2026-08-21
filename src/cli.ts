@@ -21,12 +21,15 @@ import { runRepoTests } from './gates/runTests.js';
 import { runRepoEval, type EvalGateResult } from './gates/runEval.js';
 import { loadRepoConfig, REPO_CONFIG_FILENAME, type RepoConfig } from './config/repoConfig.js';
 import {
+  effectiveVerificationState,
   isVerified,
   loadLlmRegistry,
   modelIdEntries,
   registryProvenance,
   resolveRegistryPath,
+  selfContradictionMarkersIn,
   staleRegistryWarning,
+  type EffectiveVerificationState,
 } from './usage/llmRegistry.js';
 import {
   findModelIdLiterals,
@@ -53,22 +56,32 @@ import {
   type GateSummaryFacts,
 } from './report/llmReport.js';
 import {
+  assertSingleTerminalTier,
+  crossTierCollisions,
+  devChecksEnabled,
   formatFoundLines,
   formatSummaryLines,
   formatTierBSection,
+  multiTierNotes,
   orderTierB,
   tierBFinding,
   tierBJson,
+  type RegistryVerdict,
   type TierBFinding,
   type TierCounts,
+  type TierOccurrence,
 } from './report/tiers.js';
-import { writeAllOrNothing, type PendingWrite } from './fix/atomicWrite.js';
+import {
+  writeAllOrNothing,
+  type AtomicWriteResult,
+  type PendingWrite,
+} from './fix/atomicWrite.js';
 import { findParamSites } from './fix/paramFix.js';
 import { applyLlmFixesToProject, type LlmFixResult } from './fix/llmFix.js';
 import { collectPythonFiles, readPythonSources, scanPyAnnotations } from './python/scanPy.js';
 import { applyPyModelIdFixesToSources } from './python/fixPy.js';
 import type { TestGateResult } from './gates/runTests.js';
-import { classifyEntry } from './registry/verify.js';
+import { classifyEntry, mergeReasons } from './registry/verify.js';
 import { fetchOracles } from './registry/oracles.js';
 import {
   loadCandidates,
@@ -387,6 +400,62 @@ program
     const dataGroups = groupDataFindingsByFile(dataViews);
 
     /**
+     * WHAT DID THE REGISTRY RECORD FOR THIS ID? Read from the entry that was
+     * actually loaded for this run — the same verdict the engine gate reads to
+     * decide whether a swap may be auto-applied, and the same split the footer
+     * prints as "98 verified, 3 unverified, 5 unverifiable".
+     *
+     * NOT a claim that anything was checked during this run: `fix-llm` makes no
+     * network call, so the strongest thing that can be said is what the JSON
+     * says (see registryVerdictText).
+     *
+     * FAIL CLOSED on an id with no entry: that cannot happen (every finding
+     * came FROM a registry match), and if it ever did, `unverified` is the only
+     * safe thing to say about a mapping whose record we cannot find.
+     */
+    const modelIdByValue = new Map<string, LlmModelIdDeprecation>();
+    for (const entry of modelIdEntries(registry)) {
+      if (!modelIdByValue.has(entry.deprecated)) modelIdByValue.set(entry.deprecated, entry);
+    }
+    const verdictFor = (modelId: string): RegistryVerdict => {
+      const state = modelIdByValue.get(modelId);
+      switch (state && effectiveVerificationState(state)) {
+        case 'verified':
+          return 'verified';
+        case 'self-contradicted':
+          return 'self-contradicted';
+        default:
+          return 'unverified';
+      }
+    };
+    /** The date the registry stamped that verdict, if the entry carries one. */
+    const verdictDateFor = (modelId: string): string | undefined =>
+      modelIdByValue.get(modelId)?.verification?.checkedAt;
+    /**
+     * The extra audit line a SELF-CONTRADICTING entry earns, printed above the
+     * registry's own reasons. Without it the detail block reads as a list of
+     * caveats under a `verified` stamp; with it, the reader knows those caveats
+     * are the reason no patch was generated, and which words tripped the gate.
+     */
+    const selfContradictionDetail = (
+      status: EffectiveVerificationState | undefined,
+      reasons: string[] | undefined,
+    ): string[] => {
+      // ONLY for the entries the stamp and the reasons actually disagree
+      // about. An entry stamped `unverified` over the same caveats is not
+      // contradicting itself -- it is agreeing with itself -- and saying
+      // "stamped verified, but..." over it would be a fresh false claim.
+      if (status !== 'self-contradicted') return [];
+      const markers = selfContradictionMarkersIn(reasons);
+      if (markers.length === 0) return [];
+      return [
+        `HELD BY MENDR: this entry is stamped verified, but its own reasons below say ` +
+          `${markers.map((m) => `"${m}"`).join(', ')} -- a stamp that contradicts its own ` +
+          `working is never auto-applied.`,
+      ];
+    };
+
+    /**
      * TIER B, assembled from the four EXISTING detection surfaces. Nothing new
      * is detected here — each finding already existed, it just used to be
      * reported under a heading of its own with prose instead of a reason code.
@@ -402,9 +471,12 @@ program
             column: b.location.column,
             modelId: b.value,
             replacement: b.replacement,
+            registryVerdict: verdictFor(b.value),
+            verdictCheckedAt: verdictDateFor(b.value),
             status: b.status,
-            // The verification gate's own audit trail, preserved verbatim.
-            detail: b.reasons,
+            // The verification gate's own audit trail, preserved verbatim --
+            // under mendr's own line when the entry contradicts itself.
+            detail: [...selfContradictionDetail(b.status, b.reasons), ...(b.reasons ?? [])],
           },
           'replacement_unverified',
         ),
@@ -417,6 +489,8 @@ program
             column: a.location.column,
             modelId: a.value,
             replacement: a.replacement,
+            registryVerdict: verdictFor(a.value),
+            verdictCheckedAt: verdictDateFor(a.value),
           },
           'platform_blocked',
         ),
@@ -429,6 +503,8 @@ program
             column: u.location.column,
             modelId: u.value,
             replacement: u.replacement,
+            registryVerdict: verdictFor(u.value),
+            verdictCheckedAt: verdictDateFor(u.value),
           },
           'usage_unverified',
         ),
@@ -441,6 +517,8 @@ program
             column: d.column,
             modelId: d.value,
             replacement: d.replacement,
+            registryVerdict: verdictFor(d.value),
+            verdictCheckedAt: verdictDateFor(d.value),
           },
           'type_cast_masked',
         ),
@@ -459,6 +537,64 @@ program
       tierB: tierBFindings.length,
       tierC: dataViews.length,
     };
+
+    /**
+     * EVERY model-id occurrence this scan classified, tagged with the ONE
+     * terminal tier it landed in. Two things are built on it:
+     *
+     *   1. the dev-check below, which proves the "exactly one tier" rule
+     *      rather than assuming it (see report/tiers.ts);
+     *   2. the clarifying note under the counts, which is only honest BECAUSE
+     *      of (1) — "these are different occurrences" is a claim about the
+     *      classifier, and it needs to be one that has been checked.
+     *
+     * Param transforms are deliberately absent: their key would be a PARAM
+     * name in the model-id key space, and a collision between the two would be
+     * a coincidence of strings rather than a real double classification.
+     */
+    const tierOccurrences: TierOccurrence[] = [
+      ...swapMatches.map((m) => ({
+        tier: 'A' as const,
+        file: rel(m.location.file),
+        line: m.location.line,
+        column: m.location.column,
+        modelId: m.value,
+      })),
+      ...pyResult.swapMatches.map((m) => ({
+        tier: 'A' as const,
+        file: rel(m.location.file),
+        line: m.location.line,
+        column: m.location.column,
+        modelId: m.value,
+      })),
+      ...tierBFindings.map((f) => ({
+        tier: 'B' as const,
+        file: f.file,
+        line: f.line,
+        column: f.column,
+        modelId: f.modelId,
+      })),
+      ...dataViews.map((d) => ({
+        tier: 'C' as const,
+        file: d.file,
+        line: d.line,
+        column: d.column,
+        modelId: d.value,
+      })),
+    ];
+    // The rule is A > B > C, one tier per (file, line, column, id). A key in
+    // two tiers is a classifier bug: fatal under dev-checks so a test can
+    // catch it, a loud line in a user's run so a real bug cannot hide but the
+    // report they were reading still arrives.
+    const tierCollisions = crossTierCollisions(tierOccurrences);
+    if (tierCollisions.length > 0) {
+      if (devChecksEnabled()) assertSingleTerminalTier(tierOccurrences);
+      say(
+        `warning: internal tier invariant violated -- ${tierCollisions.length} occurrence` +
+          `${tierCollisions.length === 1 ? '' : 's'} classified into more than one tier ` +
+          `(${tierCollisions.join('; ')}). Please report this.`,
+      );
+    }
 
     /**
      * The (g) footer: registry provenance + the exact commit that was scanned.
@@ -553,6 +689,10 @@ program
     // codes INSIDE Tier B, so the breakdown line carries them without
     // reintroducing a fourth and fifth top-level bucket.
     for (const line of formatFoundLines(tierCounts, tierBFindings, catalogCtx)) say(line);
+    // The same deprecated id can legitimately sit in two tiers at two
+    // different positions. Said plainly, once, right under the counts it would
+    // otherwise make look wrong — and printed only when it actually happens.
+    for (const note of multiTierNotes(tierOccurrences)) say(note);
 
     // Human labels. Model-id: one per unique deprecated -> replacement swap,
     // counting only swap-safe (`model_arg`) positions. Carry the lifecycle so
@@ -954,10 +1094,69 @@ program
     // it the patch exists only on screen, and the Summary used to print
     // "N auto-fixed" three lines above "To apply: re-run with --write".
     const thisRunWrites = !!opts.write && !opts.skipGates;
+
+    // --- THE WRITE, RUN BEFORE THE SUMMARY IS COMPUTED ---------------------
+    //
+    // This used to sit BELOW the Summary block, which meant the summary was
+    // computed from the INTENT to write and printed before the write was
+    // attempted. A read-only file (or one locked by an editor) aborts the
+    // atomic write with zero files changed — and the report still said
+    // `Summary: tier A 3 (3 auto-fixed)` over a working tree nobody had
+    // touched. Exit code and a stderr line were the only signals that the
+    // headline number was wrong.
+    //
+    // So the transaction happens first and the summary reads its RESULT. The
+    // eval-failure path already worked this way (it downgrades the tier before
+    // the summary prints); this is the same rule applied to the other way a
+    // Tier A fix can fail to land. The user-facing MESSAGES still print in
+    // their old position, below the summary, from the outcome recorded here.
+    const pyOriginalByPath = new Map(pySources.map((s) => [s.path, s.text]));
+    const pending: PendingWrite[] = [];
+    const writeLanguages: string[] = [];
+    if (thisRunWrites && tsTier === 'A' && tsPatchedFiles.length > 0) {
+      pending.push(...tsPatchedFiles);
+      writeLanguages.push(`${tsPatchedFiles.length} ts`);
+    }
+    if (thisRunWrites && pyTier === 'A' && pyResult.patchedFiles.length > 0) {
+      // Every patched path came from `pySources` by construction — the fix
+      // pass only edits text it was handed.
+      for (const f of pyResult.patchedFiles) {
+        pending.push({ ...f, originalText: pyOriginalByPath.get(f.absPath)! });
+      }
+      writeLanguages.push(`${pyResult.patchedFiles.length} py`);
+    }
+    // Each language still EARNS its own tier separately — a TS downgrade must
+    // not block a verified python fix, and vice versa — but the WRITE itself is
+    // ONE all-or-nothing transaction across both. A TS+Python repo whose TS
+    // files land and whose .py files fail is the half-migrated state that is
+    // strictly worse than not running mendr at all (see fix/atomicWrite).
+    const writeAttempted = thisRunWrites && pending.length > 0;
+    const writeResult: AtomicWriteResult = writeAttempted
+      ? writeAllOrNothing(pending)
+      : { written: [], rolledBack: false };
+    const writeApplied = writeResult.written.length > 0;
+    /**
+     * WHAT THE WORKING TREE ACTUALLY DID, in the shape the summary and the
+     * `--json` document both read. `applied: false` with `attempted: true` is
+     * the refusal case: the patch was ready, the gates passed, and NOTHING was
+     * written.
+     */
+    const writeOutcome = {
+      attempted: writeAttempted,
+      applied: writeApplied,
+      filesWritten: writeResult.written.length,
+      reason: writeAttempted && !writeApplied ? (writeResult.error ?? 'write failed') : null,
+    };
+
     say('');
     for (const line of formatSummaryLines(tierCounts, {
-      applied: thisRunWrites ? gatedSites : 0,
-      ready: thisRunWrites ? 0 : gatedSites,
+      // `auto-fixed` is claimable ONLY once the files are on disk.
+      applied: writeApplied ? gatedSites : 0,
+      // A run that never attempted a write leaves its patches READY; one whose
+      // write was refused leaves them unwritten for a different reason, and the
+      // two must not share a word.
+      ready: thisRunWrites && writeAttempted ? 0 : gatedSites,
+      refused: writeAttempted && !writeApplied ? gatedSites : 0,
       downgraded: tierCounts.tierA - gatedSites,
     })) {
       say(line);
@@ -984,35 +1183,17 @@ program
           're-run without --skip-gates to write.',
       );
     } else if (opts.write) {
-      // Each language still EARNS its own tier separately — a TS downgrade must
-      // not block a verified python fix, and vice versa — but the WRITE itself
-      // is ONE all-or-nothing transaction across both. A TS+Python repo whose
-      // TS files land and whose .py files fail is the half-migrated state that
-      // is strictly worse than not running mendr at all (see fix/atomicWrite).
-      const pyOriginalByPath = new Map(pySources.map((s) => [s.path, s.text]));
-      const pending: PendingWrite[] = [];
-      const languages: string[] = [];
-      if (tsTier === 'A' && tsPatchedFiles.length > 0) {
-        pending.push(...tsPatchedFiles);
-        languages.push(`${tsPatchedFiles.length} ts`);
-      }
-      if (pyTier === 'A' && pyResult.patchedFiles.length > 0) {
-        // Every patched path came from `pySources` by construction — the fix
-        // pass only edits text it was handed.
-        for (const f of pyResult.patchedFiles) {
-          pending.push({ ...f, originalText: pyOriginalByPath.get(f.absPath)! });
-        }
-        languages.push(`${pyResult.patchedFiles.length} py`);
-      }
+      // The transaction itself already ran, up above the Summary block (see
+      // "THE WRITE, RUN BEFORE THE SUMMARY IS COMPUTED"). What is left here is
+      // REPORTING it, in the position users have always read it.
       const downgraded = (tsTier === 'C' && tsTotalSites > 0) || pyTier === 'C';
 
-      const writeResult = writeAllOrNothing(pending);
-      if (writeResult.written.length > 0) {
+      if (writeApplied) {
         const n = writeResult.written.length;
         say('');
         say(
           `Applied the verified Tier A fix to ${n} file${n === 1 ? '' : 's'} ` +
-            `(${languages.join(' + ')}) in ${resolved} -- all-or-nothing: every file ` +
+            `(${writeLanguages.join(' + ')}) in ${resolved} -- all-or-nothing: every file ` +
             `landed, or none would have.`,
         );
         if (writeResult.error) {
@@ -1046,7 +1227,7 @@ program
             'Review their diff above and apply by hand if it is correct.',
         );
       }
-      if (pending.length === 0 && !downgraded) {
+      if (!writeAttempted && !downgraded) {
         say('');
         say('Nothing to --write (no verified Tier A changes).');
       }
@@ -1098,6 +1279,17 @@ program
               // consumer can read Tier A alone as behavioral approval.
               behavioralVerification: behavioral.status,
             },
+            /**
+             * DID THE WORKING TREE CHANGE? Until this field existed, the only
+             * signals that a `--write` run had written nothing were the exit
+             * code and a line on stderr — while `summary.tierA` sat there
+             * looking like a fix that landed. `attempted` is true whenever
+             * `--write` had gated patches to write; `applied` is true only
+             * once they are on disk; `reason` carries the abort message
+             * verbatim (the same text stderr got), and is null when there is
+             * nothing to explain.
+             */
+            write: writeOutcome,
             tierA: [
               ...swapMatches.map((m) => ({
                 file: rel(m.location.file),
@@ -1153,7 +1345,7 @@ program
             informational: dataGroups.map((g) => ({
               file: g.file,
               count: g.hits,
-              ids: [...g.idCounts.keys()],
+              ids: [...g.idLines.keys()],
             })),
             usageUnverified: tierBFindings
               .filter((f) => f.reason === 'usage_unverified')
@@ -1225,7 +1417,11 @@ program
       unverifiable: 0,
     };
     const blocked: { status: VerificationStatus; provider: string; from: string; to: string }[] = [];
+    /** Entries whose stamp this run CHANGED — the audit's real payload. */
+    const flipped: { from: string; was: string; now: VerificationStatus }[] = [];
     let modelEntries = 0;
+    let carriedReasons = 0;
+    let heldByOwnReasons = 0;
 
     for (const entry of raw) {
       if (entry.kind !== 'model_id') continue;
@@ -1233,6 +1429,8 @@ program
       const model = entry as unknown as LlmModelIdDeprecation;
       const { status, reasons } = classifyEntry(model, oracles);
       counts[status]++;
+      const stamped = model.verification?.status ?? 'unstamped';
+      if (stamped !== status) flipped.push({ from: model.deprecated, was: stamped, now: status });
 
       console.log(`[${status.toUpperCase().padEnd(12)}] ${model.provider}: ${model.deprecated} -> ${model.replacement}`);
       for (const reason of reasons) console.log(`               - ${reason}`);
@@ -1240,8 +1438,23 @@ program
       if (status !== 'verified') {
         blocked.push({ status, provider: model.provider, from: model.deprecated, to: model.replacement });
       }
+      // A RECHECK MUST NOT ERASE THE RESEARCH. The classifier's verdict
+      // replaces the classifier's PREVIOUS verdict; every hand-written reason
+      // is carried through verbatim (see mergeReasons). Without this, a routine
+      // `--write` would delete the caveats that hold a self-contradicting entry
+      // out of Tier A -- silently promoting the very entries this gate exists
+      // to catch.
+      const merged = mergeReasons(reasons, model.verification?.reasons);
+      carriedReasons += merged.length - reasons.length;
+      if (status === 'verified' && selfContradictionMarkersIn(merged).length > 0) {
+        heldByOwnReasons++;
+        console.log(
+          '               ! stamped verified, but a carried-over reason contradicts it -- ' +
+            'the engine gate holds this at Tier B',
+        );
+      }
       if (opts.write) {
-        entry.verification = { status, checkedAt, sources: oracles.sources, reasons };
+        entry.verification = { status, checkedAt, sources: oracles.sources, reasons: merged };
       }
     }
 
@@ -1252,6 +1465,14 @@ program
     console.log(`  unverified   : ${counts.unverified}  (live but stale/chained/superseded — BLOCKED)`);
     console.log(`  unverifiable : ${counts.unverifiable}  (out-of-class moderation/image/audio/tts — BLOCKED)`);
 
+    if (heldByOwnReasons > 0) {
+      console.log(
+        `  (of the verified, ${heldByOwnReasons} carr${heldByOwnReasons === 1 ? 'ies' : 'y'} a ` +
+          `recorded reason that contradicts the stamp and stay${heldByOwnReasons === 1 ? 's' : ''} ` +
+          'blocked from auto-apply)',
+      );
+    }
+
     if (blocked.length > 0) {
       console.log('');
       console.log('BLOCKED from auto-apply (verification gate withholds Tier A):');
@@ -1260,10 +1481,32 @@ program
       }
     }
 
+    // WHAT MOVED. The per-entry list above is the audit; this is the DIFF
+    // against what shipped, which is the part a reviewer has to sign off on.
+    console.log('');
+    if (flipped.length === 0) {
+      console.log('shipped stamps agree with the live catalogs on every entry.');
+    } else {
+      console.log(
+        `shipped stamps DISAGREE with the live catalogs on ${flipped.length} ` +
+          `entr${flipped.length === 1 ? 'y' : 'ies'}:`,
+      );
+      for (const f of flipped) {
+        // The unsafe direction is named as such: a shipped `verified` that live
+        // data cannot support is one users may already have auto-applied.
+        const unsafe = f.was === 'verified' ? '   <-- shipped verified, live says otherwise' : '';
+        console.log(`  ${f.from}: ${f.was} -> ${f.now}${unsafe}`);
+      }
+    }
+
     if (opts.write) {
       writeFileSync(registryPath, `${JSON.stringify(raw, null, 2)}\n`);
       console.log('');
-      console.log(`Stamped verification.status into ${modelEntries} model_id entries -> ${registryPath}`);
+      console.log(
+        `Stamped verification.status into ${modelEntries} model_id entries ` +
+          `(checkedAt ${checkedAt}; kept ${carriedReasons} hand-written reason` +
+          `${carriedReasons === 1 ? '' : 's'}) -> ${registryPath}`,
+      );
     }
   });
 
@@ -1299,6 +1542,17 @@ program
     console.log(`  source url   : ${entry.sourceUrl ?? 'none recorded'}`);
     const verification = entry.verification;
     console.log(`  verification : ${verification?.status ?? 'unstamped (blocked from auto-apply)'}`);
+    // The stamp is not the last word. When the reasons below contradict it,
+    // the engine holds the entry back -- and this command is where a reader
+    // sent by a Tier B finding lands, so it must not show a bare `verified`
+    // over a mapping mendr just refused to apply.
+    if (effectiveVerificationState(entry) === 'self-contradicted') {
+      const markers = selfContradictionMarkersIn(verification?.reasons);
+      console.log(
+        `  engine gate  : HELD -- the reasons below contradict this stamp ` +
+          `(${markers.map((m) => `"${m}"`).join(', ')}), so mendr will not auto-apply it`,
+      );
+    }
     if (verification?.checkedAt) console.log(`    checked at : ${verification.checkedAt}`);
     if (verification?.sources?.length) console.log(`    oracles    : ${verification.sources.join(', ')}`);
     for (const reason of verification?.reasons ?? []) console.log(`    - ${reason}`);

@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import type { LlmModelIdDeprecation } from '../types.js';
 import { canonicalizeId, familyOf } from './normalize.js';
-import { classifyEntry, type VerificationOracles } from './verify.js';
+import {
+  classifyEntry,
+  isMachineReason,
+  mergeReasons,
+  type VerificationOracles,
+} from './verify.js';
 
 // Pure-classifier tests. Oracle data is hand-built so every branch of the status
 // rule is exercised hermetically — no network, no clock, no filesystem.
@@ -115,5 +120,65 @@ describe('classifyEntry — UNVERIFIED (replacement not live)', () => {
     const r = classifyEntry(entry('gpt-4-0613', 'gpt-4-imaginary'), oracles);
     expect(r.status).toBe('unverified');
     expect(r.reasons.join(' ')).toMatch(/not found live/);
+  });
+});
+
+
+// --- re-stamping must not erase the humans ----------------------------------
+//
+// `verify-registry --write` overwrites each entry's `verification` block. Every
+// reason in the shipped registry is hand-written research, and some of it is a
+// CAVEAT ("status unknown -- do not auto-apply") that is the only thing holding
+// a mis-stamped entry out of Tier A. A recheck that quietly deleted those would
+// promote exactly the entries the gate exists to catch — the destructive edit
+// dressed up as routine maintenance.
+describe('mergeReasons', () => {
+  const machine = [
+    'replacement "gpt-5.6-sol" is live in a public catalog',
+    'matches the provider\'s officially-recommended replacement "gpt-5.6-sol"',
+  ];
+  const human = [
+    'Confirmed retired 2024-09-13 (via gpt-3.5-turbo-16k research note).',
+    'Status unknown; do not auto-apply until verified.',
+  ];
+
+  it('keeps every hand-written reason, verbatim and in order', () => {
+    expect(mergeReasons(machine, human)).toEqual([...machine, ...human]);
+  });
+
+  it('replaces the machine\'s PREVIOUS verdict rather than stacking it', () => {
+    const stale = ['replacement "gpt-4" was not found live in any public catalog (models.dev / OpenRouter)'];
+    expect(mergeReasons(machine, [...stale, ...human])).toEqual([...machine, ...human]);
+  });
+
+  it('is idempotent, so a daily recheck never grows the list', () => {
+    const once = mergeReasons(machine, human);
+    expect(mergeReasons(machine, once)).toEqual(once);
+  });
+
+  it('recognises each sentence classifyEntry can emit as the machine\'s own', () => {
+    // Driven from the classifier itself: every reason it produces on every
+    // branch must be recognised, or a re-stamp would carry it forward as if a
+    // person had written it.
+    const oracles: VerificationOracles = {
+      liveIds: liveSet('gpt-5.6-sol', 'gpt-4o'),
+      officialRecommendations: officialMap({ 'gpt-4-0613': 'gpt-5.6-sol', 'gpt-4-32k': 'gpt-4o' }),
+    };
+    const cases: LlmModelIdDeprecation[] = [
+      { provider: 'openai', kind: 'model_id', deprecated: 'gpt-4-0613', replacement: 'gpt-5.6-sol' },
+      { provider: 'openai', kind: 'model_id', deprecated: 'gpt-4-0613', replacement: 'gpt-4o' },
+      { provider: 'openai', kind: 'model_id', deprecated: 'gpt-4-0613', replacement: 'ghost-9' },
+      { provider: 'openai', kind: 'model_id', deprecated: 'dall-e-3', replacement: 'gpt-image-2' },
+      { provider: 'openai', kind: 'model_id', deprecated: 'o1-preview', replacement: 'gpt-4-32k' },
+    ];
+    for (const entry of cases) {
+      for (const reason of classifyEntry(entry, oracles).reasons) {
+        expect(isMachineReason(reason), reason).toBe(true);
+      }
+    }
+  });
+
+  it('never mistakes a human caveat for machine output', () => {
+    for (const reason of human) expect(isMachineReason(reason), reason).toBe(false);
   });
 });

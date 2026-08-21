@@ -293,14 +293,90 @@ export function modelMatches(model: string, onModels: readonly string[]): boolea
   return onModels.some((value) => model === value || model.startsWith(`${value}-`));
 }
 
+// --- the self-contradiction fail-safe --------------------------------------
+//
+// THE DATA MAY LIE; THE GATE MUST NOT. Seven shipped entries carried
+// `verification.status: "verified"` while their OWN `verification.reasons`
+// said the opposite -- the worst of them reading, verbatim, "Status unknown;
+// likely retired given the rest of the 2.0 line but unverified -- DO NOT
+// AUTO-APPLY. Target gemini-flash-latest is a rolling alias currently
+// resolving to gemini-3-flash-preview, which is itself deprecated." The stamp
+// said Tier A; the sentence under it said do not touch this. Tier A won, and a
+// rolling alias pointing at a deprecated preview was auto-applied to user code.
+//
+// A stamp is one field a hand-edit can get wrong. The reasons are the WORKING
+// that produced it, and when the two disagree the working is the half that was
+// thought about. So the gate reads BOTH and takes the weaker answer: an entry
+// whose own recorded reasoning undercuts its stamp is held at Tier B
+// (`replacement_unverified`) until a human resolves the contradiction. It is
+// never silently upgraded, and it is never silently dropped either -- the
+// mapping still shows up as a candidate, with the contradiction printed under
+// it.
+
+/**
+ * Phrases that, appearing anywhere in an entry's own `verification.reasons`,
+ * contradict a `verified` stamp. Matched case-insensitively as substrings, so
+ * "DO NOT AUTO-APPLY" and "do not auto-apply until verified" both fire.
+ *
+ * Deliberately blunt: a false positive costs one entry a manual review, and a
+ * false negative costs a user a bad model id in production. The classifier's
+ * own verdicts never trip these — a genuinely verified re-stamp produces only
+ * "…is live in a public catalog" / "matches the provider's officially-
+ * recommended replacement …" — so every hit is a HUMAN caveat that was written
+ * down and then stamped over.
+ */
+export const SELF_CONTRADICTION_MARKERS: readonly string[] = [
+  'do not auto-apply',
+  'unverified',
+  'status unknown',
+  'itself deprecated',
+  'not the currently-recommended',
+  'stale',
+];
+
+/** Which markers (if any) appear in a set of recorded reasons. Pure over text. */
+export function selfContradictionMarkersIn(reasons: readonly string[] | undefined): string[] {
+  if (!reasons || reasons.length === 0) return [];
+  const haystack = reasons.join('\n').toLowerCase();
+  return SELF_CONTRADICTION_MARKERS.filter((marker) => haystack.includes(marker));
+}
+
+/**
+ * Does this entry's own recorded reasoning undercut its stamp? True only when
+ * a marker is present — this asks about the TEXT, not the status, so a caller
+ * can ask it of an already-unverified entry and get an honest answer.
+ */
+export function hasSelfContradictingReasons(entry: LlmModelIdDeprecation): boolean {
+  return selfContradictionMarkersIn(entry.verification?.reasons).length > 0;
+}
+
+/**
+ * The state the ENGINE acts on, which is not always the state the file claims:
+ * the stamp, unless the entry contradicts itself, in which case
+ * `self-contradicted`. Reported (rather than quietly downgraded to
+ * `unverified`) so the report can say WHY a `verified` row was held back — a
+ * reader who runs `mendr evidence <id>` must not find a `verified` stamp where
+ * mendr just printed `unverified` and conclude the tool is broken.
+ */
+export function effectiveVerificationState(
+  entry: LlmModelIdDeprecation,
+): EffectiveVerificationState {
+  const stamped = entry.verification?.status ?? 'unstamped';
+  return stamped === 'verified' && hasSelfContradictingReasons(entry)
+    ? 'self-contradicted'
+    : stamped;
+}
+
 /**
  * The ENGINE GATE predicate: is a model-id entry trustworthy enough to
- * AUTO-APPLY? True iff it carries a `verification.status === 'verified'` stamp.
- * A missing stamp (`unstamped`), `unverified`, or `unverifiable` all return
- * false — the codemod must never swap on the strength of an unproven mapping.
+ * AUTO-APPLY? True iff it carries a `verification.status === 'verified'` stamp
+ * AND its own reasons do not contradict that stamp. A missing stamp
+ * (`unstamped`), `unverified`, `unverifiable`, or a self-contradicting
+ * `verified` all return false — the codemod must never swap on the strength of
+ * an unproven mapping, nor on one the registry itself argued against.
  */
 export function isVerified(entry: LlmModelIdDeprecation): boolean {
-  return entry.verification?.status === 'verified';
+  return effectiveVerificationState(entry) === 'verified';
 }
 
 // --- provenance (what the footer is allowed to claim) ----------------------
@@ -320,6 +396,14 @@ export function isVerified(entry: LlmModelIdDeprecation): boolean {
 /** Every verdict an entry can carry, including "carries no verdict at all". */
 export type EntryVerificationState = VerificationStatus | 'unstamped';
 
+/**
+ * What the ENGINE concluded about an entry: its stamp, or `self-contradicted`
+ * when the stamp says `verified` and the entry's own reasons say otherwise
+ * (see {@link effectiveVerificationState}). The extra state exists so a
+ * held-back entry is never reported under a word that misdescribes the file.
+ */
+export type EffectiveVerificationState = EntryVerificationState | 'self-contradicted';
+
 /** What the loaded registry actually says about itself. All counts, no claims. */
 export interface RegistryProvenance {
   /** Active `model_id` entries — the ones the fix engine can match. */
@@ -332,6 +416,14 @@ export interface RegistryProvenance {
   newestCheckedAt?: string;
   /** Entries carrying no recheck date at all — the gap the dates cannot cover. */
   undatedEntries: number;
+  /**
+   * Entries STAMPED `verified` whose own reasons contradict the stamp, and
+   * which the engine therefore holds at Tier B (see
+   * {@link hasSelfContradictingReasons}). Counted separately rather than
+   * subtracted from `statusCounts.verified`, because the two facts are
+   * different: the file says verified, and mendr refuses to act on it.
+   */
+  selfContradictingEntries: number;
 }
 
 /** The order footer/report surfaces list verification states in. */
@@ -358,8 +450,10 @@ export function registryProvenance(registry: LlmRegistry): RegistryProvenance {
   let oldest: string | undefined;
   let newest: string | undefined;
   let undated = 0;
+  let selfContradicting = 0;
   for (const entry of entries) {
     statusCounts[entry.verification?.status ?? 'unstamped']++;
+    if (effectiveVerificationState(entry) === 'self-contradicted') selfContradicting++;
     const checkedAt = entry.verification?.checkedAt;
     // ISO yyyy-mm-dd dates order correctly as strings.
     if (!checkedAt) {
@@ -375,6 +469,7 @@ export function registryProvenance(registry: LlmRegistry): RegistryProvenance {
     oldestCheckedAt: oldest,
     newestCheckedAt: newest,
     undatedEntries: undated,
+    selfContradictingEntries: selfContradicting,
   };
 }
 

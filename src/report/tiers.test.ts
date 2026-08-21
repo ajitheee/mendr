@@ -1,12 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import type { TierBReason } from '../types.js';
 import {
+  assertSingleTerminalTier,
+  crossTierCollisions,
   findingKey,
   formatFoundLines,
   formatSummaryLines,
   formatTierBFinding,
   formatTierBSection,
+  multiTierNotes,
   orderTierB,
+  resolveTerminalTier,
   tierBFinding,
   tierBJson,
   tierBReasonCounts,
@@ -14,7 +18,10 @@ import {
   TIER_B_HEADING,
   TIER_B_REASON_ORDER,
   TIER_B_REASON_TEXT,
+  TIER_PRECEDENCE,
+  type Tier,
   type TierBFinding,
+  type TierOccurrence,
 } from './tiers.js';
 
 // Tier B is the class that can never be auto-applied, so everything a reader
@@ -77,7 +84,7 @@ describe('tierBFinding', () => {
     }
   });
 
-  it('projects to exactly the seven documented JSON keys', () => {
+  it('projects to exactly the nine documented JSON keys', () => {
     const f = tierBFinding(
       {
         file: 'a.ts',
@@ -98,9 +105,79 @@ describe('tierBFinding', () => {
       'column',
       'modelId',
       'replacement',
+      'registryVerdict',
+      'verdictCheckedAt',
       'reason',
       'reasonText',
     ]);
+  });
+
+  // FAIL CLOSED. A site that says nothing about the registry's verdict gets
+  // the weaker word, never the stronger one: printing `verified` over a mapping
+  // nobody checked is the exact failure this field exists to prevent.
+  it('defaults an unstated registry verdict to unverified', () => {
+    const f = tierBFinding(
+      { file: 'a.ts', line: 1, column: 1, modelId: 'gpt-4', replacement: 'gpt-5.6-sol' },
+      'platform_blocked',
+    );
+    expect(f.registryVerdict).toBe('unverified');
+    expect(tierBJson(f).registryVerdict).toBe('unverified');
+    // No date to report is reported as no date, never as a blank that reads
+    // like one was checked.
+    expect(tierBJson(f).verdictCheckedAt).toBeNull();
+  });
+
+  it('carries a verified stamp through to the JSON projection', () => {
+    const f = tierBFinding(
+      {
+        file: 'a.ts',
+        line: 1,
+        column: 1,
+        modelId: 'gpt-4',
+        replacement: 'gpt-5.6-sol',
+        registryVerdict: 'verified',
+        verdictCheckedAt: '2026-08-21',
+      },
+      'usage_unverified',
+    );
+    expect(tierBJson(f).registryVerdict).toBe('verified');
+    expect(tierBJson(f).verdictCheckedAt).toBe('2026-08-21');
+  });
+
+  // A `replacement_unverified` finding IS the finding that the replacement is
+  // unverified. A caller that hands it a `verified` stamp is contradicting the
+  // reason code, and the constructor -- not the renderer -- settles it.
+  it('never lets a replacement_unverified finding claim a verified replacement', () => {
+    const f = tierBFinding(
+      {
+        file: 'a.ts',
+        line: 1,
+        column: 1,
+        modelId: 'gpt-4-0314',
+        replacement: 'gpt-5.6-sol',
+        registryVerdict: 'verified',
+      },
+      'replacement_unverified',
+    );
+    expect(f.registryVerdict).toBe('unverified');
+  });
+
+  // ...but `self-contradicted` is NOT a claim that anything cleared, so it
+  // survives: it is the reason the finding is in Tier B at all, and collapsing
+  // it to a plain `unverified` would hide a stamp that says the opposite.
+  it('keeps a self-contradicted verdict on a replacement_unverified finding', () => {
+    const f = tierBFinding(
+      {
+        file: 'a.ts',
+        line: 1,
+        column: 1,
+        modelId: 'gemini-2.0-flash',
+        replacement: 'gemini-3.6-flash',
+        registryVerdict: 'self-contradicted',
+      },
+      'replacement_unverified',
+    );
+    expect(f.registryVerdict).toBe('self-contradicted');
   });
 });
 
@@ -157,22 +234,26 @@ describe('formatTierBFinding', () => {
           column: 13,
           modelId: 'gpt-4',
           replacement: 'gpt-5.6-sol',
+          registryVerdict: 'verified',
+          verdictCheckedAt: '2026-08-21',
         },
         'usage_unverified',
       ),
     );
 
     expect(lines[0]).toBe('agent_app/simulator.py:166:13');
-    expect(lines[1]).toBe('  found:       "gpt-4"');
-    expect(lines[2]).toBe('  replacement: "gpt-5.6-sol"');
+    expect(lines[1]).toBe('  found:                 "gpt-4"');
+    expect(lines[2]).toBe('  replacement:           "gpt-5.6-sol"');
     expect(lines[3]).toBe(
-      '  reason:      usage_unverified -- assigned to a model-like variable, but no',
+      '  registry verdict:      verified (stamped 2026-08-21; not re-checked live',
     );
+    expect(lines[4]).toBe('                         this run)');
+    expect(lines[5]).toBe('  reason:                usage_unverified -- assigned to a model-like');
     // The wrapped sentence hangs under the reason VALUE, not under the label.
-    expect(lines[4]).toBe(
-      '               supported SDK call or parameter sink was found in this file.',
+    expect(lines[6]).toBe(
+      '                         variable, but no supported SDK call or parameter sink',
     );
-    expect(lines.at(-1)).toBe(`  action:      ${TIER_B_ACTION_LINE}`);
+    expect(lines.at(-1)).toBe(`  action:                ${TIER_B_ACTION_LINE}`);
   });
 
   it('prints the verification gate reasons as detail under a blocked finding', () => {
@@ -193,7 +274,143 @@ describe('formatTierBFinding', () => {
     expect(lines.join('\n')).toContain('- replacement not present in any live catalog');
     // The detail never displaces the action line: "is there a patch?" is
     // answered for every finding, however much audit trail it carries.
-    expect(lines.at(-1)).toBe(`  action:      ${TIER_B_ACTION_LINE}`);
+    expect(lines.at(-1)).toBe(`  action:                ${TIER_B_ACTION_LINE}`);
+  });
+});
+
+// --- the registry verdict --------------------------------------------------
+//
+// A Tier B block used to print `replacement: "o3"` and stop, which reads as a
+// checked fact whether or not anyone checked it. Some registry entries did NOT
+// clear verification, and a reader deciding whether to migrate needs to know
+// which kind they are looking at -- from the LABEL, which is unskippable, not
+// only from a row below it.
+//
+// The row is called `registry verdict` because that is all it is: a verdict
+// stored in a JSON file on some past date. It used to be called `replacement
+// evidence`, which named something the registry does not have (`entry.evidence`
+// is empty on every shipped entry, and no snapshot is stored), and its value
+// called mappings "not catalog-confirmed" where the recorded reasons said the
+// opposite. These tests pin the honest wording so it cannot drift back.
+describe('the registry verdict on a Tier B finding', () => {
+  const site = {
+    file: 'agent_app/simulator.py',
+    line: 166,
+    column: 13,
+    modelId: 'gpt-4',
+    replacement: 'gpt-5.6-sol',
+  };
+
+  it('calls a verified mapping a "replacement" and dates the stamp it read', () => {
+    const lines = formatTierBFinding(
+      tierBFinding(
+        { ...site, registryVerdict: 'verified', verdictCheckedAt: '2026-08-21' },
+        'usage_unverified',
+      ),
+    ).join('\n');
+    expect(lines).toContain('  replacement:           "gpt-5.6-sol"');
+    expect(lines.replace(/\s+/g, ' ')).toContain(
+      'registry verdict: verified (stamped 2026-08-21; not re-checked live this run)',
+    );
+    expect(lines).not.toContain('candidate replacement');
+  });
+
+  // THE CLAIM THIS ROW MAY NOT MAKE. A fix-llm run contacts no catalog and the
+  // registry stores no evidence documents, so neither word may appear as a
+  // description of what happened.
+  it('never claims evidence, and never claims a live check', () => {
+    for (const verdict of ['verified', 'unverified', 'self-contradicted'] as const) {
+      for (const reason of EVERY_REASON) {
+        const rendered = formatTierBFinding(
+          tierBFinding(
+            { ...site, registryVerdict: verdict, verdictCheckedAt: '2026-08-21' },
+            reason,
+          ),
+        ).join(' ');
+        expect(rendered, `${reason}/${verdict}`).not.toContain('evidence:');
+        expect(rendered, `${reason}/${verdict}`).not.toContain('catalog-confirmed');
+      }
+    }
+  });
+
+  // The fail-safe case, rendered: the file says one thing and mendr does
+  // another, so the row says BOTH. Reporting it as a plain `unverified` would
+  // contradict what `mendr evidence <id>` prints from the same JSON.
+  it('reports a self-contradicting entry as stamped-but-withheld', () => {
+    const flat = formatTierBFinding(
+      tierBFinding(
+        {
+          ...site,
+          modelId: 'gemini-2.0-flash',
+          replacement: 'gemini-3.6-flash',
+          registryVerdict: 'self-contradicted',
+          verdictCheckedAt: '2026-08-21',
+        },
+        'replacement_unverified',
+      ),
+    )
+      .join(' ')
+      .replace(/\s+/g, ' ');
+    expect(flat).toContain('candidate replacement: "gemini-3.6-flash"');
+    expect(flat).toContain(
+      'registry verdict: stamped verified 2026-08-21, but withheld -- the entry\'s own ' +
+        'recorded reasons contradict the stamp (see `mendr evidence gemini-2.0-flash`)',
+    );
+  });
+
+  it('calls an unverified mapping a "candidate replacement", and says why', () => {
+    const lines = formatTierBFinding(
+      tierBFinding({ ...site, modelId: 'o1-preview', replacement: 'o1' }, 'usage_unverified'),
+    ).join('\n');
+    // The WORD changes, not just the status: a reader skimming for the id
+    // reads the label and may never reach the row below it.
+    expect(lines).toContain('  candidate replacement: "o1"');
+    expect(lines.replace(/\s+/g, ' ')).toContain(
+      'unverified -- this mapping did not clear verification',
+    );
+    expect(lines).toContain('mendr evidence o1-preview');
+  });
+
+  it('applies to EVERY reason code, not just the ones that mention verification', () => {
+    for (const reason of EVERY_REASON) {
+      const rendered = formatTierBFinding(tierBFinding({ ...site }, reason)).join('\n');
+      expect(rendered, reason).toContain('registry verdict:');
+      expect(rendered, reason).toContain('candidate replacement:');
+    }
+  });
+
+  // THE COHERENCE CASE. `replacement_unverified` already says the replacement
+  // did not clear verification; an evidence row that reads like a second,
+  // separate defect makes the block look self-contradictory. One statement.
+  it('states replacement_unverified as ONE fact, not two that look contradictory', () => {
+    const rendered = formatTierBFinding(
+      tierBFinding(
+        { ...site, modelId: 'gpt-4-0314', detail: ['replacement not in any live catalog'] },
+        'replacement_unverified',
+      ),
+    ).join('\n');
+    // The verdict sentence wraps, so the claim is checked on the unwrapped
+    // text: the wording is the assertion here, not the column it broke at.
+    const flat = rendered.replace(/\s+/g, ' ');
+    expect(flat).toContain('candidate replacement:');
+    // ONE wording for every unverified finding: the verdict row restates the
+    // reason code's fact in the field a machine consumer routes on, and adds
+    // nothing that could be read as a second, separate defect.
+    expect(flat).toContain(
+      'registry verdict: unverified -- this mapping did not clear verification ' +
+        '(see `mendr evidence gpt-4-0314`)',
+    );
+  });
+
+  it('never prints a replacement without the registry verdict on the very next row', () => {
+    for (const verdict of ['verified', 'unverified', 'self-contradicted'] as const) {
+      for (const reason of EVERY_REASON) {
+        const lines = formatTierBFinding(tierBFinding({ ...site, registryVerdict: verdict }, reason));
+        const row = lines.findIndex((l) => l.includes('replacement:'));
+        expect(row, `${reason}/${verdict}`).toBeGreaterThan(-1);
+        expect(lines[row + 1], `${reason}/${verdict}`).toContain('registry verdict:');
+      }
+    }
   });
 });
 
@@ -302,15 +519,32 @@ describe('tier counts are consistent with what is listed', () => {
     expect(summary).not.toContain('3 auto-fixed');
   });
 
-  it('can report all three dispositions at once, and they sum to the tier count', () => {
+  it('can report all four dispositions at once, and they sum to the tier count', () => {
     const summary = formatSummaryLines(
-      { tierA: 6, tierB: 0, tierC: 0 },
-      { applied: 1, ready: 2, downgraded: 3 },
+      { tierA: 10, tierB: 0, tierC: 0 },
+      { applied: 1, ready: 2, refused: 4, downgraded: 3 },
     ).join('\n');
     expect(summary).toContain(
-      'tier A 6 (1 auto-fixed, 2 ready to apply -- not written, ' +
+      'tier A 10 (1 auto-fixed, 2 ready to apply -- not written, ' +
+        '4 not written -- write refused, working tree unchanged, ' +
         '3 downgraded -- gates failed, not applied)',
     );
+  });
+
+  // THE ABORTED WRITE. `--write` ran, the gates passed, and the atomic write
+  // refused (a read-only file, an editor lock, content that drifted). Nothing
+  // changed on disk, so nothing may be called auto-fixed -- and the reason is
+  // NOT a gate failure, which would send a reader off to debug a good diff.
+  it('never says "auto-fixed" for a write that was refused', () => {
+    const summary = formatSummaryLines(
+      { tierA: 3, tierB: 0, tierC: 0 },
+      { applied: 0, ready: 0, refused: 3, downgraded: 0 },
+    ).join('\n');
+    expect(summary).toContain(
+      'tier A 3 (0 auto-fixed, 3 not written -- write refused, working tree unchanged)',
+    );
+    expect(summary).not.toContain('3 auto-fixed');
+    expect(summary).not.toContain('gates failed');
   });
 
   it('still prints a disposition slot when tier A is empty', () => {
@@ -328,5 +562,127 @@ describe('findingKey', () => {
     const b = { file: 'a.ts', line: 1, column: 1, modelId: 'gemini-pro' };
     expect(findingKey(a)).not.toBe(findingKey(b));
     expect(findingKey(a)).toBe(findingKey({ ...a }));
+  });
+});
+
+// --- one occurrence, one tier ----------------------------------------------
+//
+// The rule the report now RELIES on when it tells a reader "these are
+// different occurrences": every (file, line, column, deprecatedId) lands in
+// exactly one terminal tier, resolved A > B > C. Asserted here rather than
+// assumed, because a note that explains a coincidence is only honest if the
+// coincidence is the only thing it can be.
+describe('terminal tier precedence', () => {
+  it('resolves in the order A > B > C, whatever order the candidates arrive in', () => {
+    expect(TIER_PRECEDENCE).toEqual(['A', 'B', 'C']);
+    expect(resolveTerminalTier(['C', 'A', 'B'])).toBe('A');
+    expect(resolveTerminalTier(['C', 'B'])).toBe('B');
+    expect(resolveTerminalTier(['C'])).toBe('C');
+    expect(resolveTerminalTier([])).toBeUndefined();
+  });
+
+  it('is total: any non-empty candidate set yields exactly one tier', () => {
+    const ALL: Tier[] = ['A', 'B', 'C'];
+    for (const a of ALL) {
+      for (const b of ALL) {
+        const resolved = resolveTerminalTier([a, b]);
+        expect(resolved).toBeDefined();
+        expect(ALL).toContain(resolved);
+      }
+    }
+  });
+});
+
+describe('cross-tier disjointness', () => {
+  const at = (tier: Tier, line: number, modelId = 'gpt-4'): TierOccurrence => ({
+    tier,
+    file: 'agent_app/simulator.py',
+    line,
+    column: 5,
+    modelId,
+  });
+
+  it('sees no collision when the SAME id sits in two tiers at two positions', () => {
+    // The shape two reviewers misread: `gpt-4` at line 12 (a lookup-table key,
+    // Tier C) and `gpt-4` at line 166 (an assignment, Tier B). Two literals.
+    expect(crossTierCollisions([at('B', 166), at('C', 12)])).toEqual([]);
+    expect(() => assertSingleTerminalTier([at('B', 166), at('C', 12)])).not.toThrow();
+  });
+
+  it('sees no collision when two ids share one position', () => {
+    const key = { tier: 'C' as Tier, file: 'a.ts', line: 2, column: 3 };
+    expect(
+      crossTierCollisions([
+        { ...key, modelId: 'gpt-4' },
+        { ...key, tier: 'B', modelId: 'gemini-pro' },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('CATCHES one key landing in two tiers, and names the key and the tiers', () => {
+    const collisions = crossTierCollisions([at('B', 166), at('C', 166)]);
+    expect(collisions).toEqual(['agent_app/simulator.py:166:5:gpt-4 in tiers B + C']);
+  });
+
+  it('throws on a collision, because that is a classifier bug and not a report', () => {
+    expect(() => assertSingleTerminalTier([at('A', 9), at('C', 9)])).toThrow(
+      /exactly one tier/,
+    );
+  });
+});
+
+// --- the clarifying note ---------------------------------------------------
+describe('multiTierNotes', () => {
+  const sim = (tier: Tier, line: number, modelId = 'gpt-4'): TierOccurrence => ({
+    tier,
+    file: 'agent_app/simulator.py',
+    line,
+    column: 5,
+    modelId,
+  });
+
+  it('says nothing when every id lives in a single tier', () => {
+    expect(multiTierNotes([sim('B', 166), sim('C', 12, 'gemini-1.5-pro')])).toEqual([]);
+  });
+
+  it('explains the one id that appears in two tiers, with the positions', () => {
+    expect(multiTierNotes([sim('B', 166), sim('C', 12), sim('C', 30, 'gemini-1.5-pro')])).toEqual([
+      'note: "gpt-4" appears in more than one tier -- these are different ' +
+        'occurrences (tier B: L166; tier C: L12).',
+    ]);
+  });
+
+  it('orders the tiers A, B, C however the occurrences arrive', () => {
+    const note = multiTierNotes([sim('C', 12), sim('A', 3), sim('B', 166)])[0];
+    expect(note).toContain('(tier A: L3; tier B: L166; tier C: L12)');
+  });
+
+  it('qualifies positions with the FILE as soon as more than one is involved', () => {
+    const note = multiTierNotes([
+      sim('B', 166),
+      { tier: 'C', file: 'agent_app/prices.py', line: 12, column: 1, modelId: 'gpt-4' },
+    ])[0];
+    expect(note).toContain('tier B: agent_app/simulator.py:166');
+    expect(note).toContain('tier C: agent_app/prices.py:12');
+  });
+
+  it('caps the positions it lists per tier', () => {
+    const note = multiTierNotes([
+      sim('B', 1),
+      ...[10, 11, 12, 13, 14, 15].map((line) => sim('C', line)),
+    ])[0];
+    expect(note).toContain('tier C: L10, L11, L12, L13, +2 more');
+  });
+
+  it('emits one line per multi-tier id, in id order', () => {
+    const notes = multiTierNotes([
+      sim('B', 1, 'zeta-1'),
+      sim('C', 2, 'zeta-1'),
+      sim('B', 3, 'alpha-1'),
+      sim('C', 4, 'alpha-1'),
+    ]);
+    expect(notes.length).toBe(2);
+    expect(notes[0]).toContain('"alpha-1"');
+    expect(notes[1]).toContain('"zeta-1"');
   });
 });

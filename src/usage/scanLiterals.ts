@@ -1,12 +1,12 @@
 import { Node, SyntaxKind } from 'ts-morph';
 import type { CallExpression, NoSubstitutionTemplateLiteral, Project, StringLiteral } from 'ts-morph';
-import type {
-  LlmModelIdDeprecation,
-  LlmRegistry,
-  SourceLocation,
-  VerificationStatus,
-} from '../types.js';
-import { isVerified, modelIdEntries } from './llmRegistry.js';
+import type { LlmModelIdDeprecation, LlmRegistry, SourceLocation } from '../types.js';
+import {
+  effectiveVerificationState,
+  isVerified,
+  modelIdEntries,
+  type EffectiveVerificationState,
+} from './llmRegistry.js';
 
 // LLM mode — locate.
 //
@@ -124,8 +124,12 @@ export interface BlockedModelLocate {
   value: string;
   /** The replacement the registry PROPOSES (withheld because it is not verified). */
   replacement: string;
-  /** Why it was blocked: the entry's verification status, or `unstamped` if absent. */
-  status: VerificationStatus | 'unstamped';
+  /**
+   * Why it was blocked: the entry's verification status, `unstamped` if absent,
+   * or `self-contradicted` when the stamp reads `verified` but the entry's own
+   * reasons say otherwise (see effectiveVerificationState).
+   */
+  status: EffectiveVerificationState;
   /** Where the literal sits in source. */
   location: SourceLocation;
   /** The registry entry's human note, if any. */
@@ -625,7 +629,7 @@ export function toBlockedModelArgMatches(matches: LiteralMatch[]): BlockedModelL
     .map((m) => ({
       value: m.value,
       replacement: m.deprecation.replacement,
-      status: m.deprecation.verification?.status ?? 'unstamped',
+      status: effectiveVerificationState(m.deprecation),
       location: m.location,
       note: m.deprecation.note,
       reasons: m.deprecation.verification?.reasons,

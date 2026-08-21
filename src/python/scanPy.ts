@@ -3,7 +3,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Language, Parser, type Node as PyNode, type Tree } from 'web-tree-sitter';
 import type { LlmModelIdDeprecation, LlmRegistry, SourceLocation } from '../types.js';
-import { isVerified, modelIdEntries } from '../usage/llmRegistry.js';
+import { effectiveVerificationState, isVerified, modelIdEntries } from '../usage/llmRegistry.js';
 import {
   catalogIdsInText,
   fileAnnotation,
@@ -710,7 +710,7 @@ export function toPyBlockedModelArgMatches(matches: PyLiteralMatch[]): BlockedMo
     .map((m) => ({
       value: m.value,
       replacement: m.deprecation.replacement,
-      status: m.deprecation.verification?.status ?? 'unstamped',
+      status: effectiveVerificationState(m.deprecation),
       location: m.location,
       note: m.deprecation.note,
       reasons: m.deprecation.verification?.reasons,

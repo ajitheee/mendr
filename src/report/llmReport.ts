@@ -34,8 +34,19 @@ export interface DataFileGroup {
   file: string;
   /** Total data hits in this file. */
   hits: number;
-  /** id -> occurrence count, ordered by first sighting in the file. */
-  idCounts: Map<string, number>;
+  /**
+   * id -> the LINE of every occurrence, ordered by first sighting in the file
+   * (one entry per hit, so `.length` is still the occurrence count).
+   *
+   * WHY LINES AND NOT A BARE COUNT: the collapsed line used to read
+   * `simulator.py -- 3 hits across 2 model ids (gpt-4, gemini-1.5-pro x2)`.
+   * When the SAME id also appears in Tier B — `gpt-4` assigned at line 166,
+   * `gpt-4` as a lookup-table key at line 12 — a reader had no way to tell the
+   * two apart, and two expert reviewers read that report as mendr counting one
+   * occurrence twice. It was not; the report simply refused to say WHERE. So
+   * the position travels with the id all the way to the collapsed view.
+   */
+  idLines: Map<string, number[]>;
   /** How many of the hits are runtime comparisons (the ones that gate logic). */
   comparisons: number;
   /** True when the catalog heuristic fired for this file. */
@@ -71,15 +82,17 @@ export function groupDataFindingsByFile(findings: DataFindingView[]): DataFileGr
   for (const f of findings) {
     let group = byFile.get(f.file);
     if (!group) {
-      group = { file: f.file, hits: 0, idCounts: new Map(), comparisons: 0, catalogLike: false };
+      group = { file: f.file, hits: 0, idLines: new Map(), comparisons: 0, catalogLike: false };
       byFile.set(f.file, group);
     }
     group.hits++;
-    group.idCounts.set(f.value, (group.idCounts.get(f.value) ?? 0) + 1);
+    const lines = group.idLines.get(f.value);
+    if (lines) lines.push(f.line);
+    else group.idLines.set(f.value, [f.line]);
     if (f.purpose === 'comparison') group.comparisons++;
   }
   for (const group of byFile.values()) {
-    group.catalogLike = isCatalogLike(group.file, group.idCounts.size);
+    group.catalogLike = isCatalogLike(group.file, group.idLines.size);
   }
   return [...byFile.values()];
 }
@@ -88,26 +101,60 @@ export function groupDataFindingsByFile(findings: DataFindingView[]): DataFileGr
 const MAX_IDS_PER_LINE = 4;
 
 /**
+ * How many LINE numbers one id spells out before `+N more`. Four keeps a
+ * catalog file — the whole reason this view collapses — down to one line, while
+ * still naming enough positions for a reader to go look.
+ */
+const MAX_LINES_PER_ID = 4;
+
+/**
+ * One id's share of the collapsed line: the id, then where it actually sits.
+ *
+ *   `gpt-4 (L12)` / `gemini-1.5-pro (L30, L127)` / `gpt-4o (L3, L8, L9, L11, +6 more)`
+ *
+ * Repeats on ONE line collapse to a single `L`, so `x2` is added back when the
+ * hit count exceeds the number of distinct lines — otherwise two hits on line 4
+ * would render as `gpt-4 (L4)` and silently contradict the file's hit total.
+ */
+function formatIdLines(id: string, lines: readonly number[]): string {
+  const distinct: number[] = [];
+  for (const line of lines) if (!distinct.includes(line)) distinct.push(line);
+  const shown = distinct.slice(0, MAX_LINES_PER_ID).map((line) => `L${line}`);
+  if (distinct.length > MAX_LINES_PER_ID) {
+    shown.push(`+${distinct.length - MAX_LINES_PER_ID} more`);
+  }
+  const repeats = lines.length > distinct.length ? ` x${lines.length}` : '';
+  return `${id}${repeats} (${shown.join(', ')})`;
+}
+
+/**
  * Render one file's collapsed line, e.g.:
- *   `lib/chat-setting-limits.ts -- 15 hits across 12 model ids (gpt-4 x2,
- *    gemini-pro x2, ...) [looks like a model catalog]`
+ *   `agent_app/simulator.py -- 3 hits: gpt-4 (L12), gemini-1.5-pro (L30, L127)`
+ *   `lib/chat-setting-limits.ts -- 15 hits: gpt-4 x2 (L7), gemini-pro (L9),
+ *    ... +8 more ids [looks like a model catalog]`
+ *
+ * Every id carries its LINE NUMBERS. Collapsing to `3 hits across 2 model ids
+ * (gpt-4, ...)` saved a few characters and cost the reader the one fact that
+ * distinguishes this `gpt-4` from the `gpt-4` listed in Tier B two sections up.
  * Comparisons are the one purpose worth surfacing even collapsed — they can
  * gate runtime logic, so the line says so when any are present.
  */
 export function formatDataFileGroupLine(group: DataFileGroup): string {
-  const n = group.idCounts.size;
-  const shown = [...group.idCounts.entries()]
+  const n = group.idLines.size;
+  const shown = [...group.idLines.entries()]
     .slice(0, MAX_IDS_PER_LINE)
-    .map(([id, count]) => (count > 1 ? `${id} x${count}` : id));
-  if (n > MAX_IDS_PER_LINE) shown.push('...');
+    .map(([id, lines]) => formatIdLines(id, lines));
+  // The distinct-id total survives truncation: a reader must be able to see
+  // that the four ids named are not all of them.
+  const moreIds = n > MAX_IDS_PER_LINE ? `, +${n - MAX_IDS_PER_LINE} more ids` : '';
   const catalog = group.catalogLike ? ' [looks like a model catalog]' : '';
   const compare =
     group.comparisons > 0
       ? ` -- ${group.comparisons} runtime comparison${group.comparisons === 1 ? '' : 's'} (may gate logic, review)`
       : '';
   return (
-    `${group.file} -- ${group.hits} hit${group.hits === 1 ? '' : 's'} across ` +
-    `${n} model id${n === 1 ? '' : 's'} (${shown.join(', ')})${catalog}${compare}`
+    `${group.file} -- ${group.hits} hit${group.hits === 1 ? '' : 's'}: ` +
+    `${shown.join(', ')}${moreIds}${catalog}${compare}`
   );
 }
 
@@ -323,7 +370,16 @@ export function formatGateSummary(
   const row = (label: string, value: string): string =>
     `  ${`${label}:`.padEnd(GATE_LABEL_WIDTH)}${value}`;
   const rows = [
-    row('replacement mapping', 'verified against live catalogs'),
+    // WHAT THIS ROW ACTUALLY RESTS ON. A `fix-llm` run contacts no catalog:
+    // the Tier A filter is `isVerified(entry)`, which reads the `verified`
+    // stamp already sitting in the registry JSON. This row used to read
+    // "verified against live catalogs", which named a network check that never
+    // happens in this process — and the stamp it really reads can be days old
+    // and can disagree with what `mendr verify-registry` says today. So the row
+    // names the stamp, and points at the command that does hit the catalogs.
+    // (Unconditionally true wherever this prints: every Tier A candidate is
+    // `isVerified`-filtered by construction, so the stamp is always present.)
+    row('replacement mapping', 'registry entry stamped verified (not re-checked live this run)'),
     row('usage classification', facts.usageClassification),
     ...(facts.typeCheck ? [row('type-check', facts.typeCheck)] : []),
     ...(facts.syntax ? [row('syntax', facts.syntax)] : []),
@@ -372,10 +428,24 @@ export function formatRegistryProvenanceLines(p: RegistryProvenance): string[] {
   const breakdown = ENTRY_VERIFICATION_STATES.filter((s) => p.statusCounts[s] > 0)
     .map((s) => `${p.statusCounts[s]} ${s}`)
     .join(', ');
+  const held = p.selfContradictingEntries;
   return [
     `registry: ${p.activeEntries} active entr${p.activeEntries === 1 ? 'y' : 'ies'}`,
     `catalog recheck: ${recheck()}`,
     `entry verification: ${breakdown || 'no entries'} (per entry, see \`mendr evidence <id>\`)`,
+    // The counts above report the STAMPS. This line reports what the engine
+    // does with them, and the two differ for exactly the entries whose own
+    // reasons argue against their stamp — a reader who takes "N verified" as
+    // "N auto-appliable" would otherwise be off by this number.
+    ...(held > 0
+      ? [
+          held === 1
+            ? 'held at review: 1 of those verified entries contradicts its own stamp in ' +
+              '`verification.reasons` and is never auto-applied'
+            : `held at review: ${held} of those verified entries contradict their own stamp ` +
+              'in `verification.reasons` and are never auto-applied',
+        ]
+      : []),
   ];
 }
 
