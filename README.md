@@ -9,8 +9,10 @@ A provider retires a model id, or flips a param like `max_tokens` to `max_comple
 ## quickstart
 
 ```sh
-npx mendr fix-llm .
+npx github:ajitheee/mendr fix-llm .
 ```
+
+(once the package lands on the npm registry this shortens to `npx mendr fix-llm .`)
 
 Point it at a repo and it prints a unified diff of the fixes it wants to make. Read the patch. If it's right, apply it.
 
