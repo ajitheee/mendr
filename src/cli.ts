@@ -28,21 +28,25 @@ import {
 } from './usage/llmRegistry.js';
 import {
   findModelIdLiterals,
+  scanProjectAnnotations,
   toAzureDeploymentMatches,
   toBlockedModelArgMatches,
   toModelIdDataMatches,
   AZURE_DEPLOYMENT_REASON,
 } from './usage/scanLiterals.js';
 import {
+  formatCatalogLine,
   formatDataFileGroupLine,
   formatDataHitLine,
+  formatUsageUnverifiedLine,
   groupDataFindingsByFile,
   replacementFamily,
+  swapLabel,
   type DataFindingView,
 } from './report/llmReport.js';
 import { findParamSites } from './fix/paramFix.js';
 import { applyLlmFixesToProject, type LlmFixResult } from './fix/llmFix.js';
-import { collectPythonFiles, readPythonSources } from './python/scanPy.js';
+import { collectPythonFiles, readPythonSources, scanPyAnnotations } from './python/scanPy.js';
 import { applyPyModelIdFixesToSources } from './python/fixPy.js';
 import type { TestGateResult } from './gates/runTests.js';
 import { classifyEntry } from './registry/verify.js';
@@ -109,15 +113,20 @@ function assertAnalyzable(tsFileCount: number, pyFileCount: number, resolved: st
   }
 }
 
-/** Human label for one model-id swap, carrying WHY: retired, or dying on a date. */
-function swapLabel(d: LlmModelIdDeprecation): string {
-  const when =
-    d.status === 'retired'
-      ? ' [retired]'
-      : d.status === 'deprecated' && d.shutdownDate
-        ? ` [shuts down ${d.shutdownDate}]`
-        : '';
-  return `"${d.deprecated}" -> "${d.replacement}"${when}`;
+/**
+ * The measurable tests line for a gate summary: real counts when the runner
+ * output was parseable, an honest "not run" otherwise — never a bare
+ * feel-good "pass" that cannot be checked.
+ */
+function testGateLabel(result: TestGateResult): string {
+  if (result.status === 'inconclusive') {
+    return result.output === 'no test script'
+      ? 'not run (no supported test command detected)'
+      : `not run (${result.output})`;
+  }
+  return result.counts
+    ? `${result.status} (npm test, ${result.counts.passed} passed, ${result.counts.failed} failed)`
+    : `${result.status} (npm test, exit code only -- counts not parsed)`;
 }
 
 /**
@@ -234,6 +243,23 @@ program
     /** Repo-relative display path with forward slashes. */
     const rel = (file: string): string => relative(resolved, file).replace(/\\/g, '/');
 
+    // File-level mendr annotations (both languages): `model-catalog` files
+    // collapse to one expected-content line each, `ignore-file` files are
+    // skipped entirely and surface only as a count.
+    const tsAnnotations = scanProjectAnnotations(scanProject, registry);
+    const pyAnnotations = scanPyAnnotations(pySources, registry);
+    const catalogFiles = [...tsAnnotations.catalogs, ...pyAnnotations.catalogs].map((c) => ({
+      file: rel(c.file),
+      ids: c.ids,
+    }));
+    const ignoredFiles = [...tsAnnotations.ignoredFiles, ...pyAnnotations.ignoredFiles].map(rel);
+    if (ignoredFiles.length > 0) {
+      say(
+        `Skipped ${ignoredFiles.length} file${ignoredFiles.length === 1 ? '' : 's'} ` +
+          `annotated 'mendr: ignore-file'.`,
+      );
+    }
+
     const modelMatches = findModelIdLiterals(scanProject, registry);
     const paramMatches = findParamSites(scanProject, registry);
 
@@ -250,6 +276,9 @@ program
     const swapMatches = modelArgMatches.filter((m) => isVerified(m.deprecation));
     const blockedAll = [...toBlockedModelArgMatches(modelMatches), ...pyResult.blockedMatches];
     const azureAll = [...toAzureDeploymentMatches(modelMatches), ...pyResult.azureMatches];
+    // Usage-unverified candidates (Python sink rule): model-like assignments
+    // never traced to an in-file sink. Manual review only — never auto-applied.
+    const usageUnverifiedAll = pyResult.usageUnverifiedMatches;
     const dataViews: DataFindingView[] = [
       ...toModelIdDataMatches(modelMatches),
       ...pyResult.dataMatches,
@@ -290,9 +319,16 @@ program
       autoFixableCount === 0 &&
       blockedAll.length === 0 &&
       dataViews.length === 0 &&
-      azureAll.length === 0
+      azureAll.length === 0 &&
+      usageUnverifiedAll.length === 0
     ) {
       say('No deprecated LLM model ids or model-coupled params found. Nothing to fix.');
+      // Annotated catalogs are still NAMED (expected content, not debt) so a
+      // clean repo's report explains where its known ids live.
+      if (catalogFiles.length > 0) {
+        say('');
+        for (const c of catalogFiles) say(formatCatalogLine(c));
+      }
       await printFooter();
       if (json) {
         console.log(
@@ -302,6 +338,7 @@ program
                 tierA: 0,
                 blocked: 0,
                 informational: 0,
+                usageUnverified: 0,
                 filesScanned: totalFiles,
                 tsFiles: tsFileCount,
                 pyFiles: pyFiles.length,
@@ -310,6 +347,9 @@ program
               blocked: [],
               azure: [],
               informational: [],
+              usageUnverified: [],
+              catalogs: catalogFiles,
+              ignoredFiles,
               diff: '',
             },
             null,
@@ -338,6 +378,12 @@ program
     if (azureAll.length > 0) {
       say(
         `       ${azureAll.length} azure deployment alias${azureAll.length === 1 ? '' : 'es'} (never auto-swapped).`,
+      );
+    }
+    if (usageUnverifiedAll.length > 0) {
+      say(
+        `       ${usageUnverifiedAll.length} usage-unverified candidate${usageUnverifiedAll.length === 1 ? '' : 's'} ` +
+          `(model-like assignment, no in-file sink -- manual review).`,
       );
     }
 
@@ -445,20 +491,21 @@ program
     // than the TS type-check gate, and the separate heading keeps that weaker
     // verification visible instead of blending it away.
     let pyTier: 'A' | 'C' | undefined;
-    let pyTestLabel = 'not attempted (python -- pytest runner not supported yet)';
+    let pyTestLabel = 'not run (no supported test command detected)';
     if (pyResult.siteCount > 0) {
-      // Best-effort test gate. There is no pytest runner support yet, so it
-      // only means anything when the repo has an npm test entrypoint — for
-      // pure-Python repos we say "not attempted" rather than pretending.
+      // Best-effort test gate. Mendr's only runner today is `npm test`, so it
+      // can only MEASURE anything when the repo has one — a pure-Python repo
+      // gets the honest "not run" instead of pretending. When the runner does
+      // run, the label carries parsed pass/fail counts where the output allows.
       let testResult: TestGateResult = {
         status: 'inconclusive',
-        output: 'not attempted (python)',
+        output: 'no supported test command detected',
       };
       if (opts.skipGates) {
         pyTestLabel = 'skipped';
       } else if (existsSync(join(resolved, 'package.json'))) {
         testResult = await runRepoTests(resolved, pyResult.patchedFiles);
-        pyTestLabel = `${testResult.status} (best-effort)`;
+        pyTestLabel = testGateLabel(testResult);
       }
       // The syntax gate ALWAYS ran (inside the fix pass — an in-memory
       // re-parse is essentially free), even under --skip-gates: a patch we
@@ -497,24 +544,27 @@ program
       }
     }
 
-    // Python Tier A, under its own heading with its own (weaker) gate.
+    // Python Tier A, under its own heading with its own (weaker) gates. The
+    // heading never claims VERIFIED: Python's strongest in-process check is a
+    // syntax re-parse, so the gate lines below spell out exactly which
+    // guarantees were earned instead of one overclaiming word. Every applied
+    // Python swap is sink-verified by construction (the sink rule only grants
+    // `model_arg` to literals that reach a recognized sink).
     if (pyResult.siteCount > 0 && pyTier) {
       const heading =
         pyTier === 'A'
-          ? opts.skipGates
-            ? '=== Tier A (python): auto-fixable model-id codemod ==='
-            : '=== Tier A (python): auto-fixable model-id codemod (VERIFIED) ==='
+          ? '=== Tier A (python): auto-fixable model-id codemod ==='
           : '=== Tier A candidate (python) -> DOWNGRADED to Tier C (unverified codemod) ===';
       say('');
       say(heading);
       say('');
       say(pyResult.diff);
       say('Gate summary:');
-      say(
-        `  syntax-check: ${pyResult.syntaxGate.passed ? 'pass' : 'fail'} ` +
-          '(Python has no type gate -- weaker than TS verification)',
-      );
-      say(`  tests:        ${pyTestLabel}`);
+      say('  replacement mapping:  verified');
+      say('  usage classification: verified-sink');
+      say(`  syntax:               ${pyResult.syntaxGate.passed ? 'pass' : 'fail'}`);
+      say('  static type gate:     not configured or not detected');
+      say(`  tests:                ${pyTestLabel}`);
       say('');
 
       const pyLabels = pyResult.swapDeprecations.map(swapLabel).join(', ');
@@ -526,7 +576,7 @@ program
             `${nf} file${nf === 1 ? '' : 's'}. ` +
             (opts.skipGates
               ? '(gates skipped -- tier asserted, not verified; syntax re-parse still ran)'
-              : '(verified: syntax re-parse only -- weaker than the TS type gate)'),
+              : '(gates: verified mapping + sink-verified usage + syntax re-parse -- weaker than the TS type gate)'),
         );
       } else {
         const reason = !pyResult.syntaxGate.passed
@@ -593,6 +643,28 @@ program
       }
     }
 
+    // --- Section 2c: usage-unverified candidates — model-like assignments the
+    // Python sink rule could not tie to any live call in the same file. The
+    // value is a known deprecated id and the replacement is known, but the
+    // assignment may be event/log/fixture data wearing a model-like name (the
+    // simulator failure), so these are never auto-applied and never --written.
+    if (usageUnverifiedAll.length > 0) {
+      say('');
+      say('=== Usage-unverified candidates (manual review -- no patch, never auto-applied) ===');
+      for (const u of usageUnverifiedAll) {
+        say('');
+        say(
+          `  ${formatUsageUnverifiedLine({
+            file: rel(u.location.file),
+            value: u.value,
+            replacement: u.replacement,
+            line: u.location.line,
+            column: u.location.column,
+          })}`,
+        );
+      }
+    }
+
     // --- Section 3 (least urgent, so last + collapsed): informational data
     // findings, ONE line per file. Full per-hit detail lives behind --verbose;
     // the file list is capped so a catalog-heavy repo cannot flood the report.
@@ -613,6 +685,14 @@ program
       }
     }
 
+    // --- Section 4: annotated migration catalogs — expected registry content,
+    // one line per file, no action and no debt claim.
+    if (catalogFiles.length > 0) {
+      say('');
+      say("=== Known migration catalogs (annotated 'mendr: model-catalog') ===");
+      for (const c of catalogFiles) say(`  ${formatCatalogLine(c)}`);
+    }
+
     // Combined cross-language summary.
     const tsApplied = tsTier === 'A' ? tsTotalSites : 0;
     const pyApplied = pyTier === 'A' ? pyResult.siteCount : 0;
@@ -621,6 +701,7 @@ program
       (pyTier === 'C' ? pyResult.siteCount : 0) +
       blockedAll.length +
       azureAll.length +
+      usageUnverifiedAll.length +
       dataViews.length;
     say('');
     say(
@@ -697,6 +778,7 @@ program
               tierA: autoFixableCount,
               blocked: blockedAll.length,
               informational: dataViews.length,
+              usageUnverified: usageUnverifiedAll.length,
               filesScanned: totalFiles,
               tsFiles: tsFileCount,
               pyFiles: pyFiles.length,
@@ -745,6 +827,15 @@ program
               count: g.hits,
               ids: [...g.idCounts.keys()],
             })),
+            usageUnverified: usageUnverifiedAll.map((u) => ({
+              file: rel(u.location.file),
+              from: u.value,
+              to: u.replacement,
+              line: u.location.line,
+              reason: u.reason,
+            })),
+            catalogs: catalogFiles,
+            ignoredFiles,
             diff: combinedDiff,
           },
           null,

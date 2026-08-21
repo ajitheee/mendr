@@ -1,4 +1,5 @@
 import { basename } from 'node:path';
+import type { LlmModelIdDeprecation } from '../types.js';
 import type { DataPurpose } from '../usage/scanLiterals.js';
 
 // LLM mode — report shaping. The raw scan of a real repo produces 100+ data
@@ -132,6 +133,61 @@ export function formatDataHitLine(d: DataFindingView): string {
       ? `may gate logic, review (would map to "${d.replacement}")`
       : `review manually (would map to "${d.replacement}" if it were a live model argument)`);
   return `deprecated model id "${d.value}" ${purposePhrase(d.purpose)} at ${where} -- ${advice}`;
+}
+
+/**
+ * Human label for one model-id swap, carrying WHY. The lifecycle fact attaches
+ * to the SOURCE id — it is the DEPRECATED model that is retired / shutting
+ * down — so `"gpt-4" (shuts down 2026-10-23) -> "gpt-5.6-sol"` reads
+ * correctly, where the old trailing `[shuts down …]` looked like a claim about
+ * the replacement.
+ */
+export function swapLabel(d: LlmModelIdDeprecation): string {
+  const when =
+    d.status === 'retired'
+      ? ' (retired)'
+      : d.status === 'deprecated' && d.shutdownDate
+        ? ` (shuts down ${d.shutdownDate})`
+        : '';
+  return `"${d.deprecated}"${when} -> "${d.replacement}"`;
+}
+
+/**
+ * One line for an annotated `mendr: model-catalog` file: expected registry
+ * content, named as such, with no action and no debt claim.
+ */
+export function formatCatalogLine(catalog: { file: string; ids: string[] }): string {
+  const n = catalog.ids.length;
+  return (
+    `${catalog.file} -- known migration catalog: ${n} deprecated id${n === 1 ? '' : 's'} ` +
+    `(expected registry content, no action)`
+  );
+}
+
+/** A usage-unverified candidate, reduced to a display view for one report line. */
+export interface UsageUnverifiedView {
+  /** Repo-relative display path (forward slashes). */
+  file: string;
+  /** The deprecated model-id value in the unproven assignment. */
+  value: string;
+  /** The replacement it WOULD map to (context only, never applied). */
+  replacement: string;
+  line: number;
+  column: number;
+}
+
+/**
+ * One line for a usage-unverified candidate: a model-like assignment the sink
+ * rule could not tie to any in-file model sink (the simulator failure). The
+ * review phrase is fixed wording — never auto-applied, never in --write.
+ */
+export function formatUsageUnverifiedLine(u: UsageUnverifiedView): string {
+  return (
+    `deprecated model id "${u.value}" assigned at ${u.file}:${u.line}:${u.column} -- ` +
+    `model-like data assignment, replacement known, usage purpose uncertain, ` +
+    `manual review required (would map to "${u.replacement}" if a live usage is ` +
+    `confirmed; never auto-applied)`
+  );
 }
 
 /**

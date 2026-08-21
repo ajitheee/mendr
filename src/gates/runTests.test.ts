@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { runRepoTests } from './runTests.js';
+import { parseTestCounts, runRepoTests } from './runTests.js';
 
 // Hermetic tests for the test gate. Each builds a throwaway "repo" in the OS
 // temp dir with a trivial package.json (and, where a run is expected, an empty
@@ -56,6 +56,16 @@ describe('runRepoTests (test gate)', () => {
     expect(result.output).toBe('no test script');
   });
 
+  it('captures parsed counts from the runner output when present', async () => {
+    const repo = makeRepo({
+      name: 'counts-fixture',
+      scripts: { test: 'node -e "console.log(\'Tests  3 passed (3)\'); process.exit(0)"' },
+    });
+    const result = await runRepoTests(repo, []);
+    expect(result.status).toBe('pass');
+    expect(result.counts).toEqual({ passed: 3, failed: 0 });
+  });
+
   it('overlays patched files into the temp copy (patched content decides pass/fail)', async () => {
     // The test script asserts a marker file contains PATCHED. We supply that
     // content only via patchedFiles, proving the overlay reached the sandbox.
@@ -72,5 +82,37 @@ describe('runRepoTests (test gate)', () => {
       { absPath: join(repo, 'marker.txt'), newText: 'PATCHED' },
     ]);
     expect(result.status).toBe('pass');
+  });
+});
+
+describe('parseTestCounts (measurable gate labels)', () => {
+  it('parses a vitest summary, preferring the Tests line over Test Files', () => {
+    const out = ' Test Files  17 passed (17)\n      Tests  118 passed (118)\n';
+    expect(parseTestCounts(out)).toEqual({ passed: 118, failed: 0 });
+  });
+
+  it('parses a vitest summary with failures', () => {
+    const out = ' Test Files  2 failed (17)\n      Tests  2 failed | 116 passed (118)\n';
+    expect(parseTestCounts(out)).toEqual({ passed: 116, failed: 2 });
+  });
+
+  it('parses a jest summary', () => {
+    const out = 'Tests:       1 failed, 117 passed, 118 total\n';
+    expect(parseTestCounts(out)).toEqual({ passed: 117, failed: 1 });
+  });
+
+  it('parses a pytest summary', () => {
+    const out = '=========== 1 failed, 5 passed in 0.12s ===========\n';
+    expect(parseTestCounts(out)).toEqual({ passed: 5, failed: 1 });
+  });
+
+  it('parses a mocha summary', () => {
+    const out = '  7 passing (12ms)\n  1 failing\n';
+    expect(parseTestCounts(out)).toEqual({ passed: 7, failed: 1 });
+  });
+
+  it('returns undefined for unrecognizable output (never invents numbers)', () => {
+    expect(parseTestCounts('ok\nall good\n')).toBeUndefined();
+    expect(parseTestCounts('')).toBeUndefined();
   });
 });

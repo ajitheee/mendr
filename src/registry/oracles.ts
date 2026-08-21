@@ -1,3 +1,7 @@
+// mendr: model-catalog
+// (This file IS Mendr's deprecation knowledge base — the annotation above makes
+// self-scans report it as expected registry content instead of model-id debt.)
+//
 // Registry verification — the live oracle-fetch layer.
 //
 // Thin, impure counterpart to the pure classifier (verify.ts). It formalizes the

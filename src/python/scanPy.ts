@@ -5,14 +5,20 @@ import { Language, Parser, type Node as PyNode, type Tree } from 'web-tree-sitte
 import type { LlmModelIdDeprecation, LlmRegistry, SourceLocation } from '../types.js';
 import { isVerified, modelIdEntries } from '../usage/llmRegistry.js';
 import {
+  catalogIdsInText,
+  fileAnnotation,
   isAzureDeploymentName,
   isModelLikeName,
   AZURE_DEPLOYMENT_REASON,
+  USAGE_UNVERIFIED_REASON,
+  type AnnotationScan,
   type AzureDeploymentLocate,
   type BlockedModelLocate,
+  type CatalogFileReport,
   type DataPurpose,
   type LiteralPosition,
   type ModelIdDataLocate,
+  type UsageUnverifiedLocate,
 } from '../usage/scanLiterals.js';
 
 // LLM mode — locate (PYTHON).
@@ -340,6 +346,74 @@ function isEnclosingDictACallArgument(pair: PyNode): boolean {
   );
 }
 
+// --- Same-file sink trace -----------------------------------------------------
+//
+// THE SINK RULE (the simulator.py regression): a bare assignment like
+// `model = "gpt-4"` proves the VALUE is a retired id, NOT that the variable is
+// ever USED as a model. In the real failure the assignment lived inside an
+// event-payload generator — pure data wearing a model-like name — and the
+// name-only rule wrongly promoted it to Tier A. So a model-like assignment (or
+// parameter default) is swap-eligible ONLY when its name is also passed to a
+// recognized SINK somewhere in the SAME file: a model-like keyword argument
+// (`client.chat.completions.create(model=model)`), a model-factory positional
+// argument (`genai.GenerativeModel(model)`), or the value of a model-like dict
+// key in a dict passed to a call. No in-file sink -> `usage_unverified`: a
+// candidate reported for manual review, never auto-applied, never in --write.
+//
+// The trace is deliberately SIMPLE — same file, name equality, no scoping and
+// no textual ordering — because Python's late-binding lookup makes "later in
+// the file" unreliable (a function defined ABOVE an assignment still reads it
+// at call time), and a name that reaches a sink anywhere in the file is the
+// evidence we need.
+
+/** The traceable name of a value node: `model` for both `model` and `self.model`. */
+function traceableName(node: PyNode): string | undefined {
+  if (node.type === 'identifier') return node.text;
+  if (node.type === 'attribute') return node.childForFieldName('attribute')?.text;
+  return undefined;
+}
+
+/**
+ * Every identifier/attribute name in `tree` that reaches a model SINK: a
+ * model-like keyword argument in any call, a direct argument to a known model
+ * factory, or the value of a model-like string key in a dict that is itself a
+ * call argument — the exact positions where a LITERAL would classify as
+ * `model_arg`, applied to names instead.
+ */
+export function collectPySinkNames(tree: Tree): Set<string> {
+  const names = new Set<string>();
+  for (const kw of tree.rootNode.descendantsOfType('keyword_argument')) {
+    if (!kw) continue;
+    const name = kw.childForFieldName('name');
+    const value = kw.childForFieldName('value');
+    if (!name || !value || !isModelLikeName(name.text)) continue;
+    const traced = traceableName(value);
+    if (traced) names.add(traced);
+  }
+  for (const call of tree.rootNode.descendantsOfType('call')) {
+    if (!call) continue;
+    const factory = calleeLastIdentifier(call);
+    if (!factory || !PY_MODEL_FACTORIES.has(factory)) continue;
+    const args = call.childForFieldName('arguments');
+    if (!args) continue;
+    for (const arg of args.namedChildren) {
+      if (!arg) continue;
+      const traced = traceableName(arg);
+      if (traced) names.add(traced);
+    }
+  }
+  for (const pair of tree.rootNode.descendantsOfType('pair')) {
+    if (!pair) continue;
+    const key = pair.childForFieldName('key');
+    const value = pair.childForFieldName('value');
+    if (!key || !value || !isModelLikeStringKey(key)) continue;
+    if (!isEnclosingDictACallArgument(pair)) continue;
+    const traced = traceableName(value);
+    if (traced) names.add(traced);
+  }
+  return names;
+}
+
 /**
  * Classify a matched model-id literal by its CST position.
  *
@@ -350,8 +424,10 @@ function isEnclosingDictACallArgument(pair: PyNode): boolean {
  *       (`post(url, json={"model": "…"})`) — a standalone/catalog dict is data;
  *   (c) an assignment to a model-like name (`MODEL_NAME = "…"`,
  *       `self.model = "…"`, `model: str = "…"`), or the DEFAULT of a
- *       model-like function parameter (`def ask(prompt, model="…")`) — the
- *       parameter default is Python's everyday spelling of the same intent;
+ *       model-like function parameter (`def ask(prompt, model="…")`) — BUT
+ *       only when the name is traced to an in-file SINK per `sinkNames` (see
+ *       the sink rule above); a bare assignment with no sink usage DEMOTES to
+ *       `usage_unverified` instead of being trusted on its name alone;
  *   (d) a direct string argument to a known model-factory call
  *       (`genai.GenerativeModel("…")`, `ChatOpenAI("…")`).
  *
@@ -360,8 +436,11 @@ function isEnclosingDictACallArgument(pair: PyNode): boolean {
  * `m in ("…",)` — `comparison`), a standalone dict value (`catalog_entry`), or
  * any position not matching an ACCEPT rule (`generic`). The purpose rides
  * along so the CLI's Tier C language can say WHY, mirroring the TS scanner.
+ *
+ * `sinkNames` is the file's {@link collectPySinkNames} result. Omitting it
+ * means "no sinks known", so rule (c) can only ever demote — the safe default.
  */
-export function classifyPyLiteral(literal: PyNode): {
+export function classifyPyLiteral(literal: PyNode, sinkNames?: ReadonlySet<string>): {
   position: LiteralPosition;
   purpose?: DataPurpose;
   reason?: string;
@@ -416,26 +495,27 @@ export function classifyPyLiteral(literal: PyNode): {
 
   // (c) assignment to a model-like name: `MODEL = "…"` / `self.model = "…"`.
   // Covers annotated assignments too (`model: str = "…"` is the same node).
+  // THE SINK RULE: the name alone is not proof of use — swap-eligible only
+  // when the same name reaches an in-file sink; otherwise usage_unverified.
   if (parent.type === 'assignment') {
     const left = parent.childForFieldName('left');
     const right = parent.childForFieldName('right');
     if (left && right?.equals(node)) {
-      const name =
-        left.type === 'identifier'
-          ? left.text
-          : left.type === 'attribute'
-            ? left.childForFieldName('attribute')?.text
-            : undefined;
+      const name = traceableName(left);
       if (name && isAzureDeploymentName(name)) {
         return { position: 'azure_deployment', reason: AZURE_DEPLOYMENT_REASON };
       }
-      if (name && isModelLikeName(name)) return { position: 'model_arg' };
+      if (name && isModelLikeName(name)) {
+        if (sinkNames?.has(name)) return { position: 'model_arg' };
+        return { position: 'usage_unverified', reason: USAGE_UNVERIFIED_REASON };
+      }
     }
     return { position: 'data', purpose: 'generic' };
   }
 
   // (c) parameter-default form: `def ask(prompt, model="…")` — with or without
-  // a type annotation (typed_default_parameter).
+  // a type annotation (typed_default_parameter). The same sink rule applies:
+  // the default is only trusted when the parameter's name reaches a sink.
   if (parent.type === 'default_parameter' || parent.type === 'typed_default_parameter') {
     const name = parent.childForFieldName('name');
     const value = parent.childForFieldName('value');
@@ -443,7 +523,10 @@ export function classifyPyLiteral(literal: PyNode): {
       if (isAzureDeploymentName(name.text)) {
         return { position: 'azure_deployment', reason: AZURE_DEPLOYMENT_REASON };
       }
-      if (isModelLikeName(name.text)) return { position: 'model_arg' };
+      if (isModelLikeName(name.text)) {
+        if (sinkNames?.has(name.text)) return { position: 'model_arg' };
+        return { position: 'usage_unverified', reason: USAGE_UNVERIFIED_REASON };
+      }
     }
     return { position: 'data', purpose: 'generic' };
   }
@@ -473,8 +556,11 @@ export function classifyPyLiteral(literal: PyNode): {
 }
 
 /** Position-only view of {@link classifyPyLiteral} (kept for call-site brevity). */
-export function classifyPyLiteralPosition(literal: PyNode): LiteralPosition {
-  return classifyPyLiteral(literal).position;
+export function classifyPyLiteralPosition(
+  literal: PyNode,
+  sinkNames?: ReadonlySet<string>,
+): LiteralPosition {
+  return classifyPyLiteral(literal, sinkNames).position;
 }
 
 // --- Scan --------------------------------------------------------------------
@@ -503,16 +589,22 @@ export async function findPyModelIdLiterals(
 
   for (const source of sources) {
     if (isPyTestPath(source.path)) continue;
+    // Annotated files never yield matches: a `model-catalog` file's ids are
+    // expected registry content (own one-line surface), an `ignore-file` is
+    // skipped outright. Both are surfaced via scanPyAnnotations instead.
+    if (fileAnnotation(source.text) !== undefined) continue;
 
     const tree = await parsePython(source.text);
     try {
+      // The sink rule's evidence set, computed once per file (see above).
+      const sinkNames = collectPySinkNames(tree);
       for (const node of tree.rootNode.descendantsOfType('string')) {
         const content = plainStringContent(node);
         if (!content) continue; // f-string / prefixed / concatenation fragment
         const deprecation = byValue.get(content.value);
         if (!deprecation) continue; // exact-value guard: no substring matching
 
-        const classification = classifyPyLiteral(node);
+        const classification = classifyPyLiteral(node, sinkNames);
         out.push({
           file: source.path,
           value: content.value,
@@ -568,6 +660,43 @@ export function toPyAzureDeploymentMatches(matches: PyLiteralMatch[]): AzureDepl
       location: m.location,
       note: m.deprecation.note,
     }));
+}
+
+/**
+ * Project a Python scan down to its USAGE-UNVERIFIED candidates: model-like
+ * assignments the sink rule could not tie to any in-file sink. Reported for
+ * manual review only — never auto-applied, never included in --write.
+ */
+export function toPyUsageUnverifiedMatches(matches: PyLiteralMatch[]): UsageUnverifiedLocate[] {
+  return matches
+    .filter((m) => m.position === 'usage_unverified')
+    .map((m) => ({
+      value: m.value,
+      replacement: m.deprecation.replacement,
+      location: m.location,
+      note: m.deprecation.note,
+      reason: m.reason ?? USAGE_UNVERIFIED_REASON,
+    }));
+}
+
+/**
+ * Collect the annotated Python files (same scope rules as the literal scan:
+ * test-support files skipped), so the CLI can report catalogs as expected
+ * content and ignored files as a count — mirroring scanProjectAnnotations.
+ */
+export function scanPyAnnotations(sources: PySource[], registry: LlmRegistry): AnnotationScan {
+  const catalogs: CatalogFileReport[] = [];
+  const ignoredFiles: string[] = [];
+  for (const source of sources) {
+    if (isPyTestPath(source.path)) continue;
+    const annotation = fileAnnotation(source.text);
+    if (annotation === 'ignore-file') {
+      ignoredFiles.push(source.path);
+    } else if (annotation === 'model-catalog') {
+      catalogs.push({ file: source.path, ids: catalogIdsInText(source.text, registry) });
+    }
+  }
+  return { catalogs, ignoredFiles };
 }
 
 /**

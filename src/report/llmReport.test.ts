@@ -1,11 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import {
+  formatCatalogLine,
   formatDataFileGroupLine,
   formatDataHitLine,
+  formatUsageUnverifiedLine,
   groupDataFindingsByFile,
   isCatalogLike,
   purposePhrase,
   replacementFamily,
+  swapLabel,
   type DataFindingView,
 } from './llmReport.js';
 
@@ -120,6 +123,70 @@ describe('purpose-aware hit language (--verbose)', () => {
     expect(line).toContain('src/chat.ts:3:9');
     expect(line).toContain('type-cast masks the model-id union');
     expect(line).not.toContain('would map to');
+  });
+});
+
+describe('swapLabel (lifecycle attaches to the SOURCE id)', () => {
+  it('attaches a shutdown date to the deprecated id, not the replacement', () => {
+    expect(
+      swapLabel({
+        provider: 'openai',
+        kind: 'model_id',
+        deprecated: 'gpt-4',
+        replacement: 'gpt-5.6-sol',
+        status: 'deprecated',
+        shutdownDate: '2026-10-23',
+      }),
+    ).toBe('"gpt-4" (shuts down 2026-10-23) -> "gpt-5.6-sol"');
+  });
+
+  it('marks a retired source id', () => {
+    expect(
+      swapLabel({
+        provider: 'google',
+        kind: 'model_id',
+        deprecated: 'gemini-2.0-flash',
+        replacement: 'gemini-flash-latest',
+        status: 'retired',
+      }),
+    ).toBe('"gemini-2.0-flash" (retired) -> "gemini-flash-latest"');
+  });
+
+  it('uses a plain arrow when the lifecycle is unknown', () => {
+    expect(
+      swapLabel({
+        provider: 'openai',
+        kind: 'model_id',
+        deprecated: 'o1-mini',
+        replacement: 'o4-mini',
+      }),
+    ).toBe('"o1-mini" -> "o4-mini"');
+  });
+});
+
+describe('formatCatalogLine (annotated model-catalog files)', () => {
+  it('renders the known-migration-catalog line', () => {
+    expect(formatCatalogLine({ file: 'src/registry/oracles.ts', ids: ['gpt-4', 'o1-mini'] })).toBe(
+      'src/registry/oracles.ts -- known migration catalog: 2 deprecated ids ' +
+        '(expected registry content, no action)',
+    );
+  });
+});
+
+describe('formatUsageUnverifiedLine (sink-rule demotions)', () => {
+  it('carries the exact manual-review phrase and the location', () => {
+    const line = formatUsageUnverifiedLine({
+      file: 'sim/simulator.py',
+      value: 'gpt-4',
+      replacement: 'gpt-5.6-sol',
+      line: 2,
+      column: 13,
+    });
+    expect(line).toContain('sim/simulator.py:2:13');
+    expect(line).toContain(
+      'model-like data assignment, replacement known, usage purpose uncertain, manual review required',
+    );
+    expect(line).toContain('never auto-applied');
   });
 });
 

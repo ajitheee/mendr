@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { LlmRegistry } from '../types.js';
-import { findPyModelIdLiterals, type PySource } from './scanPy.js';
+import { USAGE_UNVERIFIED_REASON } from '../usage/scanLiterals.js';
+import { findPyModelIdLiterals, scanPyAnnotations, type PySource } from './scanPy.js';
 import { applyPyModelIdFixesToSources } from './fixPy.js';
 
 // Hermetic Python-mode tests, mirroring the TS call-site suite in
@@ -53,6 +54,16 @@ const REGISTRY: LlmRegistry = [
     note: 'o1-mini deprecated',
     verification: { status: 'unverified' },
   },
+  {
+    provider: 'openai',
+    kind: 'model_id',
+    deprecated: 'gpt-4',
+    replacement: 'gpt-5.6-sol',
+    note: 'gpt-4 shutting down',
+    status: 'deprecated',
+    shutdownDate: '2026-10-23',
+    verification: { status: 'verified' },
+  },
 ];
 
 /**
@@ -67,8 +78,11 @@ import google.generativeai as genai
 def vision(client):
     return client.chat.completions.create(model="gpt-4-vision-preview")
 
-# MUST SWAP (c): assignment to a model-named constant.
+# MUST SWAP (c): assignment to a model-named constant, traced to the sink below.
 MODEL_NAME = "gemini-2.0-flash"
+
+def default_call(client):
+    return client.chat.completions.create(model=MODEL_NAME)
 
 # MUST SWAP (d): direct string argument to a known model factory.
 g_model = genai.GenerativeModel("gemini-2.0-flash")
@@ -188,7 +202,10 @@ describe('python call-site awareness: swap live model arguments, skip data', () 
 
 describe('python engine gate: unverified replacements are BLOCKED, never swapped', () => {
   it('surfaces an unverified id in a live model-arg position as blocked', async () => {
-    const source = 'SMALL_MODEL = "o1-mini"\n';
+    // The sink usage makes the assignment a LIVE model arg — only the entry's
+    // unverified replacement blocks it (isolating the verification gate).
+    const source =
+      'SMALL_MODEL = "o1-mini"\nresp = client.chat.completions.create(model=SMALL_MODEL)\n';
     const result = await applyPyModelIdFixesToSources([src('app/pick.py', source)], REGISTRY);
 
     // o1-mini is model_arg here, but its entry is `unverified` — no swap.
@@ -235,6 +252,9 @@ describe('python quote + prefix discipline', () => {
       "model_single = 'gemini-2.0-flash'",
       'model_double = "gemini-2.0-flash"',
       'model_triple = """gemini-2.0-flash"""',
+      'client.create(model=model_single)',
+      'client.create(model=model_double)',
+      'client.create(model=model_triple)',
       '',
     ].join('\n');
     const result = await applyPyModelIdFixesToSources([src('app/quotes.py', source)], REGISTRY);
@@ -274,15 +294,14 @@ describe('python test-file hardening', () => {
     expect(result.siteCount).toBe(0);
     expect(result.dataMatches).toHaveLength(0);
     expect(result.blockedMatches).toHaveLength(0);
+    expect(result.usageUnverifiedMatches).toHaveLength(0);
     expect(result.patchedFiles).toHaveLength(0);
   });
 
   it('still scans a non-test sibling in the same batch', async () => {
+    const live = 'MODEL_NAME = "gemini-2.0-flash"\nclient.create(model=MODEL_NAME)\n';
     const result = await applyPyModelIdFixesToSources(
-      [
-        src('app/test_routes.py', 'MODEL_NAME = "gemini-2.0-flash"\n'),
-        src('app/live.py', 'MODEL_NAME = "gemini-2.0-flash"\n'),
-      ],
+      [src('app/test_routes.py', live), src('app/live.py', live)],
       REGISTRY,
     );
     expect(result.siteCount).toBe(1);
@@ -304,7 +323,7 @@ describe('python syntax gate (the honesty backstop)', () => {
         verification: { status: 'verified' },
       },
     ];
-    const source = 'MODEL_NAME = "gpt-4-vision-preview"\n';
+    const source = 'MODEL_NAME = "gpt-4-vision-preview"\nclient.create(model=MODEL_NAME)\n';
     const result = await applyPyModelIdFixesToSources([src('app/broken.py', source)], poisoned);
 
     // The swap itself happened in-memory (diff is shown for review)...
@@ -318,10 +337,181 @@ describe('python syntax gate (the honesty backstop)', () => {
   });
 
   it('PASSES for a benign swap (baseline-relative: zero new errors)', async () => {
-    const source = 'MODEL_NAME = "gemini-2.0-flash"\n';
+    const source = 'MODEL_NAME = "gemini-2.0-flash"\nclient.create(model=MODEL_NAME)\n';
     const result = await applyPyModelIdFixesToSources([src('app/fine.py', source)], REGISTRY);
     expect(result.syntaxGate.passed).toBe(true);
     expect(result.syntaxGate.failures).toHaveLength(0);
+  });
+});
+
+describe('python sink rule: assignments swap ONLY when traced to an in-file sink', () => {
+  it('REGRESSION (simulator.py): a bare assignment with no sink is NOT auto-swapped', async () => {
+    // The real Tier A false positive: a model-like assignment inside an
+    // event-payload generator. The returned dict is DATA, not a call — no
+    // sink, so the match demotes to a usage-unverified candidate.
+    const source = [
+      'def generate_cost_spike_event():',
+      '    model = "gpt-4"',
+      '    return {"event": "cost_spike", "model": model, "cost": 42.0}',
+      '',
+    ].join('\n');
+    const result = await applyPyModelIdFixesToSources([src('sim/simulator.py', source)], REGISTRY);
+
+    expect(result.siteCount).toBe(0);
+    expect(result.patchedFiles).toHaveLength(0);
+    expect(result.diff).toBe('');
+    expect(result.usageUnverifiedMatches).toHaveLength(1);
+    expect(result.usageUnverifiedMatches[0]).toMatchObject({
+      value: 'gpt-4',
+      replacement: 'gpt-5.6-sol',
+      reason: USAGE_UNVERIFIED_REASON,
+    });
+    // Not double-reported on any other surface.
+    expect(result.dataMatches).toHaveLength(0);
+    expect(result.blockedMatches).toHaveLength(0);
+  });
+
+  it('the SAME assignment swaps once the file passes the name to a provider sink', async () => {
+    const source = [
+      'def generate_cost_spike_event(client):',
+      '    model = "gpt-4"',
+      '    client.chat.completions.create(model=model)',
+      '    return {"event": "cost_spike", "model": model, "cost": 42.0}',
+      '',
+    ].join('\n');
+    const result = await applyPyModelIdFixesToSources([src('sim/simulator.py', source)], REGISTRY);
+
+    expect(result.siteCount).toBe(1);
+    expect(result.patchedFiles[0]!.newText).toContain('model = "gpt-5.6-sol"');
+    expect(result.usageUnverifiedMatches).toHaveLength(0);
+  });
+
+  it('a model-factory positional argument counts as a sink', async () => {
+    const source = [
+      'import google.generativeai as genai',
+      'model_id = "gemini-2.0-flash"',
+      'gm = genai.GenerativeModel(model_id)',
+      '',
+    ].join('\n');
+    const result = await applyPyModelIdFixesToSources([src('app/gm.py', source)], REGISTRY);
+
+    expect(result.siteCount).toBe(1);
+    expect(result.patchedFiles[0]!.newText).toContain('model_id = "gemini-flash-latest"');
+  });
+
+  it('a model-keyed dict passed to a call counts as a sink', async () => {
+    const source = [
+      'model = "gpt-4"',
+      'resp = requests.post("/v1/chat", json={"model": model})',
+      '',
+    ].join('\n');
+    const result = await applyPyModelIdFixesToSources([src('app/post.py', source)], REGISTRY);
+
+    expect(result.siteCount).toBe(1);
+    expect(result.patchedFiles[0]!.newText).toContain('model = "gpt-5.6-sol"');
+  });
+
+  it('a self.model assignment traces through the attribute name', async () => {
+    const source = [
+      'class Bot:',
+      '    def __init__(self):',
+      '        self.model = "gpt-4"',
+      '    def run(self, client):',
+      '        return client.chat.completions.create(model=self.model)',
+      '',
+    ].join('\n');
+    const result = await applyPyModelIdFixesToSources([src('app/bot.py', source)], REGISTRY);
+
+    expect(result.siteCount).toBe(1);
+    expect(result.patchedFiles[0]!.newText).toContain('self.model = "gpt-5.6-sol"');
+  });
+
+  it('a parameter default with no in-file sink demotes too', async () => {
+    const source = [
+      'def make_event(model="gpt-4"):',
+      '    return {"model": model}',
+      '',
+    ].join('\n');
+    const result = await applyPyModelIdFixesToSources([src('app/event.py', source)], REGISTRY);
+
+    expect(result.siteCount).toBe(0);
+    expect(result.usageUnverifiedMatches).toHaveLength(1);
+    expect(result.usageUnverifiedMatches[0]!.value).toBe('gpt-4');
+  });
+
+  it('a parameter default swaps when the body reaches a sink', async () => {
+    const source = [
+      'def ask(client, model="gpt-4"):',
+      '    return client.chat.completions.create(model=model)',
+      '',
+    ].join('\n');
+    const result = await applyPyModelIdFixesToSources([src('app/ask.py', source)], REGISTRY);
+
+    expect(result.siteCount).toBe(1);
+    expect(result.patchedFiles[0]!.newText).toContain('def ask(client, model="gpt-5.6-sol"):');
+    expect(result.usageUnverifiedMatches).toHaveLength(0);
+  });
+});
+
+describe('python file annotations (mendr magic comments)', () => {
+  it('a `# mendr: model-catalog` file yields no matches; surfaces as a catalog', async () => {
+    const source = [
+      '# mendr: model-catalog',
+      'CATALOG = {',
+      '    "gpt-4": "gpt-5.6-sol",',
+      '    "gemini-2.0-flash": "gemini-flash-latest",',
+      '}',
+      '',
+    ].join('\n');
+    const sources = [src('app/catalog.py', source)];
+
+    const matches = await findPyModelIdLiterals(sources, REGISTRY);
+    expect(matches).toHaveLength(0);
+    const result = await applyPyModelIdFixesToSources(sources, REGISTRY);
+    expect(result.siteCount).toBe(0);
+    expect(result.dataMatches).toHaveLength(0);
+
+    const scan = scanPyAnnotations(sources, REGISTRY);
+    expect(scan.catalogs).toHaveLength(1);
+    expect(scan.catalogs[0]!.file).toBe('app/catalog.py');
+    expect(scan.catalogs[0]!.ids.sort()).toEqual(['gemini-2.0-flash', 'gpt-4']);
+    expect(scan.ignoredFiles).toHaveLength(0);
+  });
+
+  it('a `# mendr: ignore-file` file is skipped entirely and counted', async () => {
+    const source = [
+      '# mendr: ignore-file',
+      'MODEL_NAME = "gemini-2.0-flash"',
+      'client.create(model=MODEL_NAME)',
+      '',
+    ].join('\n');
+    const sources = [src('app/skipme.py', source)];
+
+    const matches = await findPyModelIdLiterals(sources, REGISTRY);
+    expect(matches).toHaveLength(0);
+
+    const scan = scanPyAnnotations(sources, REGISTRY);
+    expect(scan.ignoredFiles).toEqual(['app/skipme.py']);
+    expect(scan.catalogs).toHaveLength(0);
+  });
+
+  it('an annotation past the first 5 lines is NOT honored', async () => {
+    const source = [
+      '# line 1',
+      '# line 2',
+      '# line 3',
+      '# line 4',
+      '# line 5',
+      '# mendr: ignore-file',
+      'MODEL_NAME = "gemini-2.0-flash"',
+      'client.create(model=MODEL_NAME)',
+      '',
+    ].join('\n');
+    const sources = [src('app/late.py', source)];
+
+    const result = await applyPyModelIdFixesToSources(sources, REGISTRY);
+    expect(result.siteCount).toBe(1);
+    expect(scanPyAnnotations(sources, REGISTRY).ignoredFiles).toHaveLength(0);
   });
 });
 
@@ -329,7 +519,7 @@ describe('python diff output', () => {
   it('produces a git-appliable unified diff touching only changed files', async () => {
     const result = await applyPyModelIdFixesToSources(
       [
-        src('app/llm.py', 'MODEL_NAME = "gemini-2.0-flash"\n'),
+        src('app/llm.py', 'MODEL_NAME = "gemini-2.0-flash"\nclient.create(model=MODEL_NAME)\n'),
         src('app/other.py', 'GREETING = "hello world"\n'),
       ],
       REGISTRY,

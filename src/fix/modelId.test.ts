@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { Project } from 'ts-morph';
 import type { LlmRegistry } from '../types.js';
-import { findModelIdLiterals } from '../usage/scanLiterals.js';
+import {
+  fileAnnotation,
+  findModelIdLiterals,
+  scanProjectAnnotations,
+} from '../usage/scanLiterals.js';
 import { applyModelIdFixes, applyModelIdFixesToProject } from './modelId.js';
 
 // Hermetic LLM-mode tests. The ts-morph Project is built entirely in-memory
@@ -409,6 +413,68 @@ describe('cast blindness: `as SomeUnion` demotes a would-be swap to data', () =>
     expect(text).toContain('("gpt-4o" as string)');
     expect(text).toContain('"gemini-flash-latest" as const');
     expect(result.siteCount).toBe(2);
+  });
+});
+
+// --- FILE ANNOTATIONS (mendr magic comments) ---------------------------------
+//
+// A repo can annotate its OWN files so Mendr stops reporting known content as
+// debt: `// mendr: model-catalog` marks a deliberate migration catalog (one
+// expected-content line, nothing swapped), `// mendr: ignore-file` skips the
+// file outright. Mendr's own src/registry/oracles.ts carries the former.
+
+describe('file annotations (mendr magic comments)', () => {
+  const CATALOG_SRC =
+    '// mendr: model-catalog\n' +
+    'export const CATALOG = {\n' +
+    '  "gemini-2.0-flash": "gemini-flash-latest",\n' +
+    '};\n' +
+    'export const MODEL_NAME = "gemini-2.0-flash";\n';
+
+  it('detects both annotations in the first 5 lines only', () => {
+    expect(fileAnnotation('// mendr: model-catalog\n')).toBe('model-catalog');
+    expect(fileAnnotation('# mendr: ignore-file\n')).toBe('ignore-file');
+    expect(fileAnnotation('//   mendr:   model-catalog  \n')).toBe('model-catalog');
+    expect(fileAnnotation('// mendr: model-catalog is great\n')).toBeUndefined();
+    expect(fileAnnotation('const x = 1;\n')).toBeUndefined();
+    expect(fileAnnotation('\n\n\n\n\n// mendr: ignore-file\n')).toBeUndefined();
+  });
+
+  it('a `// mendr: model-catalog` file yields no matches or edits', () => {
+    const project = inMemoryProject('src/catalog.ts', CATALOG_SRC);
+    const result = applyModelIdFixesToProject(project, REGISTRY);
+
+    expect(result.siteCount).toBe(0);
+    expect(result.dataMatches).toHaveLength(0);
+    const text = project.getSourceFileOrThrow('src/catalog.ts').getFullText();
+    expect(text).toBe(CATALOG_SRC);
+  });
+
+  it('a `// mendr: ignore-file` file is skipped outright', () => {
+    const project = inMemoryProject(
+      'src/skipme.ts',
+      '// mendr: ignore-file\nexport const MODEL_NAME = "gemini-2.0-flash";\n',
+    );
+    const result = applyModelIdFixesToProject(project, REGISTRY);
+
+    expect(result.siteCount).toBe(0);
+    expect(result.dataMatches).toHaveLength(0);
+  });
+
+  it('scanProjectAnnotations reports catalog ids + ignored files', () => {
+    const project = inMemoryProject('src/catalog.ts', CATALOG_SRC);
+    project.createSourceFile(
+      'src/skipme.ts',
+      '// mendr: ignore-file\nexport const MODEL_NAME = "gpt-4-0314";\n',
+    );
+    project.createSourceFile('src/plain.ts', 'export const MODEL_NAME = "gemini-2.0-flash";\n');
+
+    const scan = scanProjectAnnotations(project, REGISTRY);
+    expect(scan.catalogs).toHaveLength(1);
+    expect(scan.catalogs[0].file).toContain('catalog.ts');
+    expect(scan.catalogs[0].ids).toEqual(['gemini-2.0-flash']);
+    expect(scan.ignoredFiles).toHaveLength(1);
+    expect(scan.ignoredFiles[0]).toContain('skipme.ts');
   });
 });
 

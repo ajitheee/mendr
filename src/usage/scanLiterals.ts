@@ -42,11 +42,14 @@ import { isVerified, modelIdEntries } from './llmRegistry.js';
 //   everything else is `data` (surfaced Tier C locate-only, never edited).
 
 /**
- * Where a matched model-id literal sits: a live model argument, plain data, or
+ * Where a matched model-id literal sits: a live model argument, plain data,
  * under an Azure deployment key (a deployment ALIAS, not a model id — its own
- * locate surface, never swap-eligible).
+ * locate surface, never swap-eligible), or a model-like assignment whose
+ * USAGE could not be verified (`usage_unverified`, produced by the Python
+ * scanner's sink rule only — see src/python/scanPy.ts). A usage-unverified
+ * candidate is never auto-applied and never included in --write.
  */
-export type LiteralPosition = 'model_arg' | 'data' | 'azure_deployment';
+export type LiteralPosition = 'model_arg' | 'data' | 'azure_deployment' | 'usage_unverified';
 
 /**
  * WHY a data-position literal is data — the purpose-aware refinement of the old
@@ -129,6 +132,114 @@ export interface BlockedModelLocate {
   note?: string;
   /** The verification reasons behind the block, if the entry carries them. */
   reasons?: string[];
+}
+
+/**
+ * A model-like ASSIGNMENT of a deprecated id with NO in-file sink usage
+ * (Python's sink rule; see src/python/scanPy.ts): `model = "gpt-4"` where the
+ * name is never later passed as a model kwarg / sink argument in the same
+ * file. The VALUE is a known deprecated id and the replacement is known, but
+ * the assignment may be event/log/fixture data wearing a model-like name (the
+ * simulator failure) — so it is surfaced for manual review, never auto-applied.
+ */
+export interface UsageUnverifiedLocate {
+  /** The deprecated model-id value found in the unproven assignment. */
+  value: string;
+  /** The replacement the registry WOULD apply, shown for context only. */
+  replacement: string;
+  /** Where the literal sits in source. */
+  location: SourceLocation;
+  /** The registry entry's human note, if any. */
+  note?: string;
+  /** The fixed usage-unverified explanation ({@link USAGE_UNVERIFIED_REASON}). */
+  reason: string;
+}
+
+/** The fixed explanation printed with every usage-unverified candidate. */
+export const USAGE_UNVERIFIED_REASON =
+  'model-like data assignment, replacement known, usage purpose uncertain, manual review required';
+
+// --- File-level magic comments ---------------------------------------------
+//
+// A repo can annotate its OWN files so Mendr stops reporting known content as
+// debt. The annotation must sit alone on one of the FIRST FIVE lines:
+//   `// mendr: model-catalog` (or `# mendr: model-catalog`) — the file IS a
+//     deliberate migration catalog / knowledge base of deprecated ids: its
+//     matches collapse to one "known migration catalog" line and nothing in it
+//     is ever swapped (Mendr's own src/registry/oracles.ts carries this).
+//   `// mendr: ignore-file` (or `# mendr: ignore-file`) — the file is skipped
+//     entirely; the report carries only a count of skipped files.
+
+/** The two file-level mendr annotations. */
+export type MendrFileAnnotation = 'model-catalog' | 'ignore-file';
+
+const ANNOTATION_RE = /^\s*(?:\/\/|#)\s*mendr:\s*(model-catalog|ignore-file)\s*$/;
+const ANNOTATION_MAX_LINES = 5;
+
+/** The file-level mendr annotation in `text`'s first five lines, if any. */
+export function fileAnnotation(text: string): MendrFileAnnotation | undefined {
+  for (const line of text.split(/\r?\n/, ANNOTATION_MAX_LINES)) {
+    const m = ANNOTATION_RE.exec(line);
+    if (m) return m[1] as MendrFileAnnotation;
+  }
+  return undefined;
+}
+
+/**
+ * The distinct registry `deprecated` ids present in `text` as quoted string
+ * content — the honest "N deprecated ids" count for a `model-catalog` file.
+ * Text-level on purpose: a catalog file's ids are expected registry content,
+ * so a cheap quote-delimited containment check is exact enough, and it keeps
+ * the count identical across the TS and Python scanners.
+ */
+export function catalogIdsInText(text: string, registry: LlmRegistry): string[] {
+  const seen = new Set<string>();
+  for (const dep of modelIdEntries(registry)) {
+    if (seen.has(dep.deprecated)) continue;
+    if (
+      text.includes(`"${dep.deprecated}"`) ||
+      text.includes(`'${dep.deprecated}'`) ||
+      text.includes(`\`${dep.deprecated}\``)
+    ) {
+      seen.add(dep.deprecated);
+    }
+  }
+  return [...seen];
+}
+
+/** One annotated `model-catalog` file and the deprecated ids it carries. */
+export interface CatalogFileReport {
+  file: string;
+  ids: string[];
+}
+
+/** The annotation surfaces of one scan: catalog files + ignored files. */
+export interface AnnotationScan {
+  catalogs: CatalogFileReport[];
+  ignoredFiles: string[];
+}
+
+/**
+ * Collect the annotated files of a project (same scope rules as the literal
+ * scan: no declaration files, no node_modules, no test-support files), so the
+ * CLI can report catalogs as expected content and ignored files as a count.
+ */
+export function scanProjectAnnotations(project: Project, registry: LlmRegistry): AnnotationScan {
+  const catalogs: CatalogFileReport[] = [];
+  const ignoredFiles: string[] = [];
+  for (const sf of project.getSourceFiles()) {
+    if (sf.isDeclarationFile()) continue;
+    const file = sf.getFilePath();
+    if (file.includes('/node_modules/')) continue;
+    if (isTestPath(file)) continue;
+    const annotation = fileAnnotation(sf.getFullText());
+    if (annotation === 'ignore-file') {
+      ignoredFiles.push(file);
+    } else if (annotation === 'model-catalog') {
+      catalogs.push({ file, ids: catalogIdsInText(sf.getFullText(), registry) });
+    }
+  }
+  return { catalogs, ignoredFiles };
 }
 
 // --- Call-site classification ---------------------------------------------
@@ -451,6 +562,10 @@ export function findModelIdLiterals(project: Project, registry: LlmRegistry): Li
     const file = sf.getFilePath();
     if (file.includes('/node_modules/')) continue;
     if (isTestPath(file)) continue;
+    // Annotated files never yield matches: a `model-catalog` file's ids are
+    // expected registry content (own one-line surface), an `ignore-file` is
+    // skipped outright. Both are surfaced via scanProjectAnnotations instead.
+    if (fileAnnotation(sf.getFullText()) !== undefined) continue;
 
     const literals = [
       ...sf.getDescendantsOfKind(SyntaxKind.StringLiteral),

@@ -5,6 +5,7 @@ import type {
   AzureDeploymentLocate,
   BlockedModelLocate,
   ModelIdDataLocate,
+  UsageUnverifiedLocate,
 } from '../usage/scanLiterals.js';
 import {
   countSyntaxErrors,
@@ -15,6 +16,7 @@ import {
   toPyAzureDeploymentMatches,
   toPyBlockedModelArgMatches,
   toPyModelIdDataMatches,
+  toPyUsageUnverifiedMatches,
   type PyLiteralMatch,
   type PySource,
 } from './scanPy.js';
@@ -60,6 +62,11 @@ export interface PyModelIdFixResult {
   blockedMatches: BlockedModelLocate[];
   /** Values under Azure deployment keys — locate-only, never swap-eligible. */
   azureMatches: AzureDeploymentLocate[];
+  /**
+   * Model-like assignments with NO in-file sink usage (the sink rule) —
+   * usage-unverified candidates for manual review, never auto-applied.
+   */
+  usageUnverifiedMatches: UsageUnverifiedLocate[];
   /**
    * The syntax gate verdict: `passed` iff NO patched file parses with more
    * ERROR/MISSING nodes than its unpatched baseline. `failures` carries one
@@ -123,6 +130,7 @@ export async function applyPyModelIdFixesToSources(
   const dataMatches = toPyModelIdDataMatches(matches);
   const blockedMatches = toPyBlockedModelArgMatches(matches);
   const azureMatches = toPyAzureDeploymentMatches(matches);
+  const usageUnverifiedMatches = toPyUsageUnverifiedMatches(matches);
 
   // THE ENGINE GATE: `isVerified` is the load-bearing clause — an entry the
   // registry has not stamped `verification.status === 'verified'` is NEVER
@@ -184,6 +192,7 @@ export async function applyPyModelIdFixesToSources(
     dataMatches,
     blockedMatches,
     azureMatches,
+    usageUnverifiedMatches,
     syntaxGate: { passed: failures.length === 0, failures },
     patchedFiles,
     swapDeprecations: [...uniqueSwaps.values()],
