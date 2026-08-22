@@ -1,5 +1,9 @@
 import type { TierBReason } from '../types.js';
 import type { EffectiveVerificationState } from '../usage/llmRegistry.js';
+// TYPE ONLY, and deliberately so: report/runFooter imports VALUES from this
+// module, and a value import back would close a require cycle. `import type`
+// is erased at compile time, so the dependency exists only for the checker.
+import type { RunMode } from './runFooter.js';
 
 // The THREE-TIER report vocabulary, in one place.
 //
@@ -235,8 +239,8 @@ export function tierBReasonCounts(
 }
 
 /**
- * The JSON projection of a Tier B finding: exactly the ten documented keys,
- * in the documented order. `detail`/`status` stay out — they are internal
+ * The JSON projection of a Tier B finding: exactly the documented keys, in the
+ * documented order. `detail`/`status` stay out — they are internal
  * plumbing for the derived legacy arrays, not part of the published shape.
  *
  * `entryId` leads, because it is the only key here that IDENTIFIES a registry
@@ -257,6 +261,9 @@ export function tierBJson(f: TierBFinding): {
   column: number;
   modelId: string;
   replacement: string;
+  replacementVerdict: RegistryVerdict;
+  usageVerdict: UsageVerdict;
+  tier: Tier;
   registryVerdict: RegistryVerdict;
   verdictCheckedAt: string | null;
   reason: TierBReason;
@@ -269,6 +276,17 @@ export function tierBJson(f: TierBFinding): {
     column: f.column,
     modelId: f.modelId,
     replacement: f.replacement,
+    // THE THREE DIMENSIONS, SEPARATELY. A consumer that read the old single
+    // `registryVerdict` and saw `verified` had no field to tell it the usage
+    // was the unproven half — the human report had the same defect, and this is
+    // the same fix on the machine side.
+    replacementVerdict: f.registryVerdict,
+    usageVerdict: usageVerdictState('B', f.reason),
+    tier: 'B',
+    // DEPRECATED (see README): the same value as `replacementVerdict`, kept
+    // populated for one release so existing consumers keep parsing. It is
+    // ASSIGNED FROM the new field's source rather than computed a second time,
+    // so the two cannot disagree while both ship.
     registryVerdict: f.registryVerdict,
     verdictCheckedAt: f.verdictCheckedAt ?? null,
     reason: f.reason,
@@ -280,8 +298,9 @@ export function tierBJson(f: TierBFinding): {
 
 /**
  * Label column width, so `found:` / `candidate replacement:` /
- * `registry verdict:` / `reason:` values align. Sized to the longest label
- * (`candidate replacement:`, 22 chars) plus one space.
+ * `replacement verdict:` / `usage verdict:` / `classification:` / `reason:`
+ * values align. Sized to the longest label (`candidate replacement:`, 22 chars)
+ * plus one space.
  */
 const TIER_B_LABEL_WIDTH = 23;
 
@@ -292,11 +311,30 @@ const TIER_B_WRAP_COLUMNS = 78;
 export const TIER_B_HEADING = '=== Tier B: review required ===';
 
 /**
- * The fixed action line. Its whole job is to close the question a reader would
- * otherwise carry into every finding — "is there a diff for this somewhere?" —
- * with a flat no, once per finding rather than once per section.
+ * The fixed action promise. Its whole job is to close the question a reader
+ * would otherwise carry into every finding — "is there a diff for this
+ * somewhere?" — with a flat no, once per finding rather than once per section.
+ *
+ * It is no longer a row of its own: {@link classificationText} ends every Tier
+ * B classification with this exact string, so the promise is still made once
+ * per finding and there is still only one place to change it.
  */
 export const TIER_B_ACTION_LINE = 'no patch generated.';
+
+/**
+ * One `label: value` row, wrapped, with continuation lines hanging under the
+ * VALUE column. Exported because the Tier A section prints the same three
+ * verdict rows from the same functions, and two renderers would eventually
+ * align to two different columns in one report.
+ */
+export function tierRow(label: string, value: string): string[] {
+  const valueColumn = 2 + TIER_B_LABEL_WIDTH;
+  const body = wrap(value, TIER_B_WRAP_COLUMNS - valueColumn);
+  return [
+    `  ${`${label}:`.padEnd(TIER_B_LABEL_WIDTH)}${body[0]}`,
+    ...body.slice(1).map((line) => `${' '.repeat(valueColumn)}${line}`),
+  ];
+}
 
 /** Greedy word-wrap to `width`, never breaking inside a word. */
 function wrap(text: string, width: number): string[] {
@@ -324,8 +362,25 @@ export function replacementLabel(verdict: RegistryVerdict): string {
 }
 
 /**
- * The `registry verdict:` VALUE — a report of what is stored in the registry,
- * phrased so it cannot be read as something mendr checked during this run.
+ * The `replacement verdict:` VALUE — a report of what is stored in the registry
+ * ABOUT THE REPLACEMENT MAPPING, phrased so it cannot be read as something
+ * mendr checked during this run, and so it cannot be read as a verdict on the
+ * finding as a whole.
+ *
+ * WHY THE ROW IS SCOPED TO THE REPLACEMENT. It used to be one row called
+ * `registry verdict`, and on a Tier B finding that reads as though the FINDING
+ * were verified — while the usage is precisely the thing that could not be
+ * confirmed. The block now states the two dimensions separately
+ * ({@link usageVerdictText}) and then the outcome
+ * ({@link classificationText}), so no row can be mistaken for a verdict on
+ * another row's dimension.
+ *
+ * IT IS STILL NOT CALLED "evidence". The label `replacement evidence:` was
+ * removed by an honesty audit and must not come back: `entry.evidence` — source
+ * urls, content hashes, quoted excerpts — is EMPTY on 106 of 106 shipped
+ * records, and `mendr evidence <id>` says so for every one of them. What backs
+ * this row is a STAMP in the registry's `verification` block, so the row names
+ * a stamp and its date.
  *
  * Every word here is answerable from the registry JSON alone:
  *   - `verified` names the stamp and its date, and says out loud that no
@@ -347,13 +402,15 @@ export function replacementLabel(verdict: RegistryVerdict): string {
  * No row here repeats the `mendr evidence` command: the finding prints it once,
  * on its own row, under the id it applies to.
  */
-export function registryVerdictText(f: TierBFinding): string {
+export function replacementVerdictText(f: ReplacementVerdictView): string {
   if (f.registryVerdict === 'verified') {
-    const stamped = f.verdictCheckedAt ? `stamped ${f.verdictCheckedAt}` : 'stamp carries no date';
-    return `verified (${stamped}; not re-checked live this run)`;
+    const stamped = f.verdictCheckedAt
+      ? `registry stamp ${f.verdictCheckedAt}`
+      : 'registry stamp carries no date';
+    return `verified (${stamped}, not re-checked this run)`;
   }
   if (f.registryVerdict === 'quarantined') {
-    const stamped = f.verdictCheckedAt ? ` (stamped ${f.verdictCheckedAt})` : '';
+    const stamped = f.verdictCheckedAt ? ` (registry stamp ${f.verdictCheckedAt})` : '';
     return `quarantined${stamped} -- ${f.quarantineReason ?? 'no reason recorded'}`;
   }
   if (f.registryVerdict === 'withheld') {
@@ -362,12 +419,12 @@ export function registryVerdictText(f: TierBFinding): string {
       ? f.withheldSwitches.join(', ')
       : 'a verification switch';
     return (
-      `stamped verified${stamped}, but withheld -- ${switches} ` +
+      `registry stamp says verified${stamped}, but withheld -- ${switches} ` +
       `${f.withheldSwitches?.length === 1 ? 'is' : 'are'} false on this record`
     );
   }
   if (f.registryVerdict === 'unverifiable') {
-    const stamped = f.verdictCheckedAt ? ` (stamped ${f.verdictCheckedAt})` : '';
+    const stamped = f.verdictCheckedAt ? ` (registry stamp ${f.verdictCheckedAt})` : '';
     return (
       `unverifiable${stamped} -- no public catalog covers this model class, so the mapping ` +
       'could not be checked either way (this is not evidence it is wrong)'
@@ -380,24 +437,157 @@ export function registryVerdictText(f: TierBFinding): string {
 }
 
 /**
+ * The fields {@link replacementVerdictText} reads. Structural, not a
+ * `TierBFinding`, because the Tier A path renders the same row from a registry
+ * record rather than from a finding — one function, so the two tiers cannot
+ * drift into two vocabularies for one dimension.
+ */
+export interface ReplacementVerdictView {
+  registryVerdict: RegistryVerdict;
+  verdictCheckedAt?: string;
+  quarantineReason?: string;
+  withheldSwitches?: string[];
+}
+
+// --- the usage dimension ---------------------------------------------------
+
+/**
+ * WAS THE OCCURRENCE ITSELF CONFIRMED to be a live model argument? This is the
+ * question the old single `registry verdict:` row silently answered "verified"
+ * to on a Tier B finding, which was the overclaim: a mapping's stamp says
+ * nothing about the position the id was found in.
+ *
+ * DERIVED FROM THE REASON CODE, never from prose. Every Tier B finding carries
+ * the machine-readable code that says which proof is missing, so the sentence
+ * here is a total function of that code — one entry per union member, including
+ * the two RESERVED ones, so a new code cannot ship without deciding what this
+ * row says.
+ *
+ * `replacement_unverified` is the one Tier B reason whose USAGE is fine: the id
+ * sits in a live model argument and it is the MAPPING that did not clear. Its
+ * row says so, which is exactly the distinction the three-row split exists to
+ * make visible.
+ */
+export const TIER_B_USAGE_VERDICT_TEXT: Record<TierBReason, string> = {
+  usage_unverified: 'unverified -- no traced sink in this file',
+  replacement_unverified: 'confirmed live model argument',
+  // NAMES THE POSITION, NOT THE VALUE'S NATURE. This row read `platform alias,
+  // not a model id`, which claimed two things mendr never checked: that the
+  // string IS a provisioned alias, and that it is NOT a model id. All that was
+  // checked is the enclosing property key (isAzureDeploymentName). The claim
+  // was refutable inside a single run -- `{ model: 'gpt-4-32k' }` and
+  // `{ deployment: 'gpt-4-32k' }` in one file had the same literal auto-patched
+  // as a model id under Tier A and called "not a model id" here. So the row now
+  // reports the key, which is the fact, and leaves the provisioning inference
+  // to the `reason:` row below it, which already hedges it.
+  platform_blocked: 'unverified -- sits under a deployment key, not in a model argument',
+  type_cast_masked: 'unverified -- masked by an `as` cast',
+  dynamic_model_value: 'unverified -- the model value is assembled at runtime',
+  insufficient_dataflow: 'unverified -- not traced to a definite use',
+};
+
+/** The machine word for the same three states the sentences above describe. */
+export type UsageVerdict = 'confirmed' | 'unverified' | 'n/a';
+
+/** The Tier A usage sentence: the position WAS confirmed, and that is why it is Tier A. */
+export const TIER_A_USAGE_VERDICT_TEXT = 'confirmed -- flows to a live model call';
+
+/** The Tier C usage sentence: a data position is not a model argument at all. */
+export const TIER_C_USAGE_VERDICT_TEXT = 'n/a -- data position, not a model argument';
+
+/**
+ * The `usage verdict:` VALUE for one finding. Tier A confirmed the position,
+ * Tier B names the specific miss, Tier C is not a model argument in the first
+ * place. `reason` is required for Tier B and ignored elsewhere.
+ */
+export function usageVerdictText(tier: Tier, reason?: TierBReason): string {
+  if (tier === 'A') return TIER_A_USAGE_VERDICT_TEXT;
+  if (tier === 'C') return TIER_C_USAGE_VERDICT_TEXT;
+  return reason ? TIER_B_USAGE_VERDICT_TEXT[reason] : 'unverified -- no traced sink in this file';
+}
+
+/** The machine word behind {@link usageVerdictText}, for `--json` consumers. */
+export function usageVerdictState(tier: Tier, reason?: TierBReason): UsageVerdict {
+  if (tier === 'A') return 'confirmed';
+  if (tier === 'C') return 'n/a';
+  return usageVerdictText('B', reason).startsWith('confirmed') ? 'confirmed' : 'unverified';
+}
+
+// --- the classification dimension ------------------------------------------
+
+/**
+ * The `classification:` VALUE: the tier this occurrence landed in AND what
+ * mendr will do about it. Two facts a reader would otherwise have to assemble
+ * from a heading, a section and an action line further down.
+ *
+ * Tier B reuses {@link TIER_B_ACTION_LINE} verbatim so the promise printed here
+ * and the promise the section makes cannot drift apart.
+ *
+ * THE TIER A ROW MUST NOT PROMISE A FUTURE `--write` ON A RUN THAT ALREADY
+ * PASSED ONE. This block prints from the Tier A section, which is rendered
+ * BEFORE the write is attempted, so it cannot know the outcome. It said
+ * `will apply with --write` unconditionally — and on a refused write that
+ * sentence printed three lines above `write refused, working tree unchanged`
+ * and `files modified: 0`, contradicting them both. On a SUCCESSFUL write it
+ * was merely stale: the patch had already applied.
+ *
+ * So the sentence is chosen by MODE, the one thing that IS known at print time:
+ * LOOK keeps the (true) forward statement, and WRITE points at the Summary,
+ * which carries the real disposition for all three WRITE endings — applied,
+ * refused, and `--skip-gates` (which writes nothing). It states no outcome of
+ * its own, because it does not have one yet.
+ */
+export function classificationText(tier: Tier, mode: RunMode = 'LOOK'): string {
+  if (tier === 'A') {
+    return mode === 'WRITE'
+      ? 'tier A -- auto-fixable; see Summary for whether it was applied'
+      : 'tier A -- auto-fixable, will apply with --write';
+  }
+  if (tier === 'C') return 'tier C -- informational, no action';
+  return `tier B -- review required, ${TIER_B_ACTION_LINE}`;
+}
+
+/**
+ * The classification of a Tier A CANDIDATE whose gates failed. Still a Tier A
+ * detection — the tier is what was found, not how the gates went — so the row
+ * says so and then says the patch did not land. Never "tier C": a reader who
+ * went looking for it among the Tier C findings would not find it.
+ */
+export const TIER_A_DOWNGRADED_CLASSIFICATION =
+  'tier A candidate -- gates failed, no patch applied';
+
+/**
  * Render one Tier B finding as its block of lines, relative to the section
  * (the caller adds no further indent):
  *
  *   agent_app/simulator.py:166:13
  *     found:                 "gpt-4"
  *     replacement:           "gpt-5.6-sol"
- *     registry verdict:      verified (stamped 2026-08-21; not re-checked live
- *                            this run)
+ *     replacement verdict:   verified (registry stamp 2026-08-21, not
+ *                            re-checked this run)
+ *     usage verdict:         unverified -- no traced sink in this file
+ *     classification:        tier B -- review required, no patch generated.
  *     reason:                usage_unverified -- assigned to a model-like
  *                            variable, but no supported SDK call or parameter
  *                            sink was found in this file.
  *     registry entry:        openai.gpt-4.retirement-2026-10-23
  *     evidence:              mendr evidence openai.gpt-4.retirement-2026-10-23
- *     action:                no patch generated.
  *
  * The location leads because it is what a reader acts on; the reason carries
  * BOTH forms (code for a script, sentence for a person) on the same rows; and
- * the replacement never appears without the registry's verdict beside it.
+ * the replacement never appears without its verdict beside it.
+ *
+ * THREE ROWS, NOT ONE. This block printed a single `registry verdict:` row
+ * until a reviewer pointed out what it reads like on a Tier B finding:
+ * `verified` next to a finding whose whole point is that something could NOT be
+ * confirmed. Two of the three dimensions are now stated separately — what the
+ * registry says about the MAPPING, and what mendr established about the
+ * OCCURRENCE — and the third states the outcome those two produce. A row can no
+ * longer be read as a verdict on a dimension it does not cover.
+ *
+ * The old `action:` row is gone because `classification:` now carries the same
+ * sentence, from the same constant: two rows saying "no patch generated" in one
+ * block is noise, and the one that survives is the one that also says why.
  *
  * The last two rows before the action are the FOLLOW-UP: the record's stable id
  * and the exact command to inspect it. They used to be a `see \`mendr evidence
@@ -407,13 +597,7 @@ export function registryVerdictText(f: TierBFinding): string {
  */
 export function formatTierBFinding(f: TierBFinding): string[] {
   const valueColumn = 2 + TIER_B_LABEL_WIDTH;
-  const row = (label: string, value: string): string[] => {
-    const body = wrap(value, TIER_B_WRAP_COLUMNS - valueColumn);
-    return [
-      `  ${`${label}:`.padEnd(TIER_B_LABEL_WIDTH)}${body[0]}`,
-      ...body.slice(1).map((line) => `${' '.repeat(valueColumn)}${line}`),
-    ];
-  };
+  const row = tierRow;
   /**
    * A row that is NOT wrapped. Used for the record id and the command that
    * takes it: both are things a reader selects and pastes, and a long id
@@ -427,7 +611,9 @@ export function formatTierBFinding(f: TierBFinding): string[] {
     `${f.file}:${f.line}:${f.column}`,
     ...row('found', `"${f.modelId}"`),
     ...row(replacementLabel(f.registryVerdict), `"${f.replacement}"`),
-    ...row('registry verdict', registryVerdictText(f)),
+    ...row('replacement verdict', replacementVerdictText(f)),
+    ...row('usage verdict', usageVerdictText('B', f.reason)),
+    ...row('classification', classificationText('B')),
     ...row('reason', `${f.reason} -- ${f.reasonText}`),
     ...(f.detail ?? []).map((d) => `${' '.repeat(valueColumn)}- ${d}`),
     ...(f.entryId
@@ -436,7 +622,6 @@ export function formatTierBFinding(f: TierBFinding): string[] {
           unwrappedRow('evidence', `mendr evidence ${f.entryId}`),
         ]
       : []),
-    ...row('action', TIER_B_ACTION_LINE),
   ];
 }
 

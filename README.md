@@ -106,7 +106,7 @@ Tier B is the one worth reading. Each finding names *what is missing* with a mac
 
 Two further codes, `dynamic_model_value` and `insufficient_dataflow`, exist in the type for future detectors and are never emitted today.
 
-A Tier B finding prints like this — location, both ids, what the registry recorded about the mapping, both forms of the reason, and an explicit statement that no patch exists:
+A Tier B finding prints like this — location, both ids, **each dimension on its own row**, both forms of the reason, and the record to go read:
 
 ```
 === Tier B: review required ===
@@ -114,15 +114,29 @@ A Tier B finding prints like this — location, both ids, what the registry reco
 agent_app/simulator.py:166:13
   found:                 "gpt-4"
   replacement:           "gpt-5.6-sol"
-  registry verdict:      verified (stamped 2026-08-21; not re-checked live
+  replacement verdict:   verified (registry stamp 2026-08-21, not re-checked
                          this run)
+  usage verdict:         unverified -- no traced sink in this file
+  classification:        tier B -- review required, no patch generated.
   reason:                usage_unverified -- assigned to a model-like
                          variable, but no supported SDK call or parameter sink
                          was found in this file.
   registry entry:        openai.gpt-4.retirement-2026-10-23
   evidence:              mendr evidence openai.gpt-4.retirement-2026-10-23
-  action:                no patch generated.
 ```
+
+**Three rows, not one.** This block used to print a single `registry verdict: verified` line, which on a Tier B finding reads as though the *finding* were verified — while the usage is exactly what could not be confirmed. The two dimensions are now stated separately (what the registry recorded about the **mapping**, and what mendr established about the **occurrence**), and the third row states the outcome those two produce. Tier A prints the same three rows, where all three are affirmative:
+
+```
+  replacement verdict:   verified (registry stamp 2026-08-21, not re-checked
+                         this run)
+  usage verdict:         confirmed live model argument
+  classification:        tier A -- auto-fixable, will apply with --write
+  registry entry:        openai.gpt-4-0613.retirement-2026-10-23
+  evidence:              mendr evidence openai.gpt-4-0613.retirement-2026-10-23
+```
+
+That is the **LOOK** form. This section renders before the write is attempted, so under `--write` it cannot know the outcome and does not guess — it reads `tier A -- auto-fixable; see Summary for whether it was applied`, and the `Summary:` line carries the real disposition (applied, refused, or downgraded). It never promises a `--write` that the same report has already refused.
 
 ### registry entry id
 
@@ -132,28 +146,28 @@ uniqueness in CI. Tier A and Tier B findings print it, next to the exact command
 that takes it — before it existed, findings named `mendr evidence <id>` without
 ever putting an id on screen.
 
-### registry verdict
+### replacement verdict
 
 The registry does not claim every mapping it holds is confirmed, so a Tier B finding says which kind it is, in the **label** as well as in the row below it:
 
 ```
   candidate replacement: "o3"
-  registry verdict:      unverified -- this mapping did not clear verification
+  replacement verdict:   unverified -- this mapping did not clear verification
 ```
 
 A verified mapping is a `replacement`; anything else is a `candidate replacement`, because a reader skimming for the id reads the label and may never reach the row below it.
 
-The row is called **registry verdict** because that is precisely what it is: a verdict stored in a JSON file, stamped on some past date. A `fix-llm` run contacts no catalog, so the row says so out loud rather than implying a live check. It is *not* called "evidence": `entry.evidence` is the field that holds actual provenance (source url, content hash, stored snapshot), it is empty on every entry in the shipped registry, and naming a row after the one thing the data does not have is the kind of overclaim this project exists to avoid. `mendr evidence <id>` prints whatever an entry really has, including "no evidence captured for this entry -- it was hand-seeded."
+The row is called **replacement verdict** because that is precisely what it is: a verdict about the *replacement mapping*, stored in a JSON file, stamped on some past date. It covers the mapping and nothing else — the `usage verdict` row beside it covers the occurrence. A `fix-llm` run contacts no catalog, so the row says so out loud rather than implying a live check. It is *not* called "evidence": `entry.evidence` is the field that holds actual provenance (source url, content hash, stored snapshot), it is empty on every entry in the shipped registry, and naming a row after the one thing the data does not have is the kind of overclaim this project exists to avoid. `mendr evidence <id>` prints whatever an entry really has, including "no evidence captured for this entry -- it was hand-seeded."
 
 A quarantined record prints its own stated cause, verbatim, so the reason is on
 the same screen rather than one command away:
 
 ```
   candidate replacement: "gemini-3.6-flash"
-  registry verdict:      quarantined (stamped 2026-08-21) -- stamped "verified"
-                         while its own recorded research says "do not
-                         auto-apply", "status unknown" -- held for review until
-                         that contradiction is resolved
+  replacement verdict:   quarantined (registry stamp 2026-08-21) -- stamped
+                         "verified" while its own recorded research says "do
+                         not auto-apply", "status unknown" -- held for review
+                         until that contradiction is resolved
 ```
 
 A fourth value, `withheld`, is defence in depth: a `verified` stamp sitting over
@@ -161,7 +175,7 @@ a switched-off safety field. `validate-registry` rejects that combination
 outright, so it should never ship — but if it ever does, the row names the
 **field** that is false rather than quoting somebody's prose.
 
-`--json` carries the same fact as `registryVerdict: "verified" | "quarantined" | "unverified" | "withheld"`, alongside `verdictCheckedAt` and the record's `entryId`.
+`--json` carries the same fact as `replacementVerdict: "verified" | "quarantined" | "unverified" | "unverifiable" | "unstamped" | "withheld"`, alongside `usageVerdict`, `tier`, `verdictCheckedAt` and the record's `entryId`.
 
 ### one occurrence, one tier
 
@@ -192,11 +206,26 @@ npx mendr fix-llm . --fail-on tierB
 
 ### `--json`
 
-`--json` emits `tierB` as a first-class array of `{ file, line, column, modelId, replacement, registryVerdict, verdictCheckedAt, reason, reasonText }`, and `summary` carries `{ tierA, tierB, tierC }`.
+`--json` emits `tierB` as a first-class array of `{ entryId, file, line, column, modelId, replacement, replacementVerdict, usageVerdict, tier, registryVerdict, verdictCheckedAt, reason, reasonText }`. `tierA` entries carry the same three dimensions: `replacementVerdict` (`null` on a param transform, which rests on no model-id record), `usageVerdict: "confirmed"`, and `tier: "A"`.
+
+`summary` carries `{ tierA, tierB, tierC, mode, uniqueOccurrences, filesModified, ... }`:
+
+* `mode` is `"LOOK"` on any run without `--write` and `"WRITE"` when `--write` was passed — **intent, not outcome**. A `--write` run whose write was refused still reports `WRITE`; `filesModified` carries the result.
+* `uniqueOccurrences` is the number of distinct `(file, line, column, modelId)` findings across all tiers, plus the param-transform sites (which are counted in Tier A but sit outside the model-id key space). It always equals `tierA + tierB + tierC`; if it ever could not, the printed line says so and names the tier sum rather than showing a number you cannot reconcile.
+* `filesModified` is the count of files actually written — `0` in LOOK mode always, `0` on a refused or rolled-back write, and the real post-write number otherwise. It is the same value as `write.filesWritten`.
+
+The human report prints the same three facts in its footer, above the registry block:
+
+```
+mode: LOOK
+unique occurrences: 4
+files modified: 0
+registry: 106 records
+```
 
 `write` reports what happened to your working tree, because `summary.tierA` cannot: `{ attempted, applied, filesWritten, reason }`. `attempted` is true whenever `--write` had gated patches to write; `applied` is true only once they are on disk; `reason` carries the abort message when a write was refused (a read-only file, an editor lock, content that drifted since the scan) and is `null` otherwise. The human `Summary:` line reports the same outcome — a refused write prints `0 auto-fixed, N not written -- write refused, working tree unchanged`, never an auto-fix that did not happen.
 
-**Deprecated for one release:** the pre-three-tier keys `blocked`, `azure`, `informational` and `usageUnverified` (and `summary.blocked` / `summary.informational` / `summary.usageUnverified`) are still emitted so existing consumers keep parsing. They are now *projections* of the tier data — `blocked` is `tierB` filtered to `replacement_unverified`, `azure` to `platform_blocked`, `usageUnverified` to `usage_unverified` — so they cannot drift from the tier counts. One behavior change worth knowing: type-cast-masked findings used to be counted as `informational` and are now Tier B. Move to `tierB` + `summary.tierB`; the old keys will be removed.
+**Deprecated for one release:** `tierB[].registryVerdict` is superseded by `tierB[].replacementVerdict`. It is still emitted, and always carries exactly the same value, so consumers keep parsing while they migrate — the rename exists because one row (and one field) covering both the mapping and the usage was the overclaim described above. Also deprecated: the pre-three-tier keys `blocked`, `azure`, `informational` and `usageUnverified` (and `summary.blocked` / `summary.informational` / `summary.usageUnverified`) are still emitted so existing consumers keep parsing. They are now *projections* of the tier data — `blocked` is `tierB` filtered to `replacement_unverified`, `azure` to `platform_blocked`, `usageUnverified` to `usage_unverified` — so they cannot drift from the tier counts. One behavior change worth knowing: type-cast-masked findings used to be counted as `informational` and are now Tier B. Move to `tierB` + `summary.tierB`; the old keys will be removed.
 
 ## verify behavior, not just code
 
@@ -232,9 +261,9 @@ Every Tier A fix is reported check by check, and no check borrows another's word
 
 ```
 Code verification (what mendr checked):
-  replacement evidence:   verified (registry verdict, stamped 2026-08-21)
+  replacement verdict:    verified (stamped 2026-08-21)
   official source:        confirmed
-  usage classification:   passed (traced to a live model argument at the call site)
+  usage verdict:          confirmed (live model argument at the call site)
   syntax:                 n/a (typescript -- the type-check gate below subsumes parsing)
   type-check:             passed (no new errors)  [required]
   tests:                  inconclusive (repo has no installed node_modules to link -- cannot run tests)

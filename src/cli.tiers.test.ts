@@ -169,10 +169,20 @@ describe('fix-llm three-tier report', () => {
         'modelId',
         'reason',
         'reasonText',
+        // DEPRECATED for one release, still populated, still equal to
+        // `replacementVerdict`.
         'registryVerdict',
         'replacement',
+        // The three dimensions, separately: what the registry says about the
+        // MAPPING, what mendr established about the OCCURRENCE, and the tier
+        // those two produce.
+        'replacementVerdict',
+        'tier',
+        'usageVerdict',
         'verdictCheckedAt',
       ]);
+      expect(f.registryVerdict).toBe(f.replacementVerdict);
+      expect(f.tier).toBe('B');
     }
   }, 120_000);
 
@@ -244,8 +254,10 @@ describe('fix-llm three-tier report', () => {
     // (1) the two blocks agree with each other
     expect([sumA, sumB, sumC]).toEqual([foundA, foundB, foundC]);
 
-    // (2) Tier B: one "action:" row per listed finding
-    const listedB = lines.filter((l) => l.startsWith('  action:')).length;
+    // (2) Tier B: one "classification:" row per listed finding. Scoped to the
+    // tier B wording, because Tier A now prints a classification row too --
+    // that is the point of the shared shape.
+    const listedB = lines.filter((l) => l.startsWith('  classification:        tier B')).length;
     expect(listedB).toBe(foundB);
 
     // (3) Tier C: --verbose lists every hit, one line each
@@ -296,8 +308,15 @@ describe('fix-llm three-tier report', () => {
     // row below it -- and the verdict row prints the record's own stated cause.
     expect(stdout).toContain('  candidate replacement: "gpt-5.6-sol"');
     expect(stdout.replace(/\s+/g, ' ')).toContain(
-      'registry verdict: quarantined (stamped 2026-08-21) -- stamped "verified" while its ' +
-        'own recorded research says',
+      'replacement verdict: quarantined (registry stamp 2026-08-21) -- stamped "verified" ' +
+        'while its own recorded research says',
+    );
+    // THE ROW THE SINGLE VERDICT LINE USED TO SWALLOW. This finding's usage is
+    // the unproven half, and it now says so on its own row instead of leaving
+    // the reader to infer it from the reason code four lines down.
+    expect(stdout).toContain('  usage verdict:         unverified -- no traced sink in this file');
+    expect(stdout).toContain(
+      '  classification:        tier B -- review required, no patch generated.',
     );
     expect(stdout).toContain('  reason:                usage_unverified -- assigned to a model-like');
     // THE ID AND THE COMMAND THAT TAKES IT. Findings told the reader to run
@@ -308,7 +327,9 @@ describe('fix-llm three-tier report', () => {
     expect(stdout).toContain(
       '  evidence:              mendr evidence openai.gpt-4-0314.retirement-undated',
     );
-    expect(stdout).toContain('  action:                no patch generated.');
+    // NO SEPARATE `action:` ROW: `classification:` above carries the same
+    // promise, in the same words, once.
+    expect(stdout).not.toContain('  action:                no patch generated.');
   }, 120_000);
 
   // WHAT TWO EXPERT READERS GOT WRONG. The fixture puts `gpt-4-0613` in all
@@ -340,7 +361,7 @@ describe('fix-llm three-tier report', () => {
     expect(stdout).not.toContain('"gemini-2.0-flash" appears in more than one tier');
   }, 120_000);
 
-  it('reports the registry verdict for every Tier B finding in --json', async () => {
+  it('reports the replacement verdict for every Tier B finding in --json', async () => {
     const repo = makeRepo();
     const { stdout } = await runFixLlm([repo, '--skip-gates', '--json']);
     const report = JSON.parse(stdout) as JsonReport;
@@ -399,7 +420,7 @@ describe('fix-llm three-tier report', () => {
       'registry entry: google.gemini-2.0-flash.retirement-undated evidence: ' +
         'mendr evidence google.gemini-2.0-flash.retirement-undated',
     );
-    expect(flat).toContain('action: no patch generated.');
+    expect(flat).toContain('classification: tier B -- review required, no patch generated.');
   }, 120_000);
 
   // THE TIER A FLOOR, END TO END, FOR EVERY NON-VERIFIED STATE THE SHIPPED

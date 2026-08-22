@@ -2,10 +2,13 @@ import { basename } from 'node:path';
 import type { LlmModelIdDeprecation } from '../types.js';
 import type { DataPurpose } from '../usage/scanLiterals.js';
 import {
+  effectiveVerificationState,
   REVIEW_ONLY_STATES,
+  withheldSwitches,
   type RegistryProvenance,
 } from '../usage/llmRegistry.js';
 import { displayEntryId } from '../registry/entryId.js';
+import { replacementVerdictText, tierRow, usageVerdictText } from './tiers.js';
 
 // LLM mode — report shaping. The raw scan of a real repo produces 100+ data
 // findings (LibreChat, ChatGPT-Next-Web are typical), and a per-hit listing
@@ -466,12 +469,20 @@ export function formatGateSummary(
 }
 
 /**
- * The two REGISTRY-VERDICT rows behind a patch, computed from the records the
- * patch actually used rather than asserted:
+ * The two REGISTRY rows behind a patch, computed from the records the patch
+ * actually used rather than asserted:
  *
- *   registry verdict:       verified (stamped 2026-08-14)
+ *   replacement verdict:    verified (stamped 2026-08-14)
  *   official source:        confirmed (a provider docs url and a lifecycle
  *                           claim are recorded; the page was not fetched)
+ *
+ * THE FIRST ROW IS SCOPED TO THE REPLACEMENT MAPPING, and it is the AGGREGATE
+ * over every record this patch rests on (the oldest stamp, the count of records
+ * not backed). The per-record statement of the same dimension is the
+ * `replacement verdict:` row in {@link formatRegistryEntryLines} below. Both
+ * use report/tiers' vocabulary — one word per dimension across both tiers, so
+ * a reader never has to work out whether `registry verdict` and `replacement
+ * verdict` were the same thing. They were.
  *
  * THE FIRST ROW IS NOT CALLED "evidence", and that is the point. It said
  * `replacement evidence:` until an audit ran both commands against the same
@@ -481,8 +492,8 @@ export function formatGateSummary(
  * content hashes, quoted excerpts) is empty on every one of them. report/tiers
  * had already renamed the same concept for Tier B for exactly this reason; the
  * Tier A path — the one that writes to your files — kept the older word.
- * `registry verdict` is what the value actually is, and it is now the same word
- * the Tier B rows and `mendr evidence` use.
+ * `replacement verdict` is what the value actually is, and it is now the same
+ * words the Tier B rows and `mendr evidence` use.
  *
  * They are separate rows because they are separate claims, and the P0 work made
  * them separately checkable: `replacementConfirmed` says the replacement id is
@@ -511,7 +522,7 @@ export function registryVerdictRows(
     // true, so the affirmative rows below would print "verified" over nothing.
     return [
       {
-        label: 'registry verdict',
+        label: 'replacement verdict',
         state: 'n/a',
         detail: 'no model-id swap in this patch (parameter transforms only)',
       },
@@ -534,7 +545,7 @@ export function registryVerdictRows(
   const notOfficial = entries.filter((e) => !e.verification?.officialSourceConfirmed).length;
   return [
     {
-      label: 'registry verdict',
+      label: 'replacement verdict',
       state: verified ? 'verified' : 'not verified',
       detail: stamp,
     },
@@ -566,32 +577,68 @@ export function registryVerdictRows(
 const ENTRY_LABEL_WIDTH = 23;
 
 /**
- * The `registry entry:` / `evidence:` rows for the records a Tier A patch rests
- * on:
+ * The per-record block for the records a Tier A patch rests on:
  *
+ *   replacement verdict:   verified (registry stamp 2026-08-21, not re-checked
+ *                          this run)
+ *   usage verdict:         confirmed live model argument
+ *   classification:        tier A -- auto-fixable, will apply with --write
  *   registry entry:        openai.gpt-4.retirement-2026-10-23
  *   evidence:              mendr evidence openai.gpt-4.retirement-2026-10-23
  *
- * One pair per distinct record, in the order the swaps were listed. Tier A is
+ * One block per distinct record, in the order the swaps were listed. Tier A is
  * rendered as a DIFF rather than as per-finding blocks, so these rows are the
  * only place the reader can learn which registry records authorised the edit
  * they are being shown — and the only way to go read one without first guessing
  * its id.
  *
- * Never wrapped: an id and the command that takes it are things a reader
- * selects and pastes.
+ * THE SAME THREE ROWS TIER B PRINTS, from the same functions, so the two tiers
+ * read as one report rather than two dialects. On a Tier A record all three
+ * are affirmative — the mapping's stamp is `verified`, the position WAS
+ * confirmed to be a live model argument, and the outcome is a patch — and that
+ * is precisely the contrast that makes a Tier B block legible: same rows, and
+ * a reader can see which of them is the one that did not hold.
+ *
+ * `classification` is passed IN rather than assumed: the same records are
+ * printed under a gate-failed candidate, where "will apply with --write" would
+ * be false (see TIER_A_DOWNGRADED_CLASSIFICATION). Callers with no disposition
+ * to state get the two id rows alone.
+ *
+ * The id rows are never wrapped: an id and the command that takes it are things
+ * a reader selects and pastes.
  */
 export function formatRegistryEntryLines(
   entries: readonly LlmModelIdDeprecation[],
+  classification?: string,
 ): string[] {
   const lines: string[] = [];
   const seen = new Set<string>();
+  const row = (label: string, value: string): string =>
+    `  ${`${label}:`.padEnd(ENTRY_LABEL_WIDTH)}${value}`;
   for (const entry of entries) {
     const id = displayEntryId(entry);
     if (seen.has(id)) continue;
     seen.add(id);
-    lines.push(`  ${'registry entry:'.padEnd(ENTRY_LABEL_WIDTH)}${id}`);
-    lines.push(`  ${'evidence:'.padEnd(ENTRY_LABEL_WIDTH)}mendr evidence ${id}`);
+    if (classification) {
+      const state = effectiveVerificationState(entry);
+      lines.push(
+        ...tierRow(
+          'replacement verdict',
+          replacementVerdictText({
+            registryVerdict: state,
+            verdictCheckedAt: entry.verification?.checkedAt,
+            quarantineReason: entry.verification?.quarantineReason ?? undefined,
+            withheldSwitches: state === 'withheld' ? withheldSwitches(entry) : undefined,
+          }),
+        ),
+        // Tier A is DEFINED by the position: a model-id swap only reaches this
+        // path from a live model argument (TS) or a recognized sink (python).
+        ...tierRow('usage verdict', usageVerdictText('A')),
+        ...tierRow('classification', classification),
+      );
+    }
+    lines.push(row('registry entry', id));
+    lines.push(row('evidence', `mendr evidence ${id}`));
   }
   return lines;
 }

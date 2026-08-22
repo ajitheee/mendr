@@ -14,6 +14,10 @@ import {
   tierBFinding,
   tierBJson,
   tierBReasonCounts,
+  classificationText,
+  usageVerdictState,
+  usageVerdictText,
+  TIER_A_DOWNGRADED_CLASSIFICATION,
   TIER_B_ACTION_LINE,
   TIER_B_HEADING,
   TIER_B_REASON_ORDER,
@@ -99,7 +103,7 @@ describe('tierBFinding', () => {
     }
   });
 
-  it('projects to exactly the ten documented JSON keys', () => {
+  it('projects to exactly the documented JSON keys, in order', () => {
     const f = tierBFinding(
       {
         file: 'a.ts',
@@ -121,11 +125,63 @@ describe('tierBFinding', () => {
       'column',
       'modelId',
       'replacement',
+      // THE THREE DIMENSIONS, separately, so a consumer cannot read one
+      // verdict as covering the other two.
+      'replacementVerdict',
+      'usageVerdict',
+      'tier',
+      // DEPRECATED for one release, and still populated.
       'registryVerdict',
       'verdictCheckedAt',
       'reason',
       'reasonText',
     ]);
+  });
+
+  // THE DEPRECATION CONTRACT, pinned: `registryVerdict` still ships, and it
+  // still says exactly what `replacementVerdict` says. A consumer that has not
+  // migrated yet must not start reading a different value from the old key.
+  it('keeps the deprecated registryVerdict key equal to replacementVerdict', () => {
+    for (const verdict of EVERY_VERDICT) {
+      const j = tierBJson(
+        tierBFinding(
+          {
+            file: 'a.ts',
+            line: 1,
+            column: 1,
+            modelId: 'gpt-4',
+            replacement: 'o1',
+            registryVerdict: verdict,
+          },
+          'usage_unverified',
+        ),
+      );
+      expect(j.registryVerdict, verdict).toBe(j.replacementVerdict);
+      expect(j.tier, verdict).toBe('B');
+    }
+  });
+
+  // The usage dimension is DERIVED FROM THE REASON CODE, never from the
+  // mapping's stamp -- which is the whole point of splitting the two.
+  it('reports usage as confirmed only for the reason whose usage WAS confirmed', () => {
+    const usageOf = (reason: TierBReason) =>
+      tierBJson(
+        tierBFinding(
+          {
+            file: 'a.ts',
+            line: 1,
+            column: 1,
+            modelId: 'gpt-4',
+            replacement: 'o1',
+            registryVerdict: 'quarantined',
+          },
+          reason,
+        ),
+      ).usageVerdict;
+    expect(usageOf('replacement_unverified')).toBe('confirmed');
+    for (const reason of EVERY_REASON.filter((r) => r !== 'replacement_unverified')) {
+      expect(usageOf(reason), reason).toBe('unverified');
+    }
   });
 
   // FAIL CLOSED. A site that says nothing about the registry's verdict gets
@@ -244,7 +300,7 @@ describe('finding class -> reason code', () => {
 });
 
 describe('formatTierBFinding', () => {
-  it('renders the location, both ids, both reason forms and the no-patch action', () => {
+  it('renders the location, both ids, the three verdict rows and both reason forms', () => {
     const lines = formatTierBFinding(
       tierBFinding(
         {
@@ -263,16 +319,26 @@ describe('formatTierBFinding', () => {
     expect(lines[0]).toBe('agent_app/simulator.py:166:13');
     expect(lines[1]).toBe('  found:                 "gpt-4"');
     expect(lines[2]).toBe('  replacement:           "gpt-5.6-sol"');
+    // THREE ROWS, THREE DIMENSIONS. The mapping's stamp says nothing about the
+    // position, and the position is exactly what this finding could not
+    // confirm -- so the two are stated separately, and the outcome third.
     expect(lines[3]).toBe(
-      '  registry verdict:      verified (stamped 2026-08-21; not re-checked live',
+      '  replacement verdict:   verified (registry stamp 2026-08-21, not re-checked',
     );
     expect(lines[4]).toBe('                         this run)');
-    expect(lines[5]).toBe('  reason:                usage_unverified -- assigned to a model-like');
-    // The wrapped sentence hangs under the reason VALUE, not under the label.
+    expect(lines[5]).toBe('  usage verdict:         unverified -- no traced sink in this file');
     expect(lines[6]).toBe(
+      `  classification:        tier B -- review required, ${TIER_B_ACTION_LINE}`,
+    );
+    expect(lines[7]).toBe('  reason:                usage_unverified -- assigned to a model-like');
+    // The wrapped sentence hangs under the reason VALUE, not under the label.
+    expect(lines[8]).toBe(
       '                         variable, but no supported SDK call or parameter sink',
     );
-    expect(lines.at(-1)).toBe(`  action:                ${TIER_B_ACTION_LINE}`);
+    // NO `action:` ROW ANY MORE. `classification:` carries the same promise,
+    // from the same constant, and one block does not say "no patch generated"
+    // twice.
+    expect(lines.some((l) => l.startsWith('  action:'))).toBe(false);
   });
 
   it('prints the verification gate reasons as detail under a blocked finding', () => {
@@ -291,13 +357,15 @@ describe('formatTierBFinding', () => {
       ),
     );
     expect(lines.join('\n')).toContain('- replacement not present in any live catalog');
-    // The detail never displaces the action line: "is there a patch?" is
+    // The detail never displaces the classification: "is there a patch?" is
     // answered for every finding, however much audit trail it carries.
-    expect(lines.at(-1)).toBe(`  action:                ${TIER_B_ACTION_LINE}`);
+    expect(lines).toContain(
+      `  classification:        tier B -- review required, ${TIER_B_ACTION_LINE}`,
+    );
   });
 });
 
-// --- the registry verdict --------------------------------------------------
+// --- the replacement verdict -----------------------------------------------
 //
 // A Tier B block used to print `replacement: "o3"` and stop, which reads as a
 // checked fact whether or not anyone checked it. Some registry entries did NOT
@@ -305,13 +373,17 @@ describe('formatTierBFinding', () => {
 // which kind they are looking at -- from the LABEL, which is unskippable, not
 // only from a row below it.
 //
-// The row is called `registry verdict` because that is all it is: a verdict
-// stored in a JSON file on some past date. It used to be called `replacement
-// evidence`, which named something the registry does not have (`entry.evidence`
-// is empty on every shipped entry, and no snapshot is stored), and its value
-// called mappings "not catalog-confirmed" where the recorded reasons said the
-// opposite. These tests pin the honest wording so it cannot drift back.
-describe('the registry verdict on a Tier B finding', () => {
+// The row is SCOPED TO THE REPLACEMENT MAPPING and named for what backs it: a
+// verdict stamped into a JSON file on some past date. Two earlier names are
+// pinned out here. `replacement evidence` named something the registry does not
+// have (`entry.evidence` is empty on every shipped entry, and no snapshot is
+// stored), and its value called mappings "not catalog-confirmed" where the
+// recorded reasons said the opposite. `registry verdict` was honest about the
+// backing but wrong about the SCOPE: on a Tier B finding one row reading
+// `verified` reads as a verdict on the finding, when the usage is the half that
+// could not be confirmed. These tests pin the honest wording so neither drifts
+// back.
+describe('the replacement verdict on a Tier B finding', () => {
   const site = {
     file: 'agent_app/simulator.py',
     line: 166,
@@ -329,7 +401,7 @@ describe('the registry verdict on a Tier B finding', () => {
     ).join('\n');
     expect(lines).toContain('  replacement:           "gpt-5.6-sol"');
     expect(lines.replace(/\s+/g, ' ')).toContain(
-      'registry verdict: verified (stamped 2026-08-21; not re-checked live this run)',
+      'replacement verdict: verified (registry stamp 2026-08-21, not re-checked this run)',
     );
     expect(lines).not.toContain('candidate replacement');
   });
@@ -377,8 +449,8 @@ describe('the registry verdict on a Tier B finding', () => {
       .replace(/\s+/g, ' ');
     expect(flat).toContain('candidate replacement: "gemini-3.6-flash"');
     expect(flat).toContain(
-      'registry verdict: quarantined (stamped 2026-08-21) -- no source-side verdict ' +
-        'exists for this exact id',
+      'replacement verdict: quarantined (registry stamp 2026-08-21) -- no source-side ' +
+        'verdict exists for this exact id',
     );
   });
 
@@ -402,7 +474,7 @@ describe('the registry verdict on a Tier B finding', () => {
       .join(' ')
       .replace(/\s+/g, ' ');
     expect(flat).toContain(
-      'registry verdict: stamped verified 2026-08-21, but withheld -- ' +
+      'replacement verdict: registry stamp says verified 2026-08-21, but withheld -- ' +
         'replacementConfirmed is false on this record',
     );
   });
@@ -422,8 +494,12 @@ describe('the registry verdict on a Tier B finding', () => {
   it('applies to EVERY reason code, not just the ones that mention verification', () => {
     for (const reason of EVERY_REASON) {
       const rendered = formatTierBFinding(tierBFinding({ ...site }, reason)).join('\n');
-      expect(rendered, reason).toContain('registry verdict:');
+      expect(rendered, reason).toContain('replacement verdict:');
       expect(rendered, reason).toContain('candidate replacement:');
+      // ...and so do the other two dimensions: three rows on every finding,
+      // whatever the reason code.
+      expect(rendered, reason).toContain('usage verdict:');
+      expect(rendered, reason).toContain('classification:        tier B --');
     }
   });
 
@@ -445,8 +521,11 @@ describe('the registry verdict on a Tier B finding', () => {
     // reason code's fact in the field a machine consumer routes on, and adds
     // nothing that could be read as a second, separate defect.
     expect(flat).toContain(
-      'registry verdict: unverified -- this mapping did not clear verification',
+      'replacement verdict: unverified -- this mapping did not clear verification',
     );
+    // AND the usage row says the opposite, because for this reason code the
+    // usage IS confirmed -- that separation is the point of the split.
+    expect(flat).toContain('usage verdict: confirmed live model argument');
   });
 
   // THE WORD MUST SURVIVE THE TRIP. A finding sends the reader to
@@ -465,7 +544,7 @@ describe('the registry verdict on a Tier B finding', () => {
     )
       .join(' ')
       .replace(/\s+/g, ' ');
-    expect(flat).toContain('registry verdict: unverifiable (stamped 2026-08-21)');
+    expect(flat).toContain('replacement verdict: unverifiable (registry stamp 2026-08-21)');
     // The DISTINCTION, not just the word: no catalog covers this model class,
     // which is not the same fact as a mapping that was checked and failed.
     expect(flat).toContain('could not be checked either way');
@@ -478,18 +557,132 @@ describe('the registry verdict on a Tier B finding', () => {
     )
       .join(' ')
       .replace(/\s+/g, ' ');
-    expect(flat).toContain('registry verdict: unstamped -- this record carries no verification block');
+    expect(flat).toContain(
+      'replacement verdict: unstamped -- this record carries no verification block',
+    );
   });
 
-  it('never prints a replacement without the registry verdict on the very next row', () => {
+  it('never prints a replacement without its verdict on the very next row', () => {
     for (const verdict of EVERY_VERDICT) {
       for (const reason of EVERY_REASON) {
         const lines = formatTierBFinding(tierBFinding({ ...site, registryVerdict: verdict }, reason));
         const row = lines.findIndex((l) => l.includes('replacement:'));
         expect(row, `${reason}/${verdict}`).toBeGreaterThan(-1);
-        expect(lines[row + 1], `${reason}/${verdict}`).toContain('registry verdict:');
+        expect(lines[row + 1], `${reason}/${verdict}`).toContain('replacement verdict:');
       }
     }
+  });
+
+  // THE ROW THAT USED TO BE MISSING. `usage verdict` is a function of the
+  // REASON CODE and nothing else -- never of the mapping's stamp -- so a
+  // `verified` stamp over an unconfirmed position cannot make the position
+  // read as confirmed. That combination is exactly what shipped before.
+  it('states the usage dimension from the reason code, not from the stamp', () => {
+    const expected: Record<TierBReason, string> = {
+      usage_unverified: 'unverified -- no traced sink in this file',
+      replacement_unverified: 'confirmed live model argument',
+      platform_blocked: 'unverified -- sits under a deployment key, not in a model argument',
+      type_cast_masked: 'unverified -- masked by an `as` cast',
+      dynamic_model_value: 'unverified -- the model value is assembled at runtime',
+      insufficient_dataflow: 'unverified -- not traced to a definite use',
+    };
+    for (const reason of EVERY_REASON) {
+      // A `verified` stamp on EVERY case: if the usage row were reading the
+      // stamp, every line below would say "confirmed".
+      const flat = formatTierBFinding(
+        tierBFinding(
+          { ...site, registryVerdict: 'verified', verdictCheckedAt: '2026-08-21' },
+          reason,
+        ),
+      )
+        .join(' ')
+        .replace(/\s+/g, ' ');
+      expect(flat, reason).toContain(`usage verdict: ${expected[reason]}`);
+    }
+  });
+
+  // THE OUTCOME ROW. It names the tier AND what mendr will do, so a reader
+  // never has to infer the second from a heading three sections up.
+  it('classifies every Tier B finding as review-only, with no patch', () => {
+    for (const reason of EVERY_REASON) {
+      const flat = formatTierBFinding(tierBFinding({ ...site }, reason))
+        .join(' ')
+        .replace(/\s+/g, ' ');
+      expect(flat, reason).toContain(
+        `classification: tier B -- review required, ${TIER_B_ACTION_LINE}`,
+      );
+    }
+  });
+});
+
+// --- the three dimensions, across all three tiers ---------------------------
+//
+// One vocabulary for the whole report. The Tier A section and the Tier B block
+// render from these same functions, so the two tiers cannot describe the same
+// dimension in two different words -- which is how `registry verdict` and
+// `replacement evidence` ended up naming one thing on two screens.
+describe('usageVerdictText / classificationText', () => {
+  it('gives each tier its own usage sentence and machine word', () => {
+    expect(usageVerdictText('A')).toBe('confirmed -- flows to a live model call');
+    expect(usageVerdictState('A')).toBe('confirmed');
+    expect(usageVerdictText('B', 'platform_blocked')).toBe(
+      'unverified -- sits under a deployment key, not in a model argument',
+    );
+    expect(usageVerdictState('B', 'platform_blocked')).toBe('unverified');
+    // A data position is not a model argument at all, so it is n/a -- not a
+    // failed check, and not a passed one.
+    expect(usageVerdictText('C')).toBe('n/a -- data position, not a model argument');
+    expect(usageVerdictState('C')).toBe('n/a');
+  });
+
+  it('names the tier AND what mendr will do, for every tier', () => {
+    expect(classificationText('A')).toBe('tier A -- auto-fixable, will apply with --write');
+    expect(classificationText('B')).toBe(
+      `tier B -- review required, ${TIER_B_ACTION_LINE}`,
+    );
+    expect(classificationText('C')).toBe('tier C -- informational, no action');
+    // The gate-failed disposition is still Tier A -- the tier is what was
+    // DETECTED, not how the gates went -- and it never promises a patch.
+    expect(TIER_A_DOWNGRADED_CLASSIFICATION).toContain('tier A candidate');
+    expect(TIER_A_DOWNGRADED_CLASSIFICATION).not.toContain('will apply');
+  });
+
+  // THE ROW RENDERS BEFORE THE WRITE IS ATTEMPTED, so under --write it cannot
+  // know the outcome -- and it must not promise a --write that already
+  // happened. The unconditional sentence printed `will apply with --write`
+  // three lines above `write refused, working tree unchanged`.
+  it('never promises a future --write on a run that already passed one', () => {
+    expect(classificationText('A', 'WRITE')).toBe(
+      'tier A -- auto-fixable; see Summary for whether it was applied',
+    );
+    expect(classificationText('A', 'WRITE')).not.toContain('will apply with --write');
+    // LOOK keeps the forward statement, which is true there.
+    expect(classificationText('A', 'LOOK')).toBe('tier A -- auto-fixable, will apply with --write');
+    // It states no outcome of its own either way -- the Summary owns that.
+    for (const mode of ['LOOK', 'WRITE'] as const) {
+      expect(classificationText('A', mode)).not.toContain('auto-fixed');
+      expect(classificationText('A', mode)).not.toContain('applied to');
+    }
+    // Mode is a Tier A concern only; B and C say the same thing under both.
+    for (const mode of ['LOOK', 'WRITE'] as const) {
+      expect(classificationText('B', mode)).toBe(
+        `tier B -- review required, ${TIER_B_ACTION_LINE}`,
+      );
+      expect(classificationText('C', mode)).toBe('tier C -- informational, no action');
+    }
+  });
+
+  // THE OVERCLAIM THIS ROW SHIPPED WITH: `platform alias, not a model id`
+  // asserted the VALUE's nature, while the only thing checked is the enclosing
+  // property key. It was refutable inside one run -- the same literal is
+  // auto-patched as a model id from a `model:` argument in the same file.
+  it('reports the deployment KEY, and never denies the value is a model id', () => {
+    const row = usageVerdictText('B', 'platform_blocked');
+    expect(row).toBe('unverified -- sits under a deployment key, not in a model argument');
+    expect(row).not.toContain('not a model id');
+    expect(row).not.toContain('platform alias');
+    // The provisioning INFERENCE stays on the reason row, which hedges it.
+    expect(TIER_B_REASON_TEXT.platform_blocked).toContain('likely a provisioning change');
   });
 });
 
@@ -502,8 +695,8 @@ describe('formatTierBSection', () => {
     const findings = [finding('usage_unverified', 'a.py'), finding('platform_blocked', 'b.ts')];
     const lines = formatTierBSection(findings);
     expect(lines[0]).toBe(TIER_B_HEADING);
-    // One "action:" row per finding — the count the section LISTS.
-    expect(lines.filter((l) => l.includes('action:')).length).toBe(findings.length);
+    // One "classification:" row per finding — the count the section LISTS.
+    expect(lines.filter((l) => l.includes('classification:')).length).toBe(findings.length);
   });
 
   it('orders by actionability, then file/line/column', () => {
@@ -556,8 +749,10 @@ describe('tier counts are consistent with what is listed', () => {
     expect(found).toContain('3 tier B');
     expect(found).toContain('17 tier C');
     // The number printed for tier B equals the number of findings the section
-    // actually lists (one `action:` row each).
-    const listed = formatTierBSection(findings).filter((l) => l.includes('action:')).length;
+    // actually lists (one `classification:` row each).
+    const listed = formatTierBSection(findings).filter((l) =>
+      l.includes('classification:'),
+    ).length;
     expect(listed).toBe(counts.tierB);
     // ...and the per-reason breakdown sums back to the same number.
     const byReason = tierBReasonCounts(findings).reduce((n, r) => n + r.count, 0);

@@ -232,15 +232,15 @@ describe('formatGateSummary (one row per check, one outcome per row)', () => {
   // the three actually happened.
   const TS_ROWS: GateRow[] = [
     {
-      label: 'registry verdict',
+      label: 'replacement verdict',
       state: 'verified',
       detail: 'stamped 2026-08-14',
     },
     { label: 'official source', state: 'confirmed' },
     {
-      label: 'usage classification',
-      state: 'passed',
-      detail: 'traced to a live model argument at the call site',
+      label: 'usage verdict',
+      state: 'confirmed',
+      detail: 'live model argument at the call site',
     },
     { label: 'syntax', state: 'n/a', detail: 'typescript -- the type-check gate subsumes parsing' },
     {
@@ -270,7 +270,7 @@ describe('formatGateSummary (one row per check, one outcome per row)', () => {
   it('gives every check its OWN outcome word, and never lends one to another', () => {
     const text = formatGateSummary(TS_ROWS).join('\n');
     expect(text).toMatch(
-      /^ {2}registry verdict: +verified \(stamped 2026-08-14\)$/m,
+      /^ {2}replacement verdict: +verified \(stamped 2026-08-14\)$/m,
     );
     expect(text).toMatch(/^ {2}official source: +confirmed$/m);
     expect(text).toMatch(/^ {2}syntax: +n\/a \(typescript/m);
@@ -296,7 +296,7 @@ describe('formatGateSummary (one row per check, one outcome per row)', () => {
     // Every value -- code rows and the behavioral row alike -- starts at one
     // column, so the checks read as one list rather than two vocabularies.
     const LABELS =
-      /^ {2}(registry verdict|official source|usage classification|syntax|type-check|tests|behavioral evaluation): +/;
+      /^ {2}(replacement verdict|official source|usage verdict|syntax|type-check|tests|behavioral evaluation): +/;
     const valueRows = lines.filter((l) => LABELS.test(l));
     expect(valueRows).toHaveLength(7);
     expect(new Set(valueRows.map((row) => LABELS.exec(row)![0].length)).size).toBe(1);
@@ -304,7 +304,7 @@ describe('formatGateSummary (one row per check, one outcome per row)', () => {
 
   it('renders the python row set with its own n/a and passed outcomes', () => {
     const py = formatGateSummary([
-      { label: 'usage classification', state: 'passed', detail: 'python sink rule' },
+      { label: 'usage verdict', state: 'confirmed', detail: 'python sink rule' },
       { label: 'syntax', state: 'passed', detail: 'baseline-relative re-parse' },
       { label: 'type-check', state: 'n/a', detail: 'mendr runs no type checker for python' },
       { label: 'tests', state: 'inconclusive', detail: 'mendr has no python test runner' },
@@ -318,6 +318,10 @@ describe('formatGateSummary (one row per check, one outcome per row)', () => {
 });
 
 describe('registryVerdictRows (two claims, two rows)', () => {
+  // The first row's LABEL is `replacement verdict`, the same words report/tiers
+  // uses for the same dimension. It was `registry verdict`, which read as a
+  // verdict on the whole record; the Tier B split renamed it there, and one
+  // report may not carry two names for one dimension.
   function entry(over: Partial<LlmModelIdDeprecation> = {}): LlmModelIdDeprecation {
     return {
       provider: 'openai',
@@ -339,7 +343,7 @@ describe('registryVerdictRows (two claims, two rows)', () => {
   it('names the stamp it read rather than a live catalog check it never made', () => {
     const [replacement, official] = registryVerdictRows([entry()]);
     expect(replacement).toEqual({
-      label: 'registry verdict',
+      label: 'replacement verdict',
       state: 'verified',
       detail: 'stamped 2026-08-14',
     });
@@ -619,5 +623,78 @@ describe('formatRegistryEntryLines', () => {
 
   it('has nothing to say about an empty patch', () => {
     expect(formatRegistryEntryLines([])).toEqual([]);
+  });
+
+  // THE SAME THREE ROWS TIER B PRINTS. Tier A has no per-finding block -- it is
+  // a diff -- so its dimensions used to be scattered across a gate summary, a
+  // prose line and a heading. Stating them here, in the Tier B vocabulary and
+  // at the Tier B column, is what makes the two tiers comparable: same rows,
+  // and a reader can see which one is the one that did not hold.
+  describe('the three verdict rows', () => {
+    const verified = (): LlmModelIdDeprecation => ({
+      provider: 'openai',
+      kind: 'model_id',
+      deprecated: 'gpt-4',
+      replacement: 'gpt-5.6-sol',
+      shutdownDate: '2026-10-23',
+      verification: {
+        status: 'verified',
+        officialSourceConfirmed: true,
+        replacementConfirmed: true,
+        autoApplyAllowed: true,
+        quarantineReason: null,
+        checkedAt: '2026-08-21',
+      },
+    });
+
+    it('states replacement, usage and classification above the id rows', () => {
+      const lines = formatRegistryEntryLines(
+        [verified()],
+        'tier A -- auto-fixable, will apply with --write',
+      );
+      expect(lines[0]).toBe(
+        '  replacement verdict:   verified (registry stamp 2026-08-21, not re-checked',
+      );
+      expect(lines[1]).toBe('                         this run)');
+      expect(lines[2]).toBe('  usage verdict:         confirmed -- flows to a live model call');
+      expect(lines[3]).toBe(
+        '  classification:        tier A -- auto-fixable, will apply with --write',
+      );
+      expect(lines[4]).toBe('  registry entry:        openai.gpt-4.retirement-2026-10-23');
+      expect(lines[5]).toBe(
+        '  evidence:              mendr evidence openai.gpt-4.retirement-2026-10-23',
+      );
+    });
+
+    // The row names a STAMP, never a live check and never "evidence" -- the
+    // same two claims the Tier B row is forbidden from making, for the same
+    // reason: `entry.evidence` is empty on every shipped record.
+    it('names the stamp, and claims neither evidence nor a live check', () => {
+      const flat = formatRegistryEntryLines([verified()], 'tier A')
+        .join(' ')
+        .replace(/\s+/g, ' ');
+      expect(flat).toContain('registry stamp 2026-08-21');
+      expect(flat).toContain('not re-checked this run');
+      expect(flat).not.toContain('replacement evidence');
+      expect(flat).not.toContain('live catalog');
+    });
+
+    // A gate-failed candidate rests on the SAME records, and the caller passes
+    // the disposition -- so this block can never claim a patch that did not
+    // land while printing the record that would have authorised it.
+    it('prints the disposition it is given, not one it assumes', () => {
+      const lines = formatRegistryEntryLines(
+        [verified()],
+        'tier A candidate -- gates failed, no patch applied',
+      );
+      expect(lines).toContain(
+        '  classification:        tier A candidate -- gates failed, no patch applied',
+      );
+      expect(lines.join(' ')).not.toContain('will apply with --write');
+    });
+
+    it('keeps the id rows alone when no disposition is stated', () => {
+      expect(formatRegistryEntryLines([verified()])).toHaveLength(2);
+    });
   });
 });

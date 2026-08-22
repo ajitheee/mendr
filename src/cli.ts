@@ -75,6 +75,7 @@ import {
 } from './report/llmReport.js';
 import {
   assertSingleTerminalTier,
+  classificationText,
   crossTierCollisions,
   devChecksEnabled,
   formatFoundLines,
@@ -84,11 +85,18 @@ import {
   orderTierB,
   tierBFinding,
   tierBJson,
+  usageVerdictState,
+  TIER_A_DOWNGRADED_CLASSIFICATION,
   type RegistryVerdict,
   type TierBFinding,
   type TierCounts,
   type TierOccurrence,
 } from './report/tiers.js';
+import {
+  countUniqueOccurrences,
+  formatRunFooterLines,
+  runMode,
+} from './report/runFooter.js';
 import {
   writeAllOrNothing,
   type AtomicWriteResult,
@@ -724,13 +732,39 @@ program
     }
 
     /**
-     * The (g) footer: registry provenance + the exact commit that was scanned.
-     * Every number is COMPUTED from the registry that was actually loaded for
-     * this run — see registryProvenance() for why the old one-line
-     * "N entries, verified <date>" was a claim the data did not support.
+     * WHAT THIS RUN COUNTED, checked against the tier counts it printed. The
+     * occurrence list above deliberately excludes param transforms (their key
+     * would be a param name in the model-id key space), so they are added back
+     * by name — see report/runFooter for why an unreconcilable number is worse
+     * than no number.
      */
-    const printFooter = async (): Promise<void> => {
+    const uniqueOccurrences = countUniqueOccurrences(
+      tierOccurrences,
+      paramMatches.length,
+      tierCounts,
+    );
+    /** LOOK unless `--write` was passed. Intent — the outcome is `filesModified`. */
+    const mode = runMode(opts.write);
+
+    /**
+     * The (g) footer: what this run did + registry provenance + the exact
+     * commit that was scanned. Every number is COMPUTED — the registry counts
+     * from the registry that was actually loaded (see registryProvenance() for
+     * why the old one-line "N entries, verified <date>" was a claim the data
+     * did not support), and `filesModified` from the write RESULT, which is why
+     * it is a parameter here rather than something this closure infers from
+     * `opts.write`. A footer that reported intent would print "files modified:
+     * 1" over a refused write.
+     */
+    const printFooter = async (filesModified: number): Promise<void> => {
       say('');
+      for (const line of formatRunFooterLines({
+        mode,
+        occurrences: uniqueOccurrences,
+        filesModified,
+      })) {
+        say(line);
+      }
       for (const line of formatRegistryProvenanceLines(registryProvenance(registry))) say(line);
       // Best-effort commit anchor — a non-git directory skips this silently.
       try {
@@ -759,7 +793,9 @@ program
         say('');
         for (const c of catalogFiles) say(formatCatalogLine(c));
       }
-      await printFooter();
+      // Nothing was found, so nothing could have been written -- even under
+      // --write. The 0 is a fact about this run, not a default.
+      await printFooter(0);
       if (json) {
         console.log(
           JSON.stringify(
@@ -768,6 +804,10 @@ program
                 tierA: 0,
                 tierB: 0,
                 tierC: 0,
+                // The same three run facts the footer printed.
+                mode,
+                uniqueOccurrences: uniqueOccurrences.total,
+                filesModified: 0,
                 // DEPRECATED (see README): kept for one release so existing
                 // consumers keep parsing. They are the same zeroes as the tier
                 // counts here, and on a non-empty scan they are DERIVED from
@@ -933,9 +973,9 @@ program
         tsGateRows = [
           ...registryVerdictRows([...swaps.values()]),
           {
-            label: 'usage classification',
-            state: 'passed',
-            detail: 'traced to a live model argument at the call site',
+            label: 'usage verdict',
+            state: 'confirmed',
+            detail: 'live model argument at the call site',
           },
           {
             label: 'syntax',
@@ -1160,7 +1200,17 @@ program
       // WHICH RECORDS AUTHORISED THIS EDIT. Printed under both dispositions:
       // an applied patch and a gate-failed candidate rest on the same records,
       // and the reader of the second one is likelier to want to go check them.
-      for (const line of formatRegistryEntryLines([...swaps.values()])) say(line);
+      for (const line of formatRegistryEntryLines(
+        [...swaps.values()],
+        // The SAME three-row shape Tier B prints, under the disposition this
+        // patch actually earned: a gate-failed candidate is still Tier A, and
+        // saying "will apply with --write" over it would be false.
+        // `mode` is passed because this section renders BEFORE the write is
+        // attempted: under --write the row must not promise a future --write.
+        tsTier === 'A' ? classificationText('A', mode) : TIER_A_DOWNGRADED_CLASSIFICATION,
+      )) {
+        say(line);
+      }
     }
 
     // Python Tier A, under its own heading with its own (weaker) gates. The
@@ -1182,9 +1232,9 @@ program
         [
           ...registryVerdictRows(pyResult.swapDeprecations),
           {
-            label: 'usage classification',
-            state: 'passed',
-            detail: 'traced to a recognized model sink (python sink rule)',
+            label: 'usage verdict',
+            state: 'confirmed',
+            detail: 'recognized model sink (python sink rule)',
           },
           {
             label: 'syntax',
@@ -1228,7 +1278,12 @@ program
             'The diff above is shown for manual review only; it is not trusted.',
         );
       }
-      for (const line of formatRegistryEntryLines(pyResult.swapDeprecations)) say(line);
+      for (const line of formatRegistryEntryLines(
+        pyResult.swapDeprecations,
+        pyTier === 'A' ? classificationText('A', mode) : TIER_A_DOWNGRADED_CLASSIFICATION,
+      )) {
+        say(line);
+      }
     }
 
     // (e) EMPTY Tier A: one honest line — never a VERIFIED header over nothing.
@@ -1477,7 +1532,7 @@ program
       say(behavioralVerificationNote(behavioral, !!opts.skipGates));
     }
 
-    await printFooter();
+    await printFooter(writeOutcome.filesWritten);
 
     // (h) machine-readable report: same findings, plain data, diff included.
     if (json) {
@@ -1490,6 +1545,13 @@ program
               tierA: tierCounts.tierA,
               tierB: tierCounts.tierB,
               tierC: tierCounts.tierC,
+              // The three run facts the footer printed, verbatim. `mode` is
+              // intent (was --write passed), `filesModified` is outcome (what
+              // the write actually returned), and `uniqueOccurrences` is the
+              // number that must equal the three counts above it.
+              mode,
+              uniqueOccurrences: uniqueOccurrences.total,
+              filesModified: writeOutcome.filesWritten,
               // DEPRECATED (see README): the pre-three-tier keys, kept for one
               // release so existing consumers keep parsing. They are DERIVED
               // from the tier arrays — filtering `tierB` by reason code and
@@ -1538,6 +1600,13 @@ program
               },
               outcomes: gateOutcomes,
             },
+            // Every Tier A entry carries the SAME three dimensions the Tier B
+            // entries do — `replacementVerdict`, `usageVerdict`, `tier` — so a
+            // consumer can read one shape across the report instead of
+            // inferring the affirmative case from an array's name.
+            // `replacementVerdict` is null on a param transform: that patch
+            // rests on no model-id record, and 'verified' over nothing is the
+            // overclaim registryVerdictRows already refuses to print.
             tierA: [
               ...swapMatches.map((m) => ({
                 file: rel(m.location.file),
@@ -1545,6 +1614,9 @@ program
                 to: m.deprecation.replacement,
                 status: m.deprecation.status ?? null,
                 shutdownDate: m.deprecation.shutdownDate ?? null,
+                replacementVerdict: verdictFor(m.value),
+                usageVerdict: usageVerdictState('A'),
+                tier: 'A' as const,
               })),
               // Param transforms ride in the same array; `status` carries the
               // transform kind since lifecycle does not apply to a param.
@@ -1554,6 +1626,9 @@ program
                 to: p.deprecation.kind === 'param_rename' ? p.deprecation.replacement : null,
                 status: p.deprecation.kind,
                 shutdownDate: null,
+                replacementVerdict: null,
+                usageVerdict: usageVerdictState('A'),
+                tier: 'A' as const,
               })),
               ...pyResult.swapMatches.map((m) => ({
                 file: rel(m.location.file),
@@ -1561,6 +1636,9 @@ program
                 to: m.deprecation.replacement,
                 status: m.deprecation.status ?? null,
                 shutdownDate: m.deprecation.shutdownDate ?? null,
+                replacementVerdict: verdictFor(m.value),
+                usageVerdict: usageVerdictState('A'),
+                tier: 'A' as const,
               })),
             ],
             // TIER B, first-class: every review-required finding, each with the
