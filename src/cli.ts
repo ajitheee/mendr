@@ -19,7 +19,21 @@ import { formatChange } from './detect/changeModel.js';
 import { checkTypes, formatDiagnostic } from './gates/typecheck.js';
 import { runRepoTests } from './gates/runTests.js';
 import { runRepoEval, type EvalGateResult } from './gates/runEval.js';
-import { loadRepoConfig, REPO_CONFIG_FILENAME, type RepoConfig } from './config/repoConfig.js';
+import {
+  loadRepoConfig,
+  REPO_CONFIG_FILENAME,
+  type GateName,
+  type RepoConfig,
+} from './config/repoConfig.js';
+import {
+  describeGateBlock,
+  gateBlocks,
+  resolveGatePolicy,
+  type GateBlock,
+  type GateEvaluation,
+  type GateOutcome,
+  type ResolvedGatePolicy,
+} from './gates/policy.js';
 import {
   effectiveVerificationState,
   isVerified,
@@ -27,10 +41,12 @@ import {
   modelIdEntries,
   registryProvenance,
   resolveRegistryPath,
-  selfContradictionMarkersIn,
   staleRegistryWarning,
+  withheldSwitches,
   type EffectiveVerificationState,
 } from './usage/llmRegistry.js';
+import { displayEntryId, entryIdFor } from './registry/entryId.js';
+import { formatValidation, validateRegistry } from './registry/validateRegistry.js';
 import {
   findModelIdLiterals,
   scanProjectAnnotations,
@@ -46,14 +62,16 @@ import {
   formatDataFileGroupLine,
   formatDataHitLine,
   formatGateSummary,
+  formatRegistryEntryLines,
   formatRegistryProvenanceLines,
   groupDataFindingsByFile,
+  registryVerdictRows,
   replacementFamily,
   swapLabel,
   behavioralVerificationNote,
   type BehavioralVerificationView,
   type DataFindingView,
-  type GateSummaryFacts,
+  type GateRow,
 } from './report/llmReport.js';
 import {
   assertSingleTerminalTier,
@@ -81,7 +99,7 @@ import { applyLlmFixesToProject, type LlmFixResult } from './fix/llmFix.js';
 import { collectPythonFiles, readPythonSources, scanPyAnnotations } from './python/scanPy.js';
 import { applyPyModelIdFixesToSources } from './python/fixPy.js';
 import type { TestGateResult } from './gates/runTests.js';
-import { classifyEntry, mergeReasons } from './registry/verify.js';
+import { classifyEntry, mergeReasons, verificationSwitches } from './registry/verify.js';
 import { fetchOracles } from './registry/oracles.js';
 import {
   loadCandidates,
@@ -164,19 +182,55 @@ function assertAnalyzable(tsFileCount: number, pyFileCount: number, resolved: st
 }
 
 /**
- * The measurable tests line for a gate summary: real counts when the runner
- * output was parseable, an honest "not run" otherwise — never a bare
- * feel-good "pass" that cannot be checked.
+ * The test gate's result, in the vocabulary the policy and the report share.
+ *
+ * THE THREE NON-PASSING CASES ARE NOT ONE CASE. "the repo declares no test
+ * script" is `not-configured` (nothing to run, and nothing broken); "the repo
+ * has no installed node_modules" / "the run timed out" is `inconclusive` (there
+ * IS a suite and mendr could not run it); a suite that ran and failed is `fail`.
+ * They used to share the phrase "not run", which is why a required-tests policy
+ * could not be expressed: the one state a team wants to block on was spelled
+ * the same as the one they never can.
  */
-function testGateLabel(result: TestGateResult): string {
+function testGateEvaluation(result: TestGateResult): GateEvaluation {
   if (result.status === 'inconclusive') {
     return result.output === 'no test script'
-      ? 'not run (no supported test command detected)'
-      : `not run (${result.output})`;
+      ? { gate: 'tests', outcome: 'not-configured', detail: 'no "test" script in package.json' }
+      : { gate: 'tests', outcome: 'inconclusive', detail: result.output };
   }
-  return result.counts
-    ? `${result.status} (npm test, ${result.counts.passed} passed, ${result.counts.failed} failed)`
-    : `${result.status} (npm test, exit code only -- counts not parsed)`;
+  const detail = result.counts
+    ? `npm test, ${result.counts.passed} passed, ${result.counts.failed} failed`
+    : 'npm test, exit code only -- counts not parsed';
+  return { gate: 'tests', outcome: result.status, detail };
+}
+
+/** Row states for the gate outcomes, one word each — see GateRowState. */
+const OUTCOME_STATE = {
+  pass: 'passed',
+  fail: 'failed',
+  inconclusive: 'inconclusive',
+  'not-configured': 'not configured',
+  'not-applicable': 'n/a',
+} as const;
+
+/** Render one gate evaluation as a summary row, tagged when policy requires it. */
+function gateRowOf(label: string, evaluation: GateEvaluation, required: boolean): GateRow {
+  return {
+    label,
+    state: OUTCOME_STATE[evaluation.outcome],
+    ...(evaluation.detail ? { detail: evaluation.detail } : {}),
+    ...(required ? { required } : {}),
+  };
+}
+
+/**
+ * A required gate that did not pass must be visible to a SCRIPT, not just to a
+ * reader: the whole point of marking a gate required is that CI stops. A hard
+ * failure of a gate the policy did NOT require keeps the old exit code (0) —
+ * it downgrades the tier and says so, exactly as before.
+ */
+function signalRequiredGateFailure(blocks: readonly GateBlock[]): void {
+  if (blocks.some((b) => b.required)) process.exitCode = 1;
 }
 
 /**
@@ -287,7 +341,45 @@ program
       console.error(`mendr: ${err instanceof Error ? err.message : String(err)}`);
       process.exit(2);
     }
-    const evalCommand = opts.evalCommand?.trim() || repoConfig.evalCommand;
+    // WHICH GATES MUST PASS, resolved once for the whole run: the built-in
+    // defaults overlaid with the repo's `gates` block (see gates/policy.ts).
+    // Nothing below re-derives a requirement — a second opinion about whether
+    // tests are mandatory is how the report and the exit code drift apart.
+    const policy: ResolvedGatePolicy = resolveGatePolicy(repoConfig, opts.evalCommand);
+    const evalCommand = policy.eval.command;
+
+    /**
+     * EVERY GATE OUTCOME, kept for the `--json` document. A machine consumer
+     * needs the same itemization the human summary gets: which gate, in which
+     * language, what it returned, whether policy required it, and whether it is
+     * what blocked the fix. Collapsing that to one boolean is the same mistake
+     * on the machine side that a single "verified" is on the human side.
+     */
+    const gateOutcomes: {
+      gate: GateName;
+      language: 'typescript' | 'python' | 'repo';
+      outcome: GateOutcome;
+      detail: string | null;
+      required: boolean;
+      blocking: boolean;
+    }[] = [];
+    const recordGateOutcomes = (
+      language: 'typescript' | 'python' | 'repo',
+      evaluations: readonly GateEvaluation[],
+      blocks: readonly GateBlock[],
+    ): void => {
+      const blocked = new Set(blocks.map((b) => b.gate));
+      for (const e of evaluations) {
+        gateOutcomes.push({
+          gate: e.gate,
+          language,
+          outcome: e.outcome,
+          detail: e.detail ?? null,
+          required: policy[e.gate].required,
+          blocking: blocked.has(e.gate),
+        });
+      }
+    };
 
     // Registry-driven detect. Three locators run over the repo:
     //   1. TS model-id literals whose value exactly matches a retired model id;
@@ -409,6 +501,14 @@ program
      * network call, so the strongest thing that can be said is what the JSON
      * says (see registryVerdictText).
      *
+     * PASSED THROUGH, NOT RE-CLASSIFIED. This used to be a switch that named
+     * three states and defaulted everything else to `unverified`, which
+     * silently renamed the 5 `unverifiable` records — the finding said
+     * `unverified`, the footer said `unverifiable`, and `mendr evidence` said
+     * `unverifiable`. RegistryVerdict is now the same union
+     * effectiveVerificationState returns, so the verdict a reader sees is the
+     * state the engine computed, with no second opinion in between.
+     *
      * FAIL CLOSED on an id with no entry: that cannot happen (every finding
      * came FROM a registry match), and if it ever did, `unverified` is the only
      * safe thing to say about a mapping whose record we cannot find.
@@ -419,40 +519,55 @@ program
     }
     const verdictFor = (modelId: string): RegistryVerdict => {
       const state = modelIdByValue.get(modelId);
-      switch (state && effectiveVerificationState(state)) {
-        case 'verified':
-          return 'verified';
-        case 'self-contradicted':
-          return 'self-contradicted';
-        default:
-          return 'unverified';
-      }
+      return state ? effectiveVerificationState(state) : 'unverified';
     };
     /** The date the registry stamped that verdict, if the entry carries one. */
     const verdictDateFor = (modelId: string): string | undefined =>
       modelIdByValue.get(modelId)?.verification?.checkedAt;
     /**
-     * The extra audit line a SELF-CONTRADICTING entry earns, printed above the
-     * registry's own reasons. Without it the detail block reads as a list of
-     * caveats under a `verified` stamp; with it, the reader knows those caveats
-     * are the reason no patch was generated, and which words tripped the gate.
+     * The registry record's stable id, for the `registry entry:` /`evidence:`
+     * rows. Undefined only when no entry backs the finding — impossible by
+     * construction (every finding came FROM a registry match), and printed as
+     * nothing rather than as a guess if it ever happens.
      */
-    const selfContradictionDetail = (
-      status: EffectiveVerificationState | undefined,
-      reasons: string[] | undefined,
-    ): string[] => {
-      // ONLY for the entries the stamp and the reasons actually disagree
-      // about. An entry stamped `unverified` over the same caveats is not
-      // contradicting itself -- it is agreeing with itself -- and saying
-      // "stamped verified, but..." over it would be a fresh false claim.
-      if (status !== 'self-contradicted') return [];
-      const markers = selfContradictionMarkersIn(reasons);
-      if (markers.length === 0) return [];
-      return [
-        `HELD BY MENDR: this entry is stamped verified, but its own reasons below say ` +
-          `${markers.map((m) => `"${m}"`).join(', ')} -- a stamp that contradicts its own ` +
-          `working is never auto-applied.`,
-      ];
+    const entryIdOf = (modelId: string): string | undefined => {
+      const entry = modelIdByValue.get(modelId);
+      return entry && displayEntryId(entry);
+    };
+    /** The record's own stated quarantine cause, printed verbatim by the report. */
+    const quarantineReasonOf = (modelId: string): string | undefined =>
+      modelIdByValue.get(modelId)?.verification?.quarantineReason ?? undefined;
+    /** Which structured switches are off, on a `verified` stamp that is withheld. */
+    const withheldSwitchesOf = (modelId: string): string[] | undefined => {
+      const entry = modelIdByValue.get(modelId);
+      if (!entry || effectiveVerificationState(entry) !== 'withheld') return undefined;
+      return withheldSwitches(entry);
+    };
+    /**
+     * The extra audit line a HELD-BACK record earns, printed above the
+     * registry's own reasons. Without it the detail block reads as a list of
+     * caveats under a stamp; with it, the reader knows those caveats are the
+     * reason no patch was generated, and which FIELD holds the record back.
+     *
+     * Note what it no longer does: it used to quote the English fragments that
+     * tripped the old regex gate. There is no regex gate any more, so it names
+     * the structured field instead — the thing a reviewer edits to change the
+     * outcome.
+     */
+    const heldBackDetail = (status: EffectiveVerificationState | undefined): string[] => {
+      if (status === 'quarantined') {
+        return [
+          'HELD BY MENDR: this record is quarantined in the registry ' +
+            '(verification.status = "quarantined"), so it is never auto-applied.',
+        ];
+      }
+      if (status === 'withheld') {
+        return [
+          'HELD BY MENDR: this record is stamped verified, but a verification switch on it ' +
+            'is false, so it is never auto-applied.',
+        ];
+      }
+      return [];
     };
 
     /**
@@ -470,13 +585,16 @@ program
             line: b.location.line,
             column: b.location.column,
             modelId: b.value,
+            entryId: entryIdOf(b.value),
             replacement: b.replacement,
             registryVerdict: verdictFor(b.value),
             verdictCheckedAt: verdictDateFor(b.value),
+            quarantineReason: quarantineReasonOf(b.value),
+            withheldSwitches: withheldSwitchesOf(b.value),
             status: b.status,
             // The verification gate's own audit trail, preserved verbatim --
-            // under mendr's own line when the entry contradicts itself.
-            detail: [...selfContradictionDetail(b.status, b.reasons), ...(b.reasons ?? [])],
+            // under mendr's own line when the record is held back.
+            detail: [...heldBackDetail(b.status), ...(b.reasons ?? [])],
           },
           'replacement_unverified',
         ),
@@ -488,9 +606,12 @@ program
             line: a.location.line,
             column: a.location.column,
             modelId: a.value,
+            entryId: entryIdOf(a.value),
             replacement: a.replacement,
             registryVerdict: verdictFor(a.value),
             verdictCheckedAt: verdictDateFor(a.value),
+            quarantineReason: quarantineReasonOf(a.value),
+            withheldSwitches: withheldSwitchesOf(a.value),
           },
           'platform_blocked',
         ),
@@ -502,9 +623,12 @@ program
             line: u.location.line,
             column: u.location.column,
             modelId: u.value,
+            entryId: entryIdOf(u.value),
             replacement: u.replacement,
             registryVerdict: verdictFor(u.value),
             verdictCheckedAt: verdictDateFor(u.value),
+            quarantineReason: quarantineReasonOf(u.value),
+            withheldSwitches: withheldSwitchesOf(u.value),
           },
           'usage_unverified',
         ),
@@ -516,9 +640,12 @@ program
             line: d.line,
             column: d.column,
             modelId: d.value,
+            entryId: entryIdOf(d.value),
             replacement: d.replacement,
             registryVerdict: verdictFor(d.value),
             verdictCheckedAt: verdictDateFor(d.value),
+            quarantineReason: quarantineReasonOf(d.value),
+            withheldSwitches: withheldSwitchesOf(d.value),
           },
           'type_cast_masked',
         ),
@@ -737,7 +864,7 @@ program
     // The measurable gate ROWS, kept as data rather than rendered lines: the
     // behavioral half of the summary is not known until the eval gate has run,
     // and the eval gate cannot run until the code gates below have passed.
-    let tsGateFacts: GateSummaryFacts | undefined;
+    let tsGateRows: GateRow[] | undefined;
     let tsTestsPassed = false;
     if (tsSwapCandidates > 0) {
       if (opts.skipGates) {
@@ -755,12 +882,12 @@ program
         const patchedProject = loadProject(resolved);
         tsResult = applyLlmFixesToProject(patchedProject, registry, resolved);
 
-        // Gate 1 (REQUIRED): baseline-relative type-check (in-memory, no subprocess).
+        // Gate 1: baseline-relative type-check (in-memory, no subprocess).
         const typeResult = checkTypes(baselineProject, patchedProject);
 
-        // Gate 2 (BEST-EFFORT): run the repo's tests against the patched files in a
-        // temp copy. A hard test FAILURE downgrades; inconclusive (no script / not
-        // installed) does NOT block Tier A, since tests are best-effort here.
+        // Gate 2: run the repo's tests against the patched files in a temp
+        // copy. Whether a test gate that could not RUN blocks Tier A is the
+        // repo's policy call (`gates.tests.required`), not a constant here.
         tsPatchedFiles = tsResult.changedFiles.map((absPath) => ({
           absPath,
           newText: patchedProject.getSourceFileOrThrow(absPath).getFullText(),
@@ -772,33 +899,52 @@ program
         const testResult = await runRepoTests(resolved, tsPatchedFiles);
         tsTestsPassed = testResult.status === 'pass';
 
-        const gatesPassed = typeResult.passed && testResult.status !== 'fail';
-        tsTier = gatesPassed ? 'A' : 'C';
-        if (!gatesPassed) {
-          if (!typeResult.passed) {
-            const n = typeResult.newDiagnostics.length;
-            const first = typeResult.newDiagnostics[0];
-            downgradeReason =
-              `patched code introduces ${n} new type error${n === 1 ? '' : 's'}` +
-              (first ? `: ${formatDiagnostic(first)}` : '');
-          } else {
-            downgradeReason = 'repo tests failed against the patched code';
-          }
-        }
         // "pass" here means BASELINE-RELATIVE pass. When the repo already had
         // type errors before the patch, say so — a bare "pass" would overclaim.
-        const typeNote =
-          typeResult.passed && typeResult.baselineCount > 0
-            ? `pass (no new errors; ${typeResult.baselineCount} pre-existing ignored)`
-            : `${typeResult.passed ? 'pass' : 'fail'} (required)`;
-        // Two NAMED groups: what was checked (code) and what was not
-        // (behavior). The tests row carries real parsed counts wherever the
-        // runner's summary allowed — a bare "pass" is not a measurable claim.
-        tsGateFacts = {
-          usageClassification: 'call-site',
-          typeCheck: typeNote,
-          tests: testGateLabel(testResult),
+        const firstDiagnostic = typeResult.newDiagnostics[0];
+        const newErrors = typeResult.newDiagnostics.length;
+        const typeEvaluation: GateEvaluation = {
+          gate: 'typecheck',
+          outcome: typeResult.passed ? 'pass' : 'fail',
+          detail: typeResult.passed
+            ? typeResult.baselineCount > 0
+              ? `no new errors; ${typeResult.baselineCount} pre-existing ignored`
+              : 'no new errors'
+            : `${newErrors} new type error${newErrors === 1 ? '' : 's'}` +
+              (firstDiagnostic ? ` -- ${formatDiagnostic(firstDiagnostic)}` : ''),
         };
+        const testEvaluation = testGateEvaluation(testResult);
+
+        // ONE decision, from the policy: every non-passing gate the policy
+        // cares about, in the order they ran. A `fail` always blocks; an
+        // `inconclusive` blocks only where the repo said it must pass.
+        const blocks = gateBlocks(policy, [typeEvaluation, testEvaluation]);
+        recordGateOutcomes('typescript', [typeEvaluation, testEvaluation], blocks);
+        tsTier = blocks.length === 0 ? 'A' : 'C';
+        if (blocks.length > 0) {
+          downgradeReason = blocks.map(describeGateBlock).join('; ');
+          signalRequiredGateFailure(blocks);
+        }
+        // Two NAMED groups: what was checked (code) and what was not
+        // (behavior). EVERY check gets its own row and its own outcome word —
+        // the tests row carries real parsed counts where the runner's summary
+        // allowed, and says `inconclusive` (never `passed`) where it could not
+        // run at all.
+        tsGateRows = [
+          ...registryVerdictRows([...swaps.values()]),
+          {
+            label: 'usage classification',
+            state: 'passed',
+            detail: 'traced to a live model argument at the call site',
+          },
+          {
+            label: 'syntax',
+            state: 'n/a',
+            detail: 'typescript -- the type-check gate below subsumes parsing',
+          },
+          gateRowOf('type-check', typeEvaluation, policy.typecheck.required),
+          gateRowOf('tests', testEvaluation, policy.tests.required),
+        ];
       }
     }
     const tsTotalSites = tsResult
@@ -811,31 +957,45 @@ program
     // than the TS type-check gate, and the separate heading keeps that weaker
     // verification visible instead of blending it away.
     let pyTier: 'A' | 'C' | undefined;
-    let pyTestLabel = 'not run (no supported test command detected)';
+    let pyTestRow: GateRow = {
+      label: 'tests',
+      state: 'inconclusive',
+      detail: 'mendr has no python test runner -- only `npm test` is supported',
+    };
     let pyDowngradeReason = '';
     if (pyResult.siteCount > 0) {
-      // Best-effort test gate. Mendr's only runner today is `npm test`, so it
-      // can only MEASURE anything when the repo has one — a pure-Python repo
-      // gets the honest "not run" instead of pretending. When the runner does
-      // run, the label carries parsed pass/fail counts where the output allows.
-      let testResult: TestGateResult = {
-        status: 'inconclusive',
-        output: 'no supported test command detected',
+      // The test gate. Mendr's only runner today is `npm test`, so a pure-Python
+      // repo gets `inconclusive` — there may well be a pytest suite mendr cannot
+      // reach, and "not configured" would claim otherwise. When the runner does
+      // run, the row carries parsed pass/fail counts where the output allows.
+      let testEvaluation: GateEvaluation = {
+        gate: 'tests',
+        outcome: 'inconclusive',
+        detail: 'mendr has no python test runner -- only `npm test` is supported',
       };
       if (opts.skipGates) {
-        pyTestLabel = 'skipped';
+        // No evaluation is recorded: `--skip-gates` asserts the tier instead of
+        // earning it, so there is no outcome for the policy to judge.
+        pyTestRow = { label: 'tests', state: 'skipped', detail: '--skip-gates' };
       } else if (existsSync(join(resolved, 'package.json'))) {
-        testResult = await runRepoTests(resolved, pyResult.patchedFiles);
-        pyTestLabel = testGateLabel(testResult);
+        const testResult = await runRepoTests(resolved, pyResult.patchedFiles);
+        testEvaluation = testGateEvaluation(testResult);
+        pyTestRow = gateRowOf('tests', testEvaluation, policy.tests.required);
+      } else {
+        pyTestRow = gateRowOf('tests', testEvaluation, policy.tests.required);
       }
       // The syntax gate ALWAYS ran (inside the fix pass — an in-memory
       // re-parse is essentially free), even under --skip-gates: a patch we
-      // KNOW breaks parsing must never be presented as Tier A.
-      pyTier = pyResult.syntaxGate.passed && testResult.status !== 'fail' ? 'A' : 'C';
+      // KNOW breaks parsing must never be presented as Tier A. It is not a
+      // configurable gate: a patch that does not parse is never fixable.
+      const blocks = opts.skipGates ? [] : gateBlocks(policy, [testEvaluation]);
+      if (!opts.skipGates) recordGateOutcomes('python', [testEvaluation], blocks);
+      pyTier = pyResult.syntaxGate.passed && blocks.length === 0 ? 'A' : 'C';
       if (pyTier === 'C') {
         pyDowngradeReason = !pyResult.syntaxGate.passed
           ? `patched code introduces new syntax errors (${pyResult.syntaxGate.failures[0] ?? 'unknown file'})`
-          : 'repo tests failed against the patched code';
+          : blocks.map(describeGateBlock).join('; ');
+        signalRequiredGateFailure(blocks);
       }
     }
 
@@ -859,10 +1019,21 @@ program
     // verification, did not get it, and got the write regardless. "I could not
     // check" is not a reason to proceed; it is the reason not to.
     let evalResult: EvalGateResult = { status: 'not-configured' };
+    /**
+     * Why the eval did not run, when a command WAS configured. Without this the
+     * report printed "behavioral evaluation: not configured" over a repo whose
+     * config names one — and told the reader to go configure the thing they had
+     * already configured.
+     */
+    let evalNotRunReason: string | undefined;
     const codeGatesPassed =
       (tsTotalSites === 0 || tsTier === 'A') && (pyResult.siteCount === 0 || pyTier === 'A');
     const anyTierA =
       (tsTier === 'A' && tsTotalSites > 0) || (pyTier === 'A' && pyResult.siteCount > 0);
+    if (evalCommand && !opts.skipGates && !codeGatesPassed) {
+      evalNotRunReason =
+        'not started -- the code gates above did not pass, so mendr never ran your eval';
+    }
     if (evalCommand && !opts.skipGates && codeGatesPassed && anyTierA) {
       // Progress goes to STDERR (an eval can take minutes, and with --json
       // stdout must carry only the document).
@@ -872,32 +1043,54 @@ program
         [...tsPatchedFiles, ...pyResult.patchedFiles],
         { command: evalCommand, timeoutMs: repoConfig.evalTimeoutMs },
       );
-      if (evalResult.status === 'fail' || evalResult.status === 'inconclusive') {
-        const reason =
-          evalResult.status === 'fail'
-            ? `your eval command failed against the patched code ` +
-              `(${evalResult.command}, exit ${evalResult.exitCode})`
-            : // Names the CASE, not just the outcome: "timed out" and "could not
-              // be spawned" send a user to completely different fixes, and both
-              // are different again from "your model regressed".
-              `your eval command was configured but did not complete: ${evalResult.output} ` +
-              `-- mendr will not apply a fix it could not behaviorally verify`;
-        if (tsTotalSites > 0) {
-          tsTier = 'C';
-          downgradeReason = reason;
-        }
-        if (pyResult.siteCount > 0) {
-          pyTier = 'C';
-          pyDowngradeReason = reason;
-        }
-        // Hard signal, with or without --write: a script that ran mendr must be
-        // able to see in $? that the fix was not verified and not applied.
-        process.exitCode = 1;
-        if (evalResult.status === 'inconclusive') {
-          // Also on stderr, where it survives --json (stdout is the document).
-          console.error(`mendr: eval gate could not run -- ${evalResult.output}`);
-          console.error('mendr: the fix is NOT applied -- an eval that did not run verifies nothing.');
-        }
+    }
+
+    // THE EVAL GATE'S OUTCOME, judged by the same policy as the code gates. A
+    // `fail` blocks whatever the policy says (a behavioral regression mendr was
+    // told how to detect is never written); `inconclusive` and `not-configured`
+    // block only when the eval gate is required — which it is by default the
+    // moment a command exists, so the fail-closed behavior is unchanged.
+    const evalEvaluation: GateEvaluation = {
+      gate: 'eval',
+      outcome:
+        evalResult.status === 'not-configured'
+          ? evalNotRunReason
+            ? 'inconclusive'
+            : 'not-configured'
+          : evalResult.status,
+      detail:
+        evalResult.status === 'fail'
+          ? `${evalResult.command}, exit ${evalResult.exitCode}`
+          : // Names the CASE, not just the outcome: "timed out" and "could not
+            // be spawned" send a user to completely different fixes, and both
+            // are different again from "your model regressed".
+            (evalResult.output ?? evalNotRunReason),
+    };
+    const evalBlocks = opts.skipGates ? [] : gateBlocks(policy, [evalEvaluation]);
+    if (!opts.skipGates) recordGateOutcomes('repo', [evalEvaluation], evalBlocks);
+    if (evalBlocks.length > 0) {
+      const reason = evalBlocks.map(describeGateBlock).join('; ');
+      if (tsTotalSites > 0 && tsTier === 'A') {
+        tsTier = 'C';
+        downgradeReason = reason;
+      }
+      if (pyResult.siteCount > 0 && pyTier === 'A') {
+        pyTier = 'C';
+        pyDowngradeReason = reason;
+      }
+      // Hard signal, with or without --write: a script that ran mendr must be
+      // able to see in $? that the fix was not verified and not applied. A
+      // failing eval always sets it -- that has never been optional -- and a
+      // required-but-unrunnable one now does too.
+      process.exitCode = 1;
+      if (evalResult.status === 'inconclusive') {
+        // Also on stderr, where it survives --json (stdout is the document).
+        console.error(`mendr: eval gate could not run -- ${evalResult.output}`);
+        console.error('mendr: the fix is NOT applied -- an eval that did not run verifies nothing.');
+      } else if (evalResult.status === 'not-configured') {
+        console.error(
+          `mendr: ${reason}`,
+        );
       }
     }
 
@@ -913,10 +1106,18 @@ program
             status: 'not-tested',
             // An inconclusive run is still `not-tested` — nothing was verified —
             // but it carries WHY, so the disclaimer does not tell a user who
-            // configured an eval to go configure one.
-            ...(evalResult.status === 'inconclusive' ? { reason: evalResult.output } : {}),
+            // configured an eval to go configure one. Same for a configured
+            // eval mendr never started because the code gates had already
+            // failed: that is not "not configured" either.
+            ...(evalResult.status === 'inconclusive'
+              ? { reason: evalResult.output }
+              : evalNotRunReason
+                ? { reason: evalNotRunReason }
+                : {}),
           };
-    const gateLines = tsGateFacts ? formatGateSummary(tsGateFacts, behavioral) : [];
+    const gateLines = tsGateRows
+      ? formatGateSummary(tsGateRows, behavioral, policy.eval.required)
+      : [];
 
     // --- Section 1 (most urgent): the Tier A diff. --------------------------
     if (tsTotalSites > 0 && tsResult) {
@@ -956,6 +1157,10 @@ program
             `The diff above is shown for manual review only; it is not trusted.`,
         );
       }
+      // WHICH RECORDS AUTHORISED THIS EDIT. Printed under both dispositions:
+      // an applied patch and a gate-failed candidate rest on the same records,
+      // and the reader of the second one is likelier to want to go check them.
+      for (const line of formatRegistryEntryLines([...swaps.values()])) say(line);
     }
 
     // Python Tier A, under its own heading with its own (weaker) gates. The
@@ -974,13 +1179,31 @@ program
       say('');
       say(pyResult.diff);
       for (const line of formatGateSummary(
-        {
-          usageClassification: 'verified-sink',
-          syntax: pyResult.syntaxGate.passed ? 'pass' : 'fail',
-          staticTypeGate: 'not configured or not detected',
-          tests: pyTestLabel,
-        },
+        [
+          ...registryVerdictRows(pyResult.swapDeprecations),
+          {
+            label: 'usage classification',
+            state: 'passed',
+            detail: 'traced to a recognized model sink (python sink rule)',
+          },
+          {
+            label: 'syntax',
+            state: pyResult.syntaxGate.passed ? 'passed' : 'failed',
+            detail: 'baseline-relative re-parse of every patched file',
+          },
+          {
+            // NOT "not configured": mendr does not run mypy/pyright at all, so
+            // there is no type-check gate here to configure. Calling it n/a is
+            // the honest word -- and it is why `gates.typecheck.required` does
+            // not block a python-only repo (see gates/policy.ts).
+            label: 'type-check',
+            state: 'n/a',
+            detail: 'mendr runs no type checker for python',
+          },
+          pyTestRow,
+        ],
         behavioral,
+        policy.eval.required,
       )) {
         say(line);
       }
@@ -1005,6 +1228,7 @@ program
             'The diff above is shown for manual review only; it is not trusted.',
         );
       }
+      for (const line of formatRegistryEntryLines(pyResult.swapDeprecations)) say(line);
     }
 
     // (e) EMPTY Tier A: one honest line — never a VERIFIED header over nothing.
@@ -1243,9 +1467,14 @@ program
     // summary already names it, but the summary scrolls past — this is the last
     // thing a reader sees before acting on the diff. Human mode only: machine
     // consumers get the same fact as `summary.behavioralVerification` below.
+    //
+    // `--skip-gates` gets its OWN sentence: the default one says "mendr
+    // verified the CODE only -- see the gate summary above", and under this
+    // flag both halves are false (nothing was verified, and the flag suppressed
+    // the summary it points at).
     if ((tsTier === 'A' && tsTotalSites > 0) || (pyTier === 'A' && pyResult.siteCount > 0)) {
       say('');
-      say(behavioralVerificationNote(behavioral));
+      say(behavioralVerificationNote(behavioral, !!opts.skipGates));
     }
 
     await printFooter();
@@ -1290,6 +1519,25 @@ program
              * nothing to explain.
              */
             write: writeOutcome,
+            /**
+             * THE GATES, ITEMIZED. `policy` is what this run required (defaults
+             * overlaid with the repo's `gates` block); `outcomes` is what each
+             * gate actually returned, with `blocking: true` on the ones that
+             * cost the fix its Tier A. An `inconclusive` outcome is never
+             * reported as `pass` here either -- the JSON and the printed
+             * summary are two renderings of the same records.
+             */
+            gates: {
+              policy: {
+                typecheck: { required: policy.typecheck.required },
+                tests: { required: policy.tests.required },
+                eval: {
+                  required: policy.eval.required,
+                  command: policy.eval.command ?? null,
+                },
+              },
+              outcomes: gateOutcomes,
+            },
             tierA: [
               ...swapMatches.map((m) => ({
                 file: rel(m.location.file),
@@ -1413,6 +1661,7 @@ program
 
     const counts: Record<VerificationStatus, number> = {
       verified: 0,
+      quarantined: 0,
       unverified: 0,
       unverifiable: 0,
     };
@@ -1421,40 +1670,64 @@ program
     const flipped: { from: string; was: string; now: VerificationStatus }[] = [];
     let modelEntries = 0;
     let carriedReasons = 0;
-    let heldByOwnReasons = 0;
+    let keptQuarantined = 0;
 
     for (const entry of raw) {
       if (entry.kind !== 'model_id') continue;
       modelEntries++;
       const model = entry as unknown as LlmModelIdDeprecation;
-      const { status, reasons } = classifyEntry(model, oracles);
-      counts[status]++;
+      const classified = classifyEntry(model, oracles);
+      const reasons = classified.reasons;
       const stamped = model.verification?.status ?? 'unstamped';
+      // A RECHECK MUST NOT LIFT A QUARANTINE. The classifier answers ONE
+      // question -- is the replacement live and uncontradicted in the public
+      // catalogs -- and a quarantine is a judgement about something else: that
+      // this record is not to be trusted until a human resolves a named
+      // problem. Letting a fresh `verified` catalog verdict overwrite
+      // `quarantined` would re-open every held record on the next weekly run,
+      // which is the exact failure that put those records in quarantine.
+      const status: VerificationStatus = stamped === 'quarantined' ? 'quarantined' : classified.status;
+      if (status === 'quarantined') keptQuarantined++;
+      counts[status]++;
       if (stamped !== status) flipped.push({ from: model.deprecated, was: stamped, now: status });
 
       console.log(`[${status.toUpperCase().padEnd(12)}] ${model.provider}: ${model.deprecated} -> ${model.replacement}`);
       for (const reason of reasons) console.log(`               - ${reason}`);
+      if (status === 'quarantined') {
+        console.log(
+          `               ! quarantined in the registry -- ` +
+            `${model.verification?.quarantineReason ?? 'no reason recorded'}`,
+        );
+        console.log(
+          `               ! catalog verdict this run was "${classified.status}"; the ` +
+            'quarantine stands until a human clears it',
+        );
+      }
 
       if (status !== 'verified') {
         blocked.push({ status, provider: model.provider, from: model.deprecated, to: model.replacement });
       }
-      // A RECHECK MUST NOT ERASE THE RESEARCH. The classifier's verdict
+      // A RECHECK MUST NOT ERASE THE RESEARCH either. The classifier's verdict
       // replaces the classifier's PREVIOUS verdict; every hand-written reason
-      // is carried through verbatim (see mergeReasons). Without this, a routine
-      // `--write` would delete the caveats that hold a self-contradicting entry
-      // out of Tier A -- silently promoting the very entries this gate exists
-      // to catch.
+      // is carried through verbatim (see mergeReasons).
       const merged = mergeReasons(reasons, model.verification?.reasons);
       carriedReasons += merged.length - reasons.length;
-      if (status === 'verified' && selfContradictionMarkersIn(merged).length > 0) {
-        heldByOwnReasons++;
-        console.log(
-          '               ! stamped verified, but a carried-over reason contradicts it -- ' +
-            'the engine gate holds this at Tier B',
-        );
-      }
       if (opts.write) {
-        entry.verification = { status, checkedAt, sources: oracles.sources, reasons: merged };
+        // The three switches come from ONE derivation shared with the
+        // migration and the promote gate (see verificationSwitches). A
+        // quarantined record is written with auto-apply forced off, so the
+        // stamp on disk and the engine's behaviour cannot disagree.
+        entry.entryId = entryIdFor(model);
+        entry.verification = {
+          status,
+          ...verificationSwitches(model, classified.status, status === 'quarantined'),
+          quarantineReason: status === 'quarantined'
+            ? (model.verification?.quarantineReason ?? null)
+            : null,
+          checkedAt,
+          sources: oracles.sources,
+          reasons: merged,
+        };
       }
     }
 
@@ -1462,14 +1735,21 @@ program
     console.log('-'.repeat(74));
     console.log(`model_id entries: ${modelEntries}`);
     console.log(`  verified     : ${counts.verified}  (auto-apply eligible — Tier A)`);
+    // NOT "held by a human". All twelve shipped quarantineReasons come from one
+    // of two templates written by the P0 migration, which found them by
+    // matching caveat markers in `reasons` -- no person typed any of them. What
+    // is true, and what this line is for, is that the hold lives in the FILE
+    // and this recheck does not lift it.
+    console.log(
+      `  quarantined  : ${counts.quarantined}  (held in the registry file; a catalog recheck does not clear one — BLOCKED)`,
+    );
     console.log(`  unverified   : ${counts.unverified}  (live but stale/chained/superseded — BLOCKED)`);
     console.log(`  unverifiable : ${counts.unverifiable}  (out-of-class moderation/image/audio/tts — BLOCKED)`);
 
-    if (heldByOwnReasons > 0) {
+    if (keptQuarantined > 0) {
       console.log(
-        `  (of the verified, ${heldByOwnReasons} carr${heldByOwnReasons === 1 ? 'ies' : 'y'} a ` +
-          `recorded reason that contradicts the stamp and stay${heldByOwnReasons === 1 ? 's' : ''} ` +
-          'blocked from auto-apply)',
+        `  (${keptQuarantined} quarantined record${keptQuarantined === 1 ? '' : 's'} kept their ` +
+          'quarantine through this recheck — a catalog verdict does not clear one)',
       );
     }
 
@@ -1510,6 +1790,36 @@ program
     }
   });
 
+program
+  .command('validate-registry')
+  .option(
+    '--registry <path>',
+    'validate a registry at an explicit path (default: the shipped registry)',
+  )
+  .description('Check the registry for internal contradictions; exit non-zero on any violation.')
+  .action((opts: { registry?: string }) => {
+    // OFFLINE BY DESIGN. `verify-registry` asks the public catalogs what is
+    // true; this asks whether the file contradicts ITSELF, which needs no
+    // network and must therefore run on every CI job, not just the weekly one
+    // that can be knocked over by a rate limit.
+    const registryPath = opts.registry ? resolve(opts.registry) : resolveRegistryPath();
+    let registry;
+    try {
+      registry = loadLlmRegistry(registryPath);
+    } catch (err) {
+      // A registry that will not LOAD is the most severe violation there is --
+      // the loader's own shape rules are part of the contract this command
+      // enforces, so a parse failure exits non-zero like any other.
+      console.error(`registry INVALID: ${err instanceof Error ? err.message : String(err)}`);
+      process.exitCode = 1;
+      return;
+    }
+    const result = validateRegistry(registry);
+    for (const line of formatValidation(result)) console.log(line);
+    console.log(`registry: ${registryPath}`);
+    if (result.violations.length > 0) process.exitCode = 1;
+  });
+
 // --- Provenance + the human gate -----------------------------------------
 // Three commands that share ONE invariant: research produces CANDIDATES; only a
 // human promotes a candidate into the active registry. `evidence` shows why an
@@ -1518,43 +1828,71 @@ program
 
 program
   .command('evidence')
-  .argument('<modelId>', 'a deprecated model id present in the registry')
+  .argument('<id>', 'a registry entryId, or a deprecated model id present in the registry')
   .description('Show the provenance behind a registry entry: sources, hashes, and quoted excerpts.')
-  .action((modelId: string) => {
+  .action((id: string) => {
     const registry = loadLlmRegistry();
     const entries = modelIdEntries(registry);
-    // Exact match first; canonical match second, so `GPT-4` or `openai/gpt-4`
-    // still finds the entry without ever matching a DIFFERENT model.
+    // FOUR ways to name the same record, most specific first:
+    //   1. the stamped entryId -- what every finding now prints;
+    //   2. the DERIVED entryId, so an id copied off a finding still resolves
+    //      against a registry whose records have not been stamped yet;
+    //   3. the bare deprecated model id, which is what people typed before
+    //      entryIds existed and what they will keep typing;
+    //   4. its canonical form, so `GPT-4` or `openai/gpt-4` land on the same
+    //      record without ever matching a DIFFERENT model.
     const entry =
-      entries.find((e) => e.deprecated === modelId) ??
-      entries.find((e) => canonicalizeId(e.deprecated) === canonicalizeId(modelId));
+      entries.find((e) => e.entryId === id) ??
+      entries.find((e) => entryIdFor(e) === id) ??
+      entries.find((e) => e.deprecated === id) ??
+      entries.find((e) => canonicalizeId(e.deprecated) === canonicalizeId(id));
     if (!entry) {
       console.error(
-        `mendr: no registry entry for model id "${modelId}" ` +
+        `mendr: no registry entry for "${id}" -- expected an entryId ` +
+          `(e.g. openai.gpt-4.retirement-2026-10-23) or a deprecated model id ` +
           `(${entries.length} model_id entries loaded from ${resolveRegistryPath()}).`,
       );
       process.exit(2);
     }
 
     console.log(`${entry.provider}: ${entry.deprecated} -> ${entry.replacement}`);
+    console.log(`  registry entry: ${displayEntryId(entry)}`);
     console.log(`  lifecycle    : ${entry.status ?? 'unknown (never claimed dead)'}`);
     console.log(`  shutdown date: ${entry.shutdownDate ?? 'none published'}`);
     console.log(`  source url   : ${entry.sourceUrl ?? 'none recorded'}`);
     const verification = entry.verification;
     console.log(`  verification : ${verification?.status ?? 'unstamped (blocked from auto-apply)'}`);
-    // The stamp is not the last word. When the reasons below contradict it,
-    // the engine holds the entry back -- and this command is where a reader
-    // sent by a Tier B finding lands, so it must not show a bare `verified`
-    // over a mapping mendr just refused to apply.
-    if (effectiveVerificationState(entry) === 'self-contradicted') {
-      const markers = selfContradictionMarkersIn(verification?.reasons);
+    // THE FOUR FIELDS THE GATE ACTUALLY READS, shown as fields. This is the
+    // page a reader lands on from a finding that says "not auto-applied", and
+    // the honest answer to "why" is now a boolean they can look at, not a
+    // sentence somebody has to interpret.
+    if (verification) {
+      const mark = (on: boolean): string => (on ? 'yes' : 'NO');
       console.log(
-        `  engine gate  : HELD -- the reasons below contradict this stamp ` +
-          `(${markers.map((m) => `"${m}"`).join(', ')}), so mendr will not auto-apply it`,
+        `    official source confirmed : ${mark(verification.officialSourceConfirmed)}`,
       );
+      console.log(`    replacement confirmed     : ${mark(verification.replacementConfirmed)}`);
+      console.log(`    auto-apply allowed        : ${mark(verification.autoApplyAllowed)}`);
+    }
+    console.log(
+      `  engine gate  : ${
+        isVerified(entry)
+          ? 'PASS -- eligible for a Tier A automatic patch'
+          : `HELD -- mendr will not auto-apply this record (${effectiveVerificationState(entry)})`
+      }`,
+    );
+    if (verification?.quarantineReason) {
+      console.log(`  quarantined  : ${verification.quarantineReason}`);
     }
     if (verification?.checkedAt) console.log(`    checked at : ${verification.checkedAt}`);
     if (verification?.sources?.length) console.log(`    oracles    : ${verification.sources.join(', ')}`);
+    // DOCUMENTATION, not the gate. Said out loud here because this is the one
+    // screen where a reader sees the booleans and the prose together, and the
+    // old behaviour -- prose overriding the stamp -- is exactly what they
+    // might assume is still happening.
+    if (verification?.reasons?.length) {
+      console.log('  reasons (documentation only -- the gate reads the fields above):');
+    }
     for (const reason of verification?.reasons ?? []) console.log(`    - ${reason}`);
 
     console.log('');
@@ -1668,7 +2006,22 @@ candidates
       const { status, reasons } = classifyEntry(c, oracles);
       console.log(`[${status.toUpperCase().padEnd(12)}] ${c.candidateId}: ${c.deprecated} -> ${c.replacement}`);
       for (const reason of reasons) console.log(`               - ${reason}`);
-      return { ...c, verification: { status, checkedAt, sources: oracles.sources, reasons } };
+      // The candidate's stamp carries the SAME structured switches the active
+      // registry uses, derived by the same helper. A candidate is never
+      // auto-appliable (the fix engine does not read this file at all), but a
+      // block whose shape differs from the registry's would have to be
+      // rebuilt at promotion time -- and a rebuild is a place to get it wrong.
+      return {
+        ...c,
+        verification: {
+          status,
+          ...verificationSwitches(c, status),
+          quarantineReason: null,
+          checkedAt,
+          sources: oracles.sources,
+          reasons,
+        },
+      };
     });
 
     const path = saveCandidates(stamped);

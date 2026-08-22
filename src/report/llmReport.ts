@@ -2,9 +2,10 @@ import { basename } from 'node:path';
 import type { LlmModelIdDeprecation } from '../types.js';
 import type { DataPurpose } from '../usage/scanLiterals.js';
 import {
-  ENTRY_VERIFICATION_STATES,
+  REVIEW_ONLY_STATES,
   type RegistryProvenance,
 } from '../usage/llmRegistry.js';
+import { displayEntryId } from '../registry/entryId.js';
 
 // LLM mode — report shaping. The raw scan of a real repo produces 100+ data
 // findings (LibreChat, ChatGPT-Next-Web are typical), and a per-hit listing
@@ -226,22 +227,62 @@ export function formatCatalogLine(catalog: { file: string; ids: string[] }): str
 // flat "Gate summary" list invited exactly that misreading, so the summary is
 // split into two NAMED groups and the second one is a disclaimer, not a result.
 
-/** The measurable per-gate lines for one language's summary. */
-export interface GateSummaryFacts {
-  /** How the literal was proven to be a live model argument. */
-  usageClassification: string;
-  /** Baseline-relative type-check verdict (TypeScript only). */
-  typeCheck?: string;
-  /** Baseline-relative syntax re-parse verdict (Python only). */
-  syntax?: string;
-  /** Static type-gate note (Python only — there is no compiler to consult). */
-  staticTypeGate?: string;
-  /** Test-gate label, carrying real counts wherever the runner output allowed. */
-  tests: string;
+// EVERY CHECK REPORTS ITS OWN OUTCOME. The summary used to render free-text
+// values a caller had assembled ("pass (no new errors; 3 pre-existing
+// ignored)"), which made it possible — and, for the tests row, actual — for one
+// word to stand in for several different checks: "verified" over a run where
+// the type-check passed, the tests never ran, and no eval existed. A reader
+// cannot un-collapse that. So the summary now takes ROWS, each carrying its own
+// state word from a closed vocabulary, and no row can borrow another's.
+
+/**
+ * The outcome vocabulary a gate row may use. Deliberately closed, and
+ * deliberately NOT shared between kinds of check: an evidence row is
+ * `verified`/`confirmed` (a claim about a record), a gate row is
+ * `passed`/`failed`/`inconclusive` (a claim about a run), and nothing renders
+ * as a bare "verified" over a gate that did not run.
+ *
+ *   inconclusive     the check could not run. NEVER `passed`; see gates/policy.
+ *   not configured   there is nothing to run (no test script, no eval command).
+ *   n/a              the check does not exist for this language.
+ */
+export type GateRowState =
+  | 'verified'
+  | 'not verified'
+  | 'confirmed'
+  | 'not confirmed'
+  | 'passed'
+  | 'failed'
+  | 'inconclusive'
+  | 'not configured'
+  | 'skipped'
+  | 'n/a';
+
+/** One line of the gate summary: one check, one outcome, one optional why. */
+export interface GateRow {
+  /** Left column, e.g. `type-check`. */
+  label: string;
+  /** The outcome word — never shared with, or inferred from, another row. */
+  state: GateRowState;
+  /** The parenthesised qualifier: counts, the reason it was inconclusive, a stamp date. */
+  detail?: string;
+  /**
+   * True when the run's gate policy REQUIRED this check to pass. Rendered as a
+   * `[required]` tag, so a reader can see why an `inconclusive` row blocked
+   * the fix here when the same row passes through elsewhere.
+   */
+  required?: boolean;
 }
 
 /** Column at which every gate VALUE starts, so the two groups align as one table. */
-const GATE_LABEL_WIDTH = 22;
+const GATE_LABEL_WIDTH = 24;
+
+/** Render one row: `  label:      state (detail) [required]`. */
+export function formatGateRow(row: GateRow): string {
+  const detail = row.detail ? ` (${row.detail})` : '';
+  const required = row.required ? '  [required]' : '';
+  return `  ${`${row.label}:`.padEnd(GATE_LABEL_WIDTH)}${row.state}${detail}${required}`;
+}
 
 /**
  * What the eval gate actually established about behavior, reduced to the three
@@ -291,32 +332,60 @@ export const BEHAVIORAL_VERIFICATION_LINES: readonly string[] = [
  * verification: pass" is exactly the phrase a reader would otherwise inflate
  * into "the new model is equivalent".
  */
-export function behavioralVerificationLines(view: BehavioralVerificationView): string[] {
+/**
+ * The eval gate's own itemized row — the sixth check, reported like the other
+ * five and never folded into them. `not-tested` splits into the two states that
+ * are NOT the same fact: nothing was configured, or something was configured
+ * and produced no verdict. The second one is `inconclusive`, which is the one
+ * word this row must never trade for `not configured` (it hides a gate that
+ * tried and failed to run) or for anything resembling a pass.
+ */
+export function behavioralGateRow(
+  view: BehavioralVerificationView,
+  required = false,
+): GateRow {
+  const label = 'behavioral evaluation';
+  const detail = `your eval command: ${view.command ?? 'unknown'}, exit ${view.exitCode ?? '?'}`;
+  if (view.status === 'pass') return { label, state: 'passed', detail, required };
+  if (view.status === 'fail') return { label, state: 'failed', detail, required };
+  return view.reason
+    ? { label, state: 'inconclusive', detail: view.reason, required }
+    : { label, state: 'not configured', required };
+}
+
+export function behavioralVerificationLines(
+  view: BehavioralVerificationView,
+  required = false,
+): string[] {
+  const row = formatGateRow(behavioralGateRow(view, required));
   if (view.status === 'not-tested') {
-    if (!view.reason) return [...BEHAVIORAL_VERIFICATION_LINES];
+    if (!view.reason) {
+      return [BEHAVIORAL_VERIFICATION_LINES[0], row, ...BEHAVIORAL_VERIFICATION_LINES.slice(1)];
+    }
     // A CONFIGURED eval that never produced a verdict. Same headline — nothing
-    // was verified — but the last two lines say which case it was and that the
-    // fix was blocked because of it, instead of advising a setup the user has
-    // already done.
+    // was verified — but the tail says which case it was and that the fix was
+    // blocked because of it, instead of advising a setup the user has already
+    // done. No "raise evalTimeoutMs" hint here: the gate's own reason text
+    // carries that advice in the one case (a timeout) where it applies.
     return [
-      ...BEHAVIORAL_VERIFICATION_LINES.slice(0, 3),
-      `  your eval command was configured but did not complete: ${view.reason}`,
-      '  mendr will not apply a fix it could not behaviorally verify, so nothing',
-      '  was applied. fix the eval (or raise "evalTimeoutMs") and re-run.',
+      BEHAVIORAL_VERIFICATION_LINES[0],
+      row,
+      ...BEHAVIORAL_VERIFICATION_LINES.slice(1, 3),
+      '  your eval command was configured but produced no verdict, so nothing',
+      '  was applied: mendr will not apply a fix it could not behaviorally verify.',
     ];
   }
-  const detail = `your eval command: ${view.command ?? 'unknown'}, exit ${view.exitCode ?? '?'}`;
   if (view.status === 'pass') {
     return [
       'Behavioral verification (your own evaluation):',
-      `  behavioral verification: pass (${detail})`,
+      row,
       '  that is the whole claim: YOUR eval passed against the patched code.',
       '  anything it does not measure -- quality, latency, cost -- is untested.',
     ];
   }
   return [
     'Behavioral verification (your own evaluation):',
-    `  behavioral verification: fail (${detail})`,
+    row,
     // NOT "your evaluation regressed": mendr reads an EXIT CODE and knows
     // nothing about the cause. A command that does not exist, or that died on
     // its own config, exits non-zero and lands here too -- and telling that
@@ -341,12 +410,32 @@ export const BEHAVIORAL_VERIFICATION_NOTE =
   'quality, latency, cost and response shape are untested. Check those before you ship.';
 
 /**
+ * The same boundary under `--skip-gates`, where the sentence above is simply
+ * false: no type-check ran, no test ran, and there is no gate summary above to
+ * point at — the flag suppresses it. Saying "mendr verified the CODE only" over
+ * a run that verified nothing is the overclaim this note exists to prevent,
+ * made by the note itself.
+ */
+export const SKIPPED_GATES_NOTE =
+  'note: --skip-gates was passed, so mendr verified NOTHING on this run: no type-check, ' +
+  'no tests, no eval. The tier above is asserted from the registry alone. Re-run without ' +
+  '--skip-gates before trusting the diff, and check the replacement model\'s output quality, ' +
+  'latency, cost and response shape yourself either way.';
+
+/**
  * The closing note, matched to what was actually established. With a passing
  * eval the note may name it — and must still cap the claim at "your eval
  * command passed", since the eval measures whatever its author chose to
  * measure and mendr has no idea what that is.
+ *
+ * `gatesSkipped` wins over everything: a run that checked nothing has no
+ * behavioral verdict to qualify.
  */
-export function behavioralVerificationNote(view: BehavioralVerificationView): string {
+export function behavioralVerificationNote(
+  view: BehavioralVerificationView,
+  gatesSkipped = false,
+): string {
+  if (gatesSkipped) return SKIPPED_GATES_NOTE;
   if (view.status !== 'pass') return BEHAVIORAL_VERIFICATION_NOTE;
   return (
     'note: mendr verified the CODE (see the gate summary above) and ran YOUR eval ' +
@@ -357,62 +446,183 @@ export function behavioralVerificationNote(view: BehavioralVerificationView): st
 }
 
 /**
- * Render the two-group gate summary. Only the gates that actually ran for this
- * language appear — an absent field is a gate that does not exist here (Python
- * has no type-check), never a silently-passed one. The second group is the
+ * Render the two-group gate summary from ITEMIZED ROWS. Every check the caller
+ * ran is one row with its own outcome; a check that does not exist for this
+ * language is `n/a` and a check that could not run is `inconclusive` — neither
+ * is ever omitted or absorbed into a neighbour. The second group is the
  * behavioral one, and it defaults to the disclaimer: a caller that forgets to
  * pass a result gets the honest "not checked", never a silent pass.
  */
 export function formatGateSummary(
-  facts: GateSummaryFacts,
+  rows: readonly GateRow[],
   behavioral: BehavioralVerificationView = { status: 'not-tested' },
+  evalRequired = false,
 ): string[] {
-  const row = (label: string, value: string): string =>
-    `  ${`${label}:`.padEnd(GATE_LABEL_WIDTH)}${value}`;
-  const rows = [
-    // WHAT THIS ROW ACTUALLY RESTS ON. A `fix-llm` run contacts no catalog:
-    // the Tier A filter is `isVerified(entry)`, which reads the `verified`
-    // stamp already sitting in the registry JSON. This row used to read
-    // "verified against live catalogs", which named a network check that never
-    // happens in this process — and the stamp it really reads can be days old
-    // and can disagree with what `mendr verify-registry` says today. So the row
-    // names the stamp, and points at the command that does hit the catalogs.
-    // (Unconditionally true wherever this prints: every Tier A candidate is
-    // `isVerified`-filtered by construction, so the stamp is always present.)
-    row('replacement mapping', 'registry entry stamped verified (not re-checked live this run)'),
-    row('usage classification', facts.usageClassification),
-    ...(facts.typeCheck ? [row('type-check', facts.typeCheck)] : []),
-    ...(facts.syntax ? [row('syntax', facts.syntax)] : []),
-    ...(facts.staticTypeGate ? [row('static type gate', facts.staticTypeGate)] : []),
-    row('tests', facts.tests),
-  ];
   return [
     'Code verification (what mendr checked):',
-    ...rows,
-    ...behavioralVerificationLines(behavioral),
+    ...rows.map(formatGateRow),
+    ...behavioralVerificationLines(behavioral, evalRequired),
   ];
+}
+
+/**
+ * The two REGISTRY-VERDICT rows behind a patch, computed from the records the
+ * patch actually used rather than asserted:
+ *
+ *   registry verdict:       verified (stamped 2026-08-14)
+ *   official source:        confirmed (a provider docs url and a lifecycle
+ *                           claim are recorded; the page was not fetched)
+ *
+ * THE FIRST ROW IS NOT CALLED "evidence", and that is the point. It said
+ * `replacement evidence:` until an audit ran both commands against the same
+ * record: this row printed `verified` while `mendr evidence <id>` printed
+ * "no evidence captured for this entry -- it was hand-seeded" — which is true
+ * of 106 of 106 shipped records, because `entry.evidence` (source urls,
+ * content hashes, quoted excerpts) is empty on every one of them. report/tiers
+ * had already renamed the same concept for Tier B for exactly this reason; the
+ * Tier A path — the one that writes to your files — kept the older word.
+ * `registry verdict` is what the value actually is, and it is now the same word
+ * the Tier B rows and `mendr evidence` use.
+ *
+ * They are separate rows because they are separate claims, and the P0 work made
+ * them separately checkable: `replacementConfirmed` says the replacement id is
+ * live and uncontradicted in the public catalogs, `officialSourceConfirmed`
+ * says the PROVIDER'S OWN docs back the deprecation. An entry can have the
+ * first without the second, and one word covering both would hide exactly that.
+ *
+ * WHAT `official source: confirmed` MEANS, said in the row itself: the record
+ * names a docs url AND carries a lifecycle read off it (see
+ * registry/verify.ts#officialSourceConfirmed). Nothing fetches the page, checks
+ * the domain, or re-reads what it says. It is true on all 106 shipped records,
+ * so on today's data this row cannot say "no" — the detail exists so the word
+ * "confirmed" does not have to carry a check it never performed.
+ *
+ * A `fix-llm` run contacts no catalog: these read the stamps already sitting in
+ * the registry JSON, which are as old as their `checkedAt` and can disagree
+ * with a fresh `mendr verify-registry`. So the detail names the stamp and its
+ * date rather than implying a live check.
+ */
+export function registryVerdictRows(
+  entries: readonly LlmModelIdDeprecation[],
+): GateRow[] {
+  if (entries.length === 0) {
+    // A param-only patch (a `max_tokens` rename, a `temperature` removal) rests
+    // on no model-id record at all. `every()` over an empty set is vacuously
+    // true, so the affirmative rows below would print "verified" over nothing.
+    return [
+      {
+        label: 'registry verdict',
+        state: 'n/a',
+        detail: 'no model-id swap in this patch (parameter transforms only)',
+      },
+      { label: 'official source', state: 'n/a', detail: 'no model-id record to attribute' },
+    ];
+  }
+  const verified = entries.every(
+    (e) => e.verification?.status === 'verified' && e.verification.replacementConfirmed,
+  );
+  const official = entries.every((e) => e.verification?.officialSourceConfirmed);
+  const dates = entries.map((e) => e.verification?.checkedAt).filter((d): d is string => !!d);
+  const undated = entries.length - dates.length;
+  // The OLDEST stamp is the honest one for a set: a fresh date standing over a
+  // record checked months ago is the overclaim the registry footer already
+  // refuses to make.
+  const oldest = dates.length > 0 ? dates.slice().sort()[0] : undefined;
+  const stamp = oldest
+    ? `stamped ${oldest}${undated > 0 ? `; ${undated} record${undated === 1 ? '' : 's'} undated` : ''}`
+    : 'no recheck date recorded';
+  const notOfficial = entries.filter((e) => !e.verification?.officialSourceConfirmed).length;
+  return [
+    {
+      label: 'registry verdict',
+      state: verified ? 'verified' : 'not verified',
+      detail: stamp,
+    },
+    {
+      label: 'official source',
+      state: official ? 'confirmed' : 'not confirmed',
+      ...(official
+        ? {
+            // WHAT WAS ACTUALLY CHECKED, in the row: a url is recorded and a
+            // lifecycle is recorded. Nothing fetched the page. Without this
+            // clause "confirmed" reads as "somebody read the provider's docs
+            // during this run", which no part of `fix-llm` does.
+            detail:
+              'a provider docs url and a lifecycle claim are recorded on the ' +
+              'record; the page was not fetched',
+          }
+        : {
+            detail:
+              `${notOfficial} of ${entries.length} record${entries.length === 1 ? '' : 's'} ` +
+              `not backed by provider documentation`,
+          }),
+    },
+  ];
+}
+
+// --- naming the records behind a patch -------------------------------------
+
+/** Label column width, chosen to match the Tier B block so the two align. */
+const ENTRY_LABEL_WIDTH = 23;
+
+/**
+ * The `registry entry:` / `evidence:` rows for the records a Tier A patch rests
+ * on:
+ *
+ *   registry entry:        openai.gpt-4.retirement-2026-10-23
+ *   evidence:              mendr evidence openai.gpt-4.retirement-2026-10-23
+ *
+ * One pair per distinct record, in the order the swaps were listed. Tier A is
+ * rendered as a DIFF rather than as per-finding blocks, so these rows are the
+ * only place the reader can learn which registry records authorised the edit
+ * they are being shown — and the only way to go read one without first guessing
+ * its id.
+ *
+ * Never wrapped: an id and the command that takes it are things a reader
+ * selects and pastes.
+ */
+export function formatRegistryEntryLines(
+  entries: readonly LlmModelIdDeprecation[],
+): string[] {
+  const lines: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of entries) {
+    const id = displayEntryId(entry);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    lines.push(`  ${'registry entry:'.padEnd(ENTRY_LABEL_WIDTH)}${id}`);
+    lines.push(`  ${'evidence:'.padEnd(ENTRY_LABEL_WIDTH)}mendr evidence ${id}`);
+  }
+  return lines;
 }
 
 // --- the registry footer ---------------------------------------------------
 //
 // THE FOOTER IS A CLAIM, so it gets the same treatment as the gate summary:
-// say the two things that happened, separately, and never let one date stand
-// in for a verdict it did not produce. See RegistryProvenance in
-// usage/llmRegistry.ts for why `verified <date>` was wrong.
+// lead with the number a reader will act on, never let one date stand in for a
+// verdict it did not produce, and never print a "verified" count that is larger
+// than the set mendr would actually touch. See RegistryProvenance in
+// usage/llmRegistry.ts for both footers this replaced and why each was wrong.
 
 /**
  * Render the registry footer from computed provenance:
  *
- *   registry: 106 active entries
- *   catalog recheck: 2026-08-18
- *   entry verification: 94 verified, 12 unverified (per entry, see `mendr evidence <id>`)
+ *   registry: 106 records
+ *   auto-fix eligible: 86
+ *   review-only: 20 (quarantined 12, unverified 3, unverifiable 5)
+ *   catalog recheck: 2026-08-21
+ *
+ * `auto-fix eligible` is counted through isVerified() — the same predicate the
+ * codemod calls — so the headline number is what mendr would actually act on,
+ * not what the stamps claim. Everything else is `review-only`, itemised, and
+ * the two always sum to the record count.
  *
  * The recheck line adapts to what the stamps support: one date when every
- * entry shares it, `<newest> (oldest entry checked <oldest>)` when they differ
- * — implying one date covers all of them is exactly the overclaim this
- * replaced — and an explicit "never recorded" when nothing is stamped. Entries
- * with no date at all are named on the same line, because a fresh-looking date
- * over undated entries is the same lie in a different shape.
+ * record shares it, `<newest> (oldest entry checked <oldest>)` when they differ
+ * — implying one date covers all of them is an overclaim — and an explicit
+ * "never recorded" when nothing is stamped. Records with no date at all are
+ * named on the same line, because a fresh-looking date over undated records is
+ * the same lie in a different shape.
  */
 export function formatRegistryProvenanceLines(p: RegistryProvenance): string[] {
   const recheck = (): string => {
@@ -425,27 +635,15 @@ export function formatRegistryProvenanceLines(p: RegistryProvenance): string[] {
       ? `${dates}; ${p.undatedEntries} entr${p.undatedEntries === 1 ? 'y carries' : 'ies carry'} no recheck date`
       : dates;
   };
-  const breakdown = ENTRY_VERIFICATION_STATES.filter((s) => p.statusCounts[s] > 0)
-    .map((s) => `${p.statusCounts[s]} ${s}`)
+  const reviewOnly = p.activeEntries - p.autoFixEligible;
+  const breakdown = REVIEW_ONLY_STATES.filter((s) => p.reviewOnlyCounts[s] > 0)
+    .map((s) => `${s} ${p.reviewOnlyCounts[s]}`)
     .join(', ');
-  const held = p.selfContradictingEntries;
   return [
-    `registry: ${p.activeEntries} active entr${p.activeEntries === 1 ? 'y' : 'ies'}`,
+    `registry: ${p.activeEntries} record${p.activeEntries === 1 ? '' : 's'}`,
+    `auto-fix eligible: ${p.autoFixEligible}`,
+    `review-only: ${reviewOnly}${breakdown ? ` (${breakdown})` : ''}`,
     `catalog recheck: ${recheck()}`,
-    `entry verification: ${breakdown || 'no entries'} (per entry, see \`mendr evidence <id>\`)`,
-    // The counts above report the STAMPS. This line reports what the engine
-    // does with them, and the two differ for exactly the entries whose own
-    // reasons argue against their stamp — a reader who takes "N verified" as
-    // "N auto-appliable" would otherwise be off by this number.
-    ...(held > 0
-      ? [
-          held === 1
-            ? 'held at review: 1 of those verified entries contradicts its own stamp in ' +
-              '`verification.reasons` and is never auto-applied'
-            : `held at review: ${held} of those verified entries contradict their own stamp ` +
-              'in `verification.reasons` and are never auto-applied',
-        ]
-      : []),
   ];
 }
 

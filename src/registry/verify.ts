@@ -37,9 +37,17 @@ export interface VerificationOracles {
   officialRecommendations: ReadonlyMap<string, string>;
 }
 
-/** The verdict for one entry: a status plus the human-readable reasons behind it. */
+/**
+ * The verdict for one entry: a status plus the human-readable reasons behind it.
+ *
+ * CONSTRAINT: the classifier can never return `quarantined`. Quarantine is a
+ * REVIEW decision about a record (a human, or a migration, deciding this
+ * mapping is not to be trusted yet), not a catalog fact — and typing it out of
+ * this union is what stops a routine re-stamp from silently un-quarantining an
+ * entry by overwriting its status with a fresh catalog verdict.
+ */
 export interface ClassifyResult {
-  status: VerificationStatus;
+  status: Exclude<VerificationStatus, 'quarantined'>;
   reasons: string[];
 }
 
@@ -119,6 +127,64 @@ export function classifyEntry(
   return { status: 'verified', reasons };
 }
 
+// --- the structured safety switches -----------------------------------------
+//
+// ONE derivation, used everywhere a `verification` block is written: the
+// migration that backfilled the shipped registry, `verify-registry --write`,
+// and `candidates promote`. Three call sites computing "is this auto-appliable"
+// three ways is how the stamp and the reasons drifted apart in the first place.
+
+/**
+ * Does the PROVIDER'S OWN documentation confirm this deprecation?
+ *
+ * Deliberately narrow and mechanical: the record must name a source page AND
+ * carry something read off it — a lifecycle (`status`) or a `shutdownDate`. A
+ * url with no lifecycle claim is a bookmark, not a confirmation; a lifecycle
+ * with no url is an assertion. Neither earns `true`.
+ *
+ * This does NOT check that the url is reachable, that it is the provider's own
+ * domain rather than a mirror, or that the page still says what it said. Those
+ * are evidence-layer questions (see registry/evidence.ts). When unsure, false.
+ */
+export function officialSourceConfirmed(
+  entry: Pick<LlmModelIdDeprecation, 'sourceUrl' | 'status' | 'shutdownDate'>,
+): boolean {
+  const hasSource = typeof entry.sourceUrl === 'string' && entry.sourceUrl.trim().length > 0;
+  const hasLifecycle = Boolean(entry.status) || Boolean(entry.shutdownDate);
+  return hasSource && hasLifecycle;
+}
+
+/** The three booleans the engine gate reads, derived from one classifier run. */
+export interface VerificationSwitches {
+  officialSourceConfirmed: boolean;
+  replacementConfirmed: boolean;
+  autoApplyAllowed: boolean;
+}
+
+/**
+ * Derive the switches for a record from its own fields plus a classifier
+ * verdict.
+ *
+ * `autoApplyAllowed` is the CONJUNCTION, never an independent judgement: a
+ * record is auto-appliable exactly when the catalogs confirm the replacement,
+ * the provider's docs confirm the deprecation, and the verdict is `verified`.
+ * A caller may force it off (`withhold`) — quarantine does that — but nothing
+ * can force it on.
+ */
+export function verificationSwitches(
+  entry: Pick<LlmModelIdDeprecation, 'sourceUrl' | 'status' | 'shutdownDate'>,
+  classifierStatus: ClassifyResult['status'],
+  withhold = false,
+): VerificationSwitches {
+  const official = officialSourceConfirmed(entry);
+  const replacement = classifierStatus === 'verified';
+  return {
+    officialSourceConfirmed: official,
+    replacementConfirmed: replacement,
+    autoApplyAllowed: !withhold && official && replacement,
+  };
+}
+
 // --- re-stamping without erasing the humans ---------------------------------
 //
 // `verify-registry --write` rewrites each entry's `verification` block from a
@@ -128,12 +194,14 @@ export function classifyEntry(
 // auto-apply until verified"), and a re-stamp would replace all of it with the
 // classifier's one-line catalog verdict.
 //
-// The dangerous half of that is not the lost provenance, it is the lost
-// CAVEATS. A hand-written "status unknown -- do not auto-apply" is exactly what
-// holds a self-contradicting entry at Tier B (see hasSelfContradictingReasons);
-// erasing it during a routine recheck would silently promote that entry to
-// auto-apply. So a re-stamp REPLACES the machine's own sentences and KEEPS
-// everything a person wrote.
+// Those caveats no longer HOLD anything back on their own -- the engine reads
+// the four structured switches, and the records they describe are quarantined
+// in the data. But they are still the working a reviewer needs in order to lift
+// a quarantine, and they are still what the CI prose lint reads to catch a
+// caveat left standing over a switched-on record. Erasing them during a routine
+// recheck would delete the audit trail and disarm the lint in one move. So a
+// re-stamp REPLACES the machine's own sentences and KEEPS everything a person
+// wrote.
 
 /**
  * The sentences {@link classifyEntry} itself produces, as anchored patterns.

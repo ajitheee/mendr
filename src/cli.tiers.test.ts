@@ -124,6 +124,7 @@ interface JsonReport {
   summary: Record<string, number | string>;
   tierA: unknown[];
   tierB: {
+    entryId: string | null;
     file: string;
     line: number;
     column: number;
@@ -133,7 +134,7 @@ interface JsonReport {
     verdictCheckedAt: string | null;
     reason: string;
   }[];
-  blocked: { file: string; line: number }[];
+  blocked: { file: string; line: number; from?: string; status?: string }[];
   azure: { file: string; line: number }[];
   informational: { file: string; count: number }[];
   usageUnverified: { file: string; line: number }[];
@@ -162,6 +163,7 @@ describe('fix-llm three-tier report', () => {
     for (const f of report.tierB) {
       expect(Object.keys(f).sort()).toEqual([
         'column',
+        'entryId',
         'file',
         'line',
         'modelId',
@@ -289,16 +291,23 @@ describe('fix-llm three-tier report', () => {
     const { stdout } = await runFixLlm([repo, '--skip-gates']);
     expect(stdout).toContain('sim/simulator.py:2:13');
     expect(stdout).toContain('  found:                 "gpt-4-0314"');
-    // gpt-4-0314's registry entry is stamped `verified` and its own recorded
-    // reasons say "base gpt-4-0314 unverified", so the engine holds it back:
-    // the id is a CANDIDATE replacement -- the label changes, not just a row
-    // below it -- and the verdict row reports BOTH halves of the disagreement.
+    // gpt-4-0314 is QUARANTINED in the shipped registry, so the engine holds it
+    // back: the id is a CANDIDATE replacement -- the label changes, not just a
+    // row below it -- and the verdict row prints the record's own stated cause.
     expect(stdout).toContain('  candidate replacement: "gpt-5.6-sol"');
     expect(stdout.replace(/\s+/g, ' ')).toContain(
-      "registry verdict: stamped verified 2026-08-21, but withheld -- the entry's own " +
-        'recorded reasons contradict the stamp (see `mendr evidence gpt-4-0314`)',
+      'registry verdict: quarantined (stamped 2026-08-21) -- stamped "verified" while its ' +
+        'own recorded research says',
     );
     expect(stdout).toContain('  reason:                usage_unverified -- assigned to a model-like');
+    // THE ID AND THE COMMAND THAT TAKES IT. Findings told the reader to run
+    // `mendr evidence <id>` for months without ever printing an id.
+    expect(stdout).toContain(
+      '  registry entry:        openai.gpt-4-0314.retirement-undated',
+    );
+    expect(stdout).toContain(
+      '  evidence:              mendr evidence openai.gpt-4-0314.retirement-undated',
+    );
     expect(stdout).toContain('  action:                no patch generated.');
   }, 120_000);
 
@@ -337,27 +346,30 @@ describe('fix-llm three-tier report', () => {
     const report = JSON.parse(stdout) as JsonReport;
 
     for (const f of report.tierB) {
-      expect(['verified', 'unverified', 'self-contradicted'], f.reason).toContain(
+      expect(['verified', 'quarantined', 'unverified', 'withheld'], f.reason).toContain(
         f.registryVerdict,
       );
       // A verdict a consumer cannot date is a verdict it cannot age out.
       expect(f.verdictCheckedAt, f.modelId).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      // ...and a finding a consumer cannot look up is a finding it cannot act
+      // on. `modelId` is not an identity; `entryId` is.
+      expect(f.entryId, f.modelId).toMatch(/^[a-z]+\..+\.retirement-/);
     }
-    // gpt-4-0613's entry is stamped verified and says nothing against itself;
-    // gpt-4-0314's is stamped verified over reasons that contradict it. The
-    // field tracks the REGISTRY, not the tier.
+    // gpt-4-0613's record is verified and switched on; gpt-4-0314's is
+    // quarantined. The field tracks the REGISTRY, not the tier.
     const byReason = new Map(report.tierB.map((f) => [f.reason, f]));
     expect(byReason.get('platform_blocked')!.registryVerdict).toBe('verified');
     expect(byReason.get('type_cast_masked')!.registryVerdict).toBe('verified');
-    expect(byReason.get('replacement_unverified')!.registryVerdict).toBe('self-contradicted');
-    expect(byReason.get('usage_unverified')!.registryVerdict).toBe('self-contradicted');
+    expect(byReason.get('replacement_unverified')!.registryVerdict).toBe('quarantined');
+    expect(byReason.get('usage_unverified')!.registryVerdict).toBe('quarantined');
   }, 120_000);
 
   // THE FAIL-SAFE, END TO END. `gemini-2.0-flash` shipped stamped `verified`
   // over reasons that read "status unknown ... do not auto-apply", and the
-  // engine duly auto-applied it. It must now land in Tier B, with no patch,
-  // and the report must say which words held it back.
-  it('never auto-applies an entry whose own reasons contradict its stamp', async () => {
+  // engine duly auto-applied it. It is now QUARANTINED IN THE DATA: it must
+  // land in Tier B with no patch, and the hold must come from the record's
+  // status rather than from anything the report has to read out of prose.
+  it('never auto-applies a quarantined record', async () => {
     const repo = makeContradictionRepo();
     const { stdout } = await runFixLlm([repo, '--skip-gates', '--json']);
     const report = JSON.parse(stdout) as JsonReport & { diff: string };
@@ -366,22 +378,87 @@ describe('fix-llm three-tier report', () => {
     const finding = report.tierB.find((f) => f.modelId === 'gemini-2.0-flash');
     expect(finding, 'gemini-2.0-flash must be reported as Tier B').toBeTruthy();
     expect(finding!.reason).toBe('replacement_unverified');
-    expect(finding!.registryVerdict).toBe('self-contradicted');
+    expect(finding!.registryVerdict).toBe('quarantined');
+    expect(finding!.entryId).toBe('google.gemini-2.0-flash.retirement-undated');
     // ...and no diff exists for it anywhere in the report.
     expect(report.diff).not.toContain('gemini');
   }, 120_000);
 
-  it('names the contradicting words under the held finding', async () => {
+  it('says WHY the held finding is held, and names the record to go read', async () => {
     const repo = makeContradictionRepo();
     const { stdout } = await runFixLlm([repo, '--skip-gates']);
     const flat = stdout.replace(/\s+/g, ' ');
+    // The hold is a STATUS in the file, and the line says so. It no longer
+    // quotes the English fragments that used to trip a regex, because no regex
+    // is involved in holding this record any more.
     expect(flat).toContain(
-      'HELD BY MENDR: this entry is stamped verified, but its own reasons below say',
+      'HELD BY MENDR: this record is quarantined in the registry ' +
+        '(verification.status = "quarantined"), so it is never auto-applied.',
     );
-    expect(flat).toContain('"do not auto-apply"');
-    expect(flat).toContain('"status unknown"');
+    expect(flat).toContain(
+      'registry entry: google.gemini-2.0-flash.retirement-undated evidence: ' +
+        'mendr evidence google.gemini-2.0-flash.retirement-undated',
+    );
     expect(flat).toContain('action: no patch generated.');
   }, 120_000);
+
+  // THE TIER A FLOOR, END TO END, FOR EVERY NON-VERIFIED STATE THE SHIPPED
+  // REGISTRY ACTUALLY CONTAINS. The quarantine case above was the only one
+  // covered, and quarantine is the state with the loudest machinery behind it
+  // (its own status, its own reason, its own report line). `unverified` and
+  // `unverifiable` are held by nothing but the four-field conjunction in
+  // isVerified(), which is exactly why they are the ones worth pinning: a call
+  // site that forgot to consult the gate would still refuse a quarantine (the
+  // parser rejects a reason-less one, the report has a branch for it) and would
+  // happily swap these two.
+  //
+  // Real records, not fixtures: if the registry ever re-stamps them the fixture
+  // helper below fails loudly rather than passing vacuously over a repo that
+  // no longer contains the state under test.
+  const NON_VERIFIED: { state: string; modelId: string; entryId: string }[] = [
+    { state: 'unverified', modelId: 'o1-preview', entryId: 'openai.o1-preview.retirement-undated' },
+    {
+      state: 'unverifiable',
+      modelId: 'dall-e-3',
+      entryId: 'openai.dall-e-3.retirement-2026-05-12',
+    },
+  ];
+
+  for (const { state, modelId, entryId } of NON_VERIFIED) {
+    it(`never auto-applies a record stamped ${state}`, async () => {
+      const dir = mkdtempSync(join(tmpdir(), `mendr-${state}-`));
+      created.push(dir);
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: state }));
+      mkdirSync(join(dir, 'src'));
+      writeFileSync(
+        join(dir, 'src', 'call.ts'),
+        [
+          'export async function ask(client: any) {',
+          `  return client.chat.completions.create({ model: '${modelId}', messages: [] });`,
+          '}',
+          '',
+        ].join('\n'),
+      );
+
+      const { stdout } = await runFixLlm([dir, '--skip-gates', '--json']);
+      const report = JSON.parse(stdout) as JsonReport & { diff: string };
+
+      expect(report.summary.tierA).toBe(0);
+      expect(report.tierA).toEqual([]);
+      expect(report.diff).toBe('');
+      const finding = report.tierB.find((f) => f.modelId === modelId);
+      expect(finding, `${modelId} must be reported as Tier B`).toBeTruthy();
+      expect(finding!.entryId).toBe(entryId);
+      // THE WORD, NOT JUST THE TIER. A finding that renames the state it
+      // reports sends the reader to `mendr evidence <id>` to read a different
+      // word about the same record -- which is what `unverifiable` did until
+      // RegistryVerdict stopped folding it into `unverified`.
+      expect(finding!.registryVerdict).toBe(state);
+      // ...and the legacy `blocked` array names the same state, so a consumer
+      // reading one key and a human reading the other are told the same thing.
+      expect(report.blocked.find((b) => b.from === modelId)?.status).toBe(state);
+    }, 120_000);
+  }
 });
 
 describe('a Tier A candidate that fails its gates', () => {
@@ -439,13 +516,16 @@ describe('fix-llm --fail-on', () => {
 });
 
 describe('the registry footer', () => {
-  it('separates the catalog recheck from the per-entry verdicts', async () => {
+  it('leads with what mendr would auto-fix, then itemises the rest', async () => {
     const repo = makeRepo();
     const { stdout } = await runFixLlm([repo, '--skip-gates']);
-    expect(stdout).toMatch(/registry: \d+ active entries/);
+    expect(stdout).toMatch(/registry: \d+ records/);
+    expect(stdout).toMatch(/auto-fix eligible: \d+/);
+    expect(stdout).toMatch(/review-only: \d+ \(quarantined \d+/);
     expect(stdout).toMatch(/catalog recheck: \d{4}-\d{2}-\d{2}/);
-    expect(stdout).toMatch(/entry verification: \d+ verified.*mendr evidence <id>/);
-    // The blanket claim is gone.
+    // Both blanket claims are gone: the v1 date-as-verdict and the v2
+    // "N verified" that was larger than the set mendr would actually touch.
     expect(stdout).not.toMatch(/registry: \d+ entries, verified/);
+    expect(stdout).not.toMatch(/entry verification:/);
   }, 120_000);
 });

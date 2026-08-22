@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type { LlmRegistry } from '../types.js';
 import { EVIDENCE_EXCERPT_MAX_CHARS } from '../types.js';
 import {
+  autoApplyVerification,
   effectiveVerificationState,
   hasSelfContradictingReasons,
   isVerified,
@@ -14,9 +15,11 @@ import {
   resolveRegistryPath,
   selfContradictionMarkersIn,
   staleRegistryWarning,
+  withheldSwitches,
+  withheldVerification,
   SELF_CONTRADICTION_MARKERS,
 } from './llmRegistry.js';
-import type { LlmModelIdDeprecation } from '../types.js';
+import type { LlmModelIdDeprecation, VerificationInfo } from '../types.js';
 
 // The freshness guard: model catalogs churn monthly, so fix-llm warns when the
 // registry's NEWEST verification stamp is more than 30 days behind "now". The
@@ -132,7 +135,7 @@ describe('loadLlmRegistry — evidence', () => {
 });
 
 
-// --- the self-contradiction fail-safe --------------------------------------
+// --- the engine gate: structured fields, never prose -----------------------
 //
 // THE DEFECT THIS EXISTS FOR, verbatim from the shipped registry:
 //
@@ -145,24 +148,100 @@ describe('loadLlmRegistry — evidence', () => {
 //      deprecated." ] }
 //
 // The stamp said Tier A. The sentence under the stamp said do not touch this.
-// The stamp won, and the swap was auto-applied to user code. The rule below is
-// a FAIL-SAFE, not a data fix: the data may lie, and the gate must not.
+// The stamp won, and the swap was auto-applied to user code.
+//
+// The FIRST fix regex-matched those sentences at gate time. It held the twelve
+// records and left the mechanism broken: a safety decision computed from prose
+// changes when somebody rewords a caveat. The gate now reads four booleans, the
+// twelve records are `quarantined` IN THE DATA, and the marker list survives
+// only as a CI lint. These tests hold that line from both directions -- the
+// booleans decide, and the prose decides nothing.
 
-/** A model_id entry carrying exactly the reasons under test. */
-function stamped(status: 'verified' | 'unverified', reasons: string[]): LlmModelIdDeprecation {
+/** A model_id entry carrying exactly the verification block under test. */
+function entryWith(verification: VerificationInfo): LlmModelIdDeprecation {
   return {
     provider: 'google',
     kind: 'model_id',
     deprecated: 'gemini-2.0-flash',
     replacement: 'gemini-3.6-flash',
-    verification: { status, checkedAt: '2026-08-21', reasons },
+    verification,
   };
 }
 
-describe('hasSelfContradictingReasons', () => {
+describe('isVerified (the engine gate)', () => {
+  it('passes ONLY on the full four-field conjunction', () => {
+    expect(isVerified(entryWith(autoApplyVerification()))).toBe(true);
+  });
+
+  it.each([
+    ['officialSourceConfirmed', { officialSourceConfirmed: false }],
+    ['replacementConfirmed', { replacementConfirmed: false }],
+    ['autoApplyAllowed', { autoApplyAllowed: false }],
+  ] as const)('is held back when %s is false, whatever the stamp says', (_field, override) => {
+    const entry = entryWith(autoApplyVerification(override));
+    expect(entry.verification!.status).toBe('verified');
+    expect(isVerified(entry)).toBe(false);
+    // Reported as `withheld`, NOT as `unverified`: the file really does say
+    // `verified`, and a reader who runs `mendr evidence <id>` must not find the
+    // two disagreeing.
+    expect(effectiveVerificationState(entry)).toBe('withheld');
+  });
+
+  it('names the switches that are off, as field names rather than quoted prose', () => {
+    const entry = entryWith(
+      autoApplyVerification({ replacementConfirmed: false, autoApplyAllowed: false }),
+    );
+    expect(withheldSwitches(entry)).toEqual(['replacementConfirmed', 'autoApplyAllowed']);
+  });
+
+  it.each(['quarantined', 'unverified', 'unverifiable'] as const)(
+    'never passes a %s record',
+    (status) => {
+      const entry = entryWith(withheldVerification(status));
+      expect(isVerified(entry)).toBe(false);
+      expect(effectiveVerificationState(entry)).toBe(status);
+    },
+  );
+
+  it('never passes an unstamped record -- a missing block is not a licence to swap', () => {
+    const bare: LlmModelIdDeprecation = {
+      provider: 'openai',
+      kind: 'model_id',
+      deprecated: 'gpt-4-0613',
+      replacement: 'gpt-5.6-sol',
+    };
+    expect(isVerified(bare)).toBe(false);
+    expect(effectiveVerificationState(bare)).toBe('unstamped');
+  });
+
+  it('IGNORES the reasons entirely -- rewording a caveat cannot change the gate', () => {
+    // THE WHOLE POINT. Two records identical but for their prose: one carrying
+    // every marker the old regex looked for, one carrying none. The gate gives
+    // the same answer, because it never reads either.
+    const caveats = entryWith(
+      autoApplyVerification({
+        reasons: ['Status unknown; DO NOT AUTO-APPLY -- the target is itself deprecated, stale.'],
+      }),
+    );
+    const clean = entryWith(
+      autoApplyVerification({ reasons: ['replacement is live in a public catalog'] }),
+    );
+    expect(isVerified(caveats)).toBe(true);
+    expect(isVerified(clean)).toBe(true);
+    // ...and dropping the caveat from a HELD record does not release it either.
+    const held = entryWith(withheldVerification('quarantined', { reasons: [] }));
+    expect(isVerified(held)).toBe(false);
+  });
+});
+
+// The marker list still exists, and still only for the CI validator. These
+// tests pin what it recognises; validateRegistry.test.ts pins what it is FOR.
+describe('hasSelfContradictingReasons (the CI lint)', () => {
   it('fires on every documented marker, whatever the case', () => {
     for (const marker of SELF_CONTRADICTION_MARKERS) {
-      const entry = stamped('verified', [`Provider-named. ${marker.toUpperCase()} here.`]);
+      const entry = entryWith(
+        autoApplyVerification({ reasons: [`Provider-named. ${marker.toUpperCase()} here.`] }),
+      );
       expect(hasSelfContradictingReasons(entry), marker).toBe(true);
       expect(selfContradictionMarkersIn(entry.verification!.reasons), marker).toContain(marker);
     }
@@ -170,53 +249,55 @@ describe('hasSelfContradictingReasons', () => {
 
   it('stays quiet for the sentences the classifier itself writes', () => {
     // A genuinely clean re-stamp produces only these; if either ever tripped
-    // the rule, every verified entry in the registry would fall to Tier B.
-    const entry = stamped('verified', [
-      'replacement "gpt-5.6-sol" is live in a public catalog',
-      'matches the provider\'s officially-recommended replacement "gpt-5.6-sol"',
-    ]);
+    // the lint, every verified record in the registry would fail CI.
+    const entry = entryWith(
+      autoApplyVerification({
+        reasons: [
+          'replacement "gpt-5.6-sol" is live in a public catalog',
+          "matches the provider's officially-recommended replacement \"gpt-5.6-sol\"",
+        ],
+      }),
+    );
     expect(hasSelfContradictingReasons(entry)).toBe(false);
-    expect(isVerified(entry)).toBe(true);
   });
 
-  it('reports the state honestly instead of silently downgrading it', () => {
-    const contradicted = stamped('verified', ['Status unknown; do not auto-apply until verified.']);
-    // NOT reported as `unverified`: the file really does say `verified`, and a
-    // reader who runs `mendr evidence <id>` must not find the two disagreeing.
-    expect(effectiveVerificationState(contradicted)).toBe('self-contradicted');
-    expect(isVerified(contradicted)).toBe(false);
+  it('asks about the TEXT, so an already-unverified record answers honestly too', () => {
+    const entry = entryWith(withheldVerification('unverified', { reasons: ['status unknown'] }));
+    expect(hasSelfContradictingReasons(entry)).toBe(true);
+    // ...and the state is still just the stamp. The lint reports; it does not
+    // reclassify.
+    expect(effectiveVerificationState(entry)).toBe('unverified');
   });
 
-  it('asks about the TEXT, so an already-unverified entry answers honestly too', () => {
-    expect(hasSelfContradictingReasons(stamped('unverified', ['status unknown']))).toBe(true);
-    expect(effectiveVerificationState(stamped('unverified', ['status unknown']))).toBe('unverified');
-  });
-
-  it('treats an entry with no reasons at all as merely unproven, not contradictory', () => {
-    const bare: LlmModelIdDeprecation = {
-      provider: 'openai',
-      kind: 'model_id',
-      deprecated: 'gpt-4-0613',
-      replacement: 'gpt-5.6-sol',
-      verification: { status: 'verified' },
-    };
-    expect(hasSelfContradictingReasons(bare)).toBe(false);
-    expect(isVerified(bare)).toBe(true);
+  it('treats a record with no reasons at all as unlinted, not contradictory', () => {
+    expect(hasSelfContradictingReasons(entryWith(autoApplyVerification()))).toBe(false);
   });
 });
 
-// THE SHIPPED REGISTRY, not a fixture. The seven entries the audit named (and
-// the five the 2026-08-21 re-stamp lifted to `verified` over the same kind of
-// caveat) must be held back for real, in the file that actually ships.
+// THE SHIPPED REGISTRY, not a fixture. The twelve records the audit named must
+// be held back for real, in the file that actually ships -- and held back by
+// their STATUS, so the hold survives someone tidying the prose.
 describe('the shipped registry', () => {
-  it('never lets an entry pass the gate while its own reasons argue against it', () => {
+  it('quarantines the twelve records whose research contradicts a verified stamp', () => {
+    const entries = modelIdEntries(loadLlmRegistry(resolveRegistryPath()));
+    const quarantined = entries.filter((e) => e.verification?.status === 'quarantined');
+    expect(quarantined).toHaveLength(12);
+    for (const entry of quarantined) {
+      expect(isVerified(entry), entry.deprecated).toBe(false);
+      // Every quarantine says what has to be resolved. A hold nobody can act
+      // on is a hold that never gets lifted.
+      expect(entry.verification!.quarantineReason, entry.deprecated).toBeTruthy();
+    }
+  });
+
+  it('leaves no auto-appliable record carrying a caveat in its reasons', () => {
+    // The invariant the old regex gate enforced at RUNTIME, now a property of
+    // the data itself: nothing that ships is both switched on and warned about.
     const entries = modelIdEntries(loadLlmRegistry(resolveRegistryPath()));
     for (const entry of entries) {
       if (!hasSelfContradictingReasons(entry)) continue;
+      expect(entry.verification?.autoApplyAllowed ?? false, entry.deprecated).toBe(false);
       expect(isVerified(entry), entry.deprecated).toBe(false);
-      expect(effectiveVerificationState(entry), entry.deprecated).toBe(
-        entry.verification?.status === 'verified' ? 'self-contradicted' : entry.verification!.status,
-      );
     }
   });
 
@@ -232,14 +313,23 @@ describe('the shipped registry', () => {
     }
   });
 
-  it('counts the held-back entries in its own provenance', () => {
+  it('reports the same auto-fix-eligible count the engine gate would apply', () => {
     const registry = loadLlmRegistry(resolveRegistryPath());
     const provenance = registryProvenance(registry);
-    const held = modelIdEntries(registry).filter(
-      (e) => effectiveVerificationState(e) === 'self-contradicted',
-    ).length;
-    expect(provenance.selfContradictingEntries).toBe(held);
-    // The stamp counts still report the STAMPS -- the two facts stay separate.
-    expect(provenance.statusCounts.verified).toBeGreaterThanOrEqual(held);
+    const entries = modelIdEntries(registry);
+    expect(provenance.autoFixEligible).toBe(entries.filter(isVerified).length);
+    // The parts close: eligible + every review-only bucket = the whole file.
+    const reviewOnly = Object.values(provenance.reviewOnlyCounts).reduce((n, c) => n + c, 0);
+    expect(provenance.autoFixEligible + reviewOnly).toBe(provenance.activeEntries);
+    // And the MEASURED shape of the shipped registry, so a re-stamp that moves
+    // records between buckets has to be acknowledged here rather than landing
+    // silently.
+    expect(provenance.activeEntries).toBe(106);
+    expect(provenance.autoFixEligible).toBe(86);
+    expect(provenance.reviewOnlyCounts.quarantined).toBe(12);
+    expect(provenance.reviewOnlyCounts.unverified).toBe(3);
+    expect(provenance.reviewOnlyCounts.unverifiable).toBe(5);
+    // Nothing ships in the defence-in-depth state; the validator forbids it.
+    expect(provenance.reviewOnlyCounts.withheld).toBe(0);
   });
 });

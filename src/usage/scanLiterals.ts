@@ -125,9 +125,10 @@ export interface BlockedModelLocate {
   /** The replacement the registry PROPOSES (withheld because it is not verified). */
   replacement: string;
   /**
-   * Why it was blocked: the entry's verification status, `unstamped` if absent,
-   * or `self-contradicted` when the stamp reads `verified` but the entry's own
-   * reasons say otherwise (see effectiveVerificationState).
+   * Why it was blocked: the record's verification status (`quarantined`,
+   * `unverified`, `unverifiable`), `unstamped` if the block is absent, or
+   * `withheld` when the stamp reads `verified` but one of the structured safety
+   * switches is off (see effectiveVerificationState).
    */
   status: EffectiveVerificationState;
   /** Where the literal sits in source. */

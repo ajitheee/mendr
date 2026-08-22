@@ -3,6 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { LlmRegistry } from '../types.js';
+import { autoApplyVerification } from './llmRegistry.js';
 import {
   buildRegistryPrefilter,
   countAnalyzableSourceFiles,
@@ -59,7 +60,7 @@ const PREFILTER_REGISTRY: LlmRegistry = [
     kind: 'model_id',
     deprecated: 'gemini-2.0-flash',
     replacement: 'gemini-flash-latest',
-    verification: { status: 'verified' },
+    verification: autoApplyVerification(),
   },
   {
     provider: 'openai',

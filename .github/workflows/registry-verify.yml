@@ -1,9 +1,15 @@
-# Weekly registry health check. The verification gate is only as good as the
-# registry behind it, so once a week the public-oracle audit re-runs and the
-# job FAILS if any entry that ships as `verified` no longer classifies as
-# verified — the exact regression that would let a stale replacement auto-apply.
-# Newly-added (never-verified) entries do not fail the job: they are already
-# blocked from Tier A by the engine gate.
+# Weekly registry health check, in two parts.
+#
+# 1. INTEGRITY (offline, always): does the registry contradict itself? A
+#    `verified` record with one of its proof switches off, an auto-appliable
+#    record with a caveat written under it, a quarantine with no stated reason,
+#    a missing/duplicated entryId. See scripts/validate-registry.mjs. This runs
+#    first and needs no network, so nothing external can make it flake.
+# 2. FRESHNESS (online, weekly): the public-oracle audit re-runs and the job
+#    FAILS if any record that ships as `verified` no longer classifies as
+#    verified — the exact regression that would let a stale replacement
+#    auto-apply. Newly-added (never-verified) records do not fail the job: they
+#    are already blocked from Tier A by the engine gate.
 name: registry-verify
 
 on:
@@ -25,6 +31,16 @@ jobs:
       - run: npm ci
 
       - run: npm run build
+
+      # THE OFFLINE CHECK RUNS FIRST, and it is the one that must never be
+      # skipped: it asks whether the registry contradicts ITSELF (a `verified`
+      # record with a proof switched off, an auto-appliable record with a
+      # caveat written under it, a quarantine with no stated reason, a missing
+      # or duplicated entryId). No network, so nothing external can make it
+      # flake — and a registry that fails here is broken regardless of what the
+      # catalogs say today.
+      - name: Validate registry integrity
+        run: node scripts/validate-registry.mjs
 
       - name: Run the public-oracle audit
         run: node dist/cli.js verify-registry | tee verify-out.txt

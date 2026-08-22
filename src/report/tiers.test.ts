@@ -19,6 +19,7 @@ import {
   TIER_B_REASON_ORDER,
   TIER_B_REASON_TEXT,
   TIER_PRECEDENCE,
+  type RegistryVerdict,
   type Tier,
   type TierBFinding,
   type TierOccurrence,
@@ -37,6 +38,20 @@ const EVERY_REASON: TierBReason[] = [
   'dynamic_model_value',
   'insufficient_dataflow',
   'type_cast_masked',
+];
+
+// EVERY verdict a finding can carry — the same union effectiveVerificationState
+// returns. Enumerated once so the exhaustive loops below cannot quietly stop
+// being exhaustive: `unverifiable` and `unstamped` were missing from the union
+// itself, fell through to `unverified`, and every loop that hardcoded four
+// values agreed with the bug.
+const EVERY_VERDICT: RegistryVerdict[] = [
+  'verified',
+  'quarantined',
+  'unverified',
+  'unverifiable',
+  'unstamped',
+  'withheld',
 ];
 
 function finding(reason: TierBReason, file = 'a.ts', line = 1, column = 1): TierBFinding {
@@ -84,7 +99,7 @@ describe('tierBFinding', () => {
     }
   });
 
-  it('projects to exactly the nine documented JSON keys', () => {
+  it('projects to exactly the ten documented JSON keys', () => {
     const f = tierBFinding(
       {
         file: 'a.ts',
@@ -100,6 +115,7 @@ describe('tierBFinding', () => {
       'replacement_unverified',
     );
     expect(Object.keys(tierBJson(f))).toEqual([
+      'entryId',
       'file',
       'line',
       'column',
@@ -162,23 +178,26 @@ describe('tierBFinding', () => {
     expect(f.registryVerdict).toBe('unverified');
   });
 
-  // ...but `self-contradicted` is NOT a claim that anything cleared, so it
-  // survives: it is the reason the finding is in Tier B at all, and collapsing
-  // it to a plain `unverified` would hide a stamp that says the opposite.
-  it('keeps a self-contradicted verdict on a replacement_unverified finding', () => {
-    const f = tierBFinding(
-      {
-        file: 'a.ts',
-        line: 1,
-        column: 1,
-        modelId: 'gemini-2.0-flash',
-        replacement: 'gemini-3.6-flash',
-        registryVerdict: 'self-contradicted',
-      },
-      'replacement_unverified',
-    );
-    expect(f.registryVerdict).toBe('self-contradicted');
-  });
+  // ...but neither `quarantined` nor `withheld` claims anything cleared, so
+  // both survive: each is the reason the finding is in Tier B at all, and
+  // collapsing either to a plain `unverified` would hide what the file says.
+  it.each(['quarantined', 'withheld'] as const)(
+    'keeps a %s verdict on a replacement_unverified finding',
+    (verdict) => {
+      const f = tierBFinding(
+        {
+          file: 'a.ts',
+          line: 1,
+          column: 1,
+          modelId: 'gemini-2.0-flash',
+          replacement: 'gemini-3.6-flash',
+          registryVerdict: verdict,
+        },
+        'replacement_unverified',
+      );
+      expect(f.registryVerdict).toBe(verdict);
+    },
+  );
 });
 
 // --- the documented surface -> reason-code mapping -------------------------
@@ -319,7 +338,7 @@ describe('the registry verdict on a Tier B finding', () => {
   // registry stores no evidence documents, so neither word may appear as a
   // description of what happened.
   it('never claims evidence, and never claims a live check', () => {
-    for (const verdict of ['verified', 'unverified', 'self-contradicted'] as const) {
+    for (const verdict of EVERY_VERDICT) {
       for (const reason of EVERY_REASON) {
         const rendered = formatTierBFinding(
           tierBFinding(
@@ -327,24 +346,29 @@ describe('the registry verdict on a Tier B finding', () => {
             reason,
           ),
         ).join(' ');
-        expect(rendered, `${reason}/${verdict}`).not.toContain('evidence:');
+        // The `evidence:` ROW is legitimate now -- it prints a command, not a
+        // claim about what was consulted. What may never appear is the CLAIM,
+        // so the check targets the words that would make one.
         expect(rendered, `${reason}/${verdict}`).not.toContain('catalog-confirmed');
+        expect(rendered, `${reason}/${verdict}`).not.toContain('evidence captured');
+        expect(rendered, `${reason}/${verdict}`).not.toContain('replacement evidence');
       }
     }
   });
 
-  // The fail-safe case, rendered: the file says one thing and mendr does
-  // another, so the row says BOTH. Reporting it as a plain `unverified` would
-  // contradict what `mendr evidence <id>` prints from the same JSON.
-  it('reports a self-contradicting entry as stamped-but-withheld', () => {
+  // QUARANTINE, RENDERED. The record's own stated cause is printed verbatim,
+  // so the reader gets the actual reason on this screen instead of a pointer to
+  // go find one.
+  it('prints a quarantined record own stated reason', () => {
     const flat = formatTierBFinding(
       tierBFinding(
         {
           ...site,
           modelId: 'gemini-2.0-flash',
           replacement: 'gemini-3.6-flash',
-          registryVerdict: 'self-contradicted',
+          registryVerdict: 'quarantined',
           verdictCheckedAt: '2026-08-21',
+          quarantineReason: 'no source-side verdict exists for this exact id',
         },
         'replacement_unverified',
       ),
@@ -353,8 +377,33 @@ describe('the registry verdict on a Tier B finding', () => {
       .replace(/\s+/g, ' ');
     expect(flat).toContain('candidate replacement: "gemini-3.6-flash"');
     expect(flat).toContain(
-      'registry verdict: stamped verified 2026-08-21, but withheld -- the entry\'s own ' +
-        'recorded reasons contradict the stamp (see `mendr evidence gemini-2.0-flash`)',
+      'registry verdict: quarantined (stamped 2026-08-21) -- no source-side verdict ' +
+        'exists for this exact id',
+    );
+  });
+
+  // THE DEFENCE-IN-DEPTH CASE, rendered: the file says `verified` and mendr
+  // refuses anyway, so the row says BOTH -- and names the FIELD, not a quoted
+  // fragment of somebody's sentence.
+  it('reports a withheld verified stamp by naming the switch that is off', () => {
+    const flat = formatTierBFinding(
+      tierBFinding(
+        {
+          ...site,
+          modelId: 'gemini-2.0-flash',
+          replacement: 'gemini-3.6-flash',
+          registryVerdict: 'withheld',
+          verdictCheckedAt: '2026-08-21',
+          withheldSwitches: ['replacementConfirmed'],
+        },
+        'replacement_unverified',
+      ),
+    )
+      .join(' ')
+      .replace(/\s+/g, ' ');
+    expect(flat).toContain(
+      'registry verdict: stamped verified 2026-08-21, but withheld -- ' +
+        'replacementConfirmed is false on this record',
     );
   });
 
@@ -368,7 +417,6 @@ describe('the registry verdict on a Tier B finding', () => {
     expect(lines.replace(/\s+/g, ' ')).toContain(
       'unverified -- this mapping did not clear verification',
     );
-    expect(lines).toContain('mendr evidence o1-preview');
   });
 
   it('applies to EVERY reason code, not just the ones that mention verification', () => {
@@ -397,13 +445,44 @@ describe('the registry verdict on a Tier B finding', () => {
     // reason code's fact in the field a machine consumer routes on, and adds
     // nothing that could be read as a second, separate defect.
     expect(flat).toContain(
-      'registry verdict: unverified -- this mapping did not clear verification ' +
-        '(see `mendr evidence gpt-4-0314`)',
+      'registry verdict: unverified -- this mapping did not clear verification',
     );
   });
 
+  // THE WORD MUST SURVIVE THE TRIP. A finding sends the reader to
+  // `mendr evidence <id>`; if the two screens use different words for the same
+  // record, the reader cannot tell whether they are looking at the same thing.
+  // `unverifiable` printed as `unverified` for exactly this reason -- it was
+  // absent from RegistryVerdict and fell through the default branch -- while
+  // the footer counted it under `unverifiable` and `mendr evidence` printed
+  // `unverifiable`. Three surfaces, one record, two words.
+  it('gives unverifiable its own word, and does not call it "did not clear"', () => {
+    const flat = formatTierBFinding(
+      tierBFinding(
+        { ...site, registryVerdict: 'unverifiable', verdictCheckedAt: '2026-08-21' },
+        'replacement_unverified',
+      ),
+    )
+      .join(' ')
+      .replace(/\s+/g, ' ');
+    expect(flat).toContain('registry verdict: unverifiable (stamped 2026-08-21)');
+    // The DISTINCTION, not just the word: no catalog covers this model class,
+    // which is not the same fact as a mapping that was checked and failed.
+    expect(flat).toContain('could not be checked either way');
+    expect(flat).not.toContain('did not clear verification');
+  });
+
+  it('gives an unstamped record its own word rather than borrowing "unverified"', () => {
+    const flat = formatTierBFinding(
+      tierBFinding({ ...site, registryVerdict: 'unstamped' }, 'replacement_unverified'),
+    )
+      .join(' ')
+      .replace(/\s+/g, ' ');
+    expect(flat).toContain('registry verdict: unstamped -- this record carries no verification block');
+  });
+
   it('never prints a replacement without the registry verdict on the very next row', () => {
-    for (const verdict of ['verified', 'unverified', 'self-contradicted'] as const) {
+    for (const verdict of EVERY_VERDICT) {
       for (const reason of EVERY_REASON) {
         const lines = formatTierBFinding(tierBFinding({ ...site, registryVerdict: verdict }, reason));
         const row = lines.findIndex((l) => l.includes('replacement:'));

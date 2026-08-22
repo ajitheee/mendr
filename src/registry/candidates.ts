@@ -32,8 +32,13 @@ import type {
 } from '../types.js';
 import { assertDeprecation, resolveRegistryAsset } from '../usage/llmRegistry.js';
 import { checkDeprecationClaim } from './claimCheck.js';
+import { entryIdFor } from './entryId.js';
 import { canonicalizeId } from './normalize.js';
-import { classifyEntry, type VerificationOracles } from './verify.js';
+import {
+  classifyEntry,
+  verificationSwitches,
+  type VerificationOracles,
+} from './verify.js';
 
 const CANDIDATES_RELATIVE = join('registries', 'candidates.json');
 
@@ -274,8 +279,20 @@ export function promoteCandidates(
     const { candidateId: _id, proposedBy: _by, proposedAt: _at, ...entry } = candidate;
     promoted.push({
       ...entry,
+      // The promoted record gets its stable id here, from the same formula the
+      // validator re-derives — a record that entered the registry without one
+      // would fail CI on the next run for a reason nobody chose.
+      entryId: entryIdFor(entry),
       verification: {
         status,
+        // Derived from the same helper the migration and `verify-registry
+        // --write` use, so a promoted record and a re-stamped one are switched
+        // on by the same rule. A candidate that got this far has cleared
+        // checkDeprecationClaim, which is strictly stronger than the
+        // url+lifecycle test — but the test still runs, because "stronger
+        // check passed" is not a reason to skip recording the weaker fact.
+        ...verificationSwitches(entry, status),
+        quarantineReason: null,
         ...(opts.checkedAt ? { checkedAt: opts.checkedAt } : {}),
         ...(opts.sources ? { sources: opts.sources } : {}),
         // The stamped audit trail states what the gate ACTUALLY established —

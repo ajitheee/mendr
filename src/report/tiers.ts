@@ -91,13 +91,23 @@ export const TIER_B_REASON_ORDER: readonly TierBReason[] = [
  * the value, because a reader skimming for the id reads the label and may
  * never reach the row below it.
  *
- * THREE values, not two. `self-contradicted` is a stamp that says `verified`
- * over reasons that say the opposite (see `hasSelfContradictingReasons`): the
- * engine holds it back like an unverified one, but reporting it AS
- * `unverified` would contradict what `mendr evidence <id>` prints from the
- * same file.
+ * ONE VALUE PER EFFECTIVE STATE, and no folding. `quarantined` is a real
+ * status in the registry file — a record held back on purpose, with a stated
+ * reason — and `withheld` is the defence-in-depth case where a `verified`
+ * stamp sits over a switched-off safety field. Each is reported under its own
+ * word, because a reader who runs `mendr evidence <id>` must find the same word
+ * there that the finding used.
+ *
+ * That rule was stated here before `unverifiable` and `unstamped` were in the
+ * union, and the two of them silently fell through to `unverified` — so a
+ * `dall-e-3` finding read `registry verdict: unverified` while the SAME JSON
+ * document's `blocked[].status` said `unverifiable`, the footer counted it
+ * under `unverifiable 5`, and `mendr evidence` printed `unverifiable`. Three
+ * surfaces, one record, two words. The union is now exactly
+ * {@link EffectiveVerificationState}, so the mapping is total and a new state
+ * cannot be added without deciding what it prints.
  */
-export type RegistryVerdict = 'verified' | 'unverified' | 'self-contradicted';
+export type RegistryVerdict = EffectiveVerificationState;
 
 /** One Tier B finding: a potential migration a human must decide on. */
 export interface TierBFinding {
@@ -107,12 +117,31 @@ export interface TierBFinding {
   column: number;
   /** The deprecated model id found at this position. */
   modelId: string;
+  /**
+   * The stable id of the registry record behind this finding (see
+   * registry/entryId.ts), so the reader can copy it straight into
+   * `mendr evidence`. Optional only because a finding could in principle be
+   * built without its record in hand; when it is absent the two id rows are
+   * omitted rather than printed blank or guessed.
+   */
+  entryId?: string;
   /** The id the registry WOULD migrate to. Context only — no patch is generated. */
   replacement: string;
   /** The verdict the registry RECORDED for this mapping (see {@link RegistryVerdict}). */
   registryVerdict: RegistryVerdict;
   /** The date that verdict was stamped (`verification.checkedAt`), if it carries one. */
   verdictCheckedAt?: string;
+  /**
+   * The record's own `verification.quarantineReason`, printed verbatim on a
+   * `quarantined` verdict. STRUCTURED DATA, not parsed text: nothing keys off
+   * its wording, it is only shown.
+   */
+  quarantineReason?: string;
+  /**
+   * Which structured safety switches are false, on a `withheld` verdict. Field
+   * names, not quoted prose — a reader can look up `replacementConfirmed`.
+   */
+  withheldSwitches?: string[];
   /** The machine-readable reason this is review-only. */
   reason: TierBReason;
   /** The plain-English sentence for {@link reason} (always {@link TIER_B_REASON_TEXT}). */
@@ -138,6 +167,8 @@ export interface TierBSite {
   line: number;
   column: number;
   modelId: string;
+  /** The registry record's stable id (see {@link TierBFinding.entryId}). */
+  entryId?: string;
   replacement: string;
   /**
    * Defaults to `'unverified'` when the caller cannot say. FAIL CLOSED: the
@@ -146,6 +177,8 @@ export interface TierBSite {
    */
   registryVerdict?: RegistryVerdict;
   verdictCheckedAt?: string;
+  quarantineReason?: string;
+  withheldSwitches?: string[];
   detail?: string[];
   status?: EffectiveVerificationState;
 }
@@ -159,8 +192,8 @@ export interface TierBSite {
  * `replacement_unverified` finding is BY DEFINITION one whose replacement did
  * not clear verification, so it can never carry `'verified'`. Letting a caller
  * pass it would print a block that contradicts itself in two adjacent rows.
- * `'self-contradicted'` survives, because it is not a claim that the mapping
- * cleared anything — it is the reason this finding is here at all.
+ * `'quarantined'` and `'withheld'` survive, because neither claims the mapping
+ * cleared anything — they are the reason this finding is here at all.
  */
 export function tierBFinding(site: TierBSite, reason: TierBReason): TierBFinding {
   const declared = site.registryVerdict ?? 'unverified';
@@ -202,9 +235,14 @@ export function tierBReasonCounts(
 }
 
 /**
- * The JSON projection of a Tier B finding: exactly the nine documented keys,
+ * The JSON projection of a Tier B finding: exactly the ten documented keys,
  * in the documented order. `detail`/`status` stay out — they are internal
  * plumbing for the derived legacy arrays, not part of the published shape.
+ *
+ * `entryId` leads, because it is the only key here that IDENTIFIES a registry
+ * record: a consumer that wants to look one up, suppress one, or diff two runs
+ * needs a stable key, and `modelId` is not one (two providers can retire the
+ * same-looking id). It is `null` on a finding built without its record.
  *
  * `registryVerdict` sits next to `replacement` deliberately: a machine
  * consumer that reads one and not the other is exactly the reader this field
@@ -213,6 +251,7 @@ export function tierBReasonCounts(
  * whose age a consumer cannot judge — it is `null` when the entry carries none.
  */
 export function tierBJson(f: TierBFinding): {
+  entryId: string | null;
   file: string;
   line: number;
   column: number;
@@ -224,6 +263,7 @@ export function tierBJson(f: TierBFinding): {
   reasonText: string;
 } {
   return {
+    entryId: f.entryId ?? null,
     file: f.file,
     line: f.line,
     column: f.column,
@@ -290,26 +330,53 @@ export function replacementLabel(verdict: RegistryVerdict): string {
  * Every word here is answerable from the registry JSON alone:
  *   - `verified` names the stamp and its date, and says out loud that no
  *     catalog was contacted this run (a `fix-llm` run makes no network call);
- *   - `unverified` says the mapping did not clear verification, and points at
- *     the command that prints the recorded reasoning;
- *   - `self-contradicted` is the fail-safe case: the file says `verified` and
- *     its own reasons say otherwise, so both halves are stated rather than
- *     silently resolved to the weaker one.
+ *   - `quarantined` is a deliberate hold recorded IN THE DATA, so the record's
+ *     own `quarantineReason` is printed verbatim — the reader gets the actual
+ *     cause, not a hint to go look one up;
+ *   - `withheld` is the defence-in-depth case: the stamp says `verified` while
+ *     a structured safety switch is off, so both halves are stated rather than
+ *     silently resolved to the weaker one;
+ *   - `unverified` says the mapping did not clear verification;
+ *   - `unverifiable` says something DIFFERENT, and the distinction is the whole
+ *     reason it is not folded into `unverified`: no public catalog covers this
+ *     model class (moderation, image, audio, tts), so the mapping could not be
+ *     checked either way. "did not clear verification" would read as a negative
+ *     finding about a mapping nothing has actually contradicted;
+ *   - `unstamped` says the record carries no verification block at all.
+ *
+ * No row here repeats the `mendr evidence` command: the finding prints it once,
+ * on its own row, under the id it applies to.
  */
 export function registryVerdictText(f: TierBFinding): string {
-  const evidenceCmd = `\`mendr evidence ${f.modelId}\``;
   if (f.registryVerdict === 'verified') {
     const stamped = f.verdictCheckedAt ? `stamped ${f.verdictCheckedAt}` : 'stamp carries no date';
     return `verified (${stamped}; not re-checked live this run)`;
   }
-  if (f.registryVerdict === 'self-contradicted') {
+  if (f.registryVerdict === 'quarantined') {
+    const stamped = f.verdictCheckedAt ? ` (stamped ${f.verdictCheckedAt})` : '';
+    return `quarantined${stamped} -- ${f.quarantineReason ?? 'no reason recorded'}`;
+  }
+  if (f.registryVerdict === 'withheld') {
     const stamped = f.verdictCheckedAt ? ` ${f.verdictCheckedAt}` : ' (undated)';
+    const switches = f.withheldSwitches?.length
+      ? f.withheldSwitches.join(', ')
+      : 'a verification switch';
     return (
-      `stamped verified${stamped}, but withheld -- the entry's own recorded reasons ` +
-      `contradict the stamp (see ${evidenceCmd})`
+      `stamped verified${stamped}, but withheld -- ${switches} ` +
+      `${f.withheldSwitches?.length === 1 ? 'is' : 'are'} false on this record`
     );
   }
-  return `unverified -- this mapping did not clear verification (see ${evidenceCmd})`;
+  if (f.registryVerdict === 'unverifiable') {
+    const stamped = f.verdictCheckedAt ? ` (stamped ${f.verdictCheckedAt})` : '';
+    return (
+      `unverifiable${stamped} -- no public catalog covers this model class, so the mapping ` +
+      'could not be checked either way (this is not evidence it is wrong)'
+    );
+  }
+  if (f.registryVerdict === 'unstamped') {
+    return 'unstamped -- this record carries no verification block at all';
+  }
+  return 'unverified -- this mapping did not clear verification';
 }
 
 /**
@@ -324,11 +391,19 @@ export function registryVerdictText(f: TierBFinding): string {
  *     reason:                usage_unverified -- assigned to a model-like
  *                            variable, but no supported SDK call or parameter
  *                            sink was found in this file.
+ *     registry entry:        openai.gpt-4.retirement-2026-10-23
+ *     evidence:              mendr evidence openai.gpt-4.retirement-2026-10-23
  *     action:                no patch generated.
  *
  * The location leads because it is what a reader acts on; the reason carries
  * BOTH forms (code for a script, sentence for a person) on the same rows; and
  * the replacement never appears without the registry's verdict beside it.
+ *
+ * The last two rows before the action are the FOLLOW-UP: the record's stable id
+ * and the exact command to inspect it. They used to be a `see \`mendr evidence
+ * <id>\`` fragment buried in the verdict sentence, with no id anywhere on
+ * screen to put in it. They are omitted entirely when the finding carries no
+ * record id — a blank id row is worse than none.
  */
 export function formatTierBFinding(f: TierBFinding): string[] {
   const valueColumn = 2 + TIER_B_LABEL_WIDTH;
@@ -339,6 +414,15 @@ export function formatTierBFinding(f: TierBFinding): string[] {
       ...body.slice(1).map((line) => `${' '.repeat(valueColumn)}${line}`),
     ];
   };
+  /**
+   * A row that is NOT wrapped. Used for the record id and the command that
+   * takes it: both are things a reader selects and pastes, and a long id
+   * pushed onto its own continuation line — or a command split from its
+   * argument — is one a reader has to reassemble by hand. Over-long lines are
+   * the cheaper failure.
+   */
+  const unwrappedRow = (label: string, value: string): string =>
+    `  ${`${label}:`.padEnd(TIER_B_LABEL_WIDTH)}${value}`;
   return [
     `${f.file}:${f.line}:${f.column}`,
     ...row('found', `"${f.modelId}"`),
@@ -346,6 +430,12 @@ export function formatTierBFinding(f: TierBFinding): string[] {
     ...row('registry verdict', registryVerdictText(f)),
     ...row('reason', `${f.reason} -- ${f.reasonText}`),
     ...(f.detail ?? []).map((d) => `${' '.repeat(valueColumn)}- ${d}`),
+    ...(f.entryId
+      ? [
+          unwrappedRow('registry entry', f.entryId),
+          unwrappedRow('evidence', `mendr evidence ${f.entryId}`),
+        ]
+      : []),
     ...row('action', TIER_B_ACTION_LINE),
   ];
 }

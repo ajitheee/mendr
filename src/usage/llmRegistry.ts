@@ -84,9 +84,30 @@ function requireStringArray(e: Record<string, unknown>, field: string, index: nu
 
 const VALID_STATUSES: ReadonlySet<VerificationStatus> = new Set([
   'verified',
+  'quarantined',
   'unverified',
   'unverifiable',
 ]);
+
+/**
+ * Read one of the three safety switches out of raw JSON.
+ *
+ * FAIL CLOSED ON SILENCE. A present-but-non-boolean value is a hard error (bad
+ * data must never be read as trust), and an ABSENT value is `false` — an older
+ * or hand-written registry that predates these fields is treated as having
+ * proven nothing, which downgrades it to review-only rather than auto-applying
+ * on the strength of a field nobody wrote.
+ */
+function parseSwitch(vo: Record<string, unknown>, field: string, index: number): boolean {
+  const raw = vo[field];
+  if (raw === undefined) return false;
+  if (typeof raw !== 'boolean') {
+    throw new Error(
+      `llm registry entry #${index} has a non-boolean verification.${field}: ${String(raw)}`,
+    );
+  }
+  return raw;
+}
 
 /**
  * Parse the optional `verification` block on a `model_id` entry. Absent is fine
@@ -108,7 +129,34 @@ function parseVerification(
       `llm registry entry #${index} has an invalid verification.status: ${String(vo.status)}`,
     );
   }
-  const info: VerificationInfo = { status: vo.status as VerificationStatus };
+  const status = vo.status as VerificationStatus;
+  if (vo.quarantineReason !== undefined && vo.quarantineReason !== null) {
+    if (typeof vo.quarantineReason !== 'string') {
+      throw new Error(
+        `llm registry entry #${index} has a non-string verification.quarantineReason`,
+      );
+    }
+  }
+  const quarantineReason =
+    typeof vo.quarantineReason === 'string' && vo.quarantineReason.trim().length > 0
+      ? vo.quarantineReason
+      : null;
+  // A quarantine with no stated cause is an entry nobody can act on: the
+  // reviewer cannot tell what to go resolve, and the report has nothing to
+  // print under the finding. Rejected at load, not merely flagged in CI.
+  if (status === 'quarantined' && quarantineReason === null) {
+    throw new Error(
+      `llm registry entry #${index} is quarantined with no verification.quarantineReason ` +
+        `-- a quarantine must say what has to be resolved`,
+    );
+  }
+  const info: VerificationInfo = {
+    status,
+    officialSourceConfirmed: parseSwitch(vo, 'officialSourceConfirmed', index),
+    replacementConfirmed: parseSwitch(vo, 'replacementConfirmed', index),
+    autoApplyAllowed: parseSwitch(vo, 'autoApplyAllowed', index),
+    quarantineReason,
+  };
   if (vo.checkedAt !== undefined) {
     if (typeof vo.checkedAt !== 'string') {
       throw new Error(`llm registry entry #${index} has a non-string verification.checkedAt`);
@@ -218,7 +266,17 @@ export function assertDeprecation(entry: unknown, index: number): LlmDeprecation
         throw new Error(`llm registry entry #${index} has a non-string "${field}"`);
       }
     }
+    // `entryId` is optional (an unstamped entry derives one), but an EMPTY or
+    // non-string id is malformed data, not an absent field: it would print as a
+    // blank `registry entry:` row and be copied into a command that finds
+    // nothing.
+    if (e.entryId !== undefined && e.entryId !== null) {
+      if (typeof e.entryId !== 'string' || e.entryId.length === 0) {
+        throw new Error(`llm registry entry #${index} has a missing/invalid "entryId"`);
+      }
+    }
     return {
+      entryId: (e.entryId ?? undefined) as string | undefined,
       provider,
       kind,
       deprecated: requireString(e, 'deprecated', index),
@@ -293,37 +351,39 @@ export function modelMatches(model: string, onModels: readonly string[]): boolea
   return onModels.some((value) => model === value || model.startsWith(`${value}-`));
 }
 
-// --- the self-contradiction fail-safe --------------------------------------
+// --- the prose lint (CI ONLY — never the gate) ------------------------------
 //
-// THE DATA MAY LIE; THE GATE MUST NOT. Seven shipped entries carried
-// `verification.status: "verified"` while their OWN `verification.reasons`
-// said the opposite -- the worst of them reading, verbatim, "Status unknown;
-// likely retired given the rest of the 2.0 line but unverified -- DO NOT
-// AUTO-APPLY. Target gemini-flash-latest is a rolling alias currently
-// resolving to gemini-3-flash-preview, which is itself deprecated." The stamp
-// said Tier A; the sentence under it said do not touch this. Tier A won, and a
-// rolling alias pointing at a deprecated preview was auto-applied to user code.
+// HOW THIS USED TO WORK, AND WHY IT DOESN'T ANY MORE. Twelve shipped entries
+// carried `verification.status: "verified"` while their OWN
+// `verification.reasons` said the opposite -- the worst of them reading,
+// verbatim, "Status unknown; likely retired given the rest of the 2.0 line but
+// unverified -- DO NOT AUTO-APPLY." The fail-safe was to REGEX THE REASONS at
+// gate time and hold the entry back when a marker matched.
 //
-// A stamp is one field a hand-edit can get wrong. The reasons are the WORKING
-// that produced it, and when the two disagree the working is the half that was
-// thought about. So the gate reads BOTH and takes the weaker answer: an entry
-// whose own recorded reasoning undercuts its stamp is held at Tier B
-// (`replacement_unverified`) until a human resolves the contradiction. It is
-// never silently upgraded, and it is never silently dropped either -- the
-// mapping still shows up as a candidate, with the contradiction printed under
-// it.
+// That fixed the twelve entries and left the mechanism broken. A safety
+// decision computed from English prose is a safety decision that changes when
+// someone rewords a sentence, translates it, tidies "unverified" out of a
+// caveat, or writes the same warning in words nobody thought to list here. The
+// gate now reads STRUCTURED FIELDS only (see isVerified below), and the twelve
+// entries are `status: "quarantined"` in the data itself.
+//
+// The markers survive for ONE job: linting. `mendr validate-registry` fails the
+// build when a caveat like this appears in `reasons` on an entry that is
+// nonetheless `autoApplyAllowed`. That is a MIGRATION and REVIEW check —
+// "somebody wrote a warning and flipped the switch anyway" — and it runs in CI,
+// where a false positive costs a human two minutes. It must never be called
+// from the fix engine again.
 
 /**
  * Phrases that, appearing anywhere in an entry's own `verification.reasons`,
- * contradict a `verified` stamp. Matched case-insensitively as substrings, so
+ * contradict an auto-apply switch. Matched case-insensitively as substrings, so
  * "DO NOT AUTO-APPLY" and "do not auto-apply until verified" both fire.
  *
- * Deliberately blunt: a false positive costs one entry a manual review, and a
- * false negative costs a user a bad model id in production. The classifier's
- * own verdicts never trip these — a genuinely verified re-stamp produces only
- * "…is live in a public catalog" / "matches the provider's officially-
- * recommended replacement …" — so every hit is a HUMAN caveat that was written
- * down and then stamped over.
+ * Deliberately blunt: this is a lint, and a false positive costs one entry a
+ * manual review. The classifier's own verdicts never trip these — a genuinely
+ * verified re-stamp produces only "…is live in a public catalog" / "matches the
+ * provider's officially-recommended replacement …" — so every hit is a HUMAN
+ * caveat that was written down and then switched on over.
  */
 export const SELF_CONTRADICTION_MARKERS: readonly string[] = [
   'do not auto-apply',
@@ -342,118 +402,203 @@ export function selfContradictionMarkersIn(reasons: readonly string[] | undefine
 }
 
 /**
- * Does this entry's own recorded reasoning undercut its stamp? True only when
- * a marker is present — this asks about the TEXT, not the status, so a caller
- * can ask it of an already-unverified entry and get an honest answer.
+ * Does this entry's recorded reasoning contain a caveat marker?
+ *
+ * CONSTRAINT: CI/migration use only — {@link validateRegistry} is the sole
+ * production caller. The engine gate does not read prose; see isVerified().
  */
 export function hasSelfContradictingReasons(entry: LlmModelIdDeprecation): boolean {
   return selfContradictionMarkersIn(entry.verification?.reasons).length > 0;
 }
 
+// --- the engine gate (structured fields only) -------------------------------
+
+/**
+ * The ENGINE GATE predicate: is a model-id entry trustworthy enough to
+ * AUTO-APPLY? The FULL conjunction, and nothing else:
+ *
+ *   status === 'verified'      the stamped verdict
+ *   officialSourceConfirmed    the provider's own docs confirm the deprecation
+ *   replacementConfirmed       the replacement is live + uncontradicted
+ *   autoApplyAllowed           the switch a human or the stamper may withhold
+ *
+ * Every clause is a boolean sitting in the registry JSON. No sentence is read,
+ * so no rewording can move an entry into or out of Tier A. A missing
+ * `verification` block, any other status, or any switch left false (which is
+ * what an ABSENT switch parses to — see parseSwitch) all return false.
+ */
+export function isVerified(entry: LlmModelIdDeprecation): boolean {
+  const v = entry.verification;
+  return (
+    v !== undefined &&
+    v.status === 'verified' &&
+    v.officialSourceConfirmed &&
+    v.replacementConfirmed &&
+    v.autoApplyAllowed
+  );
+}
+
 /**
  * The state the ENGINE acts on, which is not always the state the file claims:
- * the stamp, unless the entry contradicts itself, in which case
- * `self-contradicted`. Reported (rather than quietly downgraded to
- * `unverified`) so the report can say WHY a `verified` row was held back — a
- * reader who runs `mendr evidence <id>` must not find a `verified` stamp where
- * mendr just printed `unverified` and conclude the tool is broken.
+ * the stamp, unless the stamp says `verified` while one of the switches is off,
+ * in which case `withheld`.
+ *
+ * `withheld` should never appear on the shipped registry — the CI validator
+ * rejects `verified` over a false switch outright — but the report must be able
+ * to NAME the state rather than quietly printing `unverified` over a file that
+ * says `verified`. A reader sent to `mendr evidence <id>` by a finding must
+ * find the same words there that the finding used.
  */
 export function effectiveVerificationState(
   entry: LlmModelIdDeprecation,
 ): EffectiveVerificationState {
   const stamped = entry.verification?.status ?? 'unstamped';
-  return stamped === 'verified' && hasSelfContradictingReasons(entry)
-    ? 'self-contradicted'
-    : stamped;
+  if (stamped !== 'verified') return stamped;
+  return isVerified(entry) ? 'verified' : 'withheld';
 }
 
 /**
- * The ENGINE GATE predicate: is a model-id entry trustworthy enough to
- * AUTO-APPLY? True iff it carries a `verification.status === 'verified'` stamp
- * AND its own reasons do not contradict that stamp. A missing stamp
- * (`unstamped`), `unverified`, `unverifiable`, or a self-contradicting
- * `verified` all return false — the codemod must never swap on the strength of
- * an unproven mapping, nor on one the registry itself argued against.
+ * The switches that are OFF on an entry stamped `verified`, named as fields.
+ * What a `withheld` finding prints instead of the old marker list — three field
+ * names a reader can go look up beat a quoted fragment of a sentence.
  */
-export function isVerified(entry: LlmModelIdDeprecation): boolean {
-  return effectiveVerificationState(entry) === 'verified';
+export function withheldSwitches(entry: LlmModelIdDeprecation): string[] {
+  const v = entry.verification;
+  if (!v) return [];
+  return [
+    ...(v.officialSourceConfirmed ? [] : ['officialSourceConfirmed']),
+    ...(v.replacementConfirmed ? [] : ['replacementConfirmed']),
+    ...(v.autoApplyAllowed ? [] : ['autoApplyAllowed']),
+  ];
+}
+
+/**
+ * A fully-populated `verified` block with every switch ON — for FIXTURES and
+ * migrations, never for production data.
+ *
+ * It exists because {@link isVerified} is a four-field conjunction: a test that
+ * means "this entry is auto-appliable" has to state all four, and spelling them
+ * out at three dozen fixture sites is exactly how one of them gets quietly
+ * dropped and a suite starts asserting the wrong tier.
+ */
+export function autoApplyVerification(
+  overrides: Partial<VerificationInfo> = {},
+): VerificationInfo {
+  return {
+    status: 'verified',
+    officialSourceConfirmed: true,
+    replacementConfirmed: true,
+    autoApplyAllowed: true,
+    quarantineReason: null,
+    ...overrides,
+  };
+}
+
+/**
+ * A `verification` block that is NOT auto-appliable: the given status with
+ * every switch off. The counterpart to {@link autoApplyVerification}, so a
+ * fixture states its intent in one word instead of four booleans.
+ */
+export function withheldVerification(
+  status: Exclude<VerificationStatus, 'verified'>,
+  overrides: Partial<VerificationInfo> = {},
+): VerificationInfo {
+  return {
+    status,
+    officialSourceConfirmed: false,
+    replacementConfirmed: false,
+    autoApplyAllowed: false,
+    quarantineReason: status === 'quarantined' ? 'fixture: quarantined' : null,
+    ...overrides,
+  };
 }
 
 // --- provenance (what the footer is allowed to claim) ----------------------
 //
-// The old footer read `registry: 106 entries, verified 2026-08-18`, which says
-// "all 106 replacements were fully verified that day". Two separate things
-// actually happened, and neither is that:
-//   1. a CATALOG RECHECK — every replacement was re-classified against the
-//      public catalogs, and the run stamped its date onto each entry;
-//   2. PER-ENTRY VERIFICATION — each entry carries its own verdict, and 12 of
-//      them did NOT come back `verified`.
-// Rolling those into one sentence turns a partial result into a blanket
-// guarantee. Everything below is COMPUTED from the loaded registry so the
-// footer cannot outlive the data: no constant to forget to bump, and a stamp
-// that changes shows up in the printed line on the next run.
+// The footer has now been wrong in two different ways, and the second is the
+// interesting one:
+//   1. `registry: 106 entries, verified 2026-08-18` read as "all 106
+//      replacements were fully verified that day" — one date standing in for a
+//      verdict it never produced.
+//   2. The replacement said `entry verification: 98 verified, ...` and put the
+//      12 held-back entries on a separate "held at review" line. Arithmetically
+//      true, practically misleading: the number a reader takes away is the one
+//      next to the word "verified", and 98 was never the number of things mendr
+//      would auto-fix.
+// So the footer now leads with the ONE number that matters — how many entries
+// can actually be auto-fixed, computed through the same isVerified() the engine
+// uses — and puts everything else under `review-only`, broken out by state.
+// Every number is COMPUTED from the loaded registry: no constant to forget.
 
 /** Every verdict an entry can carry, including "carries no verdict at all". */
 export type EntryVerificationState = VerificationStatus | 'unstamped';
 
 /**
- * What the ENGINE concluded about an entry: its stamp, or `self-contradicted`
- * when the stamp says `verified` and the entry's own reasons say otherwise
- * (see {@link effectiveVerificationState}). The extra state exists so a
- * held-back entry is never reported under a word that misdescribes the file.
+ * What the ENGINE concluded about an entry: its stamp, or `withheld` when the
+ * stamp says `verified` and one of the structured switches is off (see
+ * {@link effectiveVerificationState}). The extra state exists so a held-back
+ * entry is never reported under a word that misdescribes the file.
  */
-export type EffectiveVerificationState = EntryVerificationState | 'self-contradicted';
+export type EffectiveVerificationState = EntryVerificationState | 'withheld';
 
 /** What the loaded registry actually says about itself. All counts, no claims. */
 export interface RegistryProvenance {
-  /** Active `model_id` entries — the ones the fix engine can match. */
+  /** Active `model_id` records — the ones the fix engine can match. */
   activeEntries: number;
-  /** Per-state entry counts (`verified`, `unverified`, `unverifiable`, `unstamped`). */
-  statusCounts: Record<EntryVerificationState, number>;
+  /**
+   * Records that clear the FULL engine gate (see {@link isVerified}) and can
+   * therefore be auto-fixed. This is the footer's headline number, and it is
+   * computed through the very predicate the codemod calls — the count and the
+   * behaviour cannot drift apart.
+   */
+  autoFixEligible: number;
+  /**
+   * Per-state counts over the records that are NOT auto-fix eligible. Sums to
+   * `activeEntries - autoFixEligible` by construction, so the footer's parts
+   * always add up to its whole.
+   */
+  reviewOnlyCounts: Record<EffectiveVerificationState, number>;
   /** Oldest `verification.checkedAt` across stamped entries, if any. */
   oldestCheckedAt?: string;
   /** Newest `verification.checkedAt` across stamped entries, if any. */
   newestCheckedAt?: string;
   /** Entries carrying no recheck date at all — the gap the dates cannot cover. */
   undatedEntries: number;
-  /**
-   * Entries STAMPED `verified` whose own reasons contradict the stamp, and
-   * which the engine therefore holds at Tier B (see
-   * {@link hasSelfContradictingReasons}). Counted separately rather than
-   * subtracted from `statusCounts.verified`, because the two facts are
-   * different: the file says verified, and mendr refuses to act on it.
-   */
-  selfContradictingEntries: number;
 }
 
-/** The order footer/report surfaces list verification states in. */
-export const ENTRY_VERIFICATION_STATES: readonly EntryVerificationState[] = [
-  'verified',
+/** The order footer/report surfaces list review-only states in. */
+export const REVIEW_ONLY_STATES: readonly EffectiveVerificationState[] = [
+  'quarantined',
   'unverified',
   'unverifiable',
   'unstamped',
+  // Should never be non-zero on a registry that passed `validate-registry`;
+  // listed last so that if it ever is, it prints somewhere defined.
+  'withheld',
 ];
 
 /**
  * Compute the registry's own provenance from the loaded entries. Pure over the
  * registry it is handed, so a test can drive it with a three-entry fixture and
- * get the same arithmetic the shipped 106-entry registry gets.
+ * get the same arithmetic the shipped 106-record registry gets.
  */
 export function registryProvenance(registry: LlmRegistry): RegistryProvenance {
   const entries = modelIdEntries(registry);
-  const statusCounts: Record<EntryVerificationState, number> = {
+  const reviewOnlyCounts: Record<EffectiveVerificationState, number> = {
     verified: 0,
+    quarantined: 0,
     unverified: 0,
     unverifiable: 0,
     unstamped: 0,
+    withheld: 0,
   };
   let oldest: string | undefined;
   let newest: string | undefined;
   let undated = 0;
-  let selfContradicting = 0;
+  let eligible = 0;
   for (const entry of entries) {
-    statusCounts[entry.verification?.status ?? 'unstamped']++;
-    if (effectiveVerificationState(entry) === 'self-contradicted') selfContradicting++;
+    if (isVerified(entry)) eligible++;
+    else reviewOnlyCounts[effectiveVerificationState(entry)]++;
     const checkedAt = entry.verification?.checkedAt;
     // ISO yyyy-mm-dd dates order correctly as strings.
     if (!checkedAt) {
@@ -465,11 +610,11 @@ export function registryProvenance(registry: LlmRegistry): RegistryProvenance {
   }
   return {
     activeEntries: entries.length,
-    statusCounts,
+    autoFixEligible: eligible,
+    reviewOnlyCounts,
     oldestCheckedAt: oldest,
     newestCheckedAt: newest,
     undatedEntries: undated,
-    selfContradictingEntries: selfContradicting,
   };
 }
 

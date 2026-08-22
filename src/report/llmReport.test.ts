@@ -1,18 +1,24 @@
 import { describe, it, expect } from 'vitest';
+import type { LlmModelIdDeprecation } from '../types.js';
 import {
   formatCatalogLine,
   formatDataFileGroupLine,
   formatDataHitLine,
+  formatGateRow,
   formatGateSummary,
+  formatRegistryEntryLines,
   groupDataFindingsByFile,
   isCatalogLike,
   purposePhrase,
   replacementFamily,
   swapLabel,
+  behavioralGateRow,
   behavioralVerificationLines,
   behavioralVerificationNote,
+  registryVerdictRows,
   BEHAVIORAL_VERIFICATION_NOTE,
   type DataFindingView,
+  type GateRow,
 } from './llmReport.js';
 
 // The report-shaping layer: a 100+ finding scan must collapse to one line per
@@ -219,70 +225,219 @@ describe('formatCatalogLine (annotated model-catalog files)', () => {
   });
 });
 
-describe('formatGateSummary (code vs behavioral verification)', () => {
-  // The whole point of the two-group summary: a reader must not be able to
-  // mistake "type-check + tests passed" for "the new model behaves the same".
-  const TS_FACTS = {
-    usageClassification: 'call-site',
-    typeCheck: 'pass (no new errors; 3 pre-existing ignored)',
-    tests: 'pass (npm test, 42 passed, 0 failed)',
-  };
+describe('formatGateSummary (one row per check, one outcome per row)', () => {
+  // THE FAILURE THIS GUARDS: a single word covering several different checks.
+  // A run where the type-check passed, the tests never ran and no eval existed
+  // is not "verified" -- and a reader given one word cannot recover which of
+  // the three actually happened.
+  const TS_ROWS: GateRow[] = [
+    {
+      label: 'registry verdict',
+      state: 'verified',
+      detail: 'stamped 2026-08-14',
+    },
+    { label: 'official source', state: 'confirmed' },
+    {
+      label: 'usage classification',
+      state: 'passed',
+      detail: 'traced to a live model argument at the call site',
+    },
+    { label: 'syntax', state: 'n/a', detail: 'typescript -- the type-check gate subsumes parsing' },
+    {
+      label: 'type-check',
+      state: 'passed',
+      detail: 'no new errors; 3 pre-existing ignored',
+      required: true,
+    },
+    {
+      label: 'tests',
+      state: 'inconclusive',
+      detail: 'repo has no installed node_modules to link -- cannot run tests',
+    },
+  ];
 
   it('names both groups, and marks the behavioral one NOT checked', () => {
-    const lines = formatGateSummary(TS_FACTS);
+    const lines = formatGateSummary(TS_ROWS);
     expect(lines[0]).toBe('Code verification (what mendr checked):');
     expect(lines).toContain('Behavioral verification (NOT checked):');
     const text = lines.join('\n');
     expect(text).toMatch(/output quality, latency, cost and response/);
-    // Code claims come FIRST, the disclaimer last — a disclaimer above the
+    // Code claims come FIRST, the disclaimer last -- a disclaimer above the
     // evidence reads as boilerplate and gets skipped.
     expect(text.indexOf('type-check')).toBeLessThan(text.indexOf('Behavioral verification'));
   });
 
-  it('keeps the measurable test counts verbatim', () => {
-    expect(formatGateSummary(TS_FACTS).join('\n')).toMatch(
-      /^ {2}tests: +pass \(npm test, 42 passed, 0 failed\)$/m,
+  it('gives every check its OWN outcome word, and never lends one to another', () => {
+    const text = formatGateSummary(TS_ROWS).join('\n');
+    expect(text).toMatch(
+      /^ {2}registry verdict: +verified \(stamped 2026-08-14\)$/m,
     );
+    expect(text).toMatch(/^ {2}official source: +confirmed$/m);
+    expect(text).toMatch(/^ {2}syntax: +n\/a \(typescript/m);
+    expect(text).toMatch(/^ {2}type-check: +passed \(no new errors; 3 pre-existing ignored\)/m);
+    // The one that matters most: the tests gate could not RUN, and nothing on
+    // that line reads as a pass.
+    expect(text).toMatch(/^ {2}tests: +inconclusive \(repo has no installed node_modules/m);
+    expect(text).not.toMatch(/^ {2}tests: +passed/m);
+    // And nothing collapses the six checks into a verdict of its own.
+    expect(text).not.toMatch(/^ {2}(gates|verification): /m);
   });
 
-  it('lists only the gates that exist for the language', () => {
-    expect(formatGateSummary(TS_FACTS).join('\n')).toContain('type-check:');
-
-    // Python has no compiler: a syntax re-parse plus an explicit "not
-    // configured" static-type row, never a silently-passed type gate.
-    const py = formatGateSummary({
-      usageClassification: 'verified-sink',
-      syntax: 'pass',
-      staticTypeGate: 'not configured or not detected',
-      tests: 'not run (no supported test command detected)',
-    }).join('\n');
-    expect(py).not.toContain('type-check:');
-    expect(py).toMatch(/^ {2}syntax: +pass$/m);
-    expect(py).toMatch(/^ {2}static type gate: +not configured or not detected$/m);
-    expect(py).toMatch(/^ {2}usage classification: +verified-sink$/m);
+  it('tags the gates the policy required, so an inconclusive row explains itself', () => {
+    const text = formatGateSummary(TS_ROWS).join('\n');
+    expect(text).toMatch(/^ {2}type-check: +passed \([^)]*\) {2}\[required\]$/m);
+    // Untagged rows are not "optional" -- they are simply not required to pass.
+    expect(text).not.toMatch(/^ {2}official source: .*\[required\]$/m);
   });
 
-  // This row sits under the heading "Code verification (what mendr checked)",
-  // so it may only name a check this PROCESS made. It used to read "verified
-  // against live catalogs" — a network check `fix-llm` never performs. What it
-  // reads is the `verification.status` stamp in the registry JSON, which is as
-  // old as its `checkedAt` and can disagree with a fresh `mendr verify-registry`
-  // run. Naming the stamp is the whole claim this row is entitled to.
-  it('names the registry stamp it read, not a live catalog check it never made', () => {
-    const rendered = formatGateSummary(TS_FACTS).join('\n');
-    expect(rendered).toMatch(
-      /^ {2}replacement mapping: +registry entry stamped verified \(not re-checked live this run\)$/m,
+  it('itemizes the behavioral gate too, in the same table', () => {
+    const lines = formatGateSummary(TS_ROWS);
+    expect(lines).toContain('  behavioral evaluation:  not configured');
+    // Every value -- code rows and the behavioral row alike -- starts at one
+    // column, so the checks read as one list rather than two vocabularies.
+    const LABELS =
+      /^ {2}(registry verdict|official source|usage classification|syntax|type-check|tests|behavioral evaluation): +/;
+    const valueRows = lines.filter((l) => LABELS.test(l));
+    expect(valueRows).toHaveLength(7);
+    expect(new Set(valueRows.map((row) => LABELS.exec(row)![0].length)).size).toBe(1);
+  });
+
+  it('renders the python row set with its own n/a and passed outcomes', () => {
+    const py = formatGateSummary([
+      { label: 'usage classification', state: 'passed', detail: 'python sink rule' },
+      { label: 'syntax', state: 'passed', detail: 'baseline-relative re-parse' },
+      { label: 'type-check', state: 'n/a', detail: 'mendr runs no type checker for python' },
+      { label: 'tests', state: 'inconclusive', detail: 'mendr has no python test runner' },
+    ]).join('\n');
+    expect(py).toMatch(/^ {2}syntax: +passed \(baseline-relative re-parse\)$/m);
+    // A gate that does not EXIST here is n/a -- never a silent pass, and never
+    // the same word as a gate that exists and could not run.
+    expect(py).toMatch(/^ {2}type-check: +n\/a \(mendr runs no type checker for python\)$/m);
+    expect(py).toMatch(/^ {2}tests: +inconclusive \(mendr has no python test runner\)$/m);
+  });
+});
+
+describe('registryVerdictRows (two claims, two rows)', () => {
+  function entry(over: Partial<LlmModelIdDeprecation> = {}): LlmModelIdDeprecation {
+    return {
+      provider: 'openai',
+      kind: 'model_id',
+      deprecated: 'gpt-4',
+      replacement: 'gpt-5.6-sol',
+      verification: {
+        status: 'verified',
+        officialSourceConfirmed: true,
+        replacementConfirmed: true,
+        autoApplyAllowed: true,
+        quarantineReason: null,
+        checkedAt: '2026-08-14',
+      },
+      ...over,
+    };
+  }
+
+  it('names the stamp it read rather than a live catalog check it never made', () => {
+    const [replacement, official] = registryVerdictRows([entry()]);
+    expect(replacement).toEqual({
+      label: 'registry verdict',
+      state: 'verified',
+      detail: 'stamped 2026-08-14',
+    });
+    // THE WORD THIS ROW MAY NOT USE. `entry.evidence` is empty on all 106
+    // shipped records and `mendr evidence <id>` says so per record, so a Tier A
+    // row calling the same value "evidence" contradicts the command it sends
+    // the reader to. It is a registry VERDICT, and it says so.
+    expect(formatGateRow(replacement)).not.toContain('evidence');
+    expect(official).toEqual({
+      label: 'official source',
+      state: 'confirmed',
+      detail:
+        'a provider docs url and a lifecycle claim are recorded on the record; ' +
+        'the page was not fetched',
+    });
+    expect(formatGateRow(replacement)).not.toContain('live catalog');
+  });
+
+  it('reports the provider-docs claim SEPARATELY from the catalog claim', () => {
+    // The two are independently stamped (P0): a replacement can be live in the
+    // catalogs while the deprecation itself rests on a blog post. One word over
+    // both would hide exactly that gap.
+    const rows = registryVerdictRows([
+      entry(),
+      entry({
+        deprecated: 'gpt-4-0613',
+        verification: {
+          status: 'verified',
+          officialSourceConfirmed: false,
+          replacementConfirmed: true,
+          autoApplyAllowed: true,
+          quarantineReason: null,
+          checkedAt: '2026-08-01',
+        },
+      }),
+    ]);
+    expect(rows[0].state).toBe('verified');
+    expect(rows[1]).toEqual({
+      label: 'official source',
+      state: 'not confirmed',
+      detail: '1 of 2 records not backed by provider documentation',
+    });
+  });
+
+  it('dates the set by its OLDEST stamp, and says when records carry none', () => {
+    const base = entry().verification!;
+    const rows = registryVerdictRows([
+      entry(),
+      entry({ deprecated: 'o1-mini', verification: { ...base, checkedAt: '2026-02-02' } }),
+      entry({ deprecated: 'gpt-4-0314', verification: { ...base, checkedAt: undefined } }),
+    ]);
+    expect(rows[0].detail).toBe('stamped 2026-02-02; 1 record undated');
+  });
+
+  it('refuses to print "verified" over an empty set (a param-only patch)', () => {
+    const rows = registryVerdictRows([]);
+    expect(rows[0].state).toBe('n/a');
+    expect(rows[0].detail).toContain('no model-id swap');
+    expect(rows[1].state).toBe('n/a');
+  });
+
+  it('says "not verified" when a record is not stamped verified', () => {
+    const rows = registryVerdictRows([entry({ verification: undefined })]);
+    expect(rows[0].state).toBe('not verified');
+    expect(rows[0].detail).toBe('no recheck date recorded');
+  });
+});
+
+describe('behavioralGateRow (the sixth check, itemized)', () => {
+  it('separates "nothing configured" from "configured but no verdict"', () => {
+    expect(behavioralGateRow({ status: 'not-tested' })).toEqual({
+      label: 'behavioral evaluation',
+      state: 'not configured',
+      required: false,
+    });
+    // An eval that timed out is INCONCLUSIVE. Reporting it as "not configured"
+    // would hide a gate that tried and failed to run; reporting it as anything
+    // passing would be a lie about behavior.
+    expect(behavioralGateRow({ status: 'not-tested', reason: 'timed out after 1500ms' })).toEqual({
+      label: 'behavioral evaluation',
+      state: 'inconclusive',
+      detail: 'timed out after 1500ms',
+      required: false,
+    });
+  });
+
+  it('reports a completed run with its command and exit code', () => {
+    expect(
+      behavioralGateRow({ status: 'pass', command: 'npm run eval', exitCode: 0 }, true),
+    ).toEqual({
+      label: 'behavioral evaluation',
+      state: 'passed',
+      detail: 'your eval command: npm run eval, exit 0',
+      required: true,
+    });
+    expect(behavioralGateRow({ status: 'fail', command: 'npm run eval', exitCode: 3 }).state).toBe(
+      'failed',
     );
-    expect(rendered).not.toContain('verified against live catalogs');
-  });
-
-  it('aligns every gate value in one column, so the rows read as one table', () => {
-    const lines = formatGateSummary(TS_FACTS);
-    const gateRows = lines.slice(1, lines.indexOf('Behavioral verification (NOT checked):'));
-    expect(gateRows).toHaveLength(4);
-    // Every row's value starts at the same column (labels padded to one width).
-    const valueColumns = new Set(gateRows.map((row) => /^ {2}[\w -]+: +/.exec(row)![0].length));
-    expect(valueColumns.size).toBe(1);
   });
 });
 
@@ -290,6 +445,7 @@ describe('behavioralVerificationLines (the configurable-eval boundary)', () => {
   it('not-tested keeps the disclaimer AND says how to switch it on', () => {
     const text = behavioralVerificationLines({ status: 'not-tested' }).join('\n');
     expect(text).toContain('Behavioral verification (NOT checked):');
+    expect(text).toContain('behavioral evaluation:  not configured');
     expect(text).toMatch(/output quality, latency, cost and response/);
     // The actionable half: the limit is a CHOICE the user can reverse.
     expect(text).toContain('"evalCommand" in mendr.config.json');
@@ -307,7 +463,7 @@ describe('behavioralVerificationLines (the configurable-eval boundary)', () => {
     }).join('\n');
     expect(text).toContain('Behavioral verification (NOT checked):');
     expect(text).toContain(
-      'your eval command was configured but did not complete: eval command timed out after 1500ms',
+      'behavioral evaluation:  inconclusive (eval command timed out after 1500ms)',
     );
     expect(text).toContain('will not apply a fix it could not behaviorally verify');
     expect(text).not.toContain('to check it: set "evalCommand"');
@@ -319,7 +475,9 @@ describe('behavioralVerificationLines (the configurable-eval boundary)', () => {
       command: 'npm run eval',
       exitCode: 0,
     }).join('\n');
-    expect(text).toContain('behavioral verification: pass (your eval command: npm run eval, exit 0)');
+    expect(text).toContain(
+      'behavioral evaluation:  passed (your eval command: npm run eval, exit 0)',
+    );
     // It must not inflate one passing command into model equivalence.
     expect(text).toContain('YOUR eval passed against the patched code');
     expect(text).toMatch(/quality, latency, cost -- is untested/);
@@ -332,27 +490,32 @@ describe('behavioralVerificationLines (the configurable-eval boundary)', () => {
       command: 'npm run eval',
       exitCode: 1,
     }).join('\n');
-    expect(text).toContain('behavioral verification: fail (your eval command: npm run eval, exit 1)');
+    expect(text).toContain(
+      'behavioral evaluation:  failed (your eval command: npm run eval, exit 1)',
+    );
     expect(text).toContain('NOT');
     expect(text).toMatch(/blocks it exactly like a failing test gate/);
   });
 
   it('formatGateSummary defaults to the disclaimer when no result is passed', () => {
     // A caller that forgets the argument must get "not checked", never a pass.
-    expect(formatGateSummary({ usageClassification: 'call-site', tests: 'pass' })).toContain(
+    expect(formatGateSummary([{ label: 'tests', state: 'passed' }])).toContain(
       'Behavioral verification (NOT checked):',
     );
   });
 
   it('formatGateSummary swaps in the eval group when one ran', () => {
     const text = formatGateSummary(
-      { usageClassification: 'call-site', typeCheck: 'pass', tests: 'pass (npm test)' },
+      [
+        { label: 'type-check', state: 'passed' },
+        { label: 'tests', state: 'passed' },
+      ],
       { status: 'pass', command: 'npm run eval', exitCode: 0 },
     ).join('\n');
     expect(text).toContain('Behavioral verification (your own evaluation):');
     expect(text).not.toContain('Behavioral verification (NOT checked):');
-    // The code rows survive unchanged — the eval ADDS a claim, it replaces none.
-    expect(text).toMatch(/^ {2}type-check: +pass$/m);
+    // The code rows survive unchanged -- the eval ADDS a claim, it replaces none.
+    expect(text).toMatch(/^ {2}type-check: +passed$/m);
   });
 });
 
@@ -374,6 +537,30 @@ describe('behavioralVerificationNote (the closing line)', () => {
     expect(note).toContain('the only behavioral claim it makes');
     expect(note).toMatch(/is still untested/);
   });
+
+  // THE CLAIM THAT WAS FALSE. Under --skip-gates the default note read
+  // "mendr verified the CODE only -- see the gate summary above", printed
+  // under a run that type-checked nothing, tested nothing, and suppressed the
+  // very summary it pointed at.
+  it('refuses to say anything was verified when the gates were skipped', () => {
+    for (const view of [
+      { status: 'not-tested' } as const,
+      { status: 'pass', command: 'npm run eval', exitCode: 0 } as const,
+    ]) {
+      const note = behavioralVerificationNote(view, true);
+      expect(note).toContain('mendr verified NOTHING on this run');
+      expect(note).toContain('--skip-gates');
+      // Neither the false claim nor the pointer to a summary that is not there.
+      expect(note).not.toContain('verified the CODE');
+      expect(note).not.toContain('gate summary above');
+    }
+  });
+
+  it('keeps the normal wording when the gates were not skipped', () => {
+    expect(behavioralVerificationNote({ status: 'not-tested' }, false)).toBe(
+      BEHAVIORAL_VERIFICATION_NOTE,
+    );
+  });
 });
 
 describe('replacementFamily (mixed-target warning)', () => {
@@ -385,5 +572,52 @@ describe('replacementFamily (mixed-target warning)', () => {
 
   it('an id with no digits is its own family', () => {
     expect(replacementFamily('gemini-flash-latest')).toBe('gemini-flash-latest');
+  });
+});
+
+// Tier A is rendered as a DIFF, not as per-finding blocks, so these two rows
+// are the only place a reader can learn WHICH registry records authorised the
+// edit they are being shown -- and the only way to go read one without first
+// guessing its id.
+describe('formatRegistryEntryLines', () => {
+  const entry = (
+    provider: string,
+    deprecated: string,
+    shutdownDate?: string,
+  ): LlmModelIdDeprecation => ({
+    provider,
+    kind: 'model_id',
+    deprecated,
+    replacement: 'gpt-5.6-sol',
+    ...(shutdownDate ? { shutdownDate } : {}),
+  });
+
+  it('prints the record id and the command that takes it', () => {
+    expect(formatRegistryEntryLines([entry('openai', 'gpt-4', '2026-10-23')])).toEqual([
+      '  registry entry:        openai.gpt-4.retirement-2026-10-23',
+      '  evidence:              mendr evidence openai.gpt-4.retirement-2026-10-23',
+    ]);
+  });
+
+  it('prints one pair per DISTINCT record, in the order the swaps were listed', () => {
+    const lines = formatRegistryEntryLines([
+      entry('openai', 'gpt-4', '2026-10-23'),
+      entry('google', 'gemini-2.0-flash'),
+      entry('openai', 'gpt-4', '2026-10-23'),
+    ]);
+    expect(lines).toHaveLength(4);
+    expect(lines[0]).toContain('openai.gpt-4.retirement-2026-10-23');
+    expect(lines[2]).toContain('google.gemini-2.0-flash.retirement-undated');
+  });
+
+  it('never wraps -- an id and its command are things a reader pastes', () => {
+    const long = entry('openai', 'gpt-4-1106-vision-preview-with-a-very-long-name');
+    for (const line of formatRegistryEntryLines([long])) {
+      expect(line.split('\n')).toHaveLength(1);
+    }
+  });
+
+  it('has nothing to say about an empty patch', () => {
+    expect(formatRegistryEntryLines([])).toEqual([]);
   });
 });

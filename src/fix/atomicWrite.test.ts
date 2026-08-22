@@ -215,4 +215,32 @@ describe('writeAllOrNothing — mid-sequence failure rolls back', () => {
     rmSync(blocker, { recursive: true, force: true });
     expect(strayTempFiles()).toEqual([]);
   });
+
+  // THE MINIMAL CASE, stated on its own because it is the one a reader
+  // pictures: two files, the second fails, does the first come back? The
+  // three-file case above is strictly harder, but "restored 2 of 3" and
+  // "restored 1 of 2" exercise different plural branches in the message and
+  // different loop boundaries in the rollback, and a batch of two is what a
+  // real model migration usually is.
+  it('restores the FIRST file when the SECOND file write fails', () => {
+    const first = seed('one.ts', 'ORIGINAL-ONE', 'PATCHED-ONE');
+    const second = seed('two.ts', 'ORIGINAL-TWO', 'PATCHED-TWO');
+    const blocker = `${second.absPath}.mendr-tmp`;
+    mkdirSync(blocker);
+
+    const result = writeAllOrNothing([first, second]);
+
+    expect(result.rolledBack).toBe(true);
+    expect(result.written).toEqual([]);
+    expect(result.restoreFailures).toBeUndefined();
+    // Singular, because exactly one file had been written. A message that says
+    // "1 file ... to their original contents" reads as a template nobody ran.
+    expect(result.error).toContain('rolled back 1 already-written file to its original contents');
+
+    expect(read(first.absPath)).toBe('ORIGINAL-ONE');
+    expect(read(second.absPath)).toBe('ORIGINAL-TWO');
+
+    rmSync(blocker, { recursive: true, force: true });
+    expect(strayTempFiles()).toEqual([]);
+  });
 });

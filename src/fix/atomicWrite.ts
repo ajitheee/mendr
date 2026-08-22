@@ -249,7 +249,7 @@ export function writeAllOrNothing(writes: PendingWrite[]): AtomicWriteResult {
       rolledBack: true,
       error:
         `write failed (${cause}); rolled back ${written.length} already-written file` +
-        `${written.length === 1 ? '' : 's'} to their original contents` +
+        `${written.length === 1 ? ' to its' : 's to their'} original contents` +
         (stray.length > 0 ? `. Stray temp files left behind: ${stray.join(', ')}` : ''),
     };
   }

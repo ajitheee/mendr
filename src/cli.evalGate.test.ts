@@ -80,7 +80,8 @@ describe('fix-llm eval gate wiring', () => {
       expect(stdout).toContain('Tier A');
       expect(stdout).toContain('Behavioral verification (NOT checked):');
       expect(stdout).toContain('"evalCommand" in mendr.config.json');
-      expect(stdout).not.toContain('behavioral verification: pass');
+      expect(stdout).toContain('behavioral evaluation:  not configured');
+      expect(stdout).not.toContain('behavioral evaluation:  passed');
     },
     120_000,
   );
@@ -95,7 +96,7 @@ describe('fix-llm eval gate wiring', () => {
       const { exitCode, stdout } = await runFixLlm([repo, '--write']);
       expect(exitCode).toBe(0);
       expect(stdout).toContain(
-        'behavioral verification: pass (your eval command: node eval.js, exit 0)',
+        'behavioral evaluation:  passed (your eval command: node eval.js, exit 0)',
       );
       expect(stdout).toContain('your eval command passed');
       expect(stdout).toContain('Applied the verified Tier A fix');
@@ -117,7 +118,7 @@ describe('fix-llm eval gate wiring', () => {
       expect(exitCode).toBe(1);
       expect(stdout).toContain('NOT APPLIED (gates failed, review only)');
       expect(stdout).toContain(
-        'behavioral verification: fail (your eval command: node eval.js, exit 1)',
+        'behavioral evaluation:  failed (your eval command: node eval.js, exit 1)',
       );
       expect(stdout).toContain('your eval command failed against the patched code');
       expect(stdout).toContain('Refusing to --write the Tier A candidates that failed their gates');
@@ -145,7 +146,7 @@ describe('fix-llm eval gate wiring', () => {
       ]);
       expect(exitCode).toBe(1);
       expect(stdout).toContain(
-        'behavioral verification: fail (your eval command: node strict-eval.js, exit 2)',
+        'behavioral evaluation:  failed (your eval command: node strict-eval.js, exit 2)',
       );
     },
     120_000,
@@ -229,7 +230,7 @@ describe('fix-llm eval gate: fails CLOSED when a configured eval cannot run', ()
       expect(chatText(repo)).toContain('gpt-4-0613');
       expect(stdout).toContain('NOT APPLIED (gates failed, review only)');
       // Names the CASE, not just "something went wrong".
-      expect(stdout).toContain('your eval command was configured but did not complete');
+      expect(stdout).toContain('your eval command was configured but produced no verdict');
       expect(stdout).toContain('timed out after 1500ms');
       expect(stdout).toContain('mendr will not apply a fix it could not behaviorally verify');
       expect(stdout).toContain('Refusing to --write the Tier A candidates that failed their gates');

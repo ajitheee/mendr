@@ -1,12 +1,19 @@
 [
   {
+    "entryId": "google.gemini-2.0-flash.retirement-undated",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-2.0-flash",
     "replacement": "gemini-3.6-flash",
     "note": "gemini-2.0-flash retired (confirmed by a production outage). Retargeted 2026-08-21 off the rolling alias gemini-flash-latest — an alias resolves to whatever Google points it at, and it was recorded as resolving to gemini-3-flash-preview, which this registry itself deprecates. Now targets gemini-3.6-flash, this registry's own successor for that preview, live in models.dev/OpenRouter and not itself deprecated. HELD AT TIER B: no catalog verdict exists for this exact source id, so mendr will not auto-apply it.",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/changelog",
+    "status": "retired",
     "verification": {
-      "status": "verified",
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": false,
+      "quarantineReason": "stamped \"verified\" while its own recorded research says \"do not auto-apply\", \"status unknown\" -- held for review until that contradiction is resolved (see verification.reasons)",
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -18,18 +25,23 @@
         "No research verdict for this exact id — only sibling 2.0 ids (-exp, -lite, -lite-001, -thinking-exp, pro-exp) were classified. Status unknown for gemini-2.0-flash itself: the retirement is attested by one production outage, not by a catalog check — do not auto-apply until a source-side verdict exists.",
         "Target retargeted 2026-08-21 from the rolling alias gemini-flash-latest to gemini-3.6-flash: the alias was recorded as resolving to gemini-3-flash-preview, and this registry maps that preview to gemini-3.6-flash, so the mapping now names the stable end of the chain rather than a moving pointer."
       ]
-    },
-    "sourceUrl": "https://ai.google.dev/gemini-api/docs/changelog",
-    "status": "retired"
+    }
   },
   {
+    "entryId": "google.gemini-2.0-flash-001.retirement-undated",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-2.0-flash-001",
     "replacement": "gemini-3.6-flash",
     "note": "gemini-2.0-flash-001 retired (confirmed by a production outage). Retargeted 2026-08-21 off the rolling alias gemini-flash-latest onto gemini-3.6-flash, for the same reasons as gemini-2.0-flash. HELD AT TIER B: no catalog verdict exists for this exact source id, so mendr will not auto-apply it.",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/changelog",
+    "status": "retired",
     "verification": {
-      "status": "verified",
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": false,
+      "quarantineReason": "stamped \"verified\" while its own recorded research says \"do not auto-apply\", \"status unknown\" -- held for review until that contradiction is resolved (see verification.reasons)",
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -41,18 +53,23 @@
         "Same as gemini-2.0-flash: no research verdict for this exact id, status unknown — do not auto-apply until a source-side verdict exists.",
         "Target retargeted 2026-08-21 from the rolling alias gemini-flash-latest to gemini-3.6-flash (the alias was recorded as resolving to gemini-3-flash-preview, which this registry deprecates in favour of gemini-3.6-flash)."
       ]
-    },
-    "sourceUrl": "https://ai.google.dev/gemini-api/docs/changelog",
-    "status": "retired"
+    }
   },
   {
+    "entryId": "openai.gpt-3.5-turbo-0301.retirement-undated",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-3.5-turbo-0301",
     "replacement": "gpt-5.6-terra",
     "note": "dated gpt-3.5-turbo-0301 snapshot retired; use the rolling alias",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "status": "retired",
     "verification": {
-      "status": "verified",
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": false,
+      "quarantineReason": "stamped \"verified\" while its own recorded research says \"unverified\", \"status unknown\" -- held for review until that contradiction is resolved (see verification.reasons)",
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -62,17 +79,23 @@
         "replacement \"gpt-5.6-terra\" is live in a public catalog",
         "Not researched this pass (status unknown; historically shut down 2024-09-13 but unverified here). Target gpt-3.5-turbo is confirmed deprecated (shutdown 2026-10-23) — on re-verification retarget to gpt-5.6-terra."
       ]
-    },
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations"
+    }
   },
   {
+    "entryId": "openai.gpt-3.5-turbo-0613.retirement-undated",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-3.5-turbo-0613",
     "replacement": "gpt-5.6-terra",
     "note": "gpt-3.5-turbo-0613 shut down 2024-09-13; use the rolling alias",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "status": "retired",
     "verification": {
       "status": "unverified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -83,17 +106,24 @@
         "the provider officially recommends \"gpt-3.5-turbo\", but the registry uses \"gpt-5.6-terra\" (live, but not the currently-recommended target — stale)",
         "Not researched this pass (status unknown). Target gpt-3.5-turbo is confirmed deprecated (2026-10-23) — retarget to gpt-5.6-terra on re-verification."
       ]
-    },
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations"
+    }
   },
   {
+    "entryId": "openai.gpt-3.5-turbo-16k-0613.retirement-2024-09-13",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-3.5-turbo-16k-0613",
     "replacement": "gpt-5.6-terra",
     "note": "gpt-3.5-turbo-16k-0613 shut down 2024-09-13; 16k folded into base model",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "status": "retired",
+    "shutdownDate": "2024-09-13",
     "verification": {
-      "status": "verified",
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": false,
+      "quarantineReason": "stamped \"verified\" while its own recorded research says \"itself deprecated\" -- held for review until that contradiction is resolved (see verification.reasons)",
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -103,19 +133,23 @@
         "replacement \"gpt-5.6-terra\" is live in a public catalog",
         "Source confirmed retired 2024-09-13 (via gpt-3.5-turbo-16k research note). Target gpt-3.5-turbo is itself deprecated (shutdown 2026-10-23); retarget to its provider-named replacement gpt-5.6-terra."
       ]
-    },
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "status": "retired",
-    "shutdownDate": "2024-09-13"
+    }
   },
   {
+    "entryId": "openai.gpt-4-0314.retirement-undated",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4-0314",
     "replacement": "gpt-5.6-sol",
     "note": "dated gpt-4-0314 snapshot retired; use the rolling alias",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "status": "retired",
     "verification": {
-      "status": "verified",
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": false,
+      "quarantineReason": "stamped \"verified\" while its own recorded research says \"unverified\" -- held for review until that contradiction is resolved (see verification.reasons)",
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -125,17 +159,24 @@
         "replacement \"gpt-5.6-sol\" is live in a public catalog",
         "Not researched this pass (only the gpt-4-32k -0314 snapshot was confirmed; base gpt-4-0314 unverified). Target gpt-4 is confirmed deprecated (2026-10-23) — retarget to gpt-5.6-sol on re-verification."
       ]
-    },
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations"
+    }
   },
   {
+    "entryId": "openai.gpt-4-0613.retirement-2026-10-23",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4-0613",
     "replacement": "gpt-5.6-sol",
     "note": "dated gpt-4-0613 snapshot deprecated; use the rolling alias (or gpt-4o)",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "status": "deprecated",
+    "shutdownDate": "2026-10-23",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -146,19 +187,24 @@
         "matches the provider's officially-recommended replacement \"gpt-5.6-sol\"",
         "Source confirmed deprecated (listed as 'gpt-4-0613 / gpt-4', shutdown 2026-10-23), but the target gpt-4 is the SAME deprecation row — the mapping is circular and dies with its source. Retarget to provider-named gpt-5.6-sol."
       ]
-    },
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "status": "deprecated",
-    "shutdownDate": "2026-10-23"
+    }
   },
   {
+    "entryId": "openai.gpt-4-32k-0314.retirement-2025-06-06",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4-32k-0314",
     "replacement": "gpt-4o",
     "note": "gpt-4-32k retired; gpt-4o carries a larger 128k context",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "status": "retired",
+    "shutdownDate": "2025-06-06",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -168,19 +214,24 @@
         "replacement \"gpt-4o\" is live in a public catalog",
         "Confirmed retired 2025-06-06 (gpt-4-32k research: shut down along with -0613 and -0314 snapshots); provider-named replacement gpt-4o is current."
       ]
-    },
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "status": "retired",
-    "shutdownDate": "2025-06-06"
+    }
   },
   {
+    "entryId": "openai.gpt-4-32k-0613.retirement-2025-06-06",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4-32k-0613",
     "replacement": "gpt-4o",
     "note": "gpt-4-32k retired; gpt-4o carries a larger 128k context",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "status": "retired",
+    "shutdownDate": "2025-06-06",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -190,19 +241,24 @@
         "replacement \"gpt-4o\" is live in a public catalog",
         "Confirmed retired 2025-06-06; provider-named replacement gpt-4o is current."
       ]
-    },
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "status": "retired",
-    "shutdownDate": "2025-06-06"
+    }
   },
   {
+    "entryId": "openai.gpt-4-vision-preview.retirement-2024-12-06",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4-vision-preview",
     "replacement": "gpt-4o",
     "note": "vision-preview deprecated; vision folded into gpt-4o",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "status": "retired",
+    "shutdownDate": "2024-12-06",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -212,19 +268,23 @@
         "replacement \"gpt-4o\" is live in a public catalog",
         "Confirmed retired 2024-12-06 (via gpt-4-vision research); provider-named replacement gpt-4o is current."
       ]
-    },
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "status": "retired",
-    "shutdownDate": "2024-12-06"
+    }
   },
   {
+    "entryId": "openai.gpt-4-1106-vision-preview.retirement-undated",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4-1106-vision-preview",
     "replacement": "gpt-4o",
     "note": "vision-preview snapshot deprecated; vision folded into gpt-4o",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "status": "deprecated",
     "verification": {
-      "status": "verified",
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": false,
+      "quarantineReason": "stamped \"verified\" while its own recorded research says \"status unknown\" -- held for review until that contradiction is resolved (see verification.reasons)",
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -234,17 +294,24 @@
         "replacement \"gpt-4o\" is live in a public catalog",
         "Not individually researched (status unknown). Almost certainly retired in the same wave as gpt-4-vision-preview and the target gpt-4o is current, so low risk — but downgrade until verified."
       ]
-    },
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations"
+    }
   },
   {
+    "entryId": "openai.gpt-4.5-preview.retirement-2025-07-14",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4.5-preview",
     "replacement": "gpt-4.1",
     "note": "gpt-4.5-preview deprecated; OpenAI recommends gpt-4o / gpt-4.1",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "status": "retired",
+    "shutdownDate": "2025-07-14",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -254,19 +321,23 @@
         "replacement \"gpt-4.1\" is live in a public catalog",
         "Confirmed retired 2025-07-14, but OpenAI's official replacement is gpt-4.1, not gpt-4o. Registry contradicts the provider — retarget to gpt-4.1."
       ]
-    },
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "status": "retired",
-    "shutdownDate": "2025-07-14"
+    }
   },
   {
+    "entryId": "openai.o1-preview.retirement-undated",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "o1-preview",
     "replacement": "o1",
     "note": "o1-preview deprecated in favor of the GA o1 reasoning model",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "status": "deprecated",
     "verification": {
       "status": "unverified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -277,17 +348,23 @@
         "the provider officially recommends \"o3\", but the registry uses \"o1\" (live, but not the currently-recommended target — stale)",
         "Neither o1-preview nor its target o1 was researched this pass — no verdict on either id. Do not auto-apply until both are verified."
       ]
-    },
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations"
+    }
   },
   {
+    "entryId": "openai.o1-mini.retirement-undated",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "o1-mini",
     "replacement": "gpt-5.6-terra",
     "note": "o1-mini deprecated; OpenAI recommends o4-mini as the small reasoning model",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "status": "deprecated",
     "verification": {
       "status": "unverified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -298,17 +375,23 @@
         "the provider officially recommends \"o4-mini\", but the registry uses \"gpt-5.6-terra\" (live, but not the currently-recommended target — stale)",
         "Source not researched (status unknown), and target o4-mini is confirmed deprecated (shutdown 2026-10-23, provider replacement gpt-5.6-terra) — the registry currently proposes a dying model as an upgrade. On re-verification retarget to gpt-5.6-terra."
       ]
-    },
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations"
+    }
   },
   {
+    "entryId": "openai.text-davinci-003.retirement-undated",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "text-davinci-003",
     "replacement": "gpt-5.6-terra",
     "note": "legacy Completions model retired 2024-01-04; use gpt-3.5-turbo-instruct",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "status": "retired",
     "verification": {
-      "status": "verified",
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": false,
+      "quarantineReason": "stamped \"verified\" while its own recorded research says \"unverified\" -- held for review until that contradiction is resolved (see verification.reasons)",
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -318,17 +401,23 @@
         "replacement \"gpt-5.6-terra\" is live in a public catalog",
         "Same as text-davinci-002: source unverified this pass; target gpt-3.5-turbo-instruct confirmed deprecated (2026-09-28) — retarget to gpt-5.6-terra on re-verification."
       ]
-    },
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations"
+    }
   },
   {
+    "entryId": "openai.text-davinci-002.retirement-undated",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "text-davinci-002",
     "replacement": "gpt-5.6-terra",
     "note": "legacy Completions model retired 2024-01-04; use gpt-3.5-turbo-instruct",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "status": "retired",
     "verification": {
-      "status": "verified",
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": false,
+      "quarantineReason": "stamped \"verified\" while its own recorded research says \"unverified\" -- held for review until that contradiction is resolved (see verification.reasons)",
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -338,17 +427,23 @@
         "replacement \"gpt-5.6-terra\" is live in a public catalog",
         "Not researched this pass (historically retired Jan 2024, unverified here). Target gpt-3.5-turbo-instruct is confirmed deprecated (shutdown 2026-09-28, provider replacement gpt-5.6-terra) — retarget on re-verification."
       ]
-    },
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations"
+    }
   },
   {
+    "entryId": "openai.text-moderation-latest.retirement-undated",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "text-moderation-latest",
     "replacement": "omni-moderation-latest",
     "note": "text-moderation-* deprecated; use the multimodal omni-moderation-latest",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "status": "deprecated",
     "verification": {
       "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -358,17 +453,23 @@
         "\"text-moderation-latest\" is a moderation model; public catalogs (models.dev, OpenRouter) do not list this class, so \"omni-moderation-latest\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
         "Neither the source nor the target omni-moderation-latest was researched this pass — no provider verdict. Do not auto-apply until verified."
       ]
-    },
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations"
+    }
   },
   {
+    "entryId": "openai.text-moderation-stable.retirement-undated",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "text-moderation-stable",
     "replacement": "omni-moderation-latest",
     "note": "text-moderation-* deprecated; use the multimodal omni-moderation-latest",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "status": "deprecated",
     "verification": {
       "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -378,8 +479,7 @@
         "\"text-moderation-stable\" is a moderation model; public catalogs (models.dev, OpenRouter) do not list this class, so \"omni-moderation-latest\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
         "Neither source nor target researched this pass — no provider verdict. Do not auto-apply until verified."
       ]
-    },
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations"
+    }
   },
   {
     "provider": "openai",
@@ -428,13 +528,21 @@
     "note": "top_k rejected (HTTP 400) on Opus 4.7+ and newer. VERIFY the exact model set against Anthropic's live docs before production."
   },
   {
+    "entryId": "anthropic.claude-3-opus-20240229.retirement-2026-01-05",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-3-opus-20240229",
     "replacement": "claude-opus-4-8",
     "note": "Claude 3 Opus retired. Replacement id is a best-effort current Opus alias; VERIFY against Anthropic's live deprecation table before production.",
+    "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+    "status": "retired",
+    "shutdownDate": "2026-01-05",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -445,19 +553,24 @@
         "matches the provider's officially-recommended replacement \"claude-opus-4-8\"",
         "Confirmed retired 2026-01-05; provider-named replacement claude-opus-4-8 is current (earliest retirement 2027-05-28)."
       ]
-    },
-    "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
-    "status": "retired",
-    "shutdownDate": "2026-01-05"
+    }
   },
   {
+    "entryId": "anthropic.claude-3-5-sonnet-20240620.retirement-2025-10-28",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-3-5-sonnet-20240620",
     "replacement": "claude-sonnet-4-6",
     "note": "Claude 3.5 Sonnet (Jun 2024) retired. Replacement is Anthropic's officially-recommended current Sonnet (corrected from claude-sonnet-4-5).",
+    "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+    "status": "retired",
+    "shutdownDate": "2025-10-28",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -468,19 +581,24 @@
         "matches the provider's officially-recommended replacement \"claude-sonnet-4-6\"",
         "Confirmed retired 2025-10-28; provider-named replacement claude-sonnet-4-6 is current."
       ]
-    },
-    "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
-    "status": "retired",
-    "shutdownDate": "2025-10-28"
+    }
   },
   {
+    "entryId": "anthropic.claude-3-5-sonnet-20241022.retirement-2025-10-28",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-3-5-sonnet-20241022",
     "replacement": "claude-sonnet-4-6",
     "note": "Claude 3.5 Sonnet v2 (Oct 2024) retired. Replacement is Anthropic's officially-recommended current Sonnet (corrected from claude-sonnet-4-5).",
+    "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+    "status": "retired",
+    "shutdownDate": "2025-10-28",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -491,19 +609,24 @@
         "matches the provider's officially-recommended replacement \"claude-sonnet-4-6\"",
         "Confirmed retired 2025-10-28; provider-named replacement claude-sonnet-4-6 is current."
       ]
-    },
-    "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
-    "status": "retired",
-    "shutdownDate": "2025-10-28"
+    }
   },
   {
+    "entryId": "anthropic.claude-3-7-sonnet-20250219.retirement-2026-02-19",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-3-7-sonnet-20250219",
     "replacement": "claude-sonnet-4-6",
     "note": "Claude 3.7 Sonnet retired. Replacement is Anthropic's officially-recommended current Sonnet (corrected from claude-sonnet-4-5).",
+    "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+    "status": "retired",
+    "shutdownDate": "2026-02-19",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -514,19 +637,24 @@
         "matches the provider's officially-recommended replacement \"claude-sonnet-4-6\"",
         "Confirmed retired 2026-02-19; provider-named replacement claude-sonnet-4-6 is current."
       ]
-    },
-    "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
-    "status": "retired",
-    "shutdownDate": "2026-02-19"
+    }
   },
   {
+    "entryId": "anthropic.claude-3-5-haiku-20241022.retirement-2026-02-19",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-3-5-haiku-20241022",
     "replacement": "claude-haiku-4-5-20251001",
     "note": "Claude 3.5 Haiku retired. Replacement is Anthropic's officially-recommended dated Haiku snapshot (corrected from the bare claude-haiku-4-5 alias).",
+    "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+    "status": "retired",
+    "shutdownDate": "2026-02-19",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -537,19 +665,24 @@
         "matches the provider's officially-recommended replacement \"claude-haiku-4-5-20251001\"",
         "Confirmed retired 2026-02-19; provider-named replacement claude-haiku-4-5-20251001 is current — but its earliest permitted retirement is 2026-10-15 (~2 months out); watch for a deprecation notice."
       ]
-    },
-    "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
-    "status": "retired",
-    "shutdownDate": "2026-02-19"
+    }
   },
   {
+    "entryId": "anthropic.claude-sonnet-4-20250514.retirement-2026-06-15",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-sonnet-4-20250514",
     "replacement": "claude-sonnet-4-6",
     "note": "Claude Sonnet 4 (May 2025) retired. Replacement is Anthropic's officially-recommended current Sonnet (corrected from claude-sonnet-4-5).",
+    "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+    "status": "retired",
+    "shutdownDate": "2026-06-15",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -560,19 +693,24 @@
         "matches the provider's officially-recommended replacement \"claude-sonnet-4-6\"",
         "Confirmed retired 2026-06-15; provider-named replacement claude-sonnet-4-6 is current."
       ]
-    },
-    "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
-    "status": "retired",
-    "shutdownDate": "2026-06-15"
+    }
   },
   {
+    "entryId": "anthropic.claude-opus-4-20250514.retirement-2026-06-15",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-opus-4-20250514",
     "replacement": "claude-opus-4-8",
     "note": "Claude Opus 4 (May 2025) retired. Replacement id best-effort; VERIFY against Anthropic's live deprecation table.",
+    "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+    "status": "retired",
+    "shutdownDate": "2026-06-15",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -583,19 +721,24 @@
         "matches the provider's officially-recommended replacement \"claude-opus-4-8\"",
         "Confirmed retired 2026-06-15; provider-named replacement claude-opus-4-8 is current."
       ]
-    },
-    "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
-    "status": "retired",
-    "shutdownDate": "2026-06-15"
+    }
   },
   {
+    "entryId": "anthropic.claude-opus-4-1-20250805.retirement-2026-08-05",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-opus-4-1-20250805",
     "replacement": "claude-opus-4-8",
     "note": "Claude Opus 4.1 (Aug 2025) retired. Replacement id best-effort; VERIFY against Anthropic's live deprecation table.",
+    "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+    "status": "retired",
+    "shutdownDate": "2026-08-05",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -606,12 +749,10 @@
         "matches the provider's officially-recommended replacement \"claude-opus-4-8\"",
         "Confirmed retired 2026-08-05; provider-named replacement claude-opus-4-8 is current."
       ]
-    },
-    "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
-    "status": "retired",
-    "shutdownDate": "2026-08-05"
+    }
   },
   {
+    "entryId": "openai.gpt-3.5-turbo-1106.retirement-2026-09-28",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-3.5-turbo-1106",
@@ -622,6 +763,10 @@
     "note": "Provider-named replacement. Announced 2025-09-26.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -634,6 +779,7 @@
     }
   },
   {
+    "entryId": "openai.gpt-3.5-turbo-0125.retirement-2026-10-23",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-3.5-turbo-0125",
@@ -644,6 +790,10 @@
     "note": "Provider-named. Announced 2026-04-22; listed jointly with the gpt-3.5-turbo alias.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -656,6 +806,7 @@
     }
   },
   {
+    "entryId": "openai.gpt-3.5-turbo-16k.retirement-2024-09-13",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-3.5-turbo-16k",
@@ -665,7 +816,11 @@
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
     "note": "Provider named gpt-3.5-turbo, but that model is itself deprecated (shutdown 2026-10-23); chained one hop to its provider-named replacement gpt-5.6-terra.",
     "verification": {
-      "status": "verified",
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": false,
+      "quarantineReason": "stamped \"verified\" while its own recorded research says \"itself deprecated\" -- held for review until that contradiction is resolved (see verification.reasons)",
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -678,6 +833,7 @@
     }
   },
   {
+    "entryId": "openai.gpt-3.5-turbo-instruct.retirement-2026-09-28",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-3.5-turbo-instruct",
@@ -688,6 +844,10 @@
     "note": "Provider-named. Announced 2025-09-26.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -701,6 +861,7 @@
     }
   },
   {
+    "entryId": "openai.gpt-3.5-turbo.retirement-2026-10-23",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-3.5-turbo",
@@ -711,6 +872,10 @@
     "note": "Provider-named. Listed as 'gpt-3.5-turbo-0125 / gpt-3.5-turbo'. This id is also a replacement TARGET in 3 existing registry rows — those need retargeting.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -723,6 +888,7 @@
     }
   },
   {
+    "entryId": "openai.gpt-4.retirement-2026-10-23",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4",
@@ -733,6 +899,10 @@
     "note": "Provider-named. Listed as 'gpt-4-0613 / gpt-4'. Also a replacement TARGET in 2 existing registry rows — those need retargeting.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -745,6 +915,7 @@
     }
   },
   {
+    "entryId": "openai.gpt-4-0125-preview.retirement-2026-03-26",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4-0125-preview",
@@ -754,7 +925,11 @@
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
     "note": "Provider named a family ('gpt-5 or gpt-4.1 variants'), not a single id; gpt-4.1 selected as the only CURRENT provider-named option (gpt-5 is itself deprecated, shutdown 2026-12-11).",
     "verification": {
-      "status": "verified",
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": false,
+      "quarantineReason": "stamped \"verified\" while its own recorded research says \"itself deprecated\" -- held for review until that contradiction is resolved (see verification.reasons)",
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -767,6 +942,7 @@
     }
   },
   {
+    "entryId": "openai.gpt-4-1106-preview.retirement-2026-10-23",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4-1106-preview",
@@ -777,6 +953,10 @@
     "note": "Provider-named. Provider-page conflict: also listed as shut down 2026-03-26; later 2026-04-22 announcement used here — treat as possibly already dead.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -789,6 +969,7 @@
     }
   },
   {
+    "entryId": "openai.gpt-4-turbo-preview.retirement-2026-03-26",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4-turbo-preview",
@@ -798,7 +979,11 @@
     "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-4-turbo-preview",
     "note": "Alias of gpt-4-0125-preview, which is shut down (alias page banner is stale). Provider named 'gpt-5 or gpt-4.1 variants'; gpt-4.1 selected as the current provider-named option.",
     "verification": {
-      "status": "verified",
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": false,
+      "quarantineReason": "stamped \"verified\" while its own recorded research says \"stale\" -- held for review until that contradiction is resolved (see verification.reasons)",
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -811,6 +996,7 @@
     }
   },
   {
+    "entryId": "openai.gpt-4-turbo.retirement-2026-10-23",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4-turbo",
@@ -821,6 +1007,10 @@
     "note": "Provider-named. Announced 2026-04-22.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -833,6 +1023,7 @@
     }
   },
   {
+    "entryId": "openai.gpt-4-turbo-2024-04-09.retirement-2026-10-23",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4-turbo-2024-04-09",
@@ -843,6 +1034,10 @@
     "note": "Provider-named. Announced 2026-04-22.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -855,6 +1050,7 @@
     }
   },
   {
+    "entryId": "openai.gpt-4-32k.retirement-2025-06-06",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4-32k",
@@ -865,6 +1061,10 @@
     "note": "Provider-named; gpt-4o is current.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -878,6 +1078,7 @@
     }
   },
   {
+    "entryId": "openai.gpt-4-vision.retirement-2024-12-06",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4-vision",
@@ -888,6 +1089,10 @@
     "note": "Bare id was never served; the real id gpt-4-vision-preview shut down 2024-12-06 with provider-named replacement gpt-4o. Either form fails today.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -900,6 +1105,7 @@
     }
   },
   {
+    "entryId": "openai.gpt-4.5.retirement-2025-07-14",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4.5",
@@ -910,6 +1116,10 @@
     "note": "Served API id was gpt-4.5-preview (bare gpt-4.5 was never an API id); provider-named replacement gpt-4.1 (current).",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -922,6 +1132,7 @@
     }
   },
   {
+    "entryId": "openai.gpt-4.5-preview-2025-02-27.retirement-2025-07-14",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4.5-preview-2025-02-27",
@@ -932,6 +1143,10 @@
     "note": "Provider-named.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -944,6 +1159,7 @@
     }
   },
   {
+    "entryId": "openai.gpt-4o-2024-05-13.retirement-2026-10-23",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4o-2024-05-13",
@@ -954,6 +1170,10 @@
     "note": "Provider-named. Only this original snapshot is deprecated; the gpt-4o alias and later snapshots remain current — do NOT flag them.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -966,6 +1186,7 @@
     }
   },
   {
+    "entryId": "openai.chatgpt-4o-latest.retirement-2026-02-17",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "chatgpt-4o-latest",
@@ -976,6 +1197,10 @@
     "note": "Provider named gpt-5.1-chat-latest, itself retired 2026-07-23; chained one hop to its provider-named replacement gpt-5.6-sol.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -988,6 +1213,7 @@
     }
   },
   {
+    "entryId": "openai.o3-mini.retirement-2026-10-23",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "o3-mini",
@@ -998,6 +1224,10 @@
     "note": "Provider-named. Announced 2026-04-22.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1010,6 +1240,7 @@
     }
   },
   {
+    "entryId": "openai.o4-mini.retirement-2026-10-23",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "o4-mini",
@@ -1020,6 +1251,10 @@
     "note": "Provider-named. Note: o4-mini is currently a replacement TARGET in the existing registry (o1-mini row) — that row needs retargeting.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1032,6 +1267,7 @@
     }
   },
   {
+    "entryId": "openai.gpt-4.1-nano.retirement-2026-10-23",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4.1-nano",
@@ -1042,6 +1278,10 @@
     "note": "Provider-named. Only nano is deprecated; gpt-4.1 and gpt-4.1-mini remain current — do NOT flag them.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1054,6 +1294,7 @@
     }
   },
   {
+    "entryId": "openai.gpt-5.retirement-2026-12-11",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-5",
@@ -1064,6 +1305,10 @@
     "note": "Provider-named. Alias resolves to gpt-5-2025-08-07; announced 2026-06-11.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1076,6 +1321,7 @@
     }
   },
   {
+    "entryId": "openai.gpt-5-2025-08-07.retirement-2026-12-11",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-5-2025-08-07",
@@ -1086,6 +1332,10 @@
     "note": "Provider-named.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1098,6 +1348,7 @@
     }
   },
   {
+    "entryId": "openai.gpt-5-mini.retirement-2026-12-11",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-5-mini",
@@ -1108,6 +1359,10 @@
     "note": "Provider-named.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1120,6 +1375,7 @@
     }
   },
   {
+    "entryId": "openai.gpt-5-nano.retirement-2026-12-11",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-5-nano",
@@ -1130,6 +1386,10 @@
     "note": "Provider-named.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1142,6 +1402,7 @@
     }
   },
   {
+    "entryId": "openai.gpt-5-pro.retirement-2026-12-11",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-5-pro",
@@ -1152,6 +1413,10 @@
     "note": "Provider names 'gpt-5.6-sol (pro mode)'.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1164,6 +1429,7 @@
     }
   },
   {
+    "entryId": "openai.gpt-5.2.retirement-undated",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-5.2",
@@ -1173,6 +1439,10 @@
     "note": "Provider-named via model-page banner recommending gpt-5.6; no shutdown date published for the base model. Still callable.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1185,6 +1455,7 @@
     }
   },
   {
+    "entryId": "openai.dall-e-2.retirement-2026-05-12",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "dall-e-2",
@@ -1195,6 +1466,10 @@
     "note": "Provider named three options; gpt-image-2 chosen — the other two (gpt-image-1, gpt-image-1-mini) are themselves deprecated.",
     "verification": {
       "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1207,6 +1482,7 @@
     }
   },
   {
+    "entryId": "openai.dall-e-3.retirement-2026-05-12",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "dall-e-3",
@@ -1217,6 +1493,10 @@
     "note": "Provider named three options; gpt-image-2 chosen as the only durable provider-named option.",
     "verification": {
       "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1229,6 +1509,7 @@
     }
   },
   {
+    "entryId": "openai.gpt-image-1.retirement-2026-10-23",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-image-1",
@@ -1239,6 +1520,10 @@
     "note": "Provider-named. Announced 2026-04-22.",
     "verification": {
       "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1251,6 +1536,7 @@
     }
   },
   {
+    "entryId": "anthropic.claude-1.retirement-2024-11-06",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-1",
@@ -1261,6 +1547,10 @@
     "note": "Provider-named for the Claude 1 family; bare form never documented, but no Claude 1 model works today.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1273,6 +1563,7 @@
     }
   },
   {
+    "entryId": "anthropic.claude-1.2.retirement-2024-11-06",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-1.2",
@@ -1283,6 +1574,10 @@
     "note": "Provider-named; explicitly listed in the 2024-09-04 notice.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1295,6 +1590,7 @@
     }
   },
   {
+    "entryId": "anthropic.claude-instant-1.retirement-2024-11-06",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-instant-1",
@@ -1305,6 +1601,10 @@
     "note": "Provider-named for the Instant family; bare form never documented.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1317,6 +1617,7 @@
     }
   },
   {
+    "entryId": "anthropic.claude-instant-1.2.retirement-2024-11-06",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-instant-1.2",
@@ -1327,6 +1628,10 @@
     "note": "Provider-named; explicitly listed.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1339,6 +1644,7 @@
     }
   },
   {
+    "entryId": "anthropic.claude-2.retirement-2025-07-21",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-2",
@@ -1349,6 +1655,10 @@
     "note": "Provider-named for the Claude 2 family; bare form never documented.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1361,6 +1671,7 @@
     }
   },
   {
+    "entryId": "anthropic.claude-2.0.retirement-2025-07-21",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-2.0",
@@ -1371,6 +1682,10 @@
     "note": "Provider-named; explicitly listed in the 2025-01-21 notice.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1383,6 +1698,7 @@
     }
   },
   {
+    "entryId": "anthropic.claude-2.1.retirement-2025-07-21",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-2.1",
@@ -1393,6 +1709,10 @@
     "note": "Provider-named; explicitly listed.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1405,6 +1725,7 @@
     }
   },
   {
+    "entryId": "anthropic.claude-3-sonnet-20240229.retirement-2025-07-21",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-3-sonnet-20240229",
@@ -1415,6 +1736,10 @@
     "note": "Provider-named. GAP: confirmed retired but absent from the existing registry — add.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1428,6 +1753,7 @@
     }
   },
   {
+    "entryId": "anthropic.claude-3-sonnet.retirement-2025-07-21",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-3-sonnet",
@@ -1438,6 +1764,10 @@
     "note": "Provider-named; dateless form was never a documented alias, but calls fail today.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1450,6 +1780,7 @@
     }
   },
   {
+    "entryId": "anthropic.claude-3-haiku-20240307.retirement-2026-04-20",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-3-haiku-20240307",
@@ -1460,6 +1791,10 @@
     "note": "Provider-named; deprecated 2026-02-19, retired 2026-04-20.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1473,6 +1808,7 @@
     }
   },
   {
+    "entryId": "anthropic.claude-3-haiku.retirement-2026-04-20",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-3-haiku",
@@ -1483,6 +1819,10 @@
     "note": "Provider-named; dateless form never documented, calls fail today.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1495,6 +1835,7 @@
     }
   },
   {
+    "entryId": "anthropic.claude-3-opus.retirement-2026-01-05",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-3-opus",
@@ -1505,6 +1846,10 @@
     "note": "Provider-named; dateless form never documented, calls fail today.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1517,6 +1862,7 @@
     }
   },
   {
+    "entryId": "anthropic.claude-3-opus-latest.retirement-2026-01-05",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-3-opus-latest",
@@ -1527,6 +1873,10 @@
     "note": "Provider-named; alias died with claude-3-opus-20240229.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1539,6 +1889,7 @@
     }
   },
   {
+    "entryId": "anthropic.claude-3-5-sonnet.retirement-2025-10-28",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-3-5-sonnet",
@@ -1549,6 +1900,10 @@
     "note": "Provider-named; both 3.5 Sonnet snapshots retired 2025-10-28.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1561,6 +1916,7 @@
     }
   },
   {
+    "entryId": "anthropic.claude-3-5-sonnet-latest.retirement-2025-10-28",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-3-5-sonnet-latest",
@@ -1571,6 +1927,10 @@
     "note": "Provider-named; alias died with the 20241022 snapshot.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1583,6 +1943,7 @@
     }
   },
   {
+    "entryId": "anthropic.claude-3-5-haiku.retirement-2026-02-19",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-3-5-haiku",
@@ -1593,6 +1954,10 @@
     "note": "Provider-named.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1605,6 +1970,7 @@
     }
   },
   {
+    "entryId": "anthropic.claude-3-5-haiku-latest.retirement-2026-02-19",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-3-5-haiku-latest",
@@ -1615,6 +1981,10 @@
     "note": "Provider-named; alias died with the 20241022 snapshot.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1627,6 +1997,7 @@
     }
   },
   {
+    "entryId": "anthropic.claude-3-7-sonnet.retirement-2026-02-19",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-3-7-sonnet",
@@ -1637,6 +2008,10 @@
     "note": "Provider-named.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1649,6 +2024,7 @@
     }
   },
   {
+    "entryId": "anthropic.claude-3-7-sonnet-latest.retirement-2026-02-19",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-3-7-sonnet-latest",
@@ -1659,6 +2035,10 @@
     "note": "Provider-named; alias died with the 20250219 snapshot.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1671,6 +2051,7 @@
     }
   },
   {
+    "entryId": "anthropic.claude-sonnet-4-0.retirement-2026-06-15",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-sonnet-4-0",
@@ -1681,6 +2062,10 @@
     "note": "Provider-named; alias died with claude-sonnet-4-20250514.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1693,6 +2078,7 @@
     }
   },
   {
+    "entryId": "anthropic.claude-sonnet-4.retirement-2026-06-15",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-sonnet-4",
@@ -1703,6 +2089,10 @@
     "note": "Provider-named; documented alias was claude-sonnet-4-0, but calls to the bare form fail today.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1715,6 +2105,7 @@
     }
   },
   {
+    "entryId": "anthropic.claude-opus-4.retirement-2026-06-15",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-opus-4",
@@ -1725,6 +2116,10 @@
     "note": "Provider-named; documented alias was claude-opus-4-0.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1737,6 +2132,7 @@
     }
   },
   {
+    "entryId": "anthropic.claude-opus-4-1.retirement-2026-08-05",
     "provider": "anthropic",
     "kind": "model_id",
     "deprecated": "claude-opus-4-1",
@@ -1747,6 +2143,10 @@
     "note": "Provider-named; alias died with claude-opus-4-1-20250805 (retired 13 days ago).",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1759,6 +2159,7 @@
     }
   },
   {
+    "entryId": "google.gemini-pro.retirement-2025-02-18",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-pro",
@@ -1769,6 +2170,10 @@
     "note": "No provider replacement named; replacement inferred, not provider-named (closest current same-class Pro model).",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1781,6 +2186,7 @@
     }
   },
   {
+    "entryId": "google.gemini-pro-vision.retirement-2024-07-12",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-pro-vision",
@@ -1791,6 +2197,10 @@
     "note": "replacement inferred, not provider-named (2.5 Pro is natively multimodal, same Pro class).",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1803,6 +2213,7 @@
     }
   },
   {
+    "entryId": "google.gemini-1.0-pro.retirement-2025-02-18",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-1.0-pro",
@@ -1813,6 +2224,10 @@
     "note": "replacement inferred, not provider-named.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1825,6 +2240,7 @@
     }
   },
   {
+    "entryId": "google.gemini-1.0-pro-001.retirement-2025-02-18",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-1.0-pro-001",
@@ -1835,6 +2251,10 @@
     "note": "replacement inferred, not provider-named.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1847,6 +2267,7 @@
     }
   },
   {
+    "entryId": "google.gemini-1.0-pro-vision.retirement-2024-07-12",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-1.0-pro-vision",
@@ -1857,6 +2278,10 @@
     "note": "replacement inferred, not provider-named.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1869,6 +2294,7 @@
     }
   },
   {
+    "entryId": "google.gemini-1.5-pro.retirement-2025-09-29",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-1.5-pro",
@@ -1879,6 +2305,10 @@
     "note": "Whole 1.5 line shut down; replacement inferred, not provider-named.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1891,6 +2321,7 @@
     }
   },
   {
+    "entryId": "google.gemini-1.5-pro-001.retirement-2025-09-29",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-1.5-pro-001",
@@ -1901,6 +2332,10 @@
     "note": "replacement inferred, not provider-named.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1913,6 +2348,7 @@
     }
   },
   {
+    "entryId": "google.gemini-1.5-pro-002.retirement-2025-09-29",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-1.5-pro-002",
@@ -1923,6 +2359,10 @@
     "note": "replacement inferred, not provider-named.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1935,6 +2375,7 @@
     }
   },
   {
+    "entryId": "google.gemini-1.5-pro-latest.retirement-2025-09-29",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-1.5-pro-latest",
@@ -1945,6 +2386,10 @@
     "note": "replacement inferred, not provider-named.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1957,6 +2402,7 @@
     }
   },
   {
+    "entryId": "google.gemini-1.5-flash.retirement-2025-09-29",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-1.5-flash",
@@ -1967,6 +2413,10 @@
     "note": "replacement inferred, not provider-named (closest current same-class Flash model).",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -1979,6 +2429,7 @@
     }
   },
   {
+    "entryId": "google.gemini-1.5-flash-001.retirement-2025-09-29",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-1.5-flash-001",
@@ -1989,6 +2440,10 @@
     "note": "replacement inferred, not provider-named.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -2001,6 +2456,7 @@
     }
   },
   {
+    "entryId": "google.gemini-1.5-flash-002.retirement-2025-09-29",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-1.5-flash-002",
@@ -2011,6 +2467,10 @@
     "note": "replacement inferred, not provider-named.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -2023,6 +2483,7 @@
     }
   },
   {
+    "entryId": "google.gemini-1.5-flash-8b.retirement-2025-09-29",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-1.5-flash-8b",
@@ -2033,6 +2494,10 @@
     "note": "replacement inferred, not provider-named (flash-lite matches the 8b cost-optimized class; plain 2.5-flash would be a capability-class upgrade).",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -2045,6 +2510,7 @@
     }
   },
   {
+    "entryId": "google.gemini-1.5-flash-latest.retirement-2025-09-29",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-1.5-flash-latest",
@@ -2055,6 +2521,10 @@
     "note": "replacement inferred, not provider-named.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -2067,6 +2537,7 @@
     }
   },
   {
+    "entryId": "google.gemini-2.0-flash-exp.retirement-2025-12-02",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-2.0-flash-exp",
@@ -2077,6 +2548,10 @@
     "note": "replacement inferred, not provider-named.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -2089,6 +2564,7 @@
     }
   },
   {
+    "entryId": "google.gemini-2.0-flash-lite.retirement-2026-06-01",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-2.0-flash-lite",
@@ -2098,7 +2574,11 @@
     "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
     "note": "Provider-named. Caution: gemini-3.1-flash-lite is itself deprecated (shutdown 2027-05-07, successor gemini-3.5-flash-lite).",
     "verification": {
-      "status": "verified",
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": false,
+      "quarantineReason": "stamped \"verified\" while its own recorded research says \"itself deprecated\" -- held for review until that contradiction is resolved (see verification.reasons)",
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -2111,6 +2591,7 @@
     }
   },
   {
+    "entryId": "google.gemini-2.0-flash-lite-001.retirement-2026-06-01",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-2.0-flash-lite-001",
@@ -2121,6 +2602,10 @@
     "note": "Provider-named; same caution as gemini-2.0-flash-lite.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -2133,6 +2618,7 @@
     }
   },
   {
+    "entryId": "google.gemini-2.0-flash-thinking-exp.retirement-2025-12-02",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-2.0-flash-thinking-exp",
@@ -2143,6 +2629,10 @@
     "note": "replacement inferred, not provider-named (2.5 Flash has native thinking).",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -2155,6 +2645,7 @@
     }
   },
   {
+    "entryId": "google.gemini-2.0-pro-exp.retirement-2025-12-02",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-2.0-pro-exp",
@@ -2165,6 +2656,10 @@
     "note": "replacement inferred, not provider-named.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -2177,6 +2672,7 @@
     }
   },
   {
+    "entryId": "google.gemini-2.5-pro-preview-03-25.retirement-2025-12-02",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-2.5-pro-preview-03-25",
@@ -2187,6 +2683,10 @@
     "note": "Provider-named (replacement is Preview-tier, weaker stability guarantees).",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -2199,6 +2699,7 @@
     }
   },
   {
+    "entryId": "google.gemini-2.5-flash-preview-04-17.retirement-2025-07-15",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-2.5-flash-preview-04-17",
@@ -2209,6 +2710,10 @@
     "note": "replacement inferred, not provider-named (GA model of the same line).",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -2221,6 +2726,7 @@
     }
   },
   {
+    "entryId": "google.gemini-2.5-flash-preview-05-20.retirement-2025-11-18",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-2.5-flash-preview-05-20",
@@ -2231,6 +2737,10 @@
     "note": "Provider-named, but research did not independently verify gemini-3.6-flash's own status (only gemini-3.5-flash confirmed current) — verify before auto-applying.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -2243,6 +2753,7 @@
     }
   },
   {
+    "entryId": "google.gemini-2.5-pro-preview-05-06.retirement-2025-12-02",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-2.5-pro-preview-05-06",
@@ -2253,6 +2764,10 @@
     "note": "Provider-named.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -2265,6 +2780,7 @@
     }
   },
   {
+    "entryId": "google.gemini-2.5-pro-preview-06-05.retirement-2025-12-02",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-2.5-pro-preview-06-05",
@@ -2275,6 +2791,10 @@
     "note": "Provider-named.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -2287,6 +2807,7 @@
     }
   },
   {
+    "entryId": "google.gemini-3-flash-preview.retirement-undated",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-3-flash-preview",
@@ -2296,6 +2817,10 @@
     "note": "Provider-named; no shutdown announced, still callable. Note: this is the current resolution target of the gemini-flash-latest alias used as a target by the existing registry.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -2308,6 +2833,7 @@
     }
   },
   {
+    "entryId": "google.gemini-3-pro-preview.retirement-2026-03-09",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-3-pro-preview",
@@ -2318,6 +2844,10 @@
     "note": "Provider-named.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -2330,6 +2860,7 @@
     }
   },
   {
+    "entryId": "google.gemini-3.1-flash-lite.retirement-2027-05-07",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-3.1-flash-lite",
@@ -2340,6 +2871,10 @@
     "note": "Provider-named; long runway (Google lists earliest-possible dates). Also the replacement target for the 2.0-flash-lite rows.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",
@@ -2352,6 +2887,7 @@
     }
   },
   {
+    "entryId": "google.gemini-embedding-001.retirement-2028-05-14",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-embedding-001",
@@ -2362,6 +2898,10 @@
     "note": "Provider-named; long runway, low urgency.",
     "verification": {
       "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
       "checkedAt": "2026-08-21",
       "sources": [
         "openrouter",

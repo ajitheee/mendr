@@ -6,6 +6,7 @@ import {
   findModelIdLiterals,
   scanProjectAnnotations,
 } from '../usage/scanLiterals.js';
+import { autoApplyVerification } from '../usage/llmRegistry.js';
 import { applyModelIdFixes, applyModelIdFixesToProject } from './modelId.js';
 
 // Hermetic LLM-mode tests. The ts-morph Project is built entirely in-memory
@@ -22,7 +23,7 @@ const REGISTRY: LlmRegistry = [
     deprecated: 'gemini-2.0-flash',
     replacement: 'gemini-flash-latest',
     note: 'gemini-2.0-flash retired',
-    verification: { status: 'verified' },
+    verification: autoApplyVerification(),
   },
   {
     provider: 'openai',
@@ -30,7 +31,7 @@ const REGISTRY: LlmRegistry = [
     deprecated: 'gpt-4-0314',
     replacement: 'gpt-4',
     note: 'dated snapshot retired',
-    verification: { status: 'verified' },
+    verification: autoApplyVerification(),
   },
   // A param_rename entry must be IGNORED by the model-id locator/codemod.
   {
@@ -155,7 +156,7 @@ const CALL_SITE_REGISTRY: LlmRegistry = [
     deprecated: 'gpt-4-vision-preview',
     replacement: 'gpt-4o',
     note: 'vision-preview folded into gpt-4o',
-    verification: { status: 'verified' },
+    verification: autoApplyVerification(),
   },
   {
     provider: 'google',
@@ -163,7 +164,7 @@ const CALL_SITE_REGISTRY: LlmRegistry = [
     deprecated: 'gemini-2.0-flash',
     replacement: 'gemini-flash-latest',
     note: 'gemini-2.0-flash retired',
-    verification: { status: 'verified' },
+    verification: autoApplyVerification(),
   },
   {
     provider: 'anthropic',
@@ -171,7 +172,7 @@ const CALL_SITE_REGISTRY: LlmRegistry = [
     deprecated: 'claude-3-opus-20240229',
     replacement: 'claude-opus-4-8',
     note: 'Claude 3 Opus retired',
-    verification: { status: 'verified' },
+    verification: autoApplyVerification(),
   },
   {
     provider: 'anthropic',
@@ -179,7 +180,7 @@ const CALL_SITE_REGISTRY: LlmRegistry = [
     deprecated: 'claude-3-5-sonnet-20241022',
     replacement: 'claude-sonnet-4-5',
     note: 'Claude 3.5 Sonnet v2 retired',
-    verification: { status: 'verified' },
+    verification: autoApplyVerification(),
   },
   {
     provider: 'openai',
@@ -187,7 +188,7 @@ const CALL_SITE_REGISTRY: LlmRegistry = [
     deprecated: 'o1-mini',
     replacement: 'o4-mini',
     note: 'o1-mini deprecated',
-    verification: { status: 'verified' },
+    verification: autoApplyVerification(),
   },
 ];
 

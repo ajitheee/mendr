@@ -45,6 +45,7 @@ Nothing, unless you pass `--write`. By default mendr loads your code in memory, 
 - `mendr scan <path>` — list the Stripe API surface a repo touches.
 - `mendr fix <path> --from <specA> --to <specB>` — Stripe field-rename codemod.
 - `mendr verify-registry` — check every model-id replacement in the registry against the live public model catalogs and print an audit.
+- `mendr validate-registry` — check the registry for internal contradictions (offline); exits non-zero on any violation.
 
 Run any command with `--help` for its flags.
 
@@ -54,20 +55,33 @@ mendr is call-site aware. It only swaps a model string when that string is actua
 
 Replacements come from a deprecation registry that carries a per-entry verdict from a check against the live public model catalogs, so it isn't guessing from a blog post. Verification is **per entry, not registry-wide** — some entries carry a `verified` verdict, some carry `unverified`, and a few carry a recheck date with a note saying that id was not researched on that pass. The report footer prints the split rather than a blanket claim, and only a `verified` entry is ever auto-applied. If a replacement isn't verified, mendr locates the spot and refuses to auto-apply rather than risk a bad patch.
 
-A stamp is one field, and a hand-edit can get it wrong. So the gate reads the entry's **reasons** too: if an entry is stamped `verified` while its own recorded reasoning says `do not auto-apply`, `status unknown`, `unverified`, `itself deprecated`, `not the currently-recommended` or `stale`, mendr treats it as **self-contradicted** and holds it at Tier B. The reasons are the working that produced the stamp, and when the two disagree the working is the half that was thought about. This is a fail-safe, not a data fix — the data may lie, and the gate must not — and `verify-registry --write` never deletes a hand-written reason, so a routine recheck cannot quietly clear a caveat that was blocking an auto-apply.
+A stamp is one field, and a hand-edit can get it wrong — twelve records once shipped stamped `verified` over their own recorded reasoning saying *do not auto-apply*. The gate used to catch that by regex-matching those sentences at fix time, which made safety behaviour a function of wording: reword the caveat and the record silently becomes auto-appliable.
+
+So the gate reads **structured fields**, and nothing else. Every record carries four:
+
+| field | means |
+| --- | --- |
+| `status` | `verified` \| `quarantined` \| `unverified` \| `unverifiable` |
+| `officialSourceConfirmed` | the provider's own docs confirm the deprecation |
+| `replacementConfirmed` | the replacement is live and uncontradicted in the public catalogs |
+| `autoApplyAllowed` | the single switch the engine reads |
+
+A record is auto-applied only when **all four** hold: `status === 'verified'` and all three booleans true. The twelve contradicting records are now `status: "quarantined"` **in the registry file itself**, each with a `quarantineReason` saying what has to be resolved — so the data is honest to anyone who reads it, not just to anyone who runs mendr. `verification.reasons` survives as documentation and is never read by the safety path.
+
+The marker list (`do not auto-apply`, `status unknown`, `unverified`, `itself deprecated`, `not the currently-recommended`, `stale`) still exists, in one place: `mendr validate-registry`, which **fails CI** when a caveat like that sits in `reasons` on a record that is nonetheless `autoApplyAllowed`. It also fails on a `verified` record missing one of its proofs, an `autoApplyAllowed` record that is not `verified`, a quarantine with no stated reason, a record with no replacement or no lifecycle claim, and a missing, wrong, or duplicated `entryId`. It runs offline, as part of `npm test` (so a bad record fails the commit that introduces it) and in the weekly `registry-verify` workflow. And `verify-registry --write` never deletes a hand-written reason and never lifts a quarantine — a fresh catalog verdict answers a different question than the one that put a record in quarantine.
 
 Every report ends with the registry's own provenance, computed from the registry that was actually loaded — never a hardcoded date:
 
 ```
-registry: 106 active entries
+registry: 106 records
+auto-fix eligible: 86
+review-only: 20 (quarantined 12, unverified 3, unverifiable 5)
 catalog recheck: 2026-08-21
-entry verification: 98 verified, 3 unverified, 5 unverifiable (per entry, see `mendr evidence <id>`)
-held at review: 12 of those verified entries contradict their own stamp in `verification.reasons` and are never auto-applied
 ```
 
-Those are three different facts and the footer keeps them apart. The **catalog recheck** date is the newest `checkedAt` stamp the entries carry (if entries carry different dates, the line names the newest *and* the oldest rather than implying one date covers all, and it names any entry carrying no date at all). The **entry verification** line is the per-entry verdict, and it is the one that decides what can be auto-applied.
+**auto-fix eligible** is the headline because it is the number you act on: how many records clear the full four-field gate, counted through the same predicate the codemod calls. Everything else is **review-only**, itemised by state. (An earlier footer led with `98 verified` and put the twelve held records on a line of their own — arithmetically true, and still misleading, because the number a reader takes away is the one next to the word "verified", and 98 was never the number of things mendr would auto-fix.) The **catalog recheck** date is the newest `checkedAt` stamp the records carry; if they carry different dates the line names the newest *and* the oldest rather than implying one date covers all, and it names any record carrying no date at all.
 
-`mendr evidence <id>` prints what a single entry actually rests on: its lifecycle and shutdown date, the oracles consulted, the verdict, and the reviewer's reasons in full — including reasons that undercut the verdict, which is the point of reading it. Stored evidence snapshots (fetched page, content hash, quoted excerpt) exist for entries promoted through `mendr candidates promote`; the entries hand-seeded into the shipped registry have none, and `mendr evidence` says so per entry rather than implying otherwise.
+`mendr evidence <id>` prints what a single record actually rests on: its lifecycle and shutdown date, the oracles consulted, the four gate fields as booleans, whether the engine gate passes or holds, and the reviewer's reasons in full — including reasons that undercut the verdict, which is the point of reading it. It accepts either the record's `entryId` or the bare deprecated model id. Stored evidence snapshots (fetched page, content hash, quoted excerpt) exist for entries promoted through `mendr candidates promote`; the entries hand-seeded into the shipped registry have none, and `mendr evidence` says so per entry rather than implying otherwise.
 
 Being precise about what "verified" covers, because it's two different checks: an entry is auto-applied only if the **replacement** is live in a public catalog and isn't contradicted by the provider's own recommendation table, *and* the **deprecation claim** is self-consistent and quote-backed — it states a lifecycle, doesn't claim a model is retired while the catalogs still list it live, carries a shutdown date when the deprecation is only announced, quotes an excerpt that actually names the model, and has the fetched page stored on disk behind it. What mendr does **not** do is independently confirm with the provider that a model was retired. No public oracle answers that, so mendr doesn't pretend to. New entries reach the registry only when a human runs `mendr candidates promote <id>` and clears both checks.
 
@@ -105,8 +119,18 @@ agent_app/simulator.py:166:13
   reason:                usage_unverified -- assigned to a model-like
                          variable, but no supported SDK call or parameter sink
                          was found in this file.
+  registry entry:        openai.gpt-4.retirement-2026-10-23
+  evidence:              mendr evidence openai.gpt-4.retirement-2026-10-23
   action:                no patch generated.
 ```
+
+### registry entry id
+
+Every model-id record carries a stable `entryId`, generated as
+`<provider>.<deprecated>.retirement-<shutdownDate|undated>` and validated for
+uniqueness in CI. Tier A and Tier B findings print it, next to the exact command
+that takes it — before it existed, findings named `mendr evidence <id>` without
+ever putting an id on screen.
 
 ### registry verdict
 
@@ -115,23 +139,29 @@ The registry does not claim every mapping it holds is confirmed, so a Tier B fin
 ```
   candidate replacement: "o3"
   registry verdict:      unverified -- this mapping did not clear verification
-                         (see `mendr evidence o3`)
 ```
 
 A verified mapping is a `replacement`; anything else is a `candidate replacement`, because a reader skimming for the id reads the label and may never reach the row below it.
 
 The row is called **registry verdict** because that is precisely what it is: a verdict stored in a JSON file, stamped on some past date. A `fix-llm` run contacts no catalog, so the row says so out loud rather than implying a live check. It is *not* called "evidence": `entry.evidence` is the field that holds actual provenance (source url, content hash, stored snapshot), it is empty on every entry in the shipped registry, and naming a row after the one thing the data does not have is the kind of overclaim this project exists to avoid. `mendr evidence <id>` prints whatever an entry really has, including "no evidence captured for this entry -- it was hand-seeded."
 
-A third value appears when the registry disagrees with itself:
+A quarantined record prints its own stated cause, verbatim, so the reason is on
+the same screen rather than one command away:
 
 ```
   candidate replacement: "gemini-3.6-flash"
-  registry verdict:      stamped verified 2026-08-21, but withheld -- the
-                         entry's own recorded reasons contradict the stamp
-                         (see `mendr evidence gemini-2.0-flash`)
+  registry verdict:      quarantined (stamped 2026-08-21) -- stamped "verified"
+                         while its own recorded research says "do not
+                         auto-apply", "status unknown" -- held for review until
+                         that contradiction is resolved
 ```
 
-`--json` carries the same fact as `registryVerdict: "verified" | "unverified" | "self-contradicted"`, alongside `verdictCheckedAt`.
+A fourth value, `withheld`, is defence in depth: a `verified` stamp sitting over
+a switched-off safety field. `validate-registry` rejects that combination
+outright, so it should never ship — but if it ever does, the row names the
+**field** that is false rather than quoting somebody's prose.
+
+`--json` carries the same fact as `registryVerdict: "verified" | "quarantined" | "unverified" | "withheld"`, alongside `verdictCheckedAt` and the record's `entryId`.
 
 ### one occurrence, one tier
 
@@ -181,20 +211,64 @@ Drop a `mendr.config.json` at the root of your repo:
 }
 ```
 
-Both fields are optional. `evalTimeoutMs` defaults to 10 minutes. `--eval-command "<cmd>"` on `fix-llm` overrides the file for one run.
+Both fields are optional. `evalTimeoutMs` defaults to 10 minutes. `evalCommand` is the same setting as `gates.eval.command` (see [which gates must pass](#which-gates-must-pass)). `--eval-command "<cmd>"` on `fix-llm` overrides the file for one run.
 
 The command runs against a throwaway copy of your repo **with the fix already applied**, never against your working tree, and only after the code gates pass. Then:
 
 | outcome | what mendr does |
 | --- | --- |
 | no eval configured | Tier A stands on the code gates alone, and the report says behavior was not tested — plus how to switch this on. |
-| eval exits 0 | `behavioral verification: pass (your eval command: npm run eval, exit 0)`. That's the whole claim: *your* eval passed. |
+| eval exits 0 | `behavioral evaluation:  passed (your eval command: npm run eval, exit 0)`. That's the whole claim: *your* eval passed. |
 | eval exits non-zero | **Tier A is downgraded to review.** The diff is printed but not applied, `--write` refuses, and mendr exits non-zero. A behavioral regression blocks the fix exactly like a failing test. |
-| eval times out or can't run | **Same thing: the fix is not applied and mendr exits non-zero.** The gate fails closed — you asked for behavioral verification and didn't get it, so mendr won't apply a fix it couldn't verify. The report names the case ("your eval command was configured but did not complete: …"). Raise `evalTimeoutMs` if your eval needs longer. |
+| eval times out or can't run | **Same thing: the fix is not applied and mendr exits non-zero.** The gate fails closed — you asked for behavioral verification and didn't get it, so mendr won't apply a fix it couldn't verify. The report names the case: the row reads `behavioral evaluation:  inconclusive (…)`, never `not configured`. Raise `evalTimeoutMs` if your eval needs longer. |
 
 Only "no eval configured" lets a fix through on the code gates alone. Once you configure one, nothing short of exit 0 applies anything.
 
 `--json` carries the same fact: `summary.behavioralVerification` is `"not-tested"`, `"pass"`, or `"fail"`, with an `eval` object naming the command, exit code and `status` (`"pass"`, `"fail"` or `"inconclusive"`, plus a `reason` on the last) whenever the gate actually ran. An inconclusive run reports `behavioralVerification: "not-tested"` — nothing was verified — and applies nothing.
+
+## which gates must pass
+
+Every Tier A fix is reported check by check, and no check borrows another's word:
+
+```
+Code verification (what mendr checked):
+  replacement evidence:   verified (registry verdict, stamped 2026-08-21)
+  official source:        confirmed
+  usage classification:   passed (traced to a live model argument at the call site)
+  syntax:                 n/a (typescript -- the type-check gate below subsumes parsing)
+  type-check:             passed (no new errors)  [required]
+  tests:                  inconclusive (repo has no installed node_modules to link -- cannot run tests)
+Behavioral verification (NOT checked):
+  behavioral evaluation:  not configured
+```
+
+`inconclusive` means the gate **could not run** — it is never printed as `passed`, and it is not the same fact as `not configured` (there was nothing to run) or `n/a` (that gate does not exist for this language).
+
+Whether a gate that did not pass *blocks* the fix is your call, in the same `mendr.config.json`:
+
+```json
+{
+  "gates": {
+    "typecheck": { "required": true },
+    "tests":     { "required": false },
+    "eval":      { "command": "npm run eval:model-migration", "required": true }
+  }
+}
+```
+
+A gate marked `required` must return `pass` for Tier A. `fail` **or** `inconclusive` downgrades the fix to review, refuses `--write`, and exits non-zero, naming the gate that did not pass. A gate that is not required still blocks on a hard `fail` — `required: false` governs the cases where the gate produced no verdict, never a verdict you dislike.
+
+Defaults, which are exactly mendr's behavior before this block existed:
+
+| gate | default | why |
+| --- | --- | --- |
+| `typecheck` | required | A patch that introduces a type error is never auto-applied. |
+| `tests` | not required | A fresh CI clone of someone else's repo usually can't run their suite. A suite that *runs and fails* still blocks. |
+| `eval` | required whenever a command is configured | You asked for behavioral verification; not getting one is not a reason to proceed. |
+
+`gates.eval.command` and the legacy top-level `evalCommand` are the same setting (setting both to *different* commands is an error, not a precedence puzzle), and `--eval-command` beats the file for one run. A malformed `gates` block — an unknown gate name, a misspelled `required`, a command on a gate that runs none — is a hard error naming the file and the field. Unknown *top-level* fields stay inert for forward compatibility, but a gate policy that silently doesn't apply is the failure this block exists to prevent.
+
+`--json` carries the same records: `gates.policy` is what this run required, and `gates.outcomes` lists every gate with its `outcome`, `language`, `required` and `blocking` flags.
 
 ## install for repeat use
 

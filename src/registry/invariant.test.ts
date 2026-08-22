@@ -9,6 +9,7 @@ import {
   loadLlmRegistry,
   modelIdEntries,
   resolveRegistryPath,
+  autoApplyVerification,
 } from '../usage/llmRegistry.js';
 import { buildRegistryPrefilter } from '../usage/scanRepo.js';
 import { findModelIdLiterals } from '../usage/scanLiterals.js';
@@ -39,7 +40,7 @@ const probe: CandidateEntry = {
   replacement: 'gpt-5.6-sol',
   // Deliberately maximal: stamped `verified`, fully evidenced. Even a candidate
   // that looks completely trustworthy must be invisible to the engine.
-  verification: { status: 'verified', checkedAt: '2026-08-20', reasons: ['fixture'] },
+  verification: autoApplyVerification({ checkedAt: '2026-08-20', reasons: ['fixture'] }),
   evidence: [
     {
       sourceUrl: 'https://example.test/deprecations',

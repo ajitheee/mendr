@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Project } from 'ts-morph';
 import type { LlmRegistry } from '../types.js';
+import { autoApplyVerification } from '../usage/llmRegistry.js';
 import { applyLlmFixesToProject } from './llmFix.js';
 
 // The combined `fix-llm` orchestration: model-id swap FIRST, then the
@@ -15,7 +16,7 @@ const REGISTRY: LlmRegistry = [
     deprecated: 'claude-3-opus-20240229',
     replacement: 'claude-opus-5',
     note: 'retired -> current opus',
-    verification: { status: 'verified' },
+    verification: autoApplyVerification(),
   },
   {
     provider: 'anthropic',

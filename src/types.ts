@@ -96,8 +96,17 @@ export type LlmDeprecationKind = 'model_id' | 'param_rename' | 'param_removal';
 // table (see src/registry/). The verdict is stamped back onto the entry so the
 // engine gate can auto-apply ONLY `verified` swaps.
 
-/** Trust verdict for a model-id replacement. */
-export type VerificationStatus = 'verified' | 'unverified' | 'unverifiable';
+/**
+ * Trust verdict for a model-id replacement.
+ *
+ * `quarantined` is a REAL state in the data, not a runtime opinion about it.
+ * Twelve entries used to ship stamped `verified` while their own recorded
+ * reasoning said "do not auto-apply"; the engine held them back by regex, so
+ * the FILE still lied to anyone who read it (or consumed it) without running
+ * mendr. Quarantine moves that judgement into the registry itself, where a
+ * reviewer, a diff, and a CI job can all see it.
+ */
+export type VerificationStatus = 'verified' | 'quarantined' | 'unverified' | 'unverifiable';
 
 // --- Evidence -------------------------------------------------------------
 // `sourceUrl` + `verification.reasons` is a CLAIM, not proof: nothing ties the
@@ -134,15 +143,64 @@ export interface EvidenceRef {
   excerpt?: string;
 }
 
-/** The stamped outcome of verifying a model-id replacement. */
+/**
+ * The stamped outcome of verifying a model-id replacement.
+ *
+ * THE SAFETY PATH READS FIELDS, NOT SENTENCES. This block used to carry one
+ * `status` plus a free-text `reasons` array, and the engine decided
+ * auto-applicability by regex-matching English inside `reasons` for phrases
+ * like "do not auto-apply" / "status unknown". That made SAFETY BEHAVIOUR A
+ * FUNCTION OF WORDING: rephrasing a caveat, or translating it, silently turned
+ * a held-back entry into an auto-applied one. The four booleans below replace
+ * that entirely — each names one thing that was (or was not) established, and
+ * {@link VerificationInfo.autoApplyAllowed} is the single switch the engine
+ * reads. See isVerified() in usage/llmRegistry.ts for the exact conjunction.
+ */
 export interface VerificationInfo {
-  /** `verified` = auto-apply (Tier A); anything else is locate-only (Tier C). */
+  /** The stamped verdict. Only `verified` is even a candidate for Tier A. */
   status: VerificationStatus;
+  /**
+   * The PROVIDER'S OWN documentation confirms this deprecation — the entry
+   * names a provider docs page AND records a lifecycle (`status`) or a
+   * `shutdownDate` read from it. Conservative by construction: a mapping
+   * sourced from a blog post, a changelog rumour, or nothing at all is false.
+   */
+  officialSourceConfirmed: boolean;
+  /**
+   * The replacement id is live and uncontradicted in the public catalogs — the
+   * verdict classifyEntry() reached on its last run (see registry/verify.ts).
+   * False for anything stale, chained, missing, or out-of-class.
+   */
+  replacementConfirmed: boolean;
+  /**
+   * THE SINGLE SWITCH THE ENGINE READS. False for every non-`verified` entry
+   * and for anything whose other two proofs are not both true. A human may
+   * also set it false on a `verified` entry to withhold auto-apply; nothing may
+   * set it true on an entry that is not `verified` (the CI validator rejects
+   * that combination outright).
+   */
+  autoApplyAllowed: boolean;
+  /**
+   * WHY this entry is quarantined, in one sentence — required (non-null) when
+   * `status` is `quarantined`, and null otherwise. This is data the report and
+   * `mendr evidence` print verbatim; it is NOT parsed, and no behaviour keys
+   * off its wording.
+   */
+  quarantineReason: string | null;
   /** ISO date (YYYY-MM-DD) the check ran, for staleness of the verdict itself. */
   checkedAt?: string;
   /** Which oracles corroborated the check (e.g. `["openrouter","models.dev"]`). */
   sources?: string[];
-  /** Human-readable reasons behind the verdict (audit trail). */
+  /**
+   * Human-readable reasons behind the verdict — DOCUMENTATION ONLY.
+   *
+   * CONSTRAINT: this array is NEVER read by the safety path. The engine gate
+   * looks at the four booleans above and nothing else. `reasons` exists so a
+   * reviewer can read the working that produced those booleans, and so the CI
+   * validator can LINT it (a caveat here over `autoApplyAllowed: true` is a
+   * migration bug worth failing the build on) — but a reworded, deleted, or
+   * translated reason can no longer change what mendr will auto-apply.
+   */
   reasons?: string[];
 }
 
@@ -159,6 +217,20 @@ export type ModelLifecycle = 'retired' | 'deprecated';
  * matched literal is itself the model.
  */
 export interface LlmModelIdDeprecation {
+  /**
+   * Stable, human-typeable id for this registry record:
+   * `<provider>.<deprecated>.retirement-<shutdownDate|undated>` (see
+   * registry/entryId.ts). Findings print it and tell the reader to run
+   * `mendr evidence <entryId>` — before it existed, every finding named a
+   * command whose argument appeared nowhere on screen.
+   *
+   * Optional on the TYPE because a hand-authored or freshly-discovered entry
+   * has not been stamped yet; the CI validator requires it (and requires it to
+   * match the deterministic formula, and to be unique) on the shipped
+   * registry. Derive it with entryIdFor() rather than reading this field when
+   * you need an id unconditionally.
+   */
+  entryId?: string;
   /** The LLM provider, e.g. `"google"`, `"openai"`, `"anthropic"`. */
   provider: string;
   kind: 'model_id';
@@ -179,8 +251,9 @@ export interface LlmModelIdDeprecation {
   note?: string;
   /**
    * The registry-verification verdict for `replacement`. The engine gate
-   * auto-applies (Tier A) ONLY when `verification.status === 'verified'`;
-   * missing or non-`verified` entries are surfaced Tier C locate-only.
+   * auto-applies (Tier A) ONLY on the full four-field conjunction in
+   * isVerified(); a missing block, any non-`verified` status, or any of the
+   * three switches being false leaves the entry review-only.
    */
   verification?: VerificationInfo;
   /**

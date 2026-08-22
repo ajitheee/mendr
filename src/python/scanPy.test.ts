@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { LlmRegistry } from '../types.js';
 import { USAGE_UNVERIFIED_REASON } from '../usage/scanLiterals.js';
+import { autoApplyVerification, withheldVerification } from '../usage/llmRegistry.js';
 import { findPyModelIdLiterals, scanPyAnnotations, type PySource } from './scanPy.js';
 import { applyPyModelIdFixesToSources } from './fixPy.js';
 
@@ -19,7 +20,7 @@ const REGISTRY: LlmRegistry = [
     deprecated: 'gpt-4-vision-preview',
     replacement: 'gpt-4o',
     note: 'vision-preview folded into gpt-4o',
-    verification: { status: 'verified' },
+    verification: autoApplyVerification(),
   },
   {
     provider: 'google',
@@ -28,7 +29,7 @@ const REGISTRY: LlmRegistry = [
     replacement: 'gemini-flash-latest',
     note: 'gemini-2.0-flash retired',
     status: 'retired',
-    verification: { status: 'verified' },
+    verification: autoApplyVerification(),
   },
   {
     provider: 'anthropic',
@@ -36,7 +37,7 @@ const REGISTRY: LlmRegistry = [
     deprecated: 'claude-3-opus-20240229',
     replacement: 'claude-opus-4-8',
     note: 'Claude 3 Opus retired',
-    verification: { status: 'verified' },
+    verification: autoApplyVerification(),
   },
   {
     provider: 'anthropic',
@@ -44,7 +45,7 @@ const REGISTRY: LlmRegistry = [
     deprecated: 'claude-3-5-sonnet-20241022',
     replacement: 'claude-sonnet-4-5',
     note: 'Claude 3.5 Sonnet v2 retired',
-    verification: { status: 'verified' },
+    verification: autoApplyVerification(),
   },
   {
     provider: 'openai',
@@ -52,7 +53,7 @@ const REGISTRY: LlmRegistry = [
     deprecated: 'o1-mini',
     replacement: 'o4-mini',
     note: 'o1-mini deprecated',
-    verification: { status: 'unverified' },
+    verification: withheldVerification('unverified'),
   },
   {
     provider: 'openai',
@@ -62,7 +63,7 @@ const REGISTRY: LlmRegistry = [
     note: 'gpt-4 shutting down',
     status: 'deprecated',
     shutdownDate: '2026-10-23',
-    verification: { status: 'verified' },
+    verification: autoApplyVerification(),
   },
 ];
 
@@ -320,7 +321,7 @@ describe('python syntax gate (the honesty backstop)', () => {
         kind: 'model_id',
         deprecated: 'gpt-4-vision-preview',
         replacement: 'oops" + broken(',
-        verification: { status: 'verified' },
+        verification: autoApplyVerification(),
       },
     ];
     const source = 'MODEL_NAME = "gpt-4-vision-preview"\nclient.create(model=MODEL_NAME)\n';
