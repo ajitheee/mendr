@@ -54,20 +54,29 @@ Run any command with `--help` for its flags.
 
 `fix-llm` is a one-shot: you run it, read a diff, and leave. But a model you use today retires on a date months out, and nobody re-runs a CLI on a calendar. `mendr watch` turns the scan into a resident thing that surfaces itself.
 
-Run it once to see your exposure:
+Mendr Watch continuously rescans your repository inside your own GitHub Actions environment and maintains one issue containing the current deprecation exposure. It stores no customer repository state on Mendr infrastructure, never modifies the default branch, and cannot bypass Mendr's deterministic safety gate.
+
+Run it once to see your exposure (a local path, or a GitHub URL to scan a read-only copy):
 
 ```sh
 npx github:ajitheee/mendr watch .
 ```
 
 ```
-Mendr Watch: 2 deprecated model ids in this repo (nearest deadline first)
+Mendr Watch: 2 deprecated model ids, 4 unique occurrences
+Highest risk first, then nearest deadline
 
-  retired 625d ago gpt-4-vision-preview  ->  gpt-4o        [1× (data only), —]
-  61d left         gpt-4-0613  ->  gpt-5.6-sol             [2× (2 live), auto-fix ready]
+REVIEW REQUIRED
+  61d left  gpt-4 -> gpt-5.6-sol
+    Tier B: 1 usage-unverified occurrence at agent_app/simulator.py:166
+    Tier C: 1 data occurrence at agent_app/simulator.py:12
+
+INFORMATIONAL
+  retired 328d ago  gemini-1.5-pro -> gemini-2.5-pro
+    Tier C: 2 data occurrences at agent_app/simulator.py:30,127
 ```
 
-It writes a small, diff-friendly `.mendr/exposure.json` you can commit — and it's **churn-free**: re-running on unchanged code produces byte-identical output, so there's no daily "one line changed" commit. The countdown is derived from the retirement date at read time, never stored.
+Every occurrence carries the same A/B/C tier `fix-llm` uses, so the two tools always agree. `--json` adds machine fields (occurrence vs model counts, both deadline fields, per-model verdicts) — see [WATCH-SCHEMA.md](WATCH-SCHEMA.md). It writes a small, diff-friendly `.mendr/exposure.json` you can commit — and it's **churn-free**: re-running on unchanged code produces byte-identical output, so there's no daily "one line changed" commit. The countdown is derived from the retirement date at read time, never stored.
 
 Then make it resident:
 
@@ -75,7 +84,7 @@ Then make it resident:
 npx github:ajitheee/mendr watch --install
 ```
 
-That scaffolds `.github/workflows/mendr-watch.yml` — a workflow that runs in **your own CI** (no server, nothing on our infrastructure) and maintains **one** GitHub issue: your deprecated model ids, each mapped to its retirement date, sorted by the nearest deadline. It's the [Renovate dashboard](https://docs.renovatebot.com/key-concepts/dashboard/) mechanic — the issue is found by a hidden marker and edited in place forever, never re-posted, so it re-surfaces itself without ever spamming you. It asks for `issues: write` and `contents: read` and nothing else: it opens no pull requests, runs none of your tests, and pushes no commits.
+That scaffolds `.github/workflows/mendr-watch.yml` — a workflow that runs in **your own CI** (no server, nothing on our infrastructure) and maintains **one** GitHub issue: your deprecated model ids, each mapped to its retirement date, sorted by the nearest deadline. It's the [Renovate dashboard](https://docs.renovatebot.com/key-concepts/dashboard/) mechanic — the issue is found by a hidden marker and edited in place forever, never re-posted, so it re-surfaces itself without ever spamming you. It asks for `issues: write` and `contents: read` and nothing else: it opens no pull requests, runs none of your tests, and pushes no commits. It's pinned to an immutable Mendr release (overridable via a `MENDR_SPEC` repo variable), so a future upstream change can't run in your CI without you choosing it.
 
 Honest limits, up front: the countdown is day-granularity (GitHub cron drifts — it is never an exact-time promise), it maintains one issue and closes it when your exposure clears, and the optional README badge is a snapshot you paste, not a live endpoint (the paying case is private repos, which a live badge host can't read).
 

@@ -4,54 +4,54 @@ Mendr Watch tells you which deprecated model ids your code uses and when each on
 stops working, and it keeps a single GitHub issue up to date so you find out
 before a model retires instead of after.
 
-You are testing this from a branch, so your normal setup does not change. Nothing
-here touches your default `mendr fix-llm` install.
+It runs inside your own GitHub Actions environment. It stores no repository state
+on Mendr infrastructure, never modifies the default branch, and cannot bypass
+Mendr's deterministic safety gate. Nothing here touches your default
+`mendr fix-llm` install.
+
+The commands below pin to the release `v0.1.0`, so you always get the same tested
+version (and no stale npx cache).
 
 ## See your exposure (about 30 seconds, no setup)
 
 Run this in any repo you want to check:
 
 ```bash
-npx github:ajitheee/mendr watch .
+npx github:ajitheee/mendr#v0.1.0 watch .
 ```
 
 You can also point it straight at a GitHub URL, which scans a read-only copy so
 you do not have to clone it yourself:
 
 ```bash
-npx github:ajitheee/mendr watch https://github.com/you/your-repo
+npx github:ajitheee/mendr#v0.1.0 watch https://github.com/you/your-repo
 ```
 
-It prints every deprecated model id in your code, sorted by the nearest
-retirement date, with a countdown. It also writes a small `.mendr/exposure.json`
-you can commit if you want to track it. If your repo is clean it says so and
-tells you exactly what it checked, so a clean result is never mistaken for a
-blind spot.
+It groups what it finds, highest risk first: models needing a look (Tier A or B)
+under REVIEW REQUIRED, data-only mentions under INFORMATIONAL, each with exact
+locations. If your repo is clean it says so and tells you exactly what it checked,
+so a clean result is never mistaken for a blind spot.
 
-## Make it resident (one setup step)
+## Make it resident (no setup)
 
 This scaffolds a GitHub Action that keeps one self-updating issue current in your
 repo. It runs in your own CI. There is no server, and none of your code leaves
 your repo.
 
 ```bash
-npx github:ajitheee/mendr watch --install
+npx github:ajitheee/mendr#v0.1.0 watch --install
 ```
 
-Before it will run, pin the version. In your repo settings, under Secrets and
-variables, Actions, Variables, add a repository variable:
+Then commit and push the workflow file. It is pinned to the Mendr release
+`v0.1.0` out of the box — an immutable tag, never a branch — so there is nothing
+else to configure. On the next run it opens one issue titled "Mendr Watch". After
+that it edits that same issue in place. It never opens a second one and never
+spams you. When your exposure clears it closes the issue, and if exposure comes
+back it reopens it.
 
-- Name: `MENDR_SPEC`
-- Value: `270ec71`
-
-The workflow refuses to run unpinned on purpose, so a future change to Mendr can
-never run in your CI without you choosing it. `270ec71` is the current commit on
-`main`; pin to it (or any later `main` commit SHA) rather than a branch.
-
-Then commit and push the workflow file. On the next run it opens one issue titled
-"Mendr Watch". After that it edits that same issue in place. It never opens a
-second one and never spams you. When your exposure clears it closes the issue,
-and if exposure comes back it reopens it.
+(Optional: to run a different Mendr version, set a `MENDR_SPEC` repository
+variable — Settings, Secrets and variables, Actions, Variables — to a release tag
+or a full commit SHA.)
 
 ## What the issue looks like
 

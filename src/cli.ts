@@ -144,7 +144,7 @@ import {
   type ExposureWriteResult,
 } from './watch/exposureFile.js';
 import { renderBadge, renderIssueBody, renderTextSummary } from './watch/issue.js';
-import { installWatchWorkflow } from './watch/installWorkflow.js';
+import { installWatchWorkflow, MENDR_RELEASE } from './watch/installWorkflow.js';
 
 const program = new Command();
 
@@ -2530,16 +2530,13 @@ program
         console.log('');
         console.log('Next:');
         console.log(`  1. commit ${relPath}`);
-        console.log(
-          '  2. pin it: set a repository variable MENDR_SPEC to a Mendr release tag or commit',
-        );
-        console.log(
-          '     SHA (never a branch) — the workflow refuses to run unpinned, so upstream code',
-        );
-        console.log('     cannot execute in your CI without review');
-        console.log('  3. push it (runs on a daily schedule and on pushes to the default branch)');
-        console.log('  4. it maintains ONE self-updating issue: your deprecated model ids, by deadline');
+        console.log('  2. push it (runs on a daily schedule and on pushes to the default branch)');
+        console.log('  3. it maintains ONE self-updating issue: your deprecated model ids, by deadline');
         console.log('');
+        console.log(
+          `Pinned to Mendr release ${MENDR_RELEASE} (an immutable tag, never a branch). Override with a`,
+        );
+        console.log('MENDR_SPEC repository variable (a release tag or full commit SHA) if you want.');
         console.log('Least privilege: issues:write + contents:read only. Opens no PRs, pushes no commits.');
         return;
       }

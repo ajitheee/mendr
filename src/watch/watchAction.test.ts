@@ -272,12 +272,13 @@ describe('the shipped github-script upsert (run against a GitHub mock)', () => {
 });
 
 describe('the generated workflow is pinned and least-privilege', () => {
-  it('never defaults the Mendr spec to a moving branch — it fails closed unpinned', () => {
-    // The old moving default: a future upstream change would run in customer CI.
+  it('defaults the Mendr spec to a pinned RELEASE tag, never a moving branch', () => {
+    // Pinned to an immutable release (vX.Y.Z), overridable via MENDR_SPEC.
+    expect(WATCH_WORKFLOW_YAML).toMatch(/vars\.MENDR_SPEC \|\| 'v\d+\.\d+\.\d+'/);
+    // Never a branch/main as the default.
     expect(WATCH_WORKFLOW_YAML).not.toContain("|| 'github:ajitheee/mendr'");
-    expect(WATCH_WORKFLOW_YAML).toContain('if [ -z "$MENDR_SPEC" ]');
-    expect(WATCH_WORKFLOW_YAML).toContain('exit 1');
-    // And it pins to whatever tag/SHA the user set, never a branch.
+    expect(WATCH_WORKFLOW_YAML).not.toContain("|| 'main'");
+    // And it installs exactly the pinned ref.
     expect(WATCH_WORKFLOW_YAML).toContain('github:ajitheee/mendr#$MENDR_SPEC');
   });
 

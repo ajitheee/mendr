@@ -11,10 +11,14 @@ import { dirname, join } from 'node:path';
 /** Repo-relative path of the scaffolded workflow. */
 export const WATCH_WORKFLOW_PATH = '.github/workflows/mendr-watch.yml';
 
+/** The immutable Mendr release the generated workflow pins to by default. */
+export const MENDR_RELEASE = 'v0.1.0';
+
 /**
- * The workflow file content. The install spec is overridable via the
- * `MENDR_SPEC` repo/workflow variable so a fork or a pinned tag can be used;
- * it defaults to the same `github:ajitheee/mendr` path the CLI ships with.
+ * The workflow file content. It is pinned to an immutable Mendr RELEASE
+ * ({@link MENDR_RELEASE}) by default, and overridable via the `MENDR_SPEC`
+ * repository variable (a different release tag or a full commit SHA — never a
+ * branch).
  */
 export const WATCH_WORKFLOW_YAML = `# Maintained by Mendr — the Standing Watch.
 # One self-updating issue lists the deprecated model ids your code touches,
@@ -23,8 +27,9 @@ export const WATCH_WORKFLOW_YAML = `# Maintained by Mendr — the Standing Watch
 #
 # Regenerate this file with: npx github:ajitheee/mendr watch . --install --force
 #
-# SUPPLY CHAIN: this workflow needs one PIN to be set before it runs — the
-# MENDR_SPEC repository variable (see the Compute-exposure step). For the
+# SUPPLY CHAIN: this workflow is pinned to an immutable Mendr release
+# (${MENDR_RELEASE}) — it never runs a moving branch. Override MENDR_SPEC (repo
+# variable) to a different release tag or full commit SHA if you want. For the
 # strictest posture, also pin the actions below to a full commit SHA instead of
 # the \`@v4\`/\`@v7\` major tags (a major tag can be re-pointed upstream).
 name: mendr watch
@@ -62,17 +67,13 @@ jobs:
 
       - name: Compute exposure
         env:
-          # PIN THIS. Set the MENDR_SPEC repository variable to a Mendr RELEASE
-          # TAG or an exact COMMIT SHA (e.g. \`v0.1.0\` or a 40-char sha) — never a
-          # branch. A branch (or \`main\`) is a MOVING reference: a future upstream
-          # change would then run inside your CI without review. The step below
-          # refuses to run until MENDR_SPEC is set, so Mendr is never unpinned.
-          MENDR_SPEC: \${{ vars.MENDR_SPEC }}
+          # Pinned to an immutable Mendr RELEASE by default. Override via the
+          # MENDR_SPEC repository variable to a different release tag or a full
+          # commit SHA — never a branch. A branch (or \`main\`) is a MOVING
+          # reference: a future upstream change would run in your CI without
+          # review, which the release pin below prevents.
+          MENDR_SPEC: \${{ vars.MENDR_SPEC || '${MENDR_RELEASE}' }}
         run: |
-          if [ -z "$MENDR_SPEC" ]; then
-            echo "::error::Mendr Watch is unpinned. Set the MENDR_SPEC repository variable to a Mendr release tag or commit SHA (never a branch), then re-run." >&2
-            exit 1
-          fi
           npx --yes "github:ajitheee/mendr#$MENDR_SPEC" watch . \\
             --issue-body "$RUNNER_TEMP/mendr-watch-issue.md" \\
             --no-exposure-file \\
