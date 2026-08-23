@@ -55,17 +55,28 @@ and if exposure comes back it reopens it.
 
 ## What the issue looks like
 
-A table, nearest deadline first:
+Grouped highest risk first, then nearest deadline. Each occurrence carries the
+same A/B/C tier `mendr fix-llm` uses, so the two tools always agree:
 
 ```
-| Model                | Provider | Retires    | Countdown        | In code        | Fix            |
-| gpt-4-vision-preview | openai   | 2024-12-06 | retired 625d ago | 1× (data only) | —              |
-| gpt-4-0613           | openai   | 2026-10-23 | 61d left         | 2× (2 live)    | auto-fix ready |
+Mendr Watch: 2 deprecated model ids, 4 unique occurrences
+Highest risk first, then nearest deadline
+
+REVIEW REQUIRED
+  61d left  gpt-4 -> gpt-5.6-sol
+    Tier B: 1 usage-unverified occurrence at agent_app/simulator.py:166
+    Tier C: 1 data occurrence at agent_app/simulator.py:12
+
+INFORMATIONAL
+  retired 328d ago  gemini-1.5-pro -> gemini-2.5-pro
+    Tier C: 2 data occurrences at agent_app/simulator.py:30,127
 ```
 
-"auto-fix ready" means `mendr fix-llm` can already produce a verified diff for
-that one. "data only" means the id appears in your code but not in a live model
-call, so it is a heads up, not something to fix.
+REVIEW REQUIRED means at least one occurrence is a live call or a model-like
+value worth a look (Tier A or B). INFORMATIONAL means the id only appears as data
+(a config value, a comparison, a catalog key), so it is a heads up, not something
+to fix. A Tier A occurrence is one `mendr fix-llm` can already produce a verified
+diff for.
 
 ## What it does not do
 

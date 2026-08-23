@@ -24,7 +24,8 @@ function models(): ExposedModel[] {
     },
     file: 'src/app.ts',
     line: 3,
-    position: 'model_arg',
+    column: 1,
+    tier: 'A',
   };
   return foldExposure([m]);
 }

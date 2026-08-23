@@ -1,41 +1,123 @@
-import type { LlmRegistry } from '../types.js';
+import type { LlmRegistry, TierBReason } from '../types.js';
 import { modelIdEntries, registryProvenance } from '../usage/llmRegistry.js';
-import { daysUntil, hasReadyFix, type ExposedModel, type Exposure } from './exposure.js';
+import { TIER_B_SHORT } from '../report/classifyOccurrence.js';
+import { TIER_B_REASON_ORDER } from '../report/tiers.js';
+import {
+  daysUntil,
+  hasReadyFix,
+  totalOccurrences,
+  type ExposedModel,
+  type Exposure,
+  type ExposureOccurrence,
+} from './exposure.js';
 import { EXPOSURE_RELATIVE_PATH } from './exposureFile.js';
 
 // The self-resurfacing side of the Standing Watch: ONE GitHub issue, found by a
 // hidden marker and edited in place forever (the Renovate Dependency Dashboard
-// mechanic). The title is constant so GitHub never notifies on a rename; the
-// countdown lives in the body and is recomputed every run. This module only
-// RENDERS the body/badge/summary as strings — it makes no network call and
-// holds no state. The CI workflow does the create-or-edit using these strings.
+// mechanic). This module only RENDERS strings; the workflow does the upsert.
+//
+// The exposure is grouped RISK FIRST — every model whose highest occurrence is a
+// review item (Tier A/B) before every model that is purely informational data
+// (Tier C) — and each model lists its per-tier occurrences with exact locations,
+// so the watch says exactly what fix-llm would say about the same repo.
 
-/**
- * The hidden marker that identifies THE watch issue. The workflow searches for
- * it (in the issue body) rather than trusting a title or an issue number, so
- * exactly one resident issue is ever maintained and it is never re-posted.
- */
+/** The hidden marker that identifies THE watch issue (searched for in the body). */
 export const WATCH_MARKER = '<!-- mendr-watch:v1 -->';
 
-/**
- * A second hidden marker present ONLY in the all-clear body. It records that the
- * last state Mendr wrote was "no exposure" — so when the workflow later closes
- * the issue, that close is attributable to Mendr, and a genuine RE-exposure may
- * reopen it. Its ABSENCE on a closed issue means a human closed an exposure
- * issue on purpose, which the workflow must not fight by reopening.
- */
+/** A second marker, present ONLY in the all-clear body, so a Mendr close is distinguishable from a human one. */
 export const WATCH_CLEAR_MARKER = '<!-- mendr-watch:clear -->';
 
 /** Constant issue title — never varies, so a re-render never notifies. */
 export const WATCH_ISSUE_TITLE = 'Mendr Watch: deprecated model ids in this repo';
 
-/** The label the workflow puts on the issue, so it can find it by label + marker. */
+/** The label the workflow puts on the issue. */
 export const WATCH_LABEL = 'mendr-watch';
 
 /** The install spec the issue/summary tell a reader to run for proposed fixes. */
 export const MENDR_RUN_SPEC = 'npx github:ajitheee/mendr fix-llm .';
 
-/** Provider tokens as a person recognizes them, for the coverage statement. */
+/** The one-line ordering note printed under the header. */
+export const ORDER_NOTE = 'Highest risk first, then nearest deadline.';
+
+// --- shared classification / formatting ------------------------------------
+
+/** Human countdown for one model — day-granularity, never an exact-time claim. */
+export function countdownLabel(model: ExposedModel, now: Date): string {
+  const days = daysUntil(model.shutdownDate, now);
+  if (days === null) return model.status === 'retired' ? 'retired' : 'unscheduled';
+  if (days < 0) return `retired ${-days}d ago`;
+  if (days === 0) return 'retires today';
+  return `${days}d left`;
+}
+
+/** Models whose highest occurrence needs a look (Tier A or B). */
+export function reviewModels(models: readonly ExposedModel[]): ExposedModel[] {
+  return models.filter((m) => m.highestTier !== 'C');
+}
+
+/** Models that are purely informational data (Tier C only). */
+export function infoModels(models: readonly ExposedModel[]): ExposedModel[] {
+  return models.filter((m) => m.highestTier === 'C');
+}
+
+/** Is this model at or past its retirement date (or retired with no date)? */
+function isOverdue(model: ExposedModel, now: Date): boolean {
+  const days = daysUntil(model.shutdownDate, now);
+  return (days !== null && days <= 0) || (days === null && model.status === 'retired');
+}
+
+function plural(n: number, word: string): string {
+  return n === 1 ? word : `${word}s`;
+}
+
+/** Compact location list: group by file, `file:L1,L2` per file, `; ` between files. */
+function formatLocations(locs: readonly ExposureOccurrence[]): string {
+  const byFile = new Map<string, number[]>();
+  for (const l of locs) {
+    const list = byFile.get(l.file);
+    if (list) list.push(l.line);
+    else byFile.set(l.file, [l.line]);
+  }
+  return [...byFile.entries()]
+    .map(([file, lines]) => `${file}:${[...new Set(lines)].sort((a, b) => a - b).join(',')}`)
+    .join('; ');
+}
+
+/**
+ * The per-tier breakdown lines for one model, most-severe tier first. Tier A is
+ * auto-fixable, Tier B is split by its reason code (usage-unverified, etc.), Tier
+ * C is data. Each line carries the true count and the exact locations.
+ */
+export function tierDetailLines(model: ExposedModel): string[] {
+  const lines: string[] = [];
+  if (model.tierCounts.A > 0) {
+    const locs = model.locations.filter((l) => l.tier === 'A');
+    lines.push(
+      `Tier A: ${model.tierCounts.A} auto-fixable ${plural(model.tierCounts.A, 'occurrence')}` +
+        (locs.length ? ` at ${formatLocations(locs)}` : ''),
+    );
+  }
+  const bLocs = model.locations.filter((l) => l.tier === 'B');
+  const reasonsPresent = new Set(bLocs.map((l) => l.reason).filter(Boolean) as TierBReason[]);
+  for (const reason of TIER_B_REASON_ORDER) {
+    if (!reasonsPresent.has(reason)) continue;
+    const rl = bLocs.filter((l) => l.reason === reason);
+    lines.push(
+      `Tier B: ${rl.length} ${TIER_B_SHORT[reason]} ${plural(rl.length, 'occurrence')} at ${formatLocations(rl)}`,
+    );
+  }
+  if (model.tierCounts.C > 0) {
+    const locs = model.locations.filter((l) => l.tier === 'C');
+    lines.push(
+      `Tier C: ${model.tierCounts.C} data ${plural(model.tierCounts.C, 'occurrence')}` +
+        (locs.length ? ` at ${formatLocations(locs)}` : ''),
+    );
+  }
+  return lines;
+}
+
+// --- provider coverage (for the all-clear body) ----------------------------
+
 const PROVIDER_DISPLAY: Record<string, string> = {
   openai: 'OpenAI',
   anthropic: 'Anthropic',
@@ -47,13 +129,7 @@ function displayProvider(p: string): string {
   return PROVIDER_DISPLAY[p] ?? p.charAt(0).toUpperCase() + p.slice(1);
 }
 
-/**
- * What a clean result actually covers — so "nothing found" is never read as
- * "you are safe". A pure-JavaScript repo, or a provider the registry does not
- * track, scans clean here while being genuinely un-analyzed; the coverage names
- * exactly what WAS checked (the languages, the providers, the registry size) so
- * the reader can tell a real all-clear from an unsupported one.
- */
+/** What a clean result actually covers, so "nothing found" is never "you are safe". */
 export function coverageLines(registry: LlmRegistry): string[] {
   const provenance = registryProvenance(registry);
   const providers = [...new Set(modelIdEntries(registry).map((e) => e.provider))]
@@ -82,84 +158,33 @@ export function coverageSentence(registry: LlmRegistry): string {
   );
 }
 
-/** Human countdown for one model — day-granularity, never an exact-time claim. */
-export function countdownLabel(model: ExposedModel, now: Date): string {
-  const days = daysUntil(model.shutdownDate, now);
-  if (days === null) return model.status === 'retired' ? 'retired' : 'unscheduled';
-  if (days < 0) return `retired ${-days}d ago`;
-  if (days === 0) return 'retires today';
-  return `${days}d left`;
-}
+// --- the issue body --------------------------------------------------------
 
-/** The nearest upcoming (or overdue) deadline across dated models, in days. */
-export function nearestDeadlineDays(models: readonly ExposedModel[], now: Date): number | null {
-  let nearest: number | null = null;
-  for (const model of models) {
-    const days = daysUntil(model.shutdownDate, now);
-    if (days === null) continue;
-    if (nearest === null || days < nearest) nearest = days;
-  }
-  return nearest;
-}
-
-/**
- * The models the urgency signal is allowed to alarm on: those with at least one
- * LIVE (`model_arg`) occurrence. A deprecated id sitting only in a pricing table
- * or a comparison is real exposure worth listing, but it is not a failing call —
- * so it must never turn the badge red or claim a retirement is "overdue". Every
- * urgency decision (colour, overdue framing) reads this subset; the full list is
- * still what gets counted and tabulated.
- */
-export function liveModels(models: readonly ExposedModel[]): ExposedModel[] {
-  return models.filter((m) => m.liveOccurrences > 0);
-}
-
-/** Is a model at or past its retirement date (or retired with no date)? */
-function isOverdue(model: ExposedModel, now: Date): boolean {
-  const days = daysUntil(model.shutdownDate, now);
-  return (days !== null && days <= 0) || (days === null && model.status === 'retired');
-}
-
-/** Escape a value for a markdown table cell (pipes would split the row). */
-function cell(text: string): string {
-  return text.replace(/\|/g, '\\|');
-}
-
-/**
- * The "In code" cell: live call sites first, then review candidates
- * (usage-unverified / azure alias — Tier B in fix-llm), then pure data. This is
- * what keeps the watch from labeling a review candidate "data only" while
- * fix-llm calls the same occurrence Tier B.
- */
-function inCodeLabel(model: ExposedModel): string {
-  if (model.liveOccurrences > 0) return `${model.occurrences}× (${model.liveOccurrences} live)`;
-  if (model.reviewOccurrences > 0) return `${model.occurrences}× (${model.reviewOccurrences} review)`;
-  return `${model.occurrences}× (data only)`;
-}
-
-/** The "Fix" cell: a ready swap, a review item, or nothing to do. */
-function fixLabel(model: ExposedModel, registry: LlmRegistry): string {
-  if (hasReadyFix(model, registry)) return 'auto-fix ready';
-  if (model.liveOccurrences > 0 || model.reviewOccurrences > 0) return 'review';
-  return '—';
+/** The shared footer: what this issue is, and the honest limits of the timing. */
+function footer(now: Date): string {
+  const stamp = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(
+    now.getUTCDate(),
+  ).padStart(2, '0')}`;
+  return [
+    '<sub>',
+    `This is a single, self-updating issue maintained by [Mendr](https://github.com/ajitheee/mendr) — ` +
+      `edited in place, never re-posted. Occurrences are classified into the same A/B/C tiers as ` +
+      `\`mendr fix-llm\`. Countdowns are day-granularity (last updated ${stamp} UTC) and derive from ` +
+      `provider retirement dates in Mendr's registry; they are not exact-time guarantees. Exposure detail ` +
+      `is committed at \`${EXPOSURE_RELATIVE_PATH}\`.`,
+    '</sub>',
+  ].join('\n');
 }
 
 /**
  * Render the full watch issue body (markdown), including the hidden marker.
- * `registry` is used only to say whether a ready Tier A fix exists for each live
- * model — never to re-detect. An empty exposure renders an explicit all-clear
- * body (still carrying the marker) so the workflow can update-then-close.
+ * `registry` is unused now (kept for signature stability with callers). An empty
+ * exposure renders an all-clear body carrying both markers.
  */
 export function renderIssueBody(exposure: Exposure, registry: LlmRegistry, now: Date): string {
   const { models } = exposure;
 
   if (models.length === 0) {
-    // The all-clear body carries the extra clear-marker so a later Mendr close
-    // is distinguishable from a human closing an exposure issue. The resurface
-    // trigger named here is the one detection can actually fire on: exposure is
-    // registry-membership + a literal match, so a date passing never flips a
-    // clean repo to exposed — only a NEW/changed registry deprecation that
-    // matches an id already in the code does.
     return (
       [
         WATCH_MARKER,
@@ -179,107 +204,78 @@ export function renderIssueBody(exposure: Exposure, registry: LlmRegistry, now: 
     );
   }
 
-  const lines: string[] = [WATCH_MARKER, ''];
-
-  // Only a LIVE call at/past its date raises the alarm; a data-only occurrence
-  // of a retired id is listed but never framed as a failing call.
-  const liveOverdue = liveModels(models).some((m) => isOverdue(m, now));
-
-  lines.push(
+  const review = reviewModels(models);
+  const info = infoModels(models);
+  const occ = totalOccurrences(models);
+  const lines: string[] = [
+    WATCH_MARKER,
+    '',
     '### Mendr Watch',
     '',
-    liveOverdue
-      ? `**${models.length}** deprecated model id${models.length === 1 ? '' : 's'} in your code — ` +
-          `at least one live call is already at or past its retirement date.`
-      : `**${models.length}** deprecated model id${models.length === 1 ? '' : 's'} in your code, ` +
-          `sorted by the nearest retirement deadline.`,
-    '',
-    '| Model | Provider | Retires | Countdown | In code | Fix |',
-    '| --- | --- | --- | --- | --- | --- |',
-  );
+    `**${models.length}** deprecated model id${models.length === 1 ? '' : 's'}, ` +
+      `**${occ}** unique occurrence${occ === 1 ? '' : 's'}. ${ORDER_NOTE}`,
+  ];
 
-  for (const model of models) {
+  const renderModelBlock = (model: ExposedModel): void => {
     lines.push(
-      `| \`${cell(model.id)}\` | ${cell(model.provider)} | ${model.shutdownDate ?? '—'} | ` +
-        `${cell(countdownLabel(model, now))} | ${inCodeLabel(model)} | ${fixLabel(model, registry)} |`,
+      '',
+      `- **\`${model.id}\`** → \`${model.replacement}\` · ${countdownLabel(model, now)}`,
     );
+    for (const detail of tierDetailLines(model)) lines.push(`  - ${detail}`);
+  };
+
+  if (review.length > 0) {
+    lines.push('', '#### Review required');
+    for (const m of review) renderModelBlock(m);
+  }
+  if (info.length > 0) {
+    lines.push('', '#### Informational');
+    for (const m of info) renderModelBlock(m);
   }
 
-  // `fix-llm` only rewrites LIVE model-argument sites, so it produces a diff
-  // only when there is live exposure. A review candidate (usage-unverified /
-  // azure alias) is worth a look but yields no patch; a pure-data occurrence
-  // yields nothing at all. Say exactly which case this is — promising a diff for
-  // a data-only exposure would be an overclaim.
-  const hasLive = liveModels(models).length > 0;
-  const hasReview = models.some((m) => m.reviewOccurrences > 0);
+  // fix-llm produces a diff ONLY for Tier A. Say exactly which case applies.
+  const hasA = models.some((m) => m.tierCounts.A > 0);
+  const hasB = models.some((m) => m.tierCounts.B > 0);
   lines.push(
     '',
-    hasLive
-      ? `See a proposed, verified diff with \`${MENDR_RUN_SPEC}\`. Nothing is changed without your review — ` +
-          'Mendr only ever opens a diff or a pull request.'
-      : hasReview
-        ? `No confirmed live call sites, but \`${MENDR_RUN_SPEC}\` flags the review rows above (Tier B) — ` +
-            'model-like values it could not tie to a live call. Worth a look before the deadline; no patch is generated.'
-        : 'Every occurrence above is a data reference (a config value, a comparison, a catalog key), ' +
-            `not a live model call, so there is nothing for \`${MENDR_RUN_SPEC}\` to rewrite — this is a heads-up, not a fix.`,
+    hasA
+      ? `See a proposed, verified diff with \`${MENDR_RUN_SPEC}\` for the Tier A rows. Nothing is changed ` +
+          'without your review — Mendr only ever opens a diff or a pull request.'
+      : hasB
+        ? `\`${MENDR_RUN_SPEC}\` shows the Tier B review rows in full (no patch is generated for them).`
+        : 'Every occurrence above is a data reference, not a live model call, so there is nothing for ' +
+            `\`${MENDR_RUN_SPEC}\` to rewrite — this is a heads-up, not a fix.`,
     '',
     footer(now),
   );
   return `${lines.join('\n')}\n`;
 }
 
-/** The shared footer: what this issue is, and the honest limits of the timing. */
-function footer(now: Date): string {
-  const stamp = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(
-    now.getUTCDate(),
-  ).padStart(2, '0')}`;
-  return [
-    '<sub>',
-    `This is a single, self-updating issue maintained by [Mendr](https://github.com/ajitheee/mendr) — ` +
-      `it is edited in place, never re-posted. Countdowns are day-granularity (last updated ${stamp} UTC) ` +
-      `and derive from provider retirement dates in Mendr's registry; they are not exact-time guarantees. ` +
-      `Exposure detail is committed at \`${EXPOSURE_RELATIVE_PATH}\`.`,
-    '</sub>',
-  ].join('\n');
-}
-
-/**
- * An OPTIONAL, static shields.io badge snapshot for the README — a copy-paste
- * the developer opts into. It is deliberately a snapshot, not live: the paying
- * ICP is private repos, which shields cannot read, so a "live" badge would be a
- * promise we can't keep. Re-running `mendr watch` regenerates it.
- *
- * The COUNT is every exposed model; the URGENCY (colour + suffix) is driven by
- * LIVE models only, so a data-only reference to a long-retired id never paints
- * the badge red.
- */
-export function renderBadge(exposure: Exposure, now: Date): string {
-  const { models } = exposure;
-  if (models.length === 0) {
-    return badgeUrl('no deprecations', 'brightgreen');
-  }
-  const count = `${models.length} model${models.length === 1 ? '' : 's'}`;
-  const live = liveModels(models);
-  const liveNearest = nearestDeadlineDays(live, now);
-
-  if (live.length === 0) {
-    // Real exposure, but only in data positions — informational, never alarming.
-    return badgeUrl(`${count} · data only`, 'blue');
-  }
-  if (liveNearest !== null && liveNearest <= 0) {
-    return badgeUrl(`${count} · retirement overdue`, 'red');
-  }
-  if (liveNearest !== null) {
-    return badgeUrl(`${count} · next ${liveNearest}d`, liveNearest <= 30 ? 'orange' : 'blue');
-  }
-  return badgeUrl(`${count} watched`, 'blue');
-}
+// --- the badge -------------------------------------------------------------
 
 /** Build one shields.io static-badge markdown image (escaping `-`/`_`/spaces). */
 function badgeUrl(right: string, color: string): string {
   const seg = (s: string): string => encodeURIComponent(s.replace(/-/g, '--').replace(/_/g, '__'));
   return `![mendr watch](https://img.shields.io/badge/${seg('mendr')}-${seg(right)}-${color})`;
 }
+
+/**
+ * An OPTIONAL static shields.io snapshot for the README. The badge reflects the
+ * highest MODEL-level classification: how many models need review (Tier A/B) and
+ * how many are informational (Tier C). Colour tracks the review models' urgency.
+ */
+export function renderBadge(exposure: Exposure, now: Date): string {
+  const { models } = exposure;
+  if (models.length === 0) return badgeUrl('no deprecations', 'brightgreen');
+  const review = reviewModels(models);
+  const info = infoModels(models);
+  const right = `${review.length} review · ${info.length} informational`;
+  const color =
+    review.some((m) => isOverdue(m, now)) ? 'red' : review.length > 0 ? 'orange' : 'blue';
+  return badgeUrl(right, color);
+}
+
+// --- the terminal summary --------------------------------------------------
 
 /** A plain-terminal summary of the exposure for `mendr watch` (human output). */
 export function renderTextSummary(exposure: Exposure, registry: LlmRegistry, now: Date): string {
@@ -291,16 +287,28 @@ export function renderTextSummary(exposure: Exposure, registry: LlmRegistry, now
       ...coverageLines(registry),
     ].join('\n');
   }
+
+  const review = reviewModels(models);
+  const info = infoModels(models);
+  const occ = totalOccurrences(models);
   const lines: string[] = [
-    `Mendr Watch: ${models.length} deprecated model id${models.length === 1 ? '' : 's'} in this repo ` +
-      `(nearest deadline first)`,
-    '',
+    `Mendr Watch: ${models.length} deprecated model id${models.length === 1 ? '' : 's'}, ` +
+      `${occ} unique occurrence${occ === 1 ? '' : 's'}`,
+    ORDER_NOTE,
   ];
-  for (const model of models) {
-    lines.push(
-      `  ${countdownLabel(model, now).padEnd(16)} ${model.id}  ->  ${model.replacement}` +
-        `   [${inCodeLabel(model)}, ${fixLabel(model, registry)}]`,
-    );
-  }
+
+  const renderGroup = (title: string, group: readonly ExposedModel[]): void => {
+    if (group.length === 0) return;
+    lines.push('', title);
+    for (const model of group) {
+      lines.push(
+        `  ${countdownLabel(model, now).padEnd(16)} ${model.id} -> ${model.replacement}`,
+      );
+      for (const detail of tierDetailLines(model)) lines.push(`    ${detail}`);
+    }
+  };
+
+  renderGroup('REVIEW REQUIRED', review);
+  renderGroup('INFORMATIONAL', info);
   return lines.join('\n');
 }

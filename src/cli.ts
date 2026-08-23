@@ -130,19 +130,14 @@ import type {
   LlmModelIdDeprecation,
   VerificationStatus,
 } from './types.js';
-import { computeExposure } from './watch/exposure.js';
+import { computeExposure, nearestDeadlineDays } from './watch/exposure.js';
 import {
   EXPOSURE_RELATIVE_PATH,
   EXPOSURE_SCHEMA,
   writeExposureFile,
   type ExposureWriteResult,
 } from './watch/exposureFile.js';
-import {
-  nearestDeadlineDays,
-  renderBadge,
-  renderIssueBody,
-  renderTextSummary,
-} from './watch/issue.js';
+import { renderBadge, renderIssueBody, renderTextSummary } from './watch/issue.js';
 import { installWatchWorkflow } from './watch/installWorkflow.js';
 
 const program = new Command();
@@ -2637,10 +2632,21 @@ program
         console.log(`  ${renderBadge(exposure, now)}`);
       }
       console.log('');
-      console.log('Make it resident — scaffold a GitHub Action that keeps one self-updating issue');
-      console.log('current (no server, runs in your own CI):');
-      console.log('  npx github:ajitheee/mendr watch . --install');
-      console.log('  (or `mendr watch --install` if mendr is installed globally)');
+      if (isUrl) {
+        // A remote scan has no local checkout to install into. `watch . --install`
+        // here would scaffold into the CURRENT directory, not the scanned repo —
+        // so tell the reader to install inside a clone of the repo they scanned.
+        const repoName = repoPath.replace(/\.git$/, '').replace(/\/$/, '').split('/').pop() || 'repo';
+        console.log('To make Watch resident, install it inside a local checkout of that repo:');
+        console.log(`  git clone ${repoPath.replace(/\/$/, '')}`);
+        console.log(`  cd ${repoName}`);
+        console.log('  npx github:ajitheee/mendr watch . --install');
+      } else {
+        console.log('Make it resident — scaffold a GitHub Action that keeps one self-updating issue');
+        console.log('current (no server, runs in your own CI):');
+        console.log('  npx github:ajitheee/mendr watch . --install');
+        console.log('  (or `mendr watch --install` if mendr is installed globally)');
+      }
     },
   );
 

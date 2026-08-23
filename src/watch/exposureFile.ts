@@ -15,7 +15,7 @@ import type { ExposedModel } from './exposure.js';
 // tracked.
 
 /** The version tag stored in the file, bumped only on a breaking shape change. */
-export const EXPOSURE_SCHEMA = 'mendr-exposure/v1';
+export const EXPOSURE_SCHEMA = 'mendr-exposure/v2';
 
 /** Repo-relative directory and file the watch record lives in. */
 export const EXPOSURE_DIR = '.mendr';
