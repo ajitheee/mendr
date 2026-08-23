@@ -577,11 +577,17 @@ export async function findPyModelIdLiterals(
   sources: PySource[],
   registry: LlmRegistry,
 ): Promise<PyLiteralMatch[]> {
-  // Index model-id deprecations by exact `deprecated` value for O(1) lookup.
-  // A value maps to the FIRST entry that declares it (same as the TS scan).
-  const byValue = new Map<string, LlmModelIdDeprecation>();
+  // Index model-id deprecations by exact `deprecated` value for O(1) lookup —
+  // a MULTIMAP, not first-wins, exactly as the TS scan (see findModelIdLiterals
+  // for the full rationale): the registry may carry two records for one id, and
+  // dropping the second silently loses its retirement deadline downstream (the
+  // `mendr watch` exposure most of all). One match is emitted per matching
+  // record; the fixer collapses them back to one splice per literal.
+  const byValue = new Map<string, LlmModelIdDeprecation[]>();
   for (const dep of modelIdEntries(registry)) {
-    if (!byValue.has(dep.deprecated)) byValue.set(dep.deprecated, dep);
+    const list = byValue.get(dep.deprecated);
+    if (list) list.push(dep);
+    else byValue.set(dep.deprecated, [dep]);
   }
   if (byValue.size === 0) return [];
 
@@ -601,25 +607,27 @@ export async function findPyModelIdLiterals(
       for (const node of tree.rootNode.descendantsOfType('string')) {
         const content = plainStringContent(node);
         if (!content) continue; // f-string / prefixed / concatenation fragment
-        const deprecation = byValue.get(content.value);
-        if (!deprecation) continue; // exact-value guard: no substring matching
+        const deprecations = byValue.get(content.value);
+        if (!deprecations) continue; // exact-value guard: no substring matching
 
+        // Position/purpose belong to the CST node, not the registry entry, so
+        // classify once and emit one match per matching record (multimap).
         const classification = classifyPyLiteral(node, sinkNames);
-        out.push({
-          file: source.path,
-          value: content.value,
-          contentStart: content.start,
-          contentEnd: content.end,
-          location: {
+        const line = node.startPosition.row + 1;
+        const column = node.startPosition.column + 1;
+        for (const deprecation of deprecations) {
+          out.push({
             file: source.path,
-            line: node.startPosition.row + 1,
-            column: node.startPosition.column + 1,
-          },
-          deprecation,
-          position: classification.position,
-          purpose: classification.purpose,
-          reason: classification.reason,
-        });
+            value: content.value,
+            contentStart: content.start,
+            contentEnd: content.end,
+            location: { file: source.path, line, column },
+            deprecation,
+            position: classification.position,
+            purpose: classification.purpose,
+            reason: classification.reason,
+          });
+        }
       }
     } finally {
       tree.delete(); // free WASM-side memory per file; matches are plain data

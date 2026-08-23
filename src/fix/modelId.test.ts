@@ -479,6 +479,90 @@ describe('file annotations (mendr magic comments)', () => {
   });
 });
 
+// --- MULTIMAP: two registry records for one value ---------------------------
+//
+// The registry may legitimately carry two `model_id` records for one deprecated
+// value (two providers, or two retirement waves — distinct entryIds, which
+// validateRegistry permits and entryId.ts is built for). The locator indexes by
+// value as a MULTIMAP and emits one match per record, so every entryId reaches
+// the consumers (the `mendr watch` exposure most of all); the fixer collapses
+// those back to one edit per physical literal. Was finding #1 of the watch
+// review — a first-wins index silently dropped the second record downstream.
+
+describe('duplicate registry records for one value (multimap)', () => {
+  /** Two records for one id that AGREE on the replacement (two retirement waves). */
+  const DUP_AGREE: LlmRegistry = [
+    {
+      provider: 'openai',
+      kind: 'model_id',
+      deprecated: 'gpt-4-0314',
+      replacement: 'gpt-4o',
+      shutdownDate: '2026-10-23',
+      verification: autoApplyVerification(),
+    },
+    {
+      provider: 'openai',
+      kind: 'model_id',
+      deprecated: 'gpt-4-0314',
+      replacement: 'gpt-4o',
+      shutdownDate: '2027-01-01',
+      verification: autoApplyVerification(),
+    },
+  ];
+
+  it('emits one match PER RECORD for a duplicated value, at one physical literal', () => {
+    const project = inMemoryProject('src/dup.ts', 'export const MODEL_NAME = "gpt-4-0314";\n');
+    const matches = findModelIdLiterals(project, DUP_AGREE);
+
+    // Two records -> two matches, but for the SAME literal (one value, one spot).
+    expect(matches).toHaveLength(2);
+    expect(new Set(matches.map((m) => m.value))).toEqual(new Set(['gpt-4-0314']));
+    expect(new Set(matches.map((m) => `${m.location.line}:${m.location.column}`)).size).toBe(1);
+    expect(matches.map((m) => m.deprecation.shutdownDate).sort()).toEqual([
+      '2026-10-23',
+      '2027-01-01',
+    ]);
+  });
+
+  it('collapses agreeing records to a SINGLE edit (no double-swap corruption)', () => {
+    const project = inMemoryProject('src/dup.ts', 'export const MODEL_NAME = "gpt-4-0314";\n');
+    const edited = applyModelIdFixes(project, DUP_AGREE);
+
+    expect(edited).toHaveLength(1);
+    expect(project.getSourceFileOrThrow('src/dup.ts').getFullText()).toBe(
+      'export const MODEL_NAME = "gpt-4o";\n',
+    );
+  });
+
+  it('leaves the literal UNEDITED when duplicate records disagree on the replacement', () => {
+    // Distinct successors for one id at one call site is genuinely ambiguous:
+    // the fixer refuses to guess (accuracy over recall) rather than pick one.
+    const DUP_CONFLICT: LlmRegistry = [
+      {
+        provider: 'openai',
+        kind: 'model_id',
+        deprecated: 'gpt-4-0314',
+        replacement: 'gpt-4o',
+        shutdownDate: '2026-10-23',
+        verification: autoApplyVerification(),
+      },
+      {
+        provider: 'azure',
+        kind: 'model_id',
+        deprecated: 'gpt-4-0314',
+        replacement: 'gpt-4.1',
+        shutdownDate: '2027-01-01',
+        verification: autoApplyVerification(),
+      },
+    ];
+    const project = inMemoryProject('src/dup.ts', 'export const MODEL_NAME = "gpt-4-0314";\n');
+    const result = applyModelIdFixesToProject(project, DUP_CONFLICT);
+
+    expect(result.siteCount).toBe(0);
+    expect(project.getSourceFileOrThrow('src/dup.ts').getFullText()).toContain('"gpt-4-0314"');
+  });
+});
+
 describe('azure deployment keys: a dedicated locate surface, never a swap', () => {
   it('does NOT swap `deployment: "gpt-4-vision-preview"` even in a call argument', () => {
     const src =

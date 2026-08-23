@@ -553,10 +553,20 @@ export function isTestPath(file: string): boolean {
  */
 export function findModelIdLiterals(project: Project, registry: LlmRegistry): LiteralMatch[] {
   // Index model-id deprecations by their exact `deprecated` value for O(1)
-  // lookup. A value maps to the FIRST entry that declares it.
-  const byValue = new Map<string, LlmModelIdDeprecation>();
+  // lookup. A value maps to EVERY entry that declares it — a MULTIMAP, not a
+  // first-wins single: the registry may legitimately carry two records for one
+  // id (two providers, or two retirement waves — distinct entryIds, which
+  // validateRegistry permits and registry/entryId.ts is built for). A first-wins
+  // index silently dropped the second record's retirement deadline everywhere
+  // downstream, the `mendr watch` exposure most of all (foldExposure groups by
+  // entryId but only ever saw the first). So one match is emitted PER MATCHING
+  // ENTRY below, so every entryId reaches the consumers; the fix path collapses
+  // those back to one edit per physical literal (see applyModelIdFixes).
+  const byValue = new Map<string, LlmModelIdDeprecation[]>();
   for (const dep of modelIdEntries(registry)) {
-    if (!byValue.has(dep.deprecated)) byValue.set(dep.deprecated, dep);
+    const list = byValue.get(dep.deprecated);
+    if (list) list.push(dep);
+    else byValue.set(dep.deprecated, [dep]);
   }
   if (byValue.size === 0) return [];
 
@@ -579,20 +589,25 @@ export function findModelIdLiterals(project: Project, registry: LlmRegistry): Li
 
     for (const node of literals) {
       const value = node.getLiteralValue();
-      const deprecation = byValue.get(value);
-      if (!deprecation) continue; // exact-value guard: no substring matching
+      const deprecations = byValue.get(value);
+      if (!deprecations) continue; // exact-value guard: no substring matching
 
+      // Position/purpose are properties of the AST NODE, not of the registry
+      // entry, so classify ONCE and share the verdict across every matching
+      // record — then emit one match per record so each entryId flows through.
       const { line, column } = sf.getLineAndColumnAtPos(node.getStart());
       const classification = classifyLiteral(node);
-      out.push({
-        node,
-        value,
-        location: { file, line, column },
-        deprecation,
-        position: classification.position,
-        purpose: classification.purpose,
-        reason: classification.reason,
-      });
+      for (const deprecation of deprecations) {
+        out.push({
+          node,
+          value,
+          location: { file, line, column },
+          deprecation,
+          position: classification.position,
+          purpose: classification.purpose,
+          reason: classification.reason,
+        });
+      }
     }
   }
 

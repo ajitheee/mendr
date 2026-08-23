@@ -57,6 +57,31 @@ function requote(originalText: string, newValue: string): string {
 }
 
 /**
+ * Collapse swap candidates to ONE per physical literal node. A value that
+ * carries two registry records yields two candidates for the same node (the
+ * multimap in findModelIdLiterals); this keeps a single edit per node when the
+ * records agree on the replacement, and drops the node entirely when they
+ * disagree — a genuinely ambiguous swap is left unedited, never guessed.
+ * Exported so the CLI can count physical swap SITES the same way the fixer edits
+ * them, keeping the tier-A count and the applied edits in lockstep.
+ */
+export function dedupeSwapsByNode(candidates: readonly LiteralMatch[]): LiteralMatch[] {
+  const byNode = new Map<StringLiteral | NoSubstitutionTemplateLiteral, LiteralMatch[]>();
+  for (const m of candidates) {
+    const list = byNode.get(m.node);
+    if (list) list.push(m);
+    else byNode.set(m.node, [m]);
+  }
+  const out: LiteralMatch[] = [];
+  for (const group of byNode.values()) {
+    const replacements = new Set(group.map((m) => m.deprecation.replacement));
+    if (replacements.size === 1) out.push(group[0]!);
+    // size > 1: conflicting successors for one literal — ambiguous, so skip.
+  }
+  return out;
+}
+
+/**
  * Replace every matching deprecated model-id literal in `project` with its
  * replacement. Returns the edited literal nodes (useful for a site count). The
  * project is mutated in place but NEVER saved.
@@ -79,12 +104,24 @@ export function applyModelIdFixes(
   // THE ENGINE GATE: `isVerified(...)` is the load-bearing clause — an entry the
   // registry has not stamped `verification.status === 'verified'` is NEVER
   // auto-swapped here, no matter how confident the value match is.
-  const swaps = (precomputed ?? findModelIdLiterals(project, registry)).filter(
+  const swapCandidates = (precomputed ?? findModelIdLiterals(project, registry)).filter(
     (m) =>
       m.position === 'model_arg' &&
       isVerified(m.deprecation) &&
       m.value !== m.deprecation.replacement,
   );
+
+  // Collapse to ONE edit per physical literal. findModelIdLiterals now emits one
+  // match PER MATCHING REGISTRY RECORD (the multimap), so a single node can
+  // appear in more than one candidate when a value carries two records. Editing
+  // that node twice would double-splice it (ts-morph forgets the node after the
+  // first replace and the second throws). So candidates are grouped by node:
+  //   - records that AGREE on the replacement collapse to one identical edit;
+  //   - records that DISAGREE make the swap ambiguous (which successor does this
+  //     call want?), so the literal is left byte-identical rather than guessed —
+  //     the same accuracy-over-recall posture the locator follows everywhere. It
+  //     still surfaces under `mendr watch` (both deadlines), just not auto-fixed.
+  const swaps = dedupeSwapsByNode(swapCandidates);
 
   // Group per file, then edit each file's sites in DESCENDING start order: every
   // edit lands at an offset BEFORE the previous one, so earlier offsets never

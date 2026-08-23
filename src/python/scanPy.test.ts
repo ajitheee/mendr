@@ -532,3 +532,57 @@ describe('python diff output', () => {
     expect(result.diff).not.toContain('other.py');
   });
 });
+
+// --- MULTIMAP: two registry records for one value (Python) ------------------
+//
+// The Python spelling of the TS multimap test: the scanner indexes by value as
+// a multimap and emits one match per matching record, and the fixer collapses
+// them back to one splice per literal. Was finding #1 of the watch review — a
+// first-wins index silently dropped the second record's retirement deadline.
+
+describe('duplicate registry records for one value (multimap)', () => {
+  const DUP: LlmRegistry = [
+    {
+      provider: 'openai',
+      kind: 'model_id',
+      deprecated: 'gpt-4',
+      replacement: 'gpt-5.6-sol',
+      shutdownDate: '2026-10-23',
+      verification: autoApplyVerification(),
+    },
+    {
+      provider: 'openai',
+      kind: 'model_id',
+      deprecated: 'gpt-4',
+      replacement: 'gpt-5.6-sol',
+      shutdownDate: '2027-01-01',
+      verification: autoApplyVerification(),
+    },
+  ];
+
+  const SOURCE = ['MODEL_NAME = "gpt-4"', 'client.chat.completions.create(model=MODEL_NAME)', ''].join(
+    '\n',
+  );
+
+  it('emits one match per matching record for a duplicated value', async () => {
+    const matches = await findPyModelIdLiterals([src('app/dup.py', SOURCE)], DUP);
+
+    // Two records -> two matches at the SAME span (same content offsets).
+    expect(matches).toHaveLength(2);
+    expect(new Set(matches.map((m) => `${m.contentStart}:${m.contentEnd}`)).size).toBe(1);
+    expect(matches.map((m) => m.deprecation.shutdownDate).sort()).toEqual([
+      '2026-10-23',
+      '2027-01-01',
+    ]);
+  });
+
+  it('collapses agreeing records to a SINGLE splice (no double-edit corruption)', async () => {
+    const result = await applyPyModelIdFixesToSources([src('app/dup.py', SOURCE)], DUP);
+
+    expect(result.siteCount).toBe(1);
+    expect(result.syntaxGate.passed).toBe(true);
+    expect(result.patchedFiles[0]!.newText).toContain('MODEL_NAME = "gpt-5.6-sol"');
+    // The id appears once in the source; it is replaced exactly once, not twice.
+    expect(result.patchedFiles[0]!.newText).not.toContain('"gpt-4"');
+  });
+});

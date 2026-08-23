@@ -68,11 +68,23 @@ export function loadProject(repoPath: string): Project {
 // handful of files even CONTAIN a registry token — LibreChat is ~900 files and
 // two hits. So fix-llm walks the repo itself, text-tests each file against one
 // compiled regex of every registry token, and builds its scan Project from the
-// hit files ONLY. Correctness is preserved by construction: the literal scan
-// matches EXACT registry values and the param scan needs a same-file resolvable
-// model that starts with an `on_models` prefix, so any file with a finding must
-// contain one of the regex's tokens as a substring. A regex FALSE positive just
-// means one extra file gets parsed; a miss is impossible for these locators.
+// hit files ONLY. The literal scan matches EXACT registry values and the param
+// scan needs a same-file resolvable model that starts with an `on_models`
+// prefix, so a file with a finding almost always carries one of the regex's
+// tokens VERBATIM in its raw text. A regex FALSE positive just means one extra
+// file gets parsed.
+//
+// KNOWN LIMITATION (accepted, near-zero likelihood): findModelIdLiterals matches
+// on the DECODED literal value (`node.getLiteralValue()`), but this pre-filter
+// tests the RAW file bytes. A model id written with a string escape — e.g.
+// `const m = "\x67pt-4"`, which decodes to "gpt-4" — matches the scan yet NOT
+// the raw-text regex, so that file is skipped and the id is silently missed.
+// Real code never hex/unicode-escapes a model id, and dropping the pre-filter to
+// close the gap would reintroduce the multi-second / OOM full-parse it exists to
+// avoid (that's the whole reason it's here), so we keep the filter and accept the
+// gap. Python is NOT affected: scanPy matches on a raw slice of the file text
+// (`plainStringContent`), so its matched value is a substring of the bytes this
+// filter tests, by construction.
 
 /**
  * Directory names the fix-llm walker never descends into: vendored code,

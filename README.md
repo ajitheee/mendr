@@ -41,6 +41,7 @@ Nothing, unless you pass `--write`. By default mendr loads your code in memory, 
 ## commands
 
 - `mendr fix-llm <path>` — scan a repo for retired model ids and coupled params, print the gated diff. This is the one you'll use. Add `--eval-command "<cmd>"` to have it run your own evaluation against the patched code (see below).
+- `mendr watch [path]` — list the deprecated model ids your code touches, sorted by the nearest provider retirement date. `--install` scaffolds a GitHub Action that keeps one self-updating issue current (see [standing watch](#standing-watch)).
 - `mendr check --repo <path> --from <specA> --to <specB>` — list the breaking changes between two Stripe specs that your repo actually uses.
 - `mendr scan <path>` — list the Stripe API surface a repo touches.
 - `mendr fix <path> --from <specA> --to <specB>` — Stripe field-rename codemod.
@@ -48,6 +49,35 @@ Nothing, unless you pass `--write`. By default mendr loads your code in memory, 
 - `mendr validate-registry` — check the registry for internal contradictions (offline); exits non-zero on any violation.
 
 Run any command with `--help` for its flags.
+
+## standing watch
+
+`fix-llm` is a one-shot: you run it, read a diff, and leave. But a model you use today retires on a date months out, and nobody re-runs a CLI on a calendar. `mendr watch` turns the scan into a resident thing that surfaces itself.
+
+Run it once to see your exposure:
+
+```sh
+npx github:ajitheee/mendr watch .
+```
+
+```
+Mendr Watch: 2 deprecated model ids in this repo (nearest deadline first)
+
+  retired 625d ago gpt-4-vision-preview  ->  gpt-4o        [1× (data only), —]
+  61d left         gpt-4-0613  ->  gpt-5.6-sol             [2× (2 live), auto-fix ready]
+```
+
+It writes a small, diff-friendly `.mendr/exposure.json` you can commit — and it's **churn-free**: re-running on unchanged code produces byte-identical output, so there's no daily "one line changed" commit. The countdown is derived from the retirement date at read time, never stored.
+
+Then make it resident:
+
+```sh
+npx github:ajitheee/mendr watch --install
+```
+
+That scaffolds `.github/workflows/mendr-watch.yml` — a workflow that runs in **your own CI** (no server, nothing on our infrastructure) and maintains **one** GitHub issue: your deprecated model ids, each mapped to its retirement date, sorted by the nearest deadline. It's the [Renovate dashboard](https://docs.renovatebot.com/key-concepts/dashboard/) mechanic — the issue is found by a hidden marker and edited in place forever, never re-posted, so it re-surfaces itself without ever spamming you. It asks for `issues: write` and `contents: read` and nothing else: it opens no pull requests, runs none of your tests, and pushes no commits.
+
+Honest limits, up front: the countdown is day-granularity (GitHub cron drifts — it is never an exact-time promise), it maintains one issue and closes it when your exposure clears, and the optional README badge is a snapshot you paste, not a live endpoint (the paying case is private repos, which a live badge host can't read).
 
 ## how it decides what to change
 

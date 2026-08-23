@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
@@ -103,6 +104,7 @@ import {
   type PendingWrite,
 } from './fix/atomicWrite.js';
 import { findParamSites } from './fix/paramFix.js';
+import { dedupeSwapsByNode } from './fix/modelId.js';
 import { applyLlmFixesToProject, type LlmFixResult } from './fix/llmFix.js';
 import { collectPythonFiles, readPythonSources, scanPyAnnotations } from './python/scanPy.js';
 import { applyPyModelIdFixesToSources } from './python/fixPy.js';
@@ -128,6 +130,20 @@ import type {
   LlmModelIdDeprecation,
   VerificationStatus,
 } from './types.js';
+import { computeExposure } from './watch/exposure.js';
+import {
+  EXPOSURE_RELATIVE_PATH,
+  EXPOSURE_SCHEMA,
+  writeExposureFile,
+  type ExposureWriteResult,
+} from './watch/exposureFile.js';
+import {
+  nearestDeadlineDays,
+  renderBadge,
+  renderIssueBody,
+  renderTextSummary,
+} from './watch/issue.js';
+import { installWatchWorkflow } from './watch/installWorkflow.js';
 
 const program = new Command();
 
@@ -472,7 +488,12 @@ program
     //   - `data` behind an `as` cast -> Tier B, `type_cast_masked`;
     //   - `data` otherwise           -> Tier C, informational (never edited).
     const modelArgMatches = modelMatches.filter((m) => m.position === 'model_arg');
-    const swapMatches = modelArgMatches.filter((m) => isVerified(m.deprecation));
+    // findModelIdLiterals emits one match PER MATCHING REGISTRY RECORD (the
+    // value->records multimap), so a value with two records surfaces twice at
+    // one call site. Collapse those to one physical SITE here — the same way the
+    // fixer edits them — so the Tier A count, the occurrence list, and the diff
+    // all agree (a no-op on the shipped registry, which has no duplicate values).
+    const swapMatches = dedupeSwapsByNode(modelArgMatches.filter((m) => isVerified(m.deprecation)));
     const blockedAll = [...toBlockedModelArgMatches(modelMatches), ...pyResult.blockedMatches];
     const azureAll = [...toAzureDeploymentMatches(modelMatches), ...pyResult.azureMatches];
     // Usage-unverified candidates (Python sink rule): model-like assignments
@@ -2451,5 +2472,162 @@ program
         `${tierC} flagged for review (Tier C).`,
     );
   });
+
+program
+  .command('watch')
+  .argument('[repoPath]', 'path to the repo to watch (default: current directory)', '.')
+  .option('--install', 'scaffold the GitHub Actions workflow that maintains the watch issue in CI')
+  .option('--force', 'with --install, overwrite an existing workflow file')
+  .option('--issue-body <file>', 'also write the rendered GitHub issue markdown to a file')
+  .option('--json', 'emit a machine-readable JSON summary on stdout (for CI)')
+  .option('--no-exposure-file', `skip writing ${EXPOSURE_RELATIVE_PATH} (used by CI)`)
+  .description('Standing Watch: list the deprecated model ids this repo touches, by deadline')
+  .action(
+    async (
+      repoPath: string,
+      opts: {
+        install?: boolean;
+        force?: boolean;
+        issueBody?: string;
+        json?: boolean;
+        exposureFile?: boolean; // false only when --no-exposure-file is passed
+      },
+    ) => {
+      const resolved = resolveRepoOrExit(repoPath);
+
+      // --install: scaffold the CI workflow and stop. No scan, no scan output.
+      if (opts.install) {
+        let result;
+        try {
+          result = installWatchWorkflow(resolved, opts.force ?? false);
+        } catch (err) {
+          // A filesystem failure (permission denied, read-only path, running in
+          // a system directory) exits with one friendly line, not a raw stack.
+          console.error(
+            `mendr: could not scaffold the watch workflow under ${repoPath}: ` +
+              `${err instanceof Error ? err.message : String(err)}\n` +
+              `run this from the root of a project directory you can write to.`,
+          );
+          process.exit(1);
+        }
+        const relPath = relative(resolved, result.path).replace(/\\/g, '/');
+        if (result.action === 'exists') {
+          console.error(`mendr: ${relPath} already exists. Re-run with --force to overwrite it.`);
+          process.exitCode = 1;
+          return;
+        }
+        console.log(`Mendr Watch workflow ${result.action}: ${relPath}`);
+        console.log('');
+        console.log('Next:');
+        console.log(`  1. commit ${relPath}`);
+        console.log(
+          '  2. pin it: set a repository variable MENDR_SPEC to a Mendr release tag or commit',
+        );
+        console.log(
+          '     SHA (never a branch) — the workflow refuses to run unpinned, so upstream code',
+        );
+        console.log('     cannot execute in your CI without review');
+        console.log('  3. push it (runs on a daily schedule and on pushes to the default branch)');
+        console.log('  4. it maintains ONE self-updating issue: your deprecated model ids, by deadline');
+        console.log('');
+        console.log('Least privilege: issues:write + contents:read only. Opens no PRs, pushes no commits.');
+        return;
+      }
+
+      const registry = loadLlmRegistry();
+      const now = new Date();
+      const exposure = await computeExposure(resolved, registry);
+
+      // Provenance: which registry produced these facts (a content hash of the
+      // bundled registry file — stable, changes only when the registry does, so
+      // it never churns the committed file), and which commit was scanned (read
+      // best-effort; null outside a git repo). The scanned commit rides in the
+      // machine `--json` output only — a per-commit value must not land in the
+      // committed .mendr/exposure.json or every commit would diff it.
+      const registryVersion =
+        'sha256:' +
+        createHash('sha256').update(readFileSync(resolveRegistryPath())).digest('hex').slice(0, 16);
+      let scannedCommit: string | null = null;
+      try {
+        scannedCommit = (await simpleGit(resolved).revparse(['HEAD'])).trim();
+      } catch {
+        // Not a git repo (or git absent): provenance simply omits the commit.
+      }
+
+      // A scan that saw no source files is almost always the wrong directory
+      // (e.g. run outside a repo). Hint on stderr so --json/--issue-body stdout
+      // stays clean.
+      if (exposure.filesScanned === 0) {
+        console.error(
+          `mendr: scanned 0 source files under ${repoPath} — is this a project directory? ` +
+            `run mendr watch from the root of your repo.`,
+        );
+      }
+
+      // Write the churn-free exposure record unless CI suppressed it. A write
+      // failure is NON-FATAL: the scan already succeeded, so warn and still show
+      // the summary rather than crashing on a read-only or protected directory.
+      let written: ExposureWriteResult | undefined;
+      if (opts.exposureFile !== false) {
+        try {
+          written = writeExposureFile(resolved, exposure.models, registryVersion);
+        } catch (err) {
+          console.error(
+            `mendr: computed your exposure but could not write ${EXPOSURE_RELATIVE_PATH} ` +
+              `(${err instanceof Error ? err.message : String(err)}) — showing the summary anyway.`,
+          );
+        }
+      }
+
+      // The rendered issue body (the CI workflow feeds this to github-script).
+      if (opts.issueBody) {
+        writeDiffOrExit(opts.issueBody, renderIssueBody(exposure, registry, now));
+      }
+
+      if (opts.json) {
+        console.log(
+          JSON.stringify(
+            {
+              schema: EXPOSURE_SCHEMA,
+              registryVersion,
+              scannedCommit,
+              hasExposure: exposure.models.length > 0,
+              modelCount: exposure.models.length,
+              nearestDeadlineDays: nearestDeadlineDays(exposure.models, now),
+              filesScanned: exposure.filesScanned,
+              filesMatched: exposure.filesMatched,
+              models: exposure.models,
+              badge: renderBadge(exposure, now),
+            },
+            null,
+            2,
+          ),
+        );
+        return;
+      }
+
+      // Human output: the summary, the file status, an optional badge, the CTA.
+      console.log(renderTextSummary(exposure, registry, now));
+      console.log('');
+      if (written) {
+        const rel = relative(resolved, written.path).replace(/\\/g, '/');
+        console.log(
+          written.changed
+            ? `Wrote ${rel} — commit it to track your exposure in git.`
+            : `${rel} is already up to date.`,
+        );
+      }
+      if (exposure.models.length > 0) {
+        console.log('');
+        console.log('Optional README badge (a snapshot — re-run this command to refresh it):');
+        console.log(`  ${renderBadge(exposure, now)}`);
+      }
+      console.log('');
+      console.log('Make it resident — scaffold a GitHub Action that keeps one self-updating issue');
+      console.log('current (no server, runs in your own CI):');
+      console.log('  npx github:ajitheee/mendr watch . --install');
+      console.log('  (or `mendr watch --install` if mendr is installed globally)');
+    },
+  );
 
 program.parse();

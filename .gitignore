@@ -8,3 +8,6 @@ fixtures/**/dist
 
 # throwaway prototyper spikes
 spikes/
+
+# mendr is not a consumer of itself — its own `watch` scan output stays untracked
+.mendr/

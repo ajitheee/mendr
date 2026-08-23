@@ -83,6 +83,30 @@ export interface PyModelIdFixResult {
 }
 
 /**
+ * Collapse swap candidates to ONE per physical literal span. The Python spelling
+ * of {@link dedupeSwapsByNode}: a value with two registry records yields two
+ * matches at the same `(file, contentStart, contentEnd)` span, and splicing that
+ * span twice corrupts the file. Records that agree on the replacement collapse to
+ * one splice; records that disagree drop the site (ambiguous — left unedited).
+ */
+export function dedupePySwapsBySpan(candidates: readonly PyLiteralMatch[]): PyLiteralMatch[] {
+  const bySpan = new Map<string, PyLiteralMatch[]>();
+  for (const m of candidates) {
+    const key = `${m.file} ${m.contentStart} ${m.contentEnd}`;
+    const list = bySpan.get(key);
+    if (list) list.push(m);
+    else bySpan.set(key, [m]);
+  }
+  const out: PyLiteralMatch[] = [];
+  for (const group of bySpan.values()) {
+    const replacements = new Set(group.map((m) => m.deprecation.replacement));
+    if (replacements.size === 1) out.push(group[0]!);
+    // size > 1: conflicting successors for one literal — ambiguous, so skip.
+  }
+  return out;
+}
+
+/**
  * Apply the swap-eligible matches to their sources' text. Returns the edited
  * text per changed file. Exported separately so the deliberate-breakage gate
  * test can drive it with a poisoned registry.
@@ -136,11 +160,20 @@ export async function applyPyModelIdFixesToSources(
   // registry has not stamped `verification.status === 'verified'` is NEVER
   // auto-swapped, no matter how confident the value match is. Same predicate,
   // same posture as the TS fixer.
-  const swaps = matches.filter(
-    (m) =>
-      m.position === 'model_arg' &&
-      isVerified(m.deprecation) &&
-      m.value !== m.deprecation.replacement,
+  //
+  // Then collapse to ONE swap per physical literal: findPyModelIdLiterals emits
+  // one match PER MATCHING RECORD (the multimap), so a value with two records
+  // yields two matches at the same span. Splicing that span twice would corrupt
+  // the file (the second splice reads offsets the first already shifted). Agreeing
+  // records collapse to one splice; disagreeing records leave the literal
+  // untouched — ambiguous, never guessed — the same rule as the TS fixer.
+  const swaps = dedupePySwapsBySpan(
+    matches.filter(
+      (m) =>
+        m.position === 'model_arg' &&
+        isVerified(m.deprecation) &&
+        m.value !== m.deprecation.replacement,
+    ),
   );
 
   const changed = applyPySwapsToText(sources, swaps);
