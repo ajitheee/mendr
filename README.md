@@ -19,20 +19,30 @@ Point it at a repo and it prints a unified diff of the fixes it wants to make. R
 You can also point it straight at a GitHub link. mendr clones a throwaway copy and scans that, so the real repo is never touched:
 
 ```sh
-npx mendr fix-llm https://github.com/someone/their-repo
+npx github:ajitheee/mendr fix-llm https://github.com/someone/their-repo
 ```
 
 It never writes to your working tree on its own. The default is print-only. When you're ready to apply:
 
 ```sh
-npx mendr fix-llm . --write
+npx github:ajitheee/mendr fix-llm . --write
 ```
 
 `--write` only applies a fix that passed the gates (type-check, plus your tests when they can run). Anything it can't verify is shown for review and left alone. You can also pipe the diff straight into git, since it's a standard patch:
 
 ```sh
-npx mendr fix-llm . -o mendr.patch && git apply mendr.patch
+npx github:ajitheee/mendr fix-llm . -o mendr.patch && git apply mendr.patch
 ```
+
+### keep watching a repo
+
+`fix-llm` is one-shot. `mendr watch` is the resident version — it scans in your own GitHub Actions and keeps one issue listing every deprecated model id you use, grouped by risk and deadline, so you find out before a model retires. Run it once to see your exposure, or `--install` to make it resident:
+
+```sh
+npx github:ajitheee/mendr watch .
+```
+
+See [standing watch](#standing-watch) for the details and [WATCH-SCHEMA.md](WATCH-SCHEMA.md) for the JSON.
 
 ## what it actually does to your files
 
@@ -238,7 +248,7 @@ The collapsed Tier C line carries line numbers for the same reason:
 ### gating CI on a tier
 
 ```sh
-npx mendr fix-llm . --fail-on tierB
+npx github:ajitheee/mendr fix-llm . --fail-on tierB
 ```
 
 `--fail-on` takes `tierA`, `tierB`, or `none` (the default). `blocked` still works as a **deprecated alias for `tierB`** and prints a notice on stderr — note that it now covers every review-required finding, not just unverified replacements.
