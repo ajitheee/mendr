@@ -60,12 +60,6 @@ export function infoModels(models: readonly ExposedModel[]): ExposedModel[] {
   return models.filter((m) => m.highestTier === 'C');
 }
 
-/** Is this model at or past its retirement date (or retired with no date)? */
-function isOverdue(model: ExposedModel, now: Date): boolean {
-  const days = daysUntil(model.shutdownDate, now);
-  return (days !== null && days <= 0) || (days === null && model.status === 'retired');
-}
-
 function plural(n: number, word: string): string {
   return n === 1 ? word : `${word}s`;
 }
@@ -260,18 +254,21 @@ function badgeUrl(right: string, color: string): string {
 }
 
 /**
- * An OPTIONAL static shields.io snapshot for the README. The badge reflects the
- * highest MODEL-level classification: how many models need review (Tier A/B) and
- * how many are informational (Tier C). Colour tracks the review models' urgency.
+ * An OPTIONAL static shields.io snapshot for the README. The label counts models
+ * by their highest classification (review = Tier A/B, info = Tier C); the colour
+ * tracks the single most severe TIER present anywhere in the repo:
+ *   Tier A present -> red    (a live call with a ready fix — act now)
+ *   Tier B present -> orange (review required)
+ *   Tier C only    -> blue   (informational data)
+ *   no findings    -> green
  */
-export function renderBadge(exposure: Exposure, now: Date): string {
+export function renderBadge(exposure: Exposure): string {
   const { models } = exposure;
   if (models.length === 0) return badgeUrl('no deprecations', 'brightgreen');
-  const review = reviewModels(models);
-  const info = infoModels(models);
-  const right = `${review.length} review · ${info.length} informational`;
-  const color =
-    review.some((m) => isOverdue(m, now)) ? 'red' : review.length > 0 ? 'orange' : 'blue';
+  const hasA = models.some((m) => m.tierCounts.A > 0);
+  const hasB = models.some((m) => m.tierCounts.B > 0);
+  const color = hasA ? 'red' : hasB ? 'orange' : 'blue';
+  const right = `${reviewModels(models).length} review · ${infoModels(models).length} info`;
   return badgeUrl(right, color);
 }
 

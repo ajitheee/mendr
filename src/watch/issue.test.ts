@@ -121,33 +121,52 @@ describe('renderIssueBody', () => {
   });
 });
 
-describe('renderBadge', () => {
-  it('counts models by highest classification: review vs informational', () => {
-    const badge = renderBadge(
-      exposureOf([
-        match({ tier: 'B', reason: 'usage_unverified' }),
-        match({ entry: entry({ deprecated: 'x', shutdownDate: '2027-01-01' }), value: 'x', tier: 'C' }),
-      ]),
-      NOW,
-    );
-    expect(badge).toContain('1%20review%20%C2%B7%201%20informational');
+describe('renderBadge — colour by highest tier present, count by model', () => {
+  const other = (tier: 'A' | 'B' | 'C'): ExposureMatch =>
+    match({ entry: entry({ deprecated: 'x', shutdownDate: '2027-01-01' }), value: 'x', tier });
+
+  it('mixed Tier B and Tier C: "1 review · 1 info", orange (B present, no A)', () => {
+    const badge = renderBadge(exposureOf([match({ tier: 'B', reason: 'usage_unverified' }), other('C')]));
+    expect(badge).toContain('1%20review%20%C2%B7%201%20info');
+    expect(badge.endsWith('-orange)')).toBe(true);
   });
-  it('no deprecations is green', () => {
-    const badge = renderBadge(EMPTY, NOW);
+
+  it('Tier A present anywhere is red', () => {
+    const badge = renderBadge(exposureOf([match({ tier: 'A' }), other('C')]));
+    expect(badge.endsWith('-red)')).toBe(true);
+  });
+
+  it('Tier C only is blue: "0 review · N info"', () => {
+    const badge = renderBadge(exposureOf([match({ tier: 'C' }), other('C')]));
+    expect(badge).toContain('0%20review%20%C2%B7%202%20info');
+    expect(badge.endsWith('-blue)')).toBe(true);
+  });
+
+  it('no exposure is green', () => {
+    const badge = renderBadge(EMPTY);
     expect(badge).toContain('no%20deprecations');
-    expect(badge).toContain('brightgreen');
+    expect(badge.endsWith('-brightgreen)')).toBe(true);
   });
-  it('a review model past its date is red; a data-only-overdue model is not', () => {
-    const red = renderBadge(
-      exposureOf([match({ entry: entry({ shutdownDate: '2026-08-12' }), tier: 'B', reason: 'usage_unverified' })]),
-      NOW,
-    );
-    expect(red.endsWith('-red)')).toBe(true);
-    const notRed = renderBadge(
-      exposureOf([match({ entry: entry({ shutdownDate: '2026-08-12' }), tier: 'C' })]),
-      NOW,
-    );
-    expect(notRed.endsWith('-red)')).toBe(false); // informational, even though overdue
+
+  it('the shields URL is fully percent-encoded (middot encoded, no raw spaces)', () => {
+    const badge = renderBadge(exposureOf([match({ tier: 'B', reason: 'usage_unverified' }), other('C')]));
+    const url = badge.slice(badge.indexOf('(') + 1, badge.lastIndexOf(')'));
+    expect(url).toMatch(/^https:\/\/img\.shields\.io\/badge\//);
+    expect(url).toContain('%C2%B7'); // the · is encoded
+    expect(url).not.toContain(' '); // no raw spaces
+    expect(url).not.toContain('·'); // no raw middot
+  });
+});
+
+describe('renderIssueBody is never empty', () => {
+  it('an all-clear body is non-empty and marked', () => {
+    const body = renderIssueBody(EMPTY, EMPTY_REGISTRY, NOW);
+    expect(body.trim().length).toBeGreaterThan(0);
+    expect(body).toContain(WATCH_MARKER);
+  });
+  it('an exposure body is non-empty', () => {
+    const body = renderIssueBody(exposureOf([match({ tier: 'B', reason: 'usage_unverified' })]), EMPTY_REGISTRY, NOW);
+    expect(body.trim().length).toBeGreaterThan(0);
   });
 });
 

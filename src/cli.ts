@@ -2606,7 +2606,7 @@ program
               filesScanned: exposure.filesScanned,
               filesMatched: exposure.filesMatched,
               models: exposure.models,
-              badge: renderBadge(exposure, now),
+              badge: renderBadge(exposure),
             },
             null,
             2,
@@ -2629,7 +2629,7 @@ program
       if (exposure.models.length > 0) {
         console.log('');
         console.log('Optional README badge (a snapshot — re-run this command to refresh it):');
-        console.log(`  ${renderBadge(exposure, now)}`);
+        console.log(`  ${renderBadge(exposure)}`);
       }
       console.log('');
       if (isUrl) {
