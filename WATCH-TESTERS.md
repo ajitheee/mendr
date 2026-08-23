@@ -15,6 +15,13 @@ Run this in any repo you want to check:
 npx github:ajitheee/mendr watch .
 ```
 
+You can also point it straight at a GitHub URL, which scans a read-only copy so
+you do not have to clone it yourself:
+
+```bash
+npx github:ajitheee/mendr watch https://github.com/you/your-repo
+```
+
 It prints every deprecated model id in your code, sorted by the nearest
 retirement date, with a countdown. It also writes a small `.mendr/exposure.json`
 you can commit if you want to track it. If your repo is clean it says so and

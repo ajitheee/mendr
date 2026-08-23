@@ -2475,7 +2475,7 @@ program
 
 program
   .command('watch')
-  .argument('[repoPath]', 'path to the repo to watch (default: current directory)', '.')
+  .argument('[repoPath]', 'local path to the repo, or a GitHub/git URL to scan a read-only copy (default: current directory)', '.')
   .option('--install', 'scaffold the GitHub Actions workflow that maintains the watch issue in CI')
   .option('--force', 'with --install, overwrite an existing workflow file')
   .option('--issue-body <file>', 'also write the rendered GitHub issue markdown to a file')
@@ -2493,10 +2493,19 @@ program
         exposureFile?: boolean; // false only when --no-exposure-file is passed
       },
     ) => {
-      const resolved = resolveRepoOrExit(repoPath);
+      const isUrl = isRemoteRepoUrl(repoPath);
 
-      // --install: scaffold the CI workflow and stop. No scan, no scan output.
+      // --install writes a workflow file INTO the repo, so it needs a local path
+      // you own — a throwaway clone of a URL has nowhere to commit it.
       if (opts.install) {
+        if (isUrl) {
+          console.error(
+            'mendr: watch --install writes a workflow into your repo, so it needs a local ' +
+              'path you own, not a URL. Clone the repo first, then run it there.',
+          );
+          process.exit(2);
+        }
+        const resolved = resolveRepoOrExit(repoPath);
         let result;
         try {
           result = installWatchWorkflow(resolved, opts.force ?? false);
@@ -2534,6 +2543,11 @@ program
         return;
       }
 
+      // A URL is shallow-cloned into a throwaway read-only copy (same as fix-llm);
+      // a local path is scanned in place. The exposure file is not written for a
+      // URL — the clone is discarded, so there is nowhere to keep it.
+      const resolved = isUrl ? await cloneRemoteOrExit(repoPath) : resolveRepoOrExit(repoPath);
+
       const registry = loadLlmRegistry();
       const now = new Date();
       const exposure = await computeExposure(resolved, registry);
@@ -2568,7 +2582,7 @@ program
       // failure is NON-FATAL: the scan already succeeded, so warn and still show
       // the summary rather than crashing on a read-only or protected directory.
       let written: ExposureWriteResult | undefined;
-      if (opts.exposureFile !== false) {
+      if (opts.exposureFile !== false && !isUrl) {
         try {
           written = writeExposureFile(resolved, exposure.models, registryVersion);
         } catch (err) {
