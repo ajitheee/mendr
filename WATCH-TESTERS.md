@@ -12,7 +12,7 @@ here touches your default `mendr fix-llm` install.
 Run this in any repo you want to check:
 
 ```bash
-npx github:ajitheee/mendr#watch watch .
+npx github:ajitheee/mendr watch .
 ```
 
 It prints every deprecated model id in your code, sorted by the nearest
@@ -28,18 +28,18 @@ repo. It runs in your own CI. There is no server, and none of your code leaves
 your repo.
 
 ```bash
-npx github:ajitheee/mendr#watch watch --install
+npx github:ajitheee/mendr watch --install
 ```
 
 Before it will run, pin the version. In your repo settings, under Secrets and
 variables, Actions, Variables, add a repository variable:
 
 - Name: `MENDR_SPEC`
-- Value: `cf317f7`
+- Value: `270ec71`
 
 The workflow refuses to run unpinned on purpose, so a future change to Mendr can
-never run in your CI without you choosing it. `cf317f7` is the exact commit you
-are testing.
+never run in your CI without you choosing it. `270ec71` is the current commit on
+`main`; pin to it (or any later `main` commit SHA) rather than a branch.
 
 Then commit and push the workflow file. On the next run it opens one issue titled
 "Mendr Watch". After that it edits that same issue in place. It never opens a
@@ -88,5 +88,5 @@ That is the signal that decides what we build next.
   directory prints a "scanned 0 source files" hint.
 - The countdown value comes from Mendr's registry of provider retirement dates,
   not from your provider account.
-- `npx github:ajitheee/mendr#watch fix-llm .` shows the proposed fixes for
+- `npx github:ajitheee/mendr fix-llm .` shows the proposed fixes for
   anything marked "auto-fix ready".
