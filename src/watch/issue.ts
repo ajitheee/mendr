@@ -50,14 +50,14 @@ export function countdownLabel(model: ExposedModel, now: Date): string {
   return `${days}d left`;
 }
 
-/** Models whose highest occurrence needs a look (Tier A or B). */
+/** Models that need any action — decided by DISPOSITION, never highestTier. */
 export function reviewModels(models: readonly ExposedModel[]): ExposedModel[] {
-  return models.filter((m) => m.highestTier !== 'C');
+  return models.filter((m) => m.disposition !== 'informational');
 }
 
 /** Models that are purely informational data (Tier C only). */
 export function infoModels(models: readonly ExposedModel[]): ExposedModel[] {
-  return models.filter((m) => m.highestTier === 'C');
+  return models.filter((m) => m.disposition === 'informational');
 }
 
 function plural(n: number, word: string): string {

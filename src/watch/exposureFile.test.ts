@@ -26,6 +26,7 @@ function models(): ExposedModel[] {
     line: 3,
     column: 1,
     tier: 'A',
+    usageVerdict: 'confirmed',
   };
   return foldExposure([m]);
 }

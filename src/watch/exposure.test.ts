@@ -11,6 +11,10 @@ import {
   daysUntil,
   foldExposure,
   MAX_LOCATIONS_PER_MODEL,
+  modelDispositionCounts,
+  mostOverdueDays,
+  nearestUpcomingDeadlineDays,
+  occurrenceTierCounts,
   type ExposureMatch,
 } from './exposure.js';
 
@@ -36,6 +40,7 @@ function match(over: Partial<ExposureMatch> = {}): ExposureMatch {
     line: 1,
     column: 1,
     tier: 'C',
+    usageVerdict: 'n/a',
     ...over,
   };
 }
@@ -146,6 +151,65 @@ describe('foldExposure', () => {
     expect(m.occurrences).toBe(MAX_LOCATIONS_PER_MODEL + 20);
     expect(m.tierCounts.C).toBe(MAX_LOCATIONS_PER_MODEL + 20);
     expect(m.locations).toHaveLength(MAX_LOCATIONS_PER_MODEL);
+  });
+
+  it('disposition is decided by the tier MIX, not highestTier', () => {
+    const disp = (tiers: Array<Partial<ExposureMatch>>): string =>
+      foldExposure(tiers.map((t) => match(t)))[0].disposition;
+    // Mixed A+B: highestTier is A, but it still requires review.
+    const [mixed] = foldExposure([match({ tier: 'A' }), match({ tier: 'B', reason: 'usage_unverified' })]);
+    expect(mixed.highestTier).toBe('A');
+    expect(mixed.disposition).toBe('mixed_review_required');
+    expect(disp([{ tier: 'B', reason: 'usage_unverified' }])).toBe('review_required');
+    expect(disp([{ tier: 'A' }])).toBe('auto_fixable');
+    expect(disp([{ tier: 'C' }])).toBe('informational');
+  });
+
+  it('carries the registry replacement verdict + autoApplyAllowed, so a candidate is never read as verified', () => {
+    const [verifiedM] = foldExposure([
+      match({ entry: entry({ verification: autoApplyVerification() }), tier: 'A' }),
+    ]);
+    expect(verifiedM.replacementVerdict).toBe('verified');
+    expect(verifiedM.autoApplyAllowed).toBe(true);
+    const [unstampedM] = foldExposure([match({ tier: 'C' })]); // entry() has no verification block
+    expect(unstampedM.replacementVerdict).toBe('unstamped');
+    expect(unstampedM.autoApplyAllowed).toBe(false);
+  });
+});
+
+describe('deadline semantics (nearest UPCOMING vs most overdue)', () => {
+  const mk = (id: string, date: string): ExposureMatch =>
+    match({ entry: entry({ deprecated: id, shutdownDate: date }), value: id, tier: 'C' });
+  const models = foldExposure([
+    mk('a', '2024-07-12'), // retired ~772d ago
+    mk('b', '2026-09-27'), // ~36d out
+    mk('c', '2026-10-23'), // ~62d out
+  ]);
+  it('nearestUpcomingDeadlineDays is the soonest FUTURE date, not the most overdue', () => {
+    expect(nearestUpcomingDeadlineDays(models, NOW)).toBe(36);
+  });
+  it('mostOverdueDays is the largest past overdue, as a positive number', () => {
+    expect(mostOverdueDays(models, NOW)).toBe(daysUntil('2024-07-12', NOW)! * -1);
+    expect(mostOverdueDays(models, NOW)).toBeGreaterThan(700);
+  });
+  it('both are null when there is nothing in that direction', () => {
+    const onlyOverdue = foldExposure([mk('a', '2024-07-12')]);
+    expect(nearestUpcomingDeadlineDays(onlyOverdue, NOW)).toBeNull();
+    const onlyUpcoming = foldExposure([mk('b', '2026-09-27')]);
+    expect(mostOverdueDays(onlyUpcoming, NOW)).toBeNull();
+  });
+});
+
+describe('occurrence vs model count views', () => {
+  it('occurrenceTierCounts sums tiers; modelDispositionCounts buckets models', () => {
+    const models = foldExposure([
+      match({ tier: 'A' }), // gpt-4-0314: A+B -> mixed_review_required
+      match({ tier: 'B', reason: 'usage_unverified' }),
+      match({ entry: entry({ deprecated: 'x' }), value: 'x', tier: 'C' }), // x: C -> informational
+      match({ entry: entry({ deprecated: 'x' }), value: 'x', tier: 'C' }),
+    ]);
+    expect(occurrenceTierCounts(models)).toEqual({ tierA: 1, tierB: 1, tierC: 2 });
+    expect(modelDispositionCounts(models)).toEqual({ reviewRequired: 1, autoFixable: 0, informational: 1 });
   });
 });
 

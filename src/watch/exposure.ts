@@ -1,41 +1,39 @@
 import { relative } from 'node:path';
 import type { LlmModelIdDeprecation, LlmRegistry, ModelLifecycle, TierBReason } from '../types.js';
 import { displayEntryId } from '../registry/entryId.js';
+import {
+  effectiveVerificationState,
+  type EffectiveVerificationState,
+} from '../usage/llmRegistry.js';
 import { buildRegistryPrefilter, loadPrefilteredProject } from '../usage/scanRepo.js';
 import { findModelIdLiterals } from '../usage/scanLiterals.js';
 import { collectPythonFiles, findPyModelIdLiterals, readPythonSources } from '../python/scanPy.js';
 import { classifyOccurrenceTier } from '../report/classifyOccurrence.js';
-import { type Tier } from '../report/tiers.js';
+import { usageVerdictState, type Tier, type UsageVerdict } from '../report/tiers.js';
 
 // Phase 1 — Standing Watch: turn a one-shot scan into a resident record.
 //
-// EXPOSURE is the durable question the watch answers: which deprecated model
-// ids does THIS repo's code touch, when does each die, and how serious is each
-// occurrence? It is computed from the SAME analyzer the fix path uses
-// (scanLiterals for TS, scanPy for Python) and each occurrence is classified by
-// the SAME per-occurrence tier fix-llm reports (classifyOccurrenceTier) — no
-// second, simplified classifier, so the two surfaces can never disagree about
-// whether a given gpt-4 is a Tier B review item or Tier C data. The countdown is
-// NOT stored: it is derived from `shutdownDate` at render time, so the committed
-// `.mendr/exposure.json` changes only when real exposure changes, never merely
-// because a day passed.
+// EXPOSURE is the durable question the watch answers: which deprecated model ids
+// does THIS repo's code touch, when does each die, and how serious is each
+// occurrence? Every occurrence is classified into the SAME A/B/C tier fix-llm
+// reports (classifyOccurrenceTier) and carries the same usage verdict, so the
+// two surfaces never disagree. Each model additionally carries a MODEL-LEVEL
+// disposition (the field that decides action — never `highestTier`, which exists
+// only to order the list) and the registry's replacement verdict, so a consumer
+// can never mistake a quarantined candidate replacement for a verified one.
 
 /** A single matched occurrence, already classified into its terminal tier. */
 export interface ExposureMatch {
-  /** The deprecated model-id value found (exact literal content). */
   value: string;
-  /** The registry entry the value matched. */
   entry: LlmModelIdDeprecation;
-  /** Repo-relative path, forward slashes. */
   file: string;
-  /** 1-based line of the literal. */
   line: number;
-  /** 1-based column of the literal. */
   column: number;
-  /** The terminal tier this occurrence lands in (A > B > C). */
   tier: Tier;
   /** The Tier B reason code, present iff `tier === 'B'`. */
   reason?: TierBReason;
+  /** Was the occurrence itself confirmed a live model argument? (confirmed/unverified/n/a) */
+  usageVerdict: UsageVerdict;
 }
 
 /** Where one occurrence sits, and how serious it is — persisted verbatim. */
@@ -45,6 +43,7 @@ export interface ExposureOccurrence {
   column: number;
   tier: Tier;
   reason?: TierBReason;
+  usageVerdict: UsageVerdict;
 }
 
 /** How many occurrences of a model landed in each tier. */
@@ -54,27 +53,42 @@ export interface TierCounts {
   C: number;
 }
 
+/**
+ * The MODEL-LEVEL action a reader should take. Decided from the tier mix, NOT
+ * from `highestTier` (a model with both Tier A and Tier B has highestTier 'A'
+ * but still needs review). This is the field downstream tools should branch on.
+ */
+export type ModelDisposition =
+  | 'auto_fixable' // Tier A only — a verified swap exists
+  | 'review_required' // Tier B present, no Tier A
+  | 'mixed_review_required' // both Tier A and Tier B — a swap AND something to review
+  | 'informational'; // Tier C only — data references, nothing to do
+
 /** One deprecated model id the repo is exposed to, with its retirement facts. */
 export interface ExposedModel {
-  /** The deprecated model-id value (what appears in the code). */
   id: string;
   provider: string;
-  /** Stable registry id — the argument to `mendr evidence <id>`. */
   entryId: string;
-  /** Source-id lifecycle per the provider's docs, when the registry carries one. */
   status: ModelLifecycle | null;
-  /** ISO date (YYYY-MM-DD) calls stop working, or null when the provider gave none. */
   shutdownDate: string | null;
-  /** The id the registry migrates to. */
   replacement: string;
-  /** The provider doc the retirement was read from, when the entry carries one. */
+  /** The registry's verdict for the replacement mapping (verified/quarantined/…). */
+  replacementVerdict: EffectiveVerificationState;
+  /** Whether the engine may auto-apply this swap — false unless fully verified. */
+  autoApplyAllowed: boolean;
   sourceUrl: string | null;
   /** Total matched occurrences across the repo (may exceed `locations.length`). */
   occurrences: number;
   /** Per-tier occurrence counts — the same A/B/C tiers fix-llm reports. */
   tierCounts: TierCounts;
-  /** The most severe tier present (A > B > C) — the model's risk level. */
+  /**
+   * The most severe tier present (A > B > C). ORDERING ONLY — do not branch on
+   * it for action; use {@link disposition}, which does not hide a Tier B under a
+   * Tier A.
+   */
   highestTier: Tier;
+  /** The model-level action to take (the field to branch on). */
+  disposition: ModelDisposition;
   /** Sorted, capped sample of where the id appears, each with its tier. */
   locations: ExposureOccurrence[];
 }
@@ -82,9 +96,7 @@ export interface ExposedModel {
 /** The computed watch state: the exposed models plus the scan's honest scope. */
 export interface Exposure {
   models: ExposedModel[];
-  /** Total source files the walker visited (TS + Python). */
   filesScanned: number;
-  /** How many of those matched the registry pre-filter and were parsed. */
   filesMatched: number;
 }
 
@@ -100,11 +112,39 @@ export function daysUntil(shutdownDate: string | null | undefined, now: Date): n
   const parsed = new Date(`${shutdownDate}T00:00:00Z`);
   const target = parsed.getTime();
   if (Number.isNaN(target)) return null;
-  // V8 silently rolls an out-of-range day over ("2026-11-31" -> Dec 1); round-trip
-  // and reject anything that did not survive, so a registry typo yields null.
   if (parsed.toISOString().slice(0, 10) !== shutdownDate) return null;
   const nowUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   return Math.round((target - nowUtc) / 86_400_000);
+}
+
+/**
+ * The nearest UPCOMING deadline (today or future), in days, or null when nothing
+ * is still upcoming. This is what "nearest deadline" should mean — the soonest
+ * thing about to break — not the most-overdue past date.
+ */
+export function nearestUpcomingDeadlineDays(
+  models: readonly ExposedModel[],
+  now: Date,
+): number | null {
+  let nearest: number | null = null;
+  for (const model of models) {
+    const days = daysUntil(model.shutdownDate, now);
+    if (days === null || days < 0) continue;
+    if (nearest === null || days < nearest) nearest = days;
+  }
+  return nearest;
+}
+
+/** The most-overdue deadline as a positive number of days, or null when none is overdue. */
+export function mostOverdueDays(models: readonly ExposedModel[], now: Date): number | null {
+  let most: number | null = null;
+  for (const model of models) {
+    const days = daysUntil(model.shutdownDate, now);
+    if (days === null || days >= 0) continue;
+    const overdue = -days;
+    if (most === null || overdue > most) most = overdue;
+  }
+  return most;
 }
 
 /** A=0, B=1, C=2 — lower is more severe (drives risk-first ordering). */
@@ -119,13 +159,20 @@ function highestOf(counts: TierCounts): Tier {
   return 'C';
 }
 
+/** The model-level disposition from its tier mix (see {@link ModelDisposition}). */
+export function dispositionOf(counts: TierCounts): ModelDisposition {
+  const hasA = counts.A > 0;
+  const hasB = counts.B > 0;
+  if (hasA && hasB) return 'mixed_review_required';
+  if (hasB) return 'review_required';
+  if (hasA) return 'auto_fixable';
+  return 'informational';
+}
+
 /**
  * Order models RISK FIRST, then nearest deadline. Highest tier (A before B
- * before C) leads, so a review-required finding always sorts above informational
- * data even when the data id retired long ago; within a tier, the soonest
- * shutdown date leads (dated before undated); ties break on entry id for a total,
- * stable order. Pure over the model (dates order correctly as strings), so
- * foldExposure needs no clock.
+ * before C) leads; within a tier the soonest date leads (dated before undated);
+ * ties break on entry id. Pure over the model (dates order as strings).
  */
 function compareByRiskThenDeadline(a: ExposedModel, b: ExposedModel): number {
   const risk = tierRank(a.highestTier) - tierRank(b.highestTier);
@@ -149,9 +196,8 @@ function compareOccurrence(a: ExposureOccurrence, b: ExposureOccurrence): number
 
 /**
  * Fold classified matches into the exposed-model list. PURE over its inputs.
- * Grouped by `entryId`, so a value with two registry records becomes two
- * exposures (the multimap feeds both). Each model accumulates per-tier counts
- * and its highest tier, and the list is ordered risk-first.
+ * Grouped by `entryId`; each model accumulates per-tier counts, its highest tier
+ * (for ordering) and its disposition (for action), and the list is risk-first.
  */
 export function foldExposure(matches: readonly ExposureMatch[]): ExposedModel[] {
   const byEntry = new Map<string, ExposedModel>();
@@ -166,10 +212,13 @@ export function foldExposure(matches: readonly ExposureMatch[]): ExposedModel[] 
         status: match.entry.status ?? null,
         shutdownDate: match.entry.shutdownDate ?? null,
         replacement: match.entry.replacement,
+        replacementVerdict: effectiveVerificationState(match.entry),
+        autoApplyAllowed: match.entry.verification?.autoApplyAllowed ?? false,
         sourceUrl: match.entry.sourceUrl ?? null,
         occurrences: 0,
         tierCounts: { A: 0, B: 0, C: 0 },
         highestTier: 'C',
+        disposition: 'informational',
         locations: [],
       };
       byEntry.set(entryId, model);
@@ -182,12 +231,14 @@ export function foldExposure(matches: readonly ExposureMatch[]): ExposedModel[] 
       column: match.column,
       tier: match.tier,
       reason: match.reason,
+      usageVerdict: match.usageVerdict,
     });
   }
 
   const models = [...byEntry.values()];
   for (const model of models) {
     model.highestTier = highestOf(model.tierCounts);
+    model.disposition = dispositionOf(model.tierCounts);
     model.locations.sort(compareOccurrence);
     if (model.locations.length > MAX_LOCATIONS_PER_MODEL) {
       model.locations = model.locations.slice(0, MAX_LOCATIONS_PER_MODEL);
@@ -197,12 +248,7 @@ export function foldExposure(matches: readonly ExposureMatch[]): ExposedModel[] 
   return models;
 }
 
-/**
- * Scan `repoPath` for every occurrence of a registry model-id, across TypeScript
- * and Python, and classify each into its terminal tier with the SHARED
- * classifier (so watch and fix-llm agree). Returns plain matches plus honest
- * file-scope counts.
- */
+/** Scan `repoPath` for every registry model-id occurrence (TS + Python), classified. */
 export async function scanForExposure(
   repoPath: string,
   registry: LlmRegistry,
@@ -210,38 +256,36 @@ export async function scanForExposure(
   const rel = (file: string): string => relative(repoPath, file).replace(/\\/g, '/');
   const prefilter = buildRegistryPrefilter(registry);
 
+  const toMatch = (m: {
+    value: string;
+    deprecation: LlmModelIdDeprecation;
+    location: { file: string; line: number; column: number };
+    position: Parameters<typeof classifyOccurrenceTier>[0]['position'];
+    reason?: string;
+  }): ExposureMatch => {
+    const t = classifyOccurrenceTier({ position: m.position, deprecation: m.deprecation, reason: m.reason });
+    return {
+      value: m.value,
+      entry: m.deprecation,
+      file: rel(m.location.file),
+      line: m.location.line,
+      column: m.location.column,
+      tier: t.tier,
+      reason: t.reason,
+      usageVerdict: usageVerdictState(t.tier, t.reason),
+    };
+  };
+
   const { project, totalFiles: tsFiles, matchedFiles: tsMatched } = loadPrefilteredProject(
     repoPath,
     prefilter,
   );
-  const tsMatches: ExposureMatch[] = findModelIdLiterals(project, registry).map((m) => {
-    const t = classifyOccurrenceTier({ position: m.position, deprecation: m.deprecation, reason: m.reason });
-    return {
-      value: m.value,
-      entry: m.deprecation,
-      file: rel(m.location.file),
-      line: m.location.line,
-      column: m.location.column,
-      tier: t.tier,
-      reason: t.reason,
-    };
-  });
+  const tsMatches = findModelIdLiterals(project, registry).map(toMatch);
 
   const pyFiles = collectPythonFiles(repoPath);
   const pySourcesAll = readPythonSources(pyFiles);
   const pySources = prefilter ? pySourcesAll.filter((s) => prefilter.test(s.text)) : [];
-  const pyMatches: ExposureMatch[] = (await findPyModelIdLiterals(pySources, registry)).map((m) => {
-    const t = classifyOccurrenceTier({ position: m.position, deprecation: m.deprecation, reason: m.reason });
-    return {
-      value: m.value,
-      entry: m.deprecation,
-      file: rel(m.location.file),
-      line: m.location.line,
-      column: m.location.column,
-      tier: t.tier,
-      reason: t.reason,
-    };
-  });
+  const pyMatches = (await findPyModelIdLiterals(pySources, registry)).map(toMatch);
 
   return {
     matches: [...tsMatches, ...pyMatches],
@@ -266,13 +310,36 @@ export function totalOccurrences(models: readonly ExposedModel[]): number {
   return models.reduce((sum, m) => sum + m.occurrences, 0);
 }
 
-/** The nearest upcoming (or overdue) deadline across dated models, in days. */
-export function nearestDeadlineDays(models: readonly ExposedModel[], now: Date): number | null {
-  let nearest: number | null = null;
-  for (const model of models) {
-    const days = daysUntil(model.shutdownDate, now);
-    if (days === null) continue;
-    if (nearest === null || days < nearest) nearest = days;
+/** Occurrence-level tier totals across the repo (item 6 in the review). */
+export function occurrenceTierCounts(models: readonly ExposedModel[]): {
+  tierA: number;
+  tierB: number;
+  tierC: number;
+} {
+  return {
+    tierA: models.reduce((s, m) => s + m.tierCounts.A, 0),
+    tierB: models.reduce((s, m) => s + m.tierCounts.B, 0),
+    tierC: models.reduce((s, m) => s + m.tierCounts.C, 0),
+  };
+}
+
+/** Model-level disposition totals across the repo (item 6 in the review). */
+export function modelDispositionCounts(models: readonly ExposedModel[]): {
+  reviewRequired: number;
+  autoFixable: number;
+  informational: number;
+} {
+  let reviewRequired = 0;
+  let autoFixable = 0;
+  let informational = 0;
+  for (const m of models) {
+    if (m.disposition === 'review_required' || m.disposition === 'mixed_review_required') {
+      reviewRequired += 1;
+    } else if (m.disposition === 'auto_fixable') {
+      autoFixable += 1;
+    } else {
+      informational += 1;
+    }
   }
-  return nearest;
+  return { reviewRequired, autoFixable, informational };
 }

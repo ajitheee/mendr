@@ -130,7 +130,13 @@ import type {
   LlmModelIdDeprecation,
   VerificationStatus,
 } from './types.js';
-import { computeExposure, nearestDeadlineDays } from './watch/exposure.js';
+import {
+  computeExposure,
+  modelDispositionCounts,
+  mostOverdueDays,
+  nearestUpcomingDeadlineDays,
+  occurrenceTierCounts,
+} from './watch/exposure.js';
 import {
   EXPOSURE_RELATIVE_PATH,
   EXPOSURE_SCHEMA,
@@ -2602,7 +2608,15 @@ program
               scannedCommit,
               hasExposure: exposure.models.length > 0,
               modelCount: exposure.models.length,
-              nearestDeadlineDays: nearestDeadlineDays(exposure.models, now),
+              // Occurrence-level tiers vs model-level dispositions are DIFFERENT
+              // views of the same scan (the badge uses the model view); both are
+              // reported so a consumer never conflates them.
+              occurrenceCounts: occurrenceTierCounts(exposure.models),
+              modelCounts: modelDispositionCounts(exposure.models),
+              // Two unambiguous deadline fields (the old single field returned the
+              // most-overdue date, not the nearest upcoming one).
+              nearestUpcomingDeadlineDays: nearestUpcomingDeadlineDays(exposure.models, now),
+              mostOverdueDays: mostOverdueDays(exposure.models, now),
               filesScanned: exposure.filesScanned,
               filesMatched: exposure.filesMatched,
               models: exposure.models,

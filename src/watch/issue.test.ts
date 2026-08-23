@@ -33,6 +33,7 @@ function match(over: Partial<ExposureMatch> = {}): ExposureMatch {
     line: 1,
     column: 1,
     tier: 'C',
+    usageVerdict: 'n/a',
     ...over,
   };
 }
