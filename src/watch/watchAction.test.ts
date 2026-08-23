@@ -300,4 +300,13 @@ describe('the generated workflow is pinned and least-privilege', () => {
     expect(WATCH_WORKFLOW_YAML).toContain('concurrency:');
     expect(WATCH_WORKFLOW_YAML).toContain('group: mendr-watch');
   });
+
+  it('runs on Node >= 22 (a dep uses Set.prototype.union, which Node 20 lacks)', () => {
+    // Regression guard: a live Actions run failed on `TEXT_ENCODINGS.union is not
+    // a function` because the workflow pinned Node 20 while web-tree-sitter needs
+    // Node 22+. This must never slip back to 20.
+    const m = WATCH_WORKFLOW_YAML.match(/node-version:\s*'(\d+)'/);
+    expect(m, 'workflow must pin a node-version').not.toBeNull();
+    expect(Number(m![1])).toBeGreaterThanOrEqual(22);
+  });
 });

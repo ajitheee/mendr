@@ -58,7 +58,7 @@ jobs:
 
       - uses: actions/setup-node@v4 # pin to a commit SHA for strict supply-chain safety
         with:
-          node-version: '20'
+          node-version: '22' # >=22: a Mendr dep (web-tree-sitter) uses Set.prototype.union
 
       - name: Compute exposure
         env:

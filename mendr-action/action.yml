@@ -23,9 +23,9 @@ inputs:
     required: false
     default: ""
   node-version:
-    description: "Node.js version (Mendr needs >=20)."
+    description: "Node.js version (Mendr needs >=22; a dep uses Set.prototype.union)."
     required: false
-    default: "20"
+    default: "22"
   branch:
     description: "Stable branch Mendr updates each run to keep a single idempotent PR."
     required: false

@@ -42,7 +42,7 @@ Re-running never stacks new PRs. It keeps the one branch current.
 | `working-directory` | `.` | where your code lives, if not the repo root |
 | `mendr-spec` | `mendr@^0.1` | the CLI version that runs in your CI |
 | `install-command` | auto | override the dependency install step |
-| `node-version` | `20` | Mendr needs Node 20 or newer |
+| `node-version` | `22` | Mendr needs Node 22 or newer |
 | `branch` | `mendr/deprecated-model-ids` | the branch Mendr owns |
 | `base` | default branch | base branch for the PR |
 | `pr-labels` | `dependencies,mendr,automated` | labels on the PR |

@@ -20,4 +20,4 @@ jobs:
       - uses: ajitheee/mendr/mendr-action@v1
         # with:
         #   working-directory: packages/api   # if your code isn't at the repo root
-        #   node-version: "20"
+        #   node-version: "22"
