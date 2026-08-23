@@ -123,6 +123,16 @@ describe('renderIssueBody', () => {
     expect(body).toContain('nothing for');
     expect(body).toContain('heads-up, not a fix');
   });
+
+  it('a usage-unverified occurrence reads as review, not data only (agrees with fix-llm Tier B)', () => {
+    const body = renderIssueBody(exposureOf([match({ position: 'usage_unverified' })]), EMPTY_REGISTRY, NOW);
+    expect(body).toContain('(1 review)'); // In code column
+    expect(body).not.toContain('data only');
+    expect(body).toContain('| review |'); // Fix column
+    // CTA points at fix-llm for review, not "heads-up, not a fix".
+    expect(body).toContain('flags the review rows');
+    expect(body).not.toContain('heads-up, not a fix');
+  });
 });
 
 describe('renderBadge', () => {

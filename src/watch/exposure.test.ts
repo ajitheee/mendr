@@ -105,6 +105,19 @@ describe('foldExposure', () => {
     expect(models[1].shutdownDate).toBeNull();
   });
 
+  it('counts usage_unverified / azure as review — neither live nor pure data', () => {
+    const models = foldExposure([
+      match({ position: 'model_arg' }),
+      match({ position: 'usage_unverified' }),
+      match({ position: 'azure_deployment' }),
+      match({ position: 'data' }),
+    ]);
+    const m = models[0];
+    expect(m.occurrences).toBe(4);
+    expect(m.liveOccurrences).toBe(1);
+    expect(m.reviewOccurrences).toBe(2); // usage_unverified + azure alias
+  });
+
   it('caps persisted locations but keeps the true occurrence count', () => {
     const many: ExposureMatch[] = Array.from({ length: MAX_LOCATIONS_PER_MODEL + 20 }, (_, i) =>
       match({ file: 'src/app.ts', line: i + 1, position: 'data' }),

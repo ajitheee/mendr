@@ -63,6 +63,13 @@ export interface ExposedModel {
   occurrences: number;
   /** How many of those sit in a live model-argument position (`model_arg`). */
   liveOccurrences: number;
+  /**
+   * How many are review candidates that are NOT confirmed-live and NOT pure
+   * data: a model-like assignment with no traced sink (`usage_unverified`) or an
+   * Azure deployment alias (`azure_deployment`). fix-llm surfaces these as Tier
+   * B, so the watch must not bury them under "data only".
+   */
+  reviewOccurrences: number;
   /** Sorted, capped sample of where the id appears. */
   locations: ExposureOccurrence[];
 }
@@ -153,12 +160,16 @@ export function foldExposure(matches: readonly ExposureMatch[]): ExposedModel[] 
         sourceUrl: match.entry.sourceUrl ?? null,
         occurrences: 0,
         liveOccurrences: 0,
+        reviewOccurrences: 0,
         locations: [],
       };
       byEntry.set(entryId, model);
     }
     model.occurrences += 1;
     if (match.position === 'model_arg') model.liveOccurrences += 1;
+    else if (match.position === 'usage_unverified' || match.position === 'azure_deployment') {
+      model.reviewOccurrences += 1;
+    }
     model.locations.push({ file: match.file, line: match.line, position: match.position });
   }
 

@@ -126,6 +126,25 @@ function cell(text: string): string {
 }
 
 /**
+ * The "In code" cell: live call sites first, then review candidates
+ * (usage-unverified / azure alias — Tier B in fix-llm), then pure data. This is
+ * what keeps the watch from labeling a review candidate "data only" while
+ * fix-llm calls the same occurrence Tier B.
+ */
+function inCodeLabel(model: ExposedModel): string {
+  if (model.liveOccurrences > 0) return `${model.occurrences}× (${model.liveOccurrences} live)`;
+  if (model.reviewOccurrences > 0) return `${model.occurrences}× (${model.reviewOccurrences} review)`;
+  return `${model.occurrences}× (data only)`;
+}
+
+/** The "Fix" cell: a ready swap, a review item, or nothing to do. */
+function fixLabel(model: ExposedModel, registry: LlmRegistry): string {
+  if (hasReadyFix(model, registry)) return 'auto-fix ready';
+  if (model.liveOccurrences > 0 || model.reviewOccurrences > 0) return 'review';
+  return '—';
+}
+
+/**
  * Render the full watch issue body (markdown), including the hidden marker.
  * `registry` is used only to say whether a ready Tier A fix exists for each live
  * model — never to re-detect. An empty exposure renders an explicit all-clear
@@ -180,33 +199,29 @@ export function renderIssueBody(exposure: Exposure, registry: LlmRegistry, now: 
   );
 
   for (const model of models) {
-    const inCode =
-      model.liveOccurrences > 0
-        ? `${model.occurrences}× (${model.liveOccurrences} live)`
-        : `${model.occurrences}× (data only)`;
-    const fix = hasReadyFix(model, registry)
-      ? 'auto-fix ready'
-      : model.liveOccurrences > 0
-        ? 'review'
-        : '—';
     lines.push(
       `| \`${cell(model.id)}\` | ${cell(model.provider)} | ${model.shutdownDate ?? '—'} | ` +
-        `${cell(countdownLabel(model, now))} | ${inCode} | ${fix} |`,
+        `${cell(countdownLabel(model, now))} | ${inCodeLabel(model)} | ${fixLabel(model, registry)} |`,
     );
   }
 
   // `fix-llm` only rewrites LIVE model-argument sites, so it produces a diff
-  // only when there is live exposure. Promising a diff for a data-only exposure
-  // (a pricing-table key, a comparison) would be an overclaim — the run would
-  // come back with nothing to change.
+  // only when there is live exposure. A review candidate (usage-unverified /
+  // azure alias) is worth a look but yields no patch; a pure-data occurrence
+  // yields nothing at all. Say exactly which case this is — promising a diff for
+  // a data-only exposure would be an overclaim.
   const hasLive = liveModels(models).length > 0;
+  const hasReview = models.some((m) => m.reviewOccurrences > 0);
   lines.push(
     '',
     hasLive
       ? `See a proposed, verified diff with \`${MENDR_RUN_SPEC}\`. Nothing is changed without your review — ` +
           'Mendr only ever opens a diff or a pull request.'
-      : 'Every occurrence above is a data reference (a config value, a comparison, a catalog key), ' +
-          `not a live model call, so there is nothing for \`${MENDR_RUN_SPEC}\` to rewrite — this is a heads-up, not a fix.`,
+      : hasReview
+        ? `No confirmed live call sites, but \`${MENDR_RUN_SPEC}\` flags the review rows above (Tier B) — ` +
+            'model-like values it could not tie to a live call. Worth a look before the deadline; no patch is generated.'
+        : 'Every occurrence above is a data reference (a config value, a comparison, a catalog key), ' +
+            `not a live model call, so there is nothing for \`${MENDR_RUN_SPEC}\` to rewrite — this is a heads-up, not a fix.`,
     '',
     footer(now),
   );
@@ -282,14 +297,9 @@ export function renderTextSummary(exposure: Exposure, registry: LlmRegistry, now
     '',
   ];
   for (const model of models) {
-    const fix = hasReadyFix(model, registry) ? 'auto-fix ready' : model.liveOccurrences > 0 ? 'review' : '—';
-    const where =
-      model.liveOccurrences > 0
-        ? `${model.occurrences}× (${model.liveOccurrences} live)`
-        : `${model.occurrences}× (data only)`;
     lines.push(
       `  ${countdownLabel(model, now).padEnd(16)} ${model.id}  ->  ${model.replacement}` +
-        `   [${where}, ${fix}]`,
+        `   [${inCodeLabel(model)}, ${fixLabel(model, registry)}]`,
     );
   }
   return lines.join('\n');
