@@ -11,6 +11,7 @@
 // per field, not a four-field auto-apply gate.
 
 import type { LiteralPosition } from '../usage/scanLiterals.js';
+import type { TierBReason } from '../types.js';
 
 // ── shared provenance wrapper ──────────────────────────────────────────────
 /** Every catalog fact carries where it came from and when it was checked. */
@@ -114,6 +115,10 @@ export interface CandidateDecision {
   /** The FIRST required capability it failed; null when kept. */
   eliminatedBy: RequirementKey | null;
   eliminationDetail: string | null;
+  /** False for an official successor the registry names but the catalog does not yet cover. */
+  inCatalog: boolean;
+  /** For an official successor: the registry's verdict for the dead→replacement mapping; null for alternatives. */
+  registryVerdict: string | null;
 }
 
 // ── 4. Authorization ───────────────────────────────────────────────────────
@@ -167,25 +172,78 @@ export interface RecommendationReceipt {
   officialSuccessors: CandidateDecision[];
   compatibleAlternatives: CandidateDecision[];
   rejected: CandidateDecision[];
+  /**
+   * False when the endpoint (model class) could not be determined — compatible
+   * alternatives are then NOT offered, because we cannot confirm they are even
+   * the same model class (e.g. a chat model must not be offered for a dall-e call).
+   */
+  alternativesQualified: boolean;
   sortedBy: 'cost' | 'context' | null;
   /** The nearest shutdown deadline for the dead model, in days (null when undated). */
   deadlineDays: number | null;
 }
 
-/** The stable `recommend --json` envelope (one shape, empty scan => models: []). */
+/**
+ * A deprecated id found in a position recommend cannot generate a shortlist for,
+ * but which fix-llm/watch would flag for review (a usage-unverified assignment or
+ * an azure deployment alias). Surfaced so recommend never hides a known finding.
+ */
+export interface ReviewFinding {
+  deprecated: string;
+  entryId: string;
+  provider: string;
+  file: string;
+  line: number;
+  /** The SAME Tier B reason watch/fix-llm assign (via classifyOccurrenceTier) — one canonical classification. */
+  reason: TierBReason;
+  detail: string;
+}
+
+/** A deprecated id found only in DATA positions (config/list/comparison), grouped by id. */
+export interface InformationalGroup {
+  deprecated: string;
+  entryId: string;
+  provider: string;
+  occurrences: number;
+}
+
+/** The overall outcome of a recommend scan. */
+export type RecommendStatus =
+  | 'recommendations' // >= 1 live call produced a shortlist
+  | 'no_shortlist' // live calls found, but no catalog model met their requirements
+  | 'no_live_calls' // deprecated ids found, but none in a verified live call
+  | 'clean'; // no deprecated model ids found at all
+
+/**
+ * The stable `recommend --json` envelope. It reports THREE buckets so it never
+ * conceals what watch/fix-llm found: `recommendations` (live calls with a
+ * shortlist), `reviewRequired` (found but usage unverifiable), and
+ * `informational` (data positions). Empty scan => all three empty, status 'clean'.
+ */
 export interface RecommendJson {
   schema: 'mendr-recommend/v1';
+  status: RecommendStatus;
+  reason: string;
   registryVersion: string;
   catalogVersion: string;
   scannedCommit: string | null;
-  provider: string | null;
+  /** The --provider filter (null if unset). A repo may use several providers, so this is a FILTER, not the repo's provider. */
+  providerFilter: string | null;
+  /** Distinct providers with any deprecated usage found in the repo. */
+  providersFound: string[];
   sortedBy: 'cost' | 'context' | null;
   hasRecommendations: boolean;
-  modelCount: number;
+  findings: {
+    liveDeprecatedCalls: number; // model_arg occurrences that produced receipts
+    usageUnverified: number; // usage-unverified review occurrences
+    informational: number; // data-position occurrences
+  };
   reviewFlagged: number;
   filesScanned: number;
   filesMatched: number;
-  models: RecommendationReceipt[];
+  recommendations: RecommendationReceipt[];
+  reviewRequired: ReviewFinding[];
+  informational: InformationalGroup[];
 }
 
 /** A single dead-model occurrence recommend keys on (a live model argument). */

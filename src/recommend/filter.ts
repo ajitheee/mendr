@@ -11,6 +11,7 @@
 // passes --sort.
 
 import type { LlmModelIdDeprecation } from '../types.js';
+import { effectiveVerificationState } from '../usage/llmRegistry.js';
 import type {
   ActiveModel,
   CandidateDecision,
@@ -87,7 +88,7 @@ function detailFor(cand: ActiveModel, check: CapabilityCheck): string {
   return `${check.key} required; ${cand.modelId} ${check.key}=${JSON.stringify(field.value)} (${prov})`;
 }
 
-/** Run every requirement against one candidate and decide keep/reject. */
+/** Run every requirement against one candidate (an ALTERNATIVE) and decide keep/reject. */
 export function decideCandidate(
   cand: ActiveModel,
   origin: CandidateOrigin,
@@ -102,26 +103,52 @@ export function decideCandidate(
     checks,
     eliminatedBy: firstFail ? firstFail.key : null,
     eliminationDetail: firstFail ? detailFor(cand, firstFail) : null,
+    inCatalog: true,
+    registryVerdict: null,
   };
 }
 
-/** The candidate SET for a dead model, split by trust origin. */
+/**
+ * The official successor is the provider's DOCUMENTED replacement (the registry's
+ * `replacement`, the same target fix-llm/watch use). It is ALWAYS surfaced — never
+ * capability-eliminated — even when the active-model catalog does not yet cover it
+ * (then its checks are indeterminate and `inCatalog` is false). This is what makes
+ * recommend agree with watch instead of silently dropping the verified successor.
+ */
+export function decideOfficialSuccessor(
+  modelId: string,
+  catalogEntry: ActiveModel | undefined,
+  requirements: readonly ExtractedRequirement[],
+  registryVerdict: string,
+): CandidateDecision {
+  const checks: CapabilityCheck[] = catalogEntry
+    ? requirements.map((r) => checkRequirement(catalogEntry, r))
+    : requirements.map((r) => ({ key: r.key, requirement: r.state, catalogValue: 'unknown', result: 'indeterminate' }));
+  return {
+    modelId,
+    origin: 'official_successor',
+    kept: true,
+    checks,
+    eliminatedBy: null,
+    eliminationDetail: null,
+    inCatalog: !!catalogEntry,
+    registryVerdict,
+  };
+}
+
+/** The candidate SET for a dead model. */
 export function generateCandidates(
   dead: LlmModelIdDeprecation,
   catalog: readonly ActiveModel[],
   candidateProvider: 'openai' | 'anthropic' | 'google',
-): { official: ActiveModel[]; alternatives: ActiveModel[] } {
+): { officialId: string | null; officialEntry: ActiveModel | undefined; alternatives: ActiveModel[] } {
   const providerCatalog = catalog.filter((m) => m.provider === candidateProvider);
-  // Official successors exist ONLY when the candidate provider is the dead
-  // model's own provider — read from the deprecation entry's `replacement`,
-  // never inferred from the catalog.
-  const officialIds =
-    candidateProvider === dead.provider && dead.replacement ? new Set([dead.replacement]) : new Set<string>();
-  const official = providerCatalog.filter((m) => officialIds.has(m.modelId));
-  const alternatives = providerCatalog.filter(
-    (m) => !officialIds.has(m.modelId) && m.modelId !== dead.deprecated,
-  );
-  return { official, alternatives };
+  // The official successor is the registry's `replacement`, and only when the
+  // candidate provider is the dead model's own provider (no cross-provider 1:1).
+  const officialId = candidateProvider === dead.provider && dead.replacement ? dead.replacement : null;
+  const officialEntry = officialId ? providerCatalog.find((m) => m.modelId === officialId) : undefined;
+  const alternatives = providerCatalog.filter((m) => m.modelId !== officialId && m.modelId !== dead.deprecated);
+  return { officialId, officialEntry, alternatives };
 }
 
 /** Neutral canonical order: ascending modelId. */
@@ -163,6 +190,7 @@ export interface FilterResult {
   officialSuccessors: CandidateDecision[];
   compatibleAlternatives: CandidateDecision[];
   rejected: CandidateDecision[];
+  alternativesQualified: boolean;
 }
 
 /** Generate, decide, split, and order the candidates for one dead model. */
@@ -173,15 +201,30 @@ export function filterCandidates(
   candidateProvider: 'openai' | 'anthropic' | 'google',
   sortBy: 'cost' | 'context' | null,
 ): FilterResult {
-  const { official, alternatives } = generateCandidates(dead, catalog, candidateProvider);
+  const { officialId, officialEntry, alternatives } = generateCandidates(dead, catalog, candidateProvider);
   const lookup = new Map(catalog.map((m) => [m.modelId, m]));
 
-  const officialDecisions = official.map((m) => decideCandidate(m, 'official_successor', requirements));
-  const altDecisions = alternatives.map((m) => decideCandidate(m, 'compatible_alternative', requirements));
+  // The registry's documented successor is always surfaced (at most one), even
+  // when the catalog does not cover it — so recommend agrees with watch/fix-llm.
+  const officialSuccessors: CandidateDecision[] = officialId
+    ? [decideOfficialSuccessor(officialId, officialEntry, requirements, effectiveVerificationState(dead))]
+    : [];
+
+  // MODEL-CLASS SAFETY: a candidate is only "compatibility-qualified" if we could
+  // determine the call's endpoint family (its model class). If the endpoint is
+  // unknown (e.g. a Python call, or a dall-e/embeddings call whose class we can't
+  // read), we do NOT offer alternatives — a chat model must never be called
+  // "compatible" for an image-generation call. The official successor still shows.
+  const endpointReq = requirements.find((r) => r.key === 'endpoint');
+  const alternativesQualified = endpointReq === undefined || endpointReq.state !== 'unknown';
+  const altDecisions = alternativesQualified
+    ? alternatives.map((m) => decideCandidate(m, 'compatible_alternative', requirements))
+    : [];
 
   return {
-    officialSuccessors: sortKept(officialDecisions.filter((d) => d.kept), lookup, sortBy),
+    alternativesQualified,
+    officialSuccessors,
     compatibleAlternatives: sortKept(altDecisions.filter((d) => d.kept), lookup, sortBy),
-    rejected: [...officialDecisions, ...altDecisions].filter((d) => !d.kept).sort(byModelId),
+    rejected: altDecisions.filter((d) => !d.kept).sort(byModelId),
   };
 }

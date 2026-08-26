@@ -2636,6 +2636,15 @@ program
         if (!json) console.log(line);
       };
 
+      // A markdown-wrapped link ("[url](url)") is a common paste error — reject
+      // it with a clear message instead of failing as a missing local path.
+      if (/^\[|\]\(/.test(repoPath)) {
+        console.error(
+          'mendr: that looks like a markdown link. Pass the bare URL, e.g. https://github.com/owner/repo',
+        );
+        process.exit(2);
+      }
+
       // Validate the two preference inputs up front — a bad flag exits, never
       // silently degrades. --sort is the ONLY thing that orders candidates.
       let candidateProvider: 'openai' | 'anthropic' | 'google' | undefined;

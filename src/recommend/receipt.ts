@@ -20,22 +20,29 @@ import type {
 import type { FilterResult } from './filter.js';
 
 function computeVerification(
+  requirements: readonly ExtractedRequirement[],
   keptCandidates: readonly CandidateDecision[],
 ): VerificationScope {
   const keptCount = keptCandidates.length;
-  // Scoped to REQUIRED checks (not the broad reviewFlag predicate): an `unknown`
-  // requirement produces an indeterminate check but must not drag capabilities
-  // to 'unknown' when every REQUIRED capability is satisfied — that belongs in
-  // reviewFlag, per the M1 population rule.
-  const anyRequiredIndeterminate = keptCandidates.some((d) =>
-    d.checks.some((c) => c.requirement === 'required' && c.result === 'indeterminate'),
-  );
+  const keptInCatalog = keptCandidates.some((d) => d.inCatalog);
+  const hasUnknownReq = requirements.some((r) => r.state === 'unknown');
+  const keptChecks = keptCandidates.flatMap((d) => d.checks);
+  const anyRequiredIndeterminate = keptChecks.some((c) => c.requirement === 'required' && c.result === 'indeterminate');
+  const anyRequiredUnsatisfied = keptChecks.some((c) => c.requirement === 'required' && c.result === 'unsatisfied');
 
-  const capabilities: VerificationScope['capabilities'] =
-    keptCount === 0 ? 'failed' : anyRequiredIndeterminate ? 'unknown' : 'passed';
+  // capabilities is honest about what M1 could prove:
+  //   failed  = no kept candidate, or a surfaced official successor provably lacks a required capability.
+  //   unknown = a requirement was unknown (e.g. Python — nothing proven), or a required check hit missing provenance.
+  //   passed  = kept candidate(s) and every required capability satisfied, with no unknowns.
+  let capabilities: VerificationScope['capabilities'];
+  if (keptCount === 0 || anyRequiredUnsatisfied) capabilities = 'failed';
+  else if (hasUnknownReq || anyRequiredIndeterminate) capabilities = 'unknown';
+  else capabilities = 'passed';
 
   return {
-    providerStatus: keptCount > 0 ? 'passed' : 'failed',
+    // 'passed' only when a CATALOG-backed model is recommended; 'unknown' when the
+    // only kept candidate is a registry successor the catalog does not yet cover.
+    providerStatus: keptCount === 0 ? 'failed' : keptInCatalog ? 'passed' : 'unknown',
     capabilities,
     // M1 measures none of these — they may NEVER read 'passed' this rung.
     availability: 'not_evaluated',
@@ -48,14 +55,20 @@ function computeVerification(
   };
 }
 
-/** true iff any requirement is unknown OR any kept candidate has an indeterminate check. */
+/**
+ * true iff any requirement is unknown, or any kept candidate has a `required`
+ * check that is indeterminate or unsatisfied (the latter reachable only for an
+ * always-surfaced official successor whose catalog data fails a hard requirement).
+ */
 export function computeReviewFlag(
   requirements: readonly ExtractedRequirement[],
   keptCandidates: readonly CandidateDecision[],
 ): boolean {
   const anyUnknownReq = requirements.some((r) => r.state === 'unknown');
-  const anyKeptIndeterminate = keptCandidates.some((d) => d.checks.some((c) => c.result === 'indeterminate'));
-  return anyUnknownReq || anyKeptIndeterminate;
+  const anyRequiredIssue = keptCandidates.some((d) =>
+    d.checks.some((c) => c.requirement === 'required' && (c.result === 'indeterminate' || c.result === 'unsatisfied')),
+  );
+  return anyUnknownReq || anyRequiredIssue;
 }
 
 /** Build the receipt for one dead model. Pure. */
@@ -80,10 +93,11 @@ export function buildReceipt(args: {
     requirements,
     reviewFlag: computeReviewFlag(requirements, keptCandidates),
     authorization: { type: 'compatibility_only' },
-    verification: computeVerification(keptCandidates),
+    verification: computeVerification(requirements, keptCandidates),
     officialSuccessors: filter.officialSuccessors,
     compatibleAlternatives: filter.compatibleAlternatives,
     rejected: filter.rejected,
+    alternativesQualified: filter.alternativesQualified,
     sortedBy: sortBy,
     deadlineDays,
   };

@@ -126,6 +126,8 @@ export interface CandidateDecision {
   checks: CapabilityCheck[];             // one per requirement considered
   eliminatedBy: RequirementKey | null;   // the FIRST required capability it failed; null when kept
   eliminationDetail: string | null;      // machine+human, e.g. "vision required; catalog gpt-x vision=false (src, 2026-08-20)"
+  inCatalog: boolean;                    // false for a registry successor the catalog does not yet cover
+  registryVerdict: string | null;        // official successor only: the registry verdict for the dead→replacement mapping
 }
 
 // ── 4. Authorization ───────────────────────────────────────────────────────
@@ -171,14 +173,16 @@ export interface VerificationScope {
 }
 
 // M1 population rule (NORMATIVE — receipt.ts MUST follow it, §8 test #11 enforces it):
-//   providerStatus : 'passed' when the kept/considered model is active in the
-//                    catalog and cross-checked not-deprecated; 'failed' otherwise.
-//   capabilities   : 'passed'  iff there is >= 1 kept candidate AND every `required`
-//                              CapabilityCheck on every kept candidate is 'satisfied';
-//                    'unknown' iff >= 1 kept candidate has a `required` check that is
-//                              'indeterminate' (catalog field has no provenance);
-//                    'failed'  iff the kept set is empty (no candidate met the
-//                              required capabilities).
+//   providerStatus : 'passed' when a CATALOG-backed kept candidate is recommended;
+//                    'unknown' when the only kept candidate is a registry successor
+//                    the catalog does not yet cover; 'failed' when the kept set is empty.
+//   capabilities   : 'failed'  iff the kept set is empty, OR a surfaced official
+//                              successor provably lacks a `required` capability.
+//                    'unknown' iff a requirement was `unknown` (nothing proven — e.g.
+//                              a Python call), OR a `required` check hit missing catalog
+//                              provenance. (An unknown requirement can NOT read 'passed'.)
+//                    'passed'  iff there is >= 1 kept candidate, every `required` check is
+//                              'satisfied', and NO requirement is `unknown`.
 //   availability, code, toolBehavior, outputSchema, cost, latency, semanticQuality
 //                  : MUST be 'not_evaluated' in every M1 receipt. M1 measures none
 //                    of them, so none of them may ever read 'passed' this rung.
@@ -289,11 +293,19 @@ classifier.
 **Candidate source.** `--provider <p>` selects which provider's catalog to draw
 from; with no flag, candidates come from the dead model's own provider
 (same-provider-first).
-- Official successors exist **only** when the candidate provider equals the dead
-  model's provider — they are read from the deprecation entry's `replacement`
-  (via the shared registry), never inferred from the catalog.
+- The official successor is the deprecation entry's `replacement` (the same target
+  fix-llm/watch use), and exists **only** when the candidate provider equals the
+  dead model's provider. It is read from the registry, never inferred from the
+  catalog, and is **always surfaced — never capability-eliminated** — even when the
+  active-model catalog does not yet cover it. When the catalog lacks it, its
+  `CapabilityCheck`s are all `indeterminate`, `inCatalog` is `false`, and
+  `registryVerdict` carries the mapping's verification state; this is what makes
+  recommend AGREE with watch instead of silently dropping the verified successor.
+  (Real-repo testing showed the old catalog-intersection behavior dropped every
+  registry successor and recommended an older/wrong-tier model in its place.)
 - Compatible alternatives are the other active `ActiveModel` entries for the
-  candidate provider.
+  candidate provider; unlike the official successor, they ARE eliminated when a
+  `required` capability is unsatisfied.
 - Cross-provider (`--provider` ≠ the dead model's provider) yields
   `officialSuccessors: []` and everything as `compatible_alternative` — there is
   no provider-documented cross-provider 1:1, and the receipt says so.
@@ -361,29 +373,57 @@ value is indeterminate (no provenance). When the flag is set purely by the
 latter — zero `unknown` requirements — the warning still fires and names those
 capabilities.
 
+After the receipts, the renderer prints a **Review required** section (each
+`usage_unverified` / `azure_deployment` finding with its file:line and why no
+requirements could be extracted) and an **Informational** section (a count of
+deprecated ids in data positions, grouped by id). When there are no live calls
+it opens with "No live deprecated-model calls found." and closes with "No
+compatibility shortlist was generated." — so a repo with deprecated ids in
+non-live positions never reads as clean.
+
 ### 6.2 `recommend --json` (one stable shape)
 stdout is reserved exclusively for the document (`console.log(JSON.stringify(obj, null, 2))`);
 all warnings/progress go to `console.error`; exit via `process.exitCode`.
 Nullable scalars are always present as `value ?? null`. There is **one** shape —
-an empty scan yields `models: []`, not a reduced variant (fix-llm's two-shape
-split is a known footgun this contract avoids).
+an empty scan yields empty buckets, not a reduced variant (fix-llm's two-shape
+split is a known footgun this contract avoids). Recommend reports THREE buckets
+so it never hides what watch/fix-llm found: `recommendations` (live calls with a
+shortlist), `reviewRequired` (found but usage unverifiable — a Python
+usage-unverified assignment or an azure deployment alias), and `informational`
+(deprecated ids in data positions). `status` + `reason` explain WHY a result is
+empty rather than reading as a clean repo.
 
 ```ts
 export interface RecommendJson {
   schema: 'mendr-recommend/v1';
+  status: 'recommendations' | 'no_shortlist' | 'no_live_calls' | 'clean';
+  reason: string;             // one-line human explanation of the status
   registryVersion: string;    // content hash of llm-deprecations.json (reuse fix-llm/watch convention)
   catalogVersion: string;     // content hash of llm-active-models.json
   scannedCommit: string | null;
-  provider: string | null;    // the --provider filter, null if unset
+  providerFilter: string | null;  // the --provider filter (a repo may use many providers, so this is a FILTER)
+  providersFound: string[];       // distinct providers with any deprecated usage found
   sortedBy: 'cost' | 'context' | null;
   hasRecommendations: boolean;
-  modelCount: number;         // dead models with >= 1 live call found (== models.length)
+  findings: {
+    liveDeprecatedCalls: number;  // model_arg occurrences that produced receipts
+    usageUnverified: number;      // usage-unverified review occurrences
+    informational: number;        // data-position occurrences
+  };
   reviewFlagged: number;      // receipts with reviewFlag === true
   filesScanned: number;
   filesMatched: number;
-  models: RecommendationReceipt[];  // ordered by nearest deadline, never by candidate quality
+  recommendations: RecommendationReceipt[];  // ordered by nearest deadline, never by candidate quality
+  reviewRequired: ReviewFinding[];           // deprecated ids found but not a verified live call
+  informational: InformationalGroup[];       // deprecated ids in data positions, grouped by id
 }
 ```
+
+`recommend` reuses the SAME classified occurrences as watch/fix-llm: every
+`model_arg` becomes a `recommendations` receipt, every `usage_unverified` /
+`azure_deployment` becomes a `reviewRequired` finding, and every `data` position
+becomes an `informational` entry. It never says "nothing to recommend" while a
+finding exists.
 
 `recommend` writes nothing to the working tree and creates no `.mendr` file in
 M1 (locate/classify-only, like the scan path of fix-llm and watch). If a later
@@ -445,10 +485,12 @@ often — the same cadence question the deprecation registry already answers. Th
 push/PR integrity check in §3.3 guards structure, not staleness; staleness is a
 later online audit and a human commitment.
 
-Catalog coverage note: an official successor only appears when the deprecation
-entry's `replacement` id is itself present in the catalog (a `CandidateDecision`
-needs the replacement's capability fields to exist). If the catalog does not yet
-cover a provider's replacements, official successors are silently omitted and
-only compatible alternatives show. Keeping the catalog's coverage in step with
-the deprecation registry's replacements is part of the same maintenance
-commitment above.
+Catalog coverage note: the official successor is always surfaced from the
+registry, but until the catalog covers the replacement id its capabilities can't
+be verified — it shows with `inCatalog: false`, its `registryVerdict`, and a
+"capability data unavailable" note, and `providerStatus` reads `unknown`. Keeping
+the catalog's coverage in step with the deprecation registry's replacements (so
+successors are capability-checked, not just named) is part of the same
+maintenance commitment above. Real-repo testing (12 public repos) showed this is
+the single highest-value catalog investment: without it, every recommendation
+leads with an unverifiable successor.

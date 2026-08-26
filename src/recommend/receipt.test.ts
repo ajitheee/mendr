@@ -27,8 +27,8 @@ function allNotObserved(): ExtractedRequirement[] {
 function check(result: CapabilityCheck['result']): CapabilityCheck {
   return { key: 'tools', requirement: 'required', catalogValue: true, result };
 }
-function kept(modelId: string, checks: CapabilityCheck[]): CandidateDecision {
-  return { modelId, origin: 'compatible_alternative', kept: true, checks, eliminatedBy: null, eliminationDetail: null };
+function kept(modelId: string, checks: CapabilityCheck[], inCatalog = true): CandidateDecision {
+  return { modelId, origin: 'compatible_alternative', kept: true, checks, eliminatedBy: null, eliminationDetail: null, inCatalog, registryVerdict: null };
 }
 function emptyFilter(): FilterResult {
   return { officialSuccessors: [], compatibleAlternatives: [], rejected: [] };
@@ -79,9 +79,9 @@ describe('buildReceipt — criterion 11 (VerificationScope is honest)', () => {
     expect(v.providerStatus).toBe('failed');
   });
 
-  it('capabilities stays passed when only an UNKNOWN requirement (not a required check) is indeterminate', () => {
-    // kept candidate: a satisfied required check + an indeterminate check whose
-    // requirement is `unknown` (from an unknown ExtractedRequirement).
+  it('capabilities is UNKNOWN when a requirement is unknown, even if a required check passes (real-repo honesty)', () => {
+    // A satisfied required check + an unknown requirement: we could NOT fully
+    // verify what the call needs, so 'passed' would over-claim.
     const filter: FilterResult = {
       officialSuccessors: [],
       compatibleAlternatives: [
@@ -91,8 +91,18 @@ describe('buildReceipt — criterion 11 (VerificationScope is honest)', () => {
     };
     const reqs = allNotObserved().map((r) => (r.key === 'vision' ? req('vision', 'unknown') : r));
     const rc = receipt(reqs, filter);
-    expect(rc.verification.capabilities).toBe('passed');
+    expect(rc.verification.capabilities).toBe('unknown');
     expect(rc.reviewFlag).toBe(true);
+  });
+
+  it('providerStatus is unknown when the only kept candidate is a registry successor not in the catalog', () => {
+    const notInCatalog: CandidateDecision = {
+      modelId: 'gpt-5.6-sol', origin: 'official_successor', kept: true,
+      checks: allNotObserved().map((r) => ({ key: r.key, requirement: r.state, catalogValue: 'unknown' as const, result: 'indeterminate' as const })),
+      eliminatedBy: null, eliminationDetail: null, inCatalog: false, registryVerdict: 'verified',
+    };
+    const rc = receipt(allNotObserved(), { officialSuccessors: [notInCatalog], compatibleAlternatives: [], rejected: [] });
+    expect(rc.verification.providerStatus).toBe('unknown');
   });
 });
 

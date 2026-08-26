@@ -152,12 +152,44 @@ describe('filterCandidates — criterion 13 (cross-provider sourcing)', () => {
 });
 
 describe('filterCandidates — criterion 14 (empty kept set is first-class)', () => {
-  it('all candidates eliminated yields both kept arrays empty and every rejected has eliminatedBy', () => {
-    const catalog = [model({ modelId: 'gpt-4o', tools: false }), model({ modelId: 'gpt-4o-mini', tools: false })];
-    const r = filterCandidates(dead, withReq('tools', 'required'), catalog, 'openai', null);
+  it('cross-provider with all alternatives eliminated yields both kept arrays empty', () => {
+    // Cross-provider => no official successor; a candidate failing a required
+    // capability => no kept alternative.
+    const catalog = [model({ provider: 'google', modelId: 'gemini-x', endpoint: 'gemini_generate', tools: false })];
+    const r = filterCandidates(dead, withReq('tools', 'required'), catalog, 'google', null);
     expect(r.officialSuccessors).toEqual([]);
     expect(r.compatibleAlternatives).toEqual([]);
-    expect(r.rejected.length).toBe(2);
+    expect(r.rejected.length).toBe(1);
     expect(r.rejected.every((d) => d.eliminatedBy !== null)).toBe(true);
+  });
+});
+
+describe('filterCandidates — official successor comes from the REGISTRY (real-repo Pattern 1 fix)', () => {
+  it('surfaces the registry replacement as official successor EVEN WHEN not in the catalog', () => {
+    const deadFutureSuccessor: LlmModelIdDeprecation = { ...dead, replacement: 'gpt-5.6-sol' };
+    const catalog = [model({ modelId: 'gpt-4o' })]; // catalog does not cover gpt-5.6-sol
+    const r = filterCandidates(deadFutureSuccessor, allNotObserved(), catalog, 'openai', null);
+    expect(r.officialSuccessors.map((d) => d.modelId)).toEqual(['gpt-5.6-sol']);
+    expect(r.officialSuccessors[0].inCatalog).toBe(false);
+    expect(r.compatibleAlternatives.map((d) => d.modelId)).toEqual(['gpt-4o']);
+  });
+
+  it('never eliminates the official successor, even if catalog data fails a required cap', () => {
+    const catalog = [model({ modelId: 'gpt-4o', tools: false })]; // gpt-4o IS dead.replacement
+    const r = filterCandidates(dead, withReq('tools', 'required'), catalog, 'openai', null);
+    expect(r.officialSuccessors.map((d) => d.modelId)).toEqual(['gpt-4o']);
+    expect(r.officialSuccessors[0].checks.find((c) => c.key === 'tools')!.result).toBe('unsatisfied');
+    expect(r.rejected.map((d) => d.modelId)).not.toContain('gpt-4o');
+  });
+});
+
+describe('filterCandidates — model-class safety (real-repo P0: dall-e got chat alternatives)', () => {
+  it('offers NO compatible alternatives when the endpoint (model class) is unknown', () => {
+    const catalog = [model({ modelId: 'gpt-4o' }), model({ modelId: 'gpt-4o-mini' })];
+    const r = filterCandidates(dead, withReq('endpoint', 'unknown'), catalog, 'openai', null);
+    expect(r.alternativesQualified).toBe(false);
+    expect(r.compatibleAlternatives).toEqual([]);
+    // the official successor still shows — it is the provider's documented answer
+    expect(r.officialSuccessors.map((d) => d.modelId)).toEqual(['gpt-4o']);
   });
 });
