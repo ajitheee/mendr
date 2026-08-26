@@ -21,6 +21,7 @@
     "dev": "tsx src/cli.ts",
     "test": "vitest run",
     "validate:registry": "npm run build && node scripts/validate-registry.mjs",
+    "validate:active-models": "npm run build && node scripts/validate-active-models.mjs",
     "start": "node dist/cli.js",
     "prepare": "npm run build",
     "prepublishOnly": "npm run build && npm test"

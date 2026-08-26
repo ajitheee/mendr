@@ -1,0 +1,26 @@
+name: CI
+
+# Push/PR gate. The active-model catalog is load-bearing for every `recommend`
+# run, so its integrity is checked on EVERY change here — not only in the weekly
+# registry-verify cron. Build, validate both data assets offline, then test.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Validate the deprecation registry (offline integrity)
+        run: node scripts/validate-registry.mjs
+      - name: Validate the active-model catalog (offline integrity)
+        run: node scripts/validate-active-models.mjs
+      - run: npm test

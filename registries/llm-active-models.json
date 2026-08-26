@@ -1,0 +1,132 @@
+[
+  {
+    "entryId": "openai.gpt-4o.active",
+    "provider": "openai",
+    "modelId": "gpt-4o",
+    "lifecycle": "active",
+    "capabilities": {
+      "tools": { "value": true, "source": "https://platform.openai.com/docs/models/gpt-4o", "checkedAt": "2026-08-25" },
+      "jsonStrict": { "value": true, "source": "https://platform.openai.com/docs/guides/structured-outputs", "checkedAt": "2026-08-25" },
+      "streaming": { "value": true, "source": "https://platform.openai.com/docs/api-reference/chat/streaming", "checkedAt": "2026-08-25" },
+      "vision": { "value": true, "source": "https://platform.openai.com/docs/guides/vision", "checkedAt": "2026-08-25" },
+      "reasoning": { "value": false, "source": "https://platform.openai.com/docs/models/gpt-4o", "checkedAt": "2026-08-25" },
+      "contextTokens": { "value": 128000, "source": "https://platform.openai.com/docs/models/gpt-4o", "checkedAt": "2026-08-25" },
+      "maxOutputTokens": { "value": 16384, "source": "https://platform.openai.com/docs/models/gpt-4o", "checkedAt": "2026-08-25" }
+    },
+    "endpoint": { "value": "chat_completions", "source": "https://platform.openai.com/docs/api-reference/chat", "checkedAt": "2026-08-25" },
+    "price": {
+      "inputPerMTok": { "value": 2.5, "source": "https://openai.com/api/pricing/", "checkedAt": "2026-08-25" },
+      "outputPerMTok": { "value": 10.0, "source": "https://openai.com/api/pricing/", "checkedAt": "2026-08-25" },
+      "currency": "USD"
+    },
+    "availability": {
+      "regions": { "value": "unknown" },
+      "requiresPreviewAccess": { "value": false, "source": "https://platform.openai.com/docs/models/gpt-4o", "checkedAt": "2026-08-25" },
+      "minAccountTier": { "value": null, "source": "https://platform.openai.com/docs/models/gpt-4o", "checkedAt": "2026-08-25" }
+    }
+  },
+  {
+    "entryId": "openai.gpt-4o-mini.active",
+    "provider": "openai",
+    "modelId": "gpt-4o-mini",
+    "lifecycle": "active",
+    "capabilities": {
+      "tools": { "value": true, "source": "https://platform.openai.com/docs/models/gpt-4o-mini", "checkedAt": "2026-08-25" },
+      "jsonStrict": { "value": true, "source": "https://platform.openai.com/docs/guides/structured-outputs", "checkedAt": "2026-08-25" },
+      "streaming": { "value": true, "source": "https://platform.openai.com/docs/api-reference/chat/streaming", "checkedAt": "2026-08-25" },
+      "vision": { "value": true, "source": "https://platform.openai.com/docs/guides/vision", "checkedAt": "2026-08-25" },
+      "reasoning": { "value": false, "source": "https://platform.openai.com/docs/models/gpt-4o-mini", "checkedAt": "2026-08-25" },
+      "contextTokens": { "value": 128000, "source": "https://platform.openai.com/docs/models/gpt-4o-mini", "checkedAt": "2026-08-25" },
+      "maxOutputTokens": { "value": 16384, "source": "https://platform.openai.com/docs/models/gpt-4o-mini", "checkedAt": "2026-08-25" }
+    },
+    "endpoint": { "value": "chat_completions", "source": "https://platform.openai.com/docs/api-reference/chat", "checkedAt": "2026-08-25" },
+    "price": {
+      "inputPerMTok": { "value": 0.15, "source": "https://openai.com/api/pricing/", "checkedAt": "2026-08-25" },
+      "outputPerMTok": { "value": 0.6, "source": "https://openai.com/api/pricing/", "checkedAt": "2026-08-25" },
+      "currency": "USD"
+    },
+    "availability": {
+      "regions": { "value": "unknown" },
+      "requiresPreviewAccess": { "value": false, "source": "https://platform.openai.com/docs/models/gpt-4o-mini", "checkedAt": "2026-08-25" },
+      "minAccountTier": { "value": null, "source": "https://platform.openai.com/docs/models/gpt-4o-mini", "checkedAt": "2026-08-25" }
+    }
+  },
+  {
+    "entryId": "anthropic.claude-haiku-4-5.active",
+    "provider": "anthropic",
+    "modelId": "claude-haiku-4-5",
+    "lifecycle": "active",
+    "capabilities": {
+      "tools": { "value": true, "source": "https://docs.claude.com/en/docs/about-claude/models/overview", "checkedAt": "2026-08-25" },
+      "jsonStrict": { "value": false, "source": "https://docs.claude.com/en/docs/about-claude/models/overview", "checkedAt": "2026-08-25" },
+      "streaming": { "value": true, "source": "https://docs.claude.com/en/api/streaming", "checkedAt": "2026-08-25" },
+      "vision": { "value": true, "source": "https://docs.claude.com/en/docs/build-with-claude/vision", "checkedAt": "2026-08-25" },
+      "reasoning": { "value": false, "source": "https://docs.claude.com/en/docs/about-claude/models/overview", "checkedAt": "2026-08-25" },
+      "contextTokens": { "value": 200000, "source": "https://docs.claude.com/en/docs/about-claude/models/overview", "checkedAt": "2026-08-25" },
+      "maxOutputTokens": { "value": 8192, "source": "https://docs.claude.com/en/docs/about-claude/models/overview", "checkedAt": "2026-08-25" }
+    },
+    "endpoint": { "value": "messages", "source": "https://docs.claude.com/en/api/messages", "checkedAt": "2026-08-25" },
+    "price": {
+      "inputPerMTok": { "value": 1.0, "source": "https://www.anthropic.com/pricing", "checkedAt": "2026-08-25" },
+      "outputPerMTok": { "value": 5.0, "source": "https://www.anthropic.com/pricing", "checkedAt": "2026-08-25" },
+      "currency": "USD"
+    },
+    "availability": {
+      "regions": { "value": "unknown" },
+      "requiresPreviewAccess": { "value": false, "source": "https://docs.claude.com/en/docs/about-claude/models/overview", "checkedAt": "2026-08-25" },
+      "minAccountTier": { "value": null, "source": "https://docs.claude.com/en/docs/about-claude/models/overview", "checkedAt": "2026-08-25" }
+    }
+  },
+  {
+    "entryId": "anthropic.claude-opus-4-8.active",
+    "provider": "anthropic",
+    "modelId": "claude-opus-4-8",
+    "lifecycle": "active",
+    "capabilities": {
+      "tools": { "value": true, "source": "https://docs.claude.com/en/docs/about-claude/models/overview", "checkedAt": "2026-08-25" },
+      "jsonStrict": { "value": false, "source": "https://docs.claude.com/en/docs/about-claude/models/overview", "checkedAt": "2026-08-25" },
+      "streaming": { "value": true, "source": "https://docs.claude.com/en/api/streaming", "checkedAt": "2026-08-25" },
+      "vision": { "value": true, "source": "https://docs.claude.com/en/docs/build-with-claude/vision", "checkedAt": "2026-08-25" },
+      "reasoning": { "value": true, "source": "https://docs.claude.com/en/docs/build-with-claude/extended-thinking", "checkedAt": "2026-08-25" },
+      "contextTokens": { "value": 200000, "source": "https://docs.claude.com/en/docs/about-claude/models/overview", "checkedAt": "2026-08-25" },
+      "maxOutputTokens": { "value": 32000, "source": "https://docs.claude.com/en/docs/about-claude/models/overview", "checkedAt": "2026-08-25" }
+    },
+    "endpoint": { "value": "messages", "source": "https://docs.claude.com/en/api/messages", "checkedAt": "2026-08-25" },
+    "price": {
+      "inputPerMTok": { "value": 15.0, "source": "https://www.anthropic.com/pricing", "checkedAt": "2026-08-25" },
+      "outputPerMTok": { "value": 75.0, "source": "https://www.anthropic.com/pricing", "checkedAt": "2026-08-25" },
+      "currency": "USD"
+    },
+    "availability": {
+      "regions": { "value": "unknown" },
+      "requiresPreviewAccess": { "value": false, "source": "https://docs.claude.com/en/docs/about-claude/models/overview", "checkedAt": "2026-08-25" },
+      "minAccountTier": { "value": null, "source": "https://docs.claude.com/en/docs/about-claude/models/overview", "checkedAt": "2026-08-25" }
+    }
+  },
+  {
+    "entryId": "google.gemini-3.6-flash.active",
+    "provider": "google",
+    "modelId": "gemini-3.6-flash",
+    "lifecycle": "active",
+    "capabilities": {
+      "tools": { "value": true, "source": "https://ai.google.dev/gemini-api/docs/models", "checkedAt": "2026-08-25" },
+      "jsonStrict": { "value": true, "source": "https://ai.google.dev/gemini-api/docs/structured-output", "checkedAt": "2026-08-25" },
+      "streaming": { "value": true, "source": "https://ai.google.dev/gemini-api/docs/text-generation", "checkedAt": "2026-08-25" },
+      "vision": { "value": true, "source": "https://ai.google.dev/gemini-api/docs/vision", "checkedAt": "2026-08-25" },
+      "reasoning": { "value": true, "source": "https://ai.google.dev/gemini-api/docs/thinking", "checkedAt": "2026-08-25" },
+      "contextTokens": { "value": 1000000, "source": "https://ai.google.dev/gemini-api/docs/models", "checkedAt": "2026-08-25" },
+      "maxOutputTokens": { "value": 65536, "source": "https://ai.google.dev/gemini-api/docs/models", "checkedAt": "2026-08-25" }
+    },
+    "endpoint": { "value": "gemini_generate", "source": "https://ai.google.dev/api/generate-content", "checkedAt": "2026-08-25" },
+    "price": {
+      "inputPerMTok": { "value": 0.3, "source": "https://ai.google.dev/gemini-api/docs/pricing", "checkedAt": "2026-08-25" },
+      "outputPerMTok": { "value": 2.5, "source": "https://ai.google.dev/gemini-api/docs/pricing", "checkedAt": "2026-08-25" },
+      "currency": "USD"
+    },
+    "availability": {
+      "regions": { "value": "unknown" },
+      "requiresPreviewAccess": { "value": false, "source": "https://ai.google.dev/gemini-api/docs/models", "checkedAt": "2026-08-25" },
+      "minAccountTier": { "value": null, "source": "https://ai.google.dev/gemini-api/docs/models", "checkedAt": "2026-08-25" }
+    }
+  }
+]

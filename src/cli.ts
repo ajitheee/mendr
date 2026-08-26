@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { simpleGit } from 'simple-git';
 import { loadSpec } from './detect/fetchSpec.js';
@@ -145,6 +144,15 @@ import {
 } from './watch/exposureFile.js';
 import { renderBadge, renderIssueBody, renderTextSummary } from './watch/issue.js';
 import { installWatchWorkflow, MENDR_RELEASE } from './watch/installWorkflow.js';
+import {
+  assertAnalyzable,
+  cloneRemoteOrExit,
+  isRemoteRepoUrl,
+  resolveRepoOrExit,
+} from './cli/repoTarget.js';
+import { loadActiveModels, resolveActiveModelsPath } from './recommend/catalog.js';
+import { scanForRecommendations } from './recommend/scan.js';
+import { buildRecommendJson, renderRecommendText } from './report/recommend.js';
 
 const program = new Command();
 
@@ -153,58 +161,8 @@ program
   .description('Auto-fix third-party API breaking changes: deprecated LLM model ids + Stripe renames.')
   .version('0.1.0');
 
-/** Is the target a remote git URL (GitHub link etc.) rather than a local path? */
-function isRemoteRepoUrl(target: string): boolean {
-  return /^(https?:\/\/|git@)/i.test(target);
-}
-
-/**
- * fix-llm accepts a GitHub/git URL as well as a local path. A URL is shallow-
- * cloned into a throwaway temp dir and analyzed there — the real repo is never
- * touched. --write is refused for URLs, since it would only edit the temp copy.
- */
-async function cloneRemoteOrExit(url: string): Promise<string> {
-  const dest = mkdtempSync(join(tmpdir(), 'mendr-clone-'));
-  // Progress goes to STDERR: with --json, stdout must carry only the report.
-  console.error(`Cloning ${url} (shallow, read-only copy)...`);
-  try {
-    await simpleGit().clone(url, dest, ['--depth', '1']);
-  } catch (err) {
-    console.error(
-      `mendr: could not clone ${url}: ${err instanceof Error ? err.message : String(err)}`,
-    );
-    process.exit(2);
-  }
-  return dest;
-}
-
-/** Resolve a repo path, exiting non-zero if it is missing or not a directory. */
-function resolveRepoOrExit(repoPath: string): string {
-  const resolved = resolve(repoPath);
-  if (!existsSync(resolved) || !statSync(resolved).isDirectory()) {
-    console.error(`mendr: path not found or not a directory: ${repoPath}`);
-    process.exit(2);
-  }
-  return resolved;
-}
-
-/**
- * Guard the dangerous FALSE-CLEAN case. A mistyped path, a repo in a language
- * we cannot read, or a tsconfig whose `include` matched nothing loads 0
- * analyzable source files — and the old code then printed "Nothing to fix"
- * with a success exit, which a user cannot tell apart from a genuinely clean
- * repo. Fail loudly instead — but only when BOTH languages come up empty: a
- * pure-Python repo has 0 TS files and is perfectly analyzable now.
- */
-function assertAnalyzable(tsFileCount: number, pyFileCount: number, resolved: string): void {
-  if (tsFileCount === 0 && pyFileCount === 0) {
-    console.error(
-      `mendr: found no analyzable source files under ${resolved}.\n` +
-        `mendr can read TypeScript (.ts/.tsx/.mts/.cts) and Python (.py) — is this the repo root?`,
-    );
-    process.exit(2);
-  }
-}
+// isRemoteRepoUrl / cloneRemoteOrExit / resolveRepoOrExit / assertAnalyzable were
+// hoisted into ./cli/repoTarget.ts (exported) so `recommend` can share them.
 
 /**
  * The test gate's result, in the vocabulary the policy and the report share.
@@ -2658,6 +2616,109 @@ program
         console.log('  npx github:ajitheee/mendr watch . --install');
         console.log('  (or `mendr watch --install` if mendr is installed globally)');
       }
+    },
+  );
+
+program
+  .command('recommend')
+  .argument('[repoPath]', 'local path to the repo, or a GitHub/git URL to scan a read-only copy (default: current directory)', '.')
+  .option('--provider <provider>', 'draw candidates from this provider (openai | anthropic | google); default: each dead model\'s own provider')
+  .option('--sort <dimension>', 'order kept candidates by cost | context (default: none — no implicit ranking)')
+  .option('--json', 'emit a machine-readable JSON report on stdout instead of the human one')
+  .description('Recommend compatible active models for the deprecated model ids this repo calls (report-only, writes nothing)')
+  .action(
+    async (
+      repoPath: string,
+      opts: { provider?: string; sort?: string; json?: boolean },
+    ) => {
+      const json = !!opts.json;
+      const say = (line = ''): void => {
+        if (!json) console.log(line);
+      };
+
+      // Validate the two preference inputs up front — a bad flag exits, never
+      // silently degrades. --sort is the ONLY thing that orders candidates.
+      let candidateProvider: 'openai' | 'anthropic' | 'google' | undefined;
+      if (opts.provider !== undefined) {
+        if (opts.provider !== 'openai' && opts.provider !== 'anthropic' && opts.provider !== 'google') {
+          console.error(`mendr: --provider must be one of openai | anthropic | google (got "${opts.provider}")`);
+          process.exit(2);
+        }
+        candidateProvider = opts.provider;
+      }
+      let sortBy: 'cost' | 'context' | null = null;
+      if (opts.sort !== undefined) {
+        if (opts.sort !== 'cost' && opts.sort !== 'context') {
+          console.error(`mendr: --sort must be one of cost | context (got "${opts.sort}")`);
+          process.exit(2);
+        }
+        sortBy = opts.sort;
+      }
+
+      const isUrl = isRemoteRepoUrl(repoPath);
+      const resolved = isUrl ? await cloneRemoteOrExit(repoPath) : resolveRepoOrExit(repoPath);
+
+      const registry = loadLlmRegistry();
+      let catalog;
+      try {
+        catalog = loadActiveModels();
+      } catch (err) {
+        console.error(
+          `mendr: could not load the active-model catalog: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        process.exit(2);
+        return;
+      }
+
+      const now = new Date();
+      const scan = await scanForRecommendations(resolved, registry, catalog, {
+        candidateProvider,
+        sortBy,
+        now,
+      });
+
+      // Provenance: which deprecation registry AND which catalog produced these
+      // facts (content hashes, stable), plus the scanned commit (json-only).
+      const registryVersion =
+        'sha256:' +
+        createHash('sha256').update(readFileSync(resolveRegistryPath())).digest('hex').slice(0, 16);
+      const catalogVersion =
+        'sha256:' +
+        createHash('sha256').update(readFileSync(resolveActiveModelsPath())).digest('hex').slice(0, 16);
+      let scannedCommit: string | null = null;
+      try {
+        scannedCommit = (await simpleGit(resolved).revparse(['HEAD'])).trim();
+      } catch {
+        // Not a git repo (or git absent): provenance omits the commit.
+      }
+
+      if (scan.filesScanned === 0) {
+        console.error(
+          `mendr: scanned 0 source files under ${repoPath} — is this a project directory? ` +
+            `run mendr recommend from the root of your repo.`,
+        );
+      }
+
+      if (json) {
+        console.log(
+          JSON.stringify(
+            buildRecommendJson(scan, {
+              registryVersion,
+              catalogVersion,
+              scannedCommit,
+              provider: opts.provider ?? null,
+              sortBy,
+            }),
+            null,
+            2,
+          ),
+        );
+        return;
+      }
+
+      for (const line of renderRecommendText(scan)) say(line);
+      say('');
+      say('recommend is report-only — it writes nothing. A migration PR is a later rung.');
     },
   );
 
