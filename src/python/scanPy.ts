@@ -259,6 +259,24 @@ const PY_MODEL_FACTORIES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Callee last-identifier names that are recognized model-CONSUMING SDK sinks:
+ * a `model=` keyword argument to one of these IS a live model call. Deliberately
+ * curated (accuracy over recall) — a model-like keyword argument to ANYTHING
+ * ELSE (a model-DEFINITION constructor like `AzureBaseModel(base_model_name=…)`,
+ * a config/catalog builder, an unrecognized wrapper) is NOT swap-eligible.
+ * Recall for genuine wrappers is recovered later by inter-file wrapper tracing.
+ */
+const PY_SDK_SINKS: ReadonlySet<string> = new Set([
+  'create', // openai/anthropic/azure: chat.completions.create / messages.create / responses.create / ChatCompletion.create
+  'acreate', // async variants
+  'generate', // images.generate and similar
+  'generate_content', // google-genai: client.models.generate_content(model=…)
+  'generate_content_async',
+  'completion', // litellm.completion(model=…)
+  'acompletion',
+]);
+
+/**
  * Is `parent` a value-transparent wrapper around `child`? Lets a literal inside
  * an `or` fallback, a parenthesis, or a conditional-expression branch still be
  * seen as the value of its enclosing keyword/pair/assignment — the Python
@@ -318,6 +336,19 @@ function calleeLastIdentifier(call: PyNode): string | undefined {
   if (callee.type === 'identifier') return callee.text;
   if (callee.type === 'attribute') return callee.childForFieldName('attribute')?.text;
   return undefined;
+}
+
+/** Is `call` a recognized model-consuming SDK sink (or a model factory)? */
+function isSdkSinkCall(call: PyNode | null | undefined): boolean {
+  if (!call || call.type !== 'call') return false;
+  const name = calleeLastIdentifier(call);
+  return name !== undefined && (PY_SDK_SINKS.has(name) || PY_MODEL_FACTORIES.has(name));
+}
+
+/** The enclosing `call` of a keyword_argument node, if it is a direct call argument. */
+function enclosingCallOfKeyword(kw: PyNode): PyNode | undefined {
+  const argList = kw.parent;
+  return argList?.type === 'argument_list' ? (argList.parent ?? undefined) : undefined;
 }
 
 /**
@@ -387,6 +418,9 @@ export function collectPySinkNames(tree: Tree): Set<string> {
     const name = kw.childForFieldName('name');
     const value = kw.childForFieldName('value');
     if (!name || !value || !isModelLikeName(name.text)) continue;
+    // Only a recognized SDK sink makes a name a model sink — a name passed to
+    // AzureBaseModel(base_model_name=name) or any non-sink call is not evidence.
+    if (!isSdkSinkCall(enclosingCallOfKeyword(kw))) continue;
     const traced = traceableName(value);
     if (traced) names.add(traced);
   }
@@ -466,7 +500,14 @@ export function classifyPyLiteral(literal: PyNode, sinkNames?: ReadonlySet<strin
       if (isAzureDeploymentName(name.text)) {
         return { position: 'azure_deployment', reason: AZURE_DEPLOYMENT_REASON };
       }
-      if (isModelLikeName(name.text)) return { position: 'model_arg' };
+      if (isModelLikeName(name.text)) {
+        // A model-like keyword arg is a LIVE model only inside a recognized SDK
+        // sink. In a model-DEFINITION constructor (AzureBaseModel(base_model_name=…),
+        // AIModelEntity(model=…)), a config/catalog builder, or an unrecognized
+        // wrapper, it is NOT swap-eligible — surfaced as data, never Tier A.
+        if (isSdkSinkCall(enclosingCallOfKeyword(parent))) return { position: 'model_arg' };
+        return { position: 'data', purpose: 'catalog_entry' };
+      }
     }
     return { position: 'data', purpose: 'generic' };
   }
