@@ -1,0 +1,7 @@
+# A catalog (Tier C — informational references, not selectors to swap).
+available_models:
+  - gpt-4
+  - gpt-4o
+pricing:
+  gpt-4:
+    input_per_mtok: 30

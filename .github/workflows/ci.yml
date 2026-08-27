@@ -1,0 +1,25 @@
+name: CI
+
+# Push/PR gate: build, validate the deprecation registry offline, run the suite.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Validate the deprecation registry (offline integrity)
+        run: node scripts/validate-registry.mjs
+      # Run test files sequentially: several tests spawn subprocesses, and on a
+      # 2-core runner parallel files starve the event loop, delaying a kill-timer
+      # past the per-test timeout. Slower, but stable.
+      - run: npm test -- --no-file-parallelism

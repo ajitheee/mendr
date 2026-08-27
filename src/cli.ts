@@ -145,6 +145,12 @@ import {
 } from './watch/exposureFile.js';
 import { renderBadge, renderIssueBody, renderTextSummary } from './watch/issue.js';
 import { installWatchWorkflow, MENDR_RELEASE } from './watch/installWorkflow.js';
+import { foldConfigExposure, scanConfigFiles } from './config/scanConfig.js';
+import { renderConfigReport } from './report/configReport.js';
+import { auditUsage } from './recon/usageAudit.js';
+import { fetchProviderUsage, loadFixtureUsage } from './recon/providers.js';
+import type { Provider } from './recon/types.js';
+import { renderUsageReport } from './report/usageReport.js';
 
 const program = new Command();
 
@@ -2657,6 +2663,129 @@ program
         console.log('current (no server, runs in your own CI):');
         console.log('  npx github:ajitheee/mendr watch . --install');
         console.log('  (or `mendr watch --install` if mendr is installed globally)');
+      }
+    },
+  );
+
+program
+  .command('config-scan')
+  .argument('[repoPath]', 'local path to the repo (default: current directory)', '.')
+  .option('--json', 'emit the machine-readable config exposure on stdout')
+  .description('Locate deprecated model ids in config/IaC files (yaml/json/toml/env) — the LOCATE half of a migration audit')
+  .action(async (repoPath: string, opts: { json?: boolean }) => {
+    const json = !!opts.json;
+    const say = (line = ''): void => {
+      if (!json) console.log(line);
+    };
+    if (/^(https?:\/\/|git@)/i.test(repoPath)) {
+      console.error(
+        'mendr: config-scan needs a LOCAL path — remote URLs are not supported. Clone the repo first:\n' +
+          '  git clone <url>\n  mendr config-scan <cloned-dir>',
+      );
+      process.exit(2);
+    }
+    const resolved = resolveRepoOrExit(repoPath);
+    const registry = loadLlmRegistry();
+    const now = new Date();
+    const { matches, filesScanned } = scanConfigFiles(resolved, registry);
+    const exposures = foldConfigExposure(matches);
+
+    if (json) {
+      console.log(JSON.stringify({ schema: 'mendr-config/v1', filesScanned, exposures }, null, 2));
+      return;
+    }
+    for (const line of renderConfigReport(exposures, filesScanned, now)) say(line);
+  });
+
+program
+  .command('usage-audit')
+  .argument('[provider]', 'openai | anthropic | google (omit when using --fixture)')
+  .option('--from <date>', 'ISO start date YYYY-MM-DD (default: 30 days ago)')
+  .option('--to <date>', 'ISO end date YYYY-MM-DD (default: today)')
+  .option('--api-key-env <NAME>', 'env var holding your read-only provider Admin key', 'MENDR_PROVIDER_KEY')
+  .option('--fixture <file>', 'read usage from a JSON fixture instead of the provider API (demo/test — no key)')
+  .option('--json', 'emit the machine-readable audit on stdout instead of the human report')
+  .description('Read per-model usage/spend from a provider (read-only key) and report deprecated-model exposure in dollars')
+  .action(
+    async (
+      provider: string | undefined,
+      opts: { from?: string; to?: string; apiKeyEnv?: string; fixture?: string; json?: boolean },
+    ) => {
+      const json = !!opts.json;
+      const say = (line = ''): void => {
+        if (!json) console.log(line);
+      };
+
+      const now = new Date();
+      const iso = (d: Date): string => d.toISOString().slice(0, 10);
+      const to = opts.to ?? iso(now);
+      const from = opts.from ?? iso(new Date(now.getTime() - 30 * 86_400_000));
+
+      let rows;
+      try {
+        if (opts.fixture) {
+          rows = loadFixtureUsage(opts.fixture);
+        } else {
+          if (provider !== 'openai' && provider !== 'anthropic' && provider !== 'google') {
+            console.error('mendr: pass a provider (openai | anthropic | google) or use --fixture.');
+            process.exit(2);
+          }
+          const keyEnv = opts.apiKeyEnv ?? 'MENDR_PROVIDER_KEY';
+          const apiKey = process.env[keyEnv];
+          if (!apiKey) {
+            console.error(
+              `mendr: no provider key found in $${keyEnv}. Set a READ-ONLY usage/cost Admin key there, e.g.\n` +
+                `  $env:${keyEnv}="sk-admin-..."   (PowerShell)\n` +
+                'The key is read-only usage data; mendr never invokes a model or moves money, and reads no prompts.',
+            );
+            process.exit(2);
+            return;
+          }
+          console.error(`Reading ${provider} usage ${from}..${to} (read-only)...`);
+          rows = await fetchProviderUsage(provider as Provider, apiKey, { start: from, end: to });
+        }
+      } catch (err) {
+        console.error(`mendr: could not load usage: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+        return;
+      }
+
+      // Empty live result is NOT a clean audit — a new/empty org, or all traffic
+      // in a usage category we do not yet query. Say so, do not imply "clean".
+      const isLive = !opts.fixture;
+      if (isLive && rows.length === 0) {
+        if (json) {
+          console.log(
+            JSON.stringify(
+              { schema: 'mendr-usage/v1', provider: provider ?? null, connection: 'successful', status: 'no_data', deprecationExposure: 'inconclusive', from, to },
+              null,
+              2,
+            ),
+          );
+        } else {
+          say(`provider: ${provider}`);
+          say('connection: successful');
+          say('status: no_data');
+          say('deprecation exposure: inconclusive');
+          console.error(
+            'mendr: the usage API returned zero rows for this window — a new/empty org, or all traffic is in a usage ' +
+              'category not yet queried (only chat/completions is). Widen --from/--to or confirm the org has traffic. This is NOT a clean audit.',
+          );
+        }
+        return;
+      }
+
+      const audit = auditUsage(rows, loadLlmRegistry(), now, { start: from, end: to });
+
+      if (json) {
+        console.log(JSON.stringify(audit, null, 2));
+        return;
+      }
+      for (const line of renderUsageReport(audit)) say(line);
+      if (isLive) {
+        say('');
+        say('Coverage: chat/completions usage only. A deprecated model used ONLY via embeddings, images, audio,');
+        say('batch, or fine-tuning would not appear here yet.');
       }
     },
   );
