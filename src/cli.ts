@@ -145,6 +145,10 @@ import {
 } from './watch/exposureFile.js';
 import { renderBadge, renderIssueBody, renderTextSummary } from './watch/issue.js';
 import { installWatchWorkflow, MENDR_RELEASE } from './watch/installWorkflow.js';
+import { auditUsage } from './recon/usageAudit.js';
+import { fetchProviderUsage, loadFixtureUsage } from './recon/providers.js';
+import type { Provider } from './recon/types.js';
+import { renderUsageReport } from './report/usageReport.js';
 
 const program = new Command();
 
@@ -2658,6 +2662,69 @@ program
         console.log('  npx github:ajitheee/mendr watch . --install');
         console.log('  (or `mendr watch --install` if mendr is installed globally)');
       }
+    },
+  );
+
+program
+  .command('usage-audit')
+  .argument('[provider]', 'openai | anthropic | google (omit when using --fixture)')
+  .option('--from <date>', 'ISO start date YYYY-MM-DD (default: 30 days ago)')
+  .option('--to <date>', 'ISO end date YYYY-MM-DD (default: today)')
+  .option('--api-key-env <NAME>', 'env var holding your read-only provider Admin key', 'MENDR_PROVIDER_KEY')
+  .option('--fixture <file>', 'read usage from a JSON fixture instead of the provider API (demo/test — no key)')
+  .option('--json', 'emit the machine-readable audit on stdout instead of the human report')
+  .description('Read per-model usage/spend from a provider (read-only key) and report deprecated-model exposure in dollars')
+  .action(
+    async (
+      provider: string | undefined,
+      opts: { from?: string; to?: string; apiKeyEnv?: string; fixture?: string; json?: boolean },
+    ) => {
+      const json = !!opts.json;
+      const say = (line = ''): void => {
+        if (!json) console.log(line);
+      };
+
+      const now = new Date();
+      const iso = (d: Date): string => d.toISOString().slice(0, 10);
+      const to = opts.to ?? iso(now);
+      const from = opts.from ?? iso(new Date(now.getTime() - 30 * 86_400_000));
+
+      let rows;
+      try {
+        if (opts.fixture) {
+          rows = loadFixtureUsage(opts.fixture);
+        } else {
+          if (provider !== 'openai' && provider !== 'anthropic' && provider !== 'google') {
+            console.error('mendr: pass a provider (openai | anthropic | google) or use --fixture.');
+            process.exit(2);
+          }
+          const keyEnv = opts.apiKeyEnv ?? 'MENDR_PROVIDER_KEY';
+          const apiKey = process.env[keyEnv];
+          if (!apiKey) {
+            console.error(
+              `mendr: no provider key found in $${keyEnv}. Set a READ-ONLY usage/cost Admin key there, e.g.\n` +
+                `  $env:${keyEnv}="sk-admin-..."   (PowerShell)\n` +
+                'The key is read-only usage data; mendr never invokes a model or moves money, and reads no prompts.',
+            );
+            process.exit(2);
+            return;
+          }
+          console.error(`Reading ${provider} usage ${from}..${to} (read-only)...`);
+          rows = await fetchProviderUsage(provider as Provider, apiKey, { start: from, end: to });
+        }
+      } catch (err) {
+        console.error(`mendr: could not load usage: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+        return;
+      }
+
+      const audit = auditUsage(rows, loadLlmRegistry(), now, { start: from, end: to });
+
+      if (json) {
+        console.log(JSON.stringify(audit, null, 2));
+        return;
+      }
+      for (const line of renderUsageReport(audit)) say(line);
     },
   );
 
