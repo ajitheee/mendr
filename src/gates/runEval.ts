@@ -75,6 +75,17 @@ async function runWithDeadline<T>(
         reject: false,
         windowsHide: true,
       }).catch(() => undefined);
+    } else if (subprocess.pid) {
+      // POSIX: `sh -c "<cmd>"` does NOT always exec the program in place — on some
+      // shells (dash on CI) it forks it as a CHILD. Signalling the shell alone
+      // then orphans the real program, which holds the captured pipe open so the
+      // await never settles. Since the subprocess is spawned `detached` (its own
+      // process group), a NEGATIVE pid signals the whole group in one call.
+      try {
+        process.kill(-subprocess.pid, 'SIGKILL');
+      } catch {
+        subprocess.kill('SIGKILL');
+      }
     } else {
       subprocess.kill('SIGKILL');
     }
@@ -120,6 +131,9 @@ export async function runRepoEval(
         reject: false,
         all: true,
         windowsHide: true,
+        // POSIX only: own process group so the deadline can group-kill a shell
+        // that forked the real program (Windows uses taskkill /T instead).
+        detached: process.platform !== 'win32',
       }),
       timeoutMs,
     ),
