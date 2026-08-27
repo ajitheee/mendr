@@ -19,4 +19,7 @@ jobs:
       - run: npm run build
       - name: Validate the deprecation registry (offline integrity)
         run: node scripts/validate-registry.mjs
-      - run: npm test
+      # Run test files sequentially: several tests spawn subprocesses, and on a
+      # 2-core runner parallel files starve the event loop, delaying a kill-timer
+      # past the per-test timeout. Slower, but stable.
+      - run: npm test -- --no-file-parallelism
