@@ -157,7 +157,7 @@ const program = new Command();
 program
   .name('mendr')
   .description('Auto-fix third-party API breaking changes: deprecated LLM model ids + Stripe renames.')
-  .version('0.1.0');
+  .version('0.2.0-alpha');
 
 /** Is the target a remote git URL (GitHub link etc.) rather than a local path? */
 function isRemoteRepoUrl(target: string): boolean {

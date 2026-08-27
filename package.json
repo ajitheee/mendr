@@ -1,6 +1,6 @@
 {
   "name": "mendr",
-  "version": "0.1.0",
+  "version": "0.2.0-alpha",
   "description": "CLI that auto-fixes third-party API breaking changes: deprecated LLM model ids and coupled params (OpenAI/Anthropic/Google), plus Stripe renames. It prints a verified diff and never writes your working tree on its own.",
   "type": "module",
   "bin": {
