@@ -1,0 +1,9 @@
+[
+  { "provider": "openai", "model": "gpt-4", "requests": 48210, "inputTokens": 52000000, "outputTokens": 9000000, "costUsd": 1284.50 },
+  { "provider": "openai", "model": "gpt-3.5-turbo", "requests": 210400, "inputTokens": 88000000, "outputTokens": 15000000, "costUsd": 412.30 },
+  { "provider": "openai", "model": "gpt-4o", "requests": 98000, "inputTokens": 120000000, "outputTokens": 22000000, "costUsd": 540.00 },
+  { "provider": "openai", "model": "ft:gpt-3.5-turbo:acme::abc123", "requests": 5200, "inputTokens": 3000000, "outputTokens": 800000, "costUsd": 36.10 },
+  { "provider": "anthropic", "model": "claude-3-opus-20240229", "requests": 12300, "inputTokens": 9000000, "outputTokens": 2000000, "costUsd": 305.00 },
+  { "provider": "anthropic", "model": "claude-opus-4-8", "requests": 30000, "inputTokens": 40000000, "outputTokens": 8000000, "costUsd": 720.00 },
+  { "provider": "google", "model": "gemini-1.5-pro", "requests": 8800, "inputTokens": 11000000, "outputTokens": 1500000, "costUsd": 22.40 }
+]
