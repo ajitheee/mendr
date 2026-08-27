@@ -19,12 +19,29 @@ export interface UsageRange {
 const unix = (isoDate: string): number => Math.floor(new Date(`${isoDate}T00:00:00Z`).getTime() / 1000);
 const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
-/** Fetch JSON with a hard timeout; throws a friendly error on non-2xx. */
+/** Redact any credential-looking token from a string before it reaches a log/error. */
+function redact(s: string): string {
+  return s
+    .replace(/sk-[A-Za-z0-9_.-]{6,}/g, 'sk-***')
+    .replace(/(bearer|x-api-key|authorization)([:=]?\s*)\S+/gi, '$1$2***');
+}
+
+/** Fetch JSON with a hard timeout; throws a friendly, credential-redacted error on failure. */
 async function getJson(url: string, headers: Record<string, string>): Promise<unknown> {
-  const res = await fetch(url, { method: 'GET', headers, signal: AbortSignal.timeout(30_000) });
+  let res: Response;
+  try {
+    res = await fetch(url, { method: 'GET', headers, signal: AbortSignal.timeout(30_000) });
+  } catch (err) {
+    throw new Error(`request failed: ${redact(err instanceof Error ? err.message : String(err))}`);
+  }
   if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`GET ${url} -> ${res.status} ${res.statusText}${body ? `: ${body.slice(0, 300)}` : ''}`);
+    const body = redact((await res.text().catch(() => '')).slice(0, 300));
+    if (res.status === 401 || res.status === 403) {
+      throw new Error(
+        `authentication failed (${res.status}) — the key must be a READ-ONLY usage/cost Admin key with org access.${body ? ` ${body}` : ''}`,
+      );
+    }
+    throw new Error(`GET ${url} -> ${res.status} ${res.statusText}${body ? `: ${body}` : ''}`);
   }
   return res.json();
 }

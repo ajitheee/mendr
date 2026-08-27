@@ -2718,6 +2718,31 @@ program
         return;
       }
 
+      // Empty live result is NOT a clean audit — a new/empty org, or all traffic
+      // in a usage category we do not yet query. Say so, do not imply "clean".
+      const isLive = !opts.fixture;
+      if (isLive && rows.length === 0) {
+        if (json) {
+          console.log(
+            JSON.stringify(
+              { schema: 'mendr-usage/v1', provider: provider ?? null, connection: 'successful', status: 'no_data', deprecationExposure: 'inconclusive', from, to },
+              null,
+              2,
+            ),
+          );
+        } else {
+          say(`provider: ${provider}`);
+          say('connection: successful');
+          say('status: no_data');
+          say('deprecation exposure: inconclusive');
+          console.error(
+            'mendr: the usage API returned zero rows for this window — a new/empty org, or all traffic is in a usage ' +
+              'category not yet queried (only chat/completions is). Widen --from/--to or confirm the org has traffic. This is NOT a clean audit.',
+          );
+        }
+        return;
+      }
+
       const audit = auditUsage(rows, loadLlmRegistry(), now, { start: from, end: to });
 
       if (json) {
@@ -2725,6 +2750,11 @@ program
         return;
       }
       for (const line of renderUsageReport(audit)) say(line);
+      if (isLive) {
+        say('');
+        say('Coverage: chat/completions usage only. A deprecated model used ONLY via embeddings, images, audio,');
+        say('batch, or fine-tuning would not appear here yet.');
+      }
     },
   );
 

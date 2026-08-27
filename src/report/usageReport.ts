@@ -36,8 +36,14 @@ export function renderUsageReport(audit: UsageAudit): string[] {
   lines.push('');
   for (const f of audit.exposed) {
     const cost = f.costUsd > 0 ? `, ${usd(f.costUsd)}` : '';
-    const repl = f.replacement ? ` -> ${f.replacement} [registry: ${f.replacementVerdict}]` : '';
-    lines.push(`  ${f.model}  (${f.provider}, ${int(f.requests)} req${cost}, ${deadline(f)})${repl}`);
+    const raw = f.observed !== f.model ? ` (observed as ${f.observed})` : '';
+    const repl =
+      f.replacement && f.replacementVerdict === 'verified'
+        ? ` -> ${f.replacement} [registry: verified]`
+        : f.replacement
+          ? ` (replacement ${f.replacement} is ${f.replacementVerdict} — review, not a recommended swap)`
+          : '';
+    lines.push(`  ${f.model}${raw}  (${f.provider}, ${int(f.requests)} req${cost}, ${deadline(f)})${repl}`);
   }
   lines.push('');
   lines.push('This audit MEASURES exposure (what runs, how much, what it costs) from the provider APIs —');
