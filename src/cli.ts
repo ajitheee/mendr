@@ -145,6 +145,8 @@ import {
 } from './watch/exposureFile.js';
 import { renderBadge, renderIssueBody, renderTextSummary } from './watch/issue.js';
 import { installWatchWorkflow, MENDR_RELEASE } from './watch/installWorkflow.js';
+import { foldConfigExposure, scanConfigFiles } from './config/scanConfig.js';
+import { renderConfigReport } from './report/configReport.js';
 
 const program = new Command();
 
@@ -2660,5 +2662,28 @@ program
       }
     },
   );
+
+program
+  .command('config-scan')
+  .argument('[repoPath]', 'local path to the repo (default: current directory)', '.')
+  .option('--json', 'emit the machine-readable config exposure on stdout')
+  .description('Locate deprecated model ids in config/IaC files (yaml/json/toml/env) — the LOCATE half of a migration audit')
+  .action(async (repoPath: string, opts: { json?: boolean }) => {
+    const json = !!opts.json;
+    const say = (line = ''): void => {
+      if (!json) console.log(line);
+    };
+    const resolved = resolveRepoOrExit(repoPath);
+    const registry = loadLlmRegistry();
+    const now = new Date();
+    const { matches, filesScanned } = scanConfigFiles(resolved, registry);
+    const exposures = foldConfigExposure(matches);
+
+    if (json) {
+      console.log(JSON.stringify({ schema: 'mendr-config/v1', filesScanned, exposures }, null, 2));
+      return;
+    }
+    for (const line of renderConfigReport(exposures, filesScanned, now)) say(line);
+  });
 
 program.parse();
