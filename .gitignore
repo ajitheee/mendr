@@ -11,3 +11,7 @@ spikes/
 
 # mendr is not a consumer of itself — its own `watch` scan output stays untracked
 .mendr/
+
+# local real-repo scan evidence / exported test results (kept locally, never committed)
+test-results/
+test-results.zip
