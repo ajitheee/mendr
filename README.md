@@ -57,8 +57,53 @@ Nothing, unless you pass `--write`. By default mendr loads your code in memory, 
 - `mendr fix <path> --from <specA> --to <specB>` — Stripe field-rename codemod.
 - `mendr verify-registry` — check every model-id replacement in the registry against the live public model catalogs and print an audit.
 - `mendr validate-registry` — check the registry for internal contradictions (offline); exits non-zero on any violation.
+- `mendr usage-audit [provider]` — **(experimental, v0.2.0-alpha)** read per-model usage/spend from a provider's read-only usage API and report which deprecated models are actually consuming requests and money. The MEASURE half of an AI-dependency audit. See below.
+- `mendr config-scan [path]` — **(experimental, v0.2.0-alpha)** locate deprecated model ids in config/IaC files (yaml/json/toml/.env/Helm/compose), separating live selectors from catalog definitions. The LOCATE half. See below.
 
 Run any command with `--help` for its flags.
+
+## AI dependency audit (experimental — v0.2.0-alpha)
+
+For products whose model ids don't live at a call site — they're in config, a
+database, a feature flag, or only in the runtime request — the `fix-llm` scanner
+finds nothing. Two commands close that gap as a **read-only audit** that runs
+entirely in your own environment (no keys or source ever leave it):
+
+- **MEASURE** — `usage-audit` reads per-model request counts and spend from a
+  provider's usage API (read-only Admin key from an env var) and reports the
+  deprecated models actually running, in dollars, with deadlines.
+- **LOCATE** — `config-scan` finds deprecated ids in config/IaC files and
+  separates live *selectors* (`model: gpt-4` — the place to change) from *catalog
+  definitions* and list/map references (informational, never a change target).
+
+```sh
+# LOCATE (local repo, no key):
+npx github:ajitheee/mendr#v0.2.0-alpha config-scan .
+
+# MEASURE (demo, no key):
+npx github:ajitheee/mendr#v0.2.0-alpha usage-audit --fixture examples/usage-fixture.example.json
+
+# MEASURE (live, read-only usage/cost Admin key in an env var):
+MENDR_PROVIDER_KEY=sk-admin-... npx github:ajitheee/mendr#v0.2.0-alpha usage-audit openai --from 2026-07-01 --to 2026-07-31
+```
+
+**Limitations (this is an alpha):**
+- `config-scan` is **report-only** — it locates, it does not write a fix; it
+  reports the leaf key, not a full nested YAML key path; it does not resolve
+  layer/override precedence (a base value beaten by an env override).
+- A deprecated id under a non-direct surface (Bedrock, Vertex, Azure, an
+  OpenAI-compatible proxy) is reported as *provider-ambiguous* with **no** direct
+  replacement; model-definition catalogs are Tier C, never "change this".
+- `usage-audit` covers **chat/completions usage only** (not embeddings, images,
+  audio, batch, fine-tuning); **Google/Vertex is not supported** (BigQuery billing
+  export only); the live OpenAI/Anthropic fetch follows the documented usage API
+  but should be verified against your live account.
+- MEASURE tells you *what* runs and *how much*; LOCATE tells you *where* it's set.
+  Neither evaluates whether a replacement is behaviorally safe — that's your
+  call, on an inspectable report.
+
+Both commands write nothing and send nothing. `config-scan` needs a local path
+(clone a repo first; remote URLs are refused).
 
 ## standing watch
 
