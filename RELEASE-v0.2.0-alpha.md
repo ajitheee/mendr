@@ -16,8 +16,14 @@ verified from a fresh installation.
 
 ## Test evidence
 - Build: `npm run build` (tsc) — PASS.
-- Suite: **649 tests across 49 files — PASS** (625 baseline + 17 config + 7 recon).
+- Suite: **664 tests across 51 files — PASS** (625 baseline + 17 config + 7 recon
+  + 15 positive-path render tests for the MEASURE/LOCATE reports).
 - Registry integrity: `node scripts/validate-registry.mjs` — 0 violations.
+- CI: GitHub Actions `build-and-test` (ubuntu, node 22) — **GREEN**. Landing the
+  suite on Linux CI surfaced a pre-existing eval-gate bug: on POSIX the deadline
+  only signalled the shell, so a `sh -c` that forks the program orphaned it and
+  the run hung. Fixed by group-killing (`detached` + negative-pid SIGKILL); the
+  timeout still reports `inconclusive`, never a behavioral `fail`.
 
 ## Real-repository validation — dify-official-plugins
 - Scanned commit: `c62e9d4771e6a46296547c5a08e9b935f2fbff44`
