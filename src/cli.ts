@@ -2673,6 +2673,13 @@ program
     const say = (line = ''): void => {
       if (!json) console.log(line);
     };
+    if (/^(https?:\/\/|git@)/i.test(repoPath)) {
+      console.error(
+        'mendr: config-scan needs a LOCAL path — remote URLs are not supported. Clone the repo first:\n' +
+          '  git clone <url>\n  mendr config-scan <cloned-dir>',
+      );
+      process.exit(2);
+    }
     const resolved = resolveRepoOrExit(repoPath);
     const registry = loadLlmRegistry();
     const now = new Date();

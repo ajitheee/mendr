@@ -22,7 +22,20 @@ import type { Tier } from '../report/tiers.js';
 export type ConfigPosition = 'config_selector' | 'config_catalog';
 
 /** Why a catalog occurrence is data (parallels the code scanner's DataPurpose). */
-export type ConfigPurpose = 'lookup_key' | 'list_entry' | 'catalog_entry' | 'generic';
+export type ConfigPurpose = 'lookup_key' | 'list_entry' | 'catalog_entry' | 'generic' | 'catalog_definition';
+
+/**
+ * The provider SURFACE a config file belongs to. A model id under a non-direct
+ * surface (Bedrock, Vertex, Azure, an OpenAI-compatible proxy) must NOT be given
+ * a direct-provider replacement — it is a different runtime.
+ */
+export type ProviderSurface =
+  | 'aws_bedrock'
+  | 'google_vertex'
+  | 'azure_openai'
+  | 'openrouter'
+  | 'provider_ambiguous' // OpenAI-compatible custom proxies (cometapi/deerapi/aihubmix)
+  | null; // direct/first-party or unknown
 
 /** One deprecated model id found in a config file. */
 export interface ConfigMatch {
@@ -37,6 +50,47 @@ export interface ConfigMatch {
   purpose?: ConfigPurpose;
   /** config_selector -> 'B' (review), config_catalog -> 'C'. Never 'A'. */
   tier: Tier;
+  /** The provider surface of the file (null = direct/first-party or unknown). */
+  providerSurface: ProviderSurface;
+}
+
+// --- catalog-definition + provider-surface detection (Dify P0) --------------
+
+/** Keys that mark a file as a model-DEFINITION catalog, not a runtime config. */
+const CATALOG_DEF_KEYS = ['label', 'model_type', 'features', 'model_properties', 'parameter_rules', 'pricing'];
+
+/**
+ * Is this a model-DEFINITION catalog file (one file per model id, describing its
+ * label/features/parameters/pricing) rather than a runtime selector config? A
+ * root `model:` field in such a file names the model the file DEFINES; it does
+ * not prove that model is selected or receiving traffic. Detected by path shape
+ * (provider model-directory) OR by >=2 catalog-definition sibling keys.
+ */
+export function isCatalogDefinitionFile(file: string, text: string): boolean {
+  const p = file.replace(/\\/g, '/');
+  // Dify-style provider model directories: models/<provider>/models/llm/*.yaml,
+  // .../model_configurations/*.yaml, etc.
+  if (/(^|\/)models\/[^/]+\/models\//i.test(p)) return true;
+  if (/\/model_configurations\//i.test(p)) return true;
+  let signals = 0;
+  for (const key of CATALOG_DEF_KEYS) {
+    if (new RegExp(`(^|\\n)\\s*${key}\\s*:`, 'i').test(text)) signals++;
+    if (signals >= 2) return true;
+  }
+  return false;
+}
+
+/** Detect the provider surface from the file path. */
+export function detectProviderSurface(file: string): ProviderSurface {
+  const p = file.replace(/\\/g, '/').toLowerCase();
+  if (/(^|\/)(bedrock|aws_bedrock|sagemaker)(\/|$)/.test(p)) return 'aws_bedrock';
+  if (/(^|\/)(vertex|vertex_ai|google_vertex)(\/|$)/.test(p)) return 'google_vertex';
+  if (/(^|\/)(azure|azure_openai)(\/|$)/.test(p)) return 'azure_openai';
+  if (/(^|\/)openrouter(\/|$)/.test(p)) return 'openrouter';
+  if (/(^|\/)(cometapi|deerapi|aihubmix|openai_api_compatible|openai-compatible)(\/|$)/.test(p)) {
+    return 'provider_ambiguous';
+  }
+  return null;
 }
 
 const CONFIG_EXT = /\.(ya?ml|json|json5|toml|ini|cfg|conf|properties|env)$/i;
@@ -142,6 +196,12 @@ export function scanConfigText(file: string, text: string, registry: LlmRegistry
     if (list) list.push(e);
     else byValue.set(e.deprecated, [e]);
   }
+  // File-level context: a model-definition catalog file classifies EVERY match
+  // as a catalog definition (Tier C) — a root `model:` there names the model the
+  // file defines, not a runtime selection. Surface rides on every match.
+  const catalogDef = isCatalogDefinitionFile(file, text);
+  const surface = detectProviderSurface(file);
+
   const out: ConfigMatch[] = [];
   const lines = text.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
@@ -150,18 +210,21 @@ export function scanConfigText(file: string, text: string, registry: LlmRegistry
       if (!line.includes(id)) continue;
       for (const m of line.matchAll(idMatcher(id))) {
         const idCol = m.index ?? 0;
-        const { position, purpose, key } = classifyConfigOccurrence(line, idCol, id);
+        const cls = catalogDef
+          ? ({ position: 'config_catalog', purpose: 'catalog_definition', key: parseKey(line)?.key ?? null } as const)
+          : classifyConfigOccurrence(line, idCol, id);
         for (const dep of deps) {
           out.push({
             file,
             line: i + 1,
             column: idCol + 1,
-            key,
+            key: cls.key,
             value: id,
             deprecation: dep,
-            position,
-            purpose,
-            tier: tierOf(position),
+            position: cls.position,
+            purpose: cls.purpose,
+            tier: tierOf(cls.position),
+            providerSurface: surface,
           });
         }
       }
