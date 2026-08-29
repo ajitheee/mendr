@@ -41,7 +41,8 @@ function deadline(status: string | null, days: number | null, shutdownDate: stri
 const roleLabel = (r: LocationRef['role']): string =>
   r === 'runtime_selector_candidate' ? 'runtime selector candidate'
     : r === 'catalog_definition' ? 'catalog definition'
-      : 'catalog reference';
+      : r === 'test_fixture' ? 'test/data fixture (not a runtime selector)'
+        : 'catalog reference';
 
 function locationPhrase(loc: LocationRef): string {
   const surface = loc.providerSurface ? ` (surface: ${loc.providerSurface})` : '';
@@ -82,7 +83,14 @@ export function renderAuditReport(investigations: readonly ModelInvestigation[],
 
   if (investigations.length === 0) {
     lines.push('');
-    lines.push('No deprecated models found in usage or configuration for this audit.');
+    // Only claim the ground we actually covered — usage was not necessarily measured.
+    const scope =
+      meta.usageStatus === 'ok'
+        ? 'usage or configuration'
+        : meta.usageStatus === 'no_data'
+          ? 'configuration (usage was inconclusive — no rows for this window)'
+          : 'configuration (usage was not measured — add a provider or --fixture to also check runtime exposure)';
+    lines.push(`No deprecated models found in ${scope} for this audit.`);
     return lines;
   }
 

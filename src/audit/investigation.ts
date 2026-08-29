@@ -23,7 +23,11 @@ import { daysUntil } from '../watch/exposure.js';
 export type AuditDecision = 'review_required' | 'monitor';
 
 /** What ROLE a located occurrence plays — a candidate, never a proven control. */
-export type LocationRole = 'runtime_selector_candidate' | 'catalog_definition' | 'catalog_reference';
+export type LocationRole =
+  | 'runtime_selector_candidate'
+  | 'catalog_definition'
+  | 'catalog_reference'
+  | 'test_fixture';
 
 /** One located occurrence of the model id, with its (unproven) role. */
 export interface LocationRef {
@@ -100,7 +104,9 @@ function toLocation(m: ConfigMatch): LocationRef {
       ? 'runtime_selector_candidate'
       : m.purpose === 'catalog_definition'
         ? 'catalog_definition'
-        : 'catalog_reference';
+        : m.purpose === 'data_fixture'
+          ? 'test_fixture'
+          : 'catalog_reference';
   return {
     file: m.file,
     line: m.line,

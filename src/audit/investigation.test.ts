@@ -127,6 +127,48 @@ describe('buildInvestigations — ordering: review_required before monitor, by c
   });
 });
 
+describe('buildInvestigations — a deprecated id in a test/data fixture is NOT a selector', () => {
+  // Real-repo finding (LibreChat): `model_slug: "gpt-4"` inside a conversation-export
+  // fixture under api/server/utils/import/__data__/ was flagged as a runtime selector.
+  const config = foldConfigExposure(
+    scanConfigText('api/server/utils/import/__data__/chatgpt-export.json', '  "model_slug": "gpt-4",\n', REGISTRY),
+  );
+  const [inv] = buildInvestigations(null, config, NOW);
+
+  it('demotes the fixture occurrence to a Tier-C data role and MONITOR', () => {
+    expect(inv.model).toBe('gpt-4');
+    expect(inv.locations.selectors).toHaveLength(0);
+    expect(inv.locations.catalog).toHaveLength(1);
+    expect(inv.locations.catalog[0].role).toBe('test_fixture');
+    expect(inv.decision).toBe('monitor');
+  });
+
+  it('renders it as a fixture, never a runtime selector candidate', () => {
+    const meta: AuditMeta = {
+      from: null, to: null, usageStatus: 'not_measured', providers: [],
+      totalRequests: null, totalCostUsd: null, filesScanned: 1,
+    };
+    const out = renderAuditReport(buildInvestigations(null, config, NOW), meta).join('\n');
+    expect(out).toContain('test/data fixture (not a runtime selector)');
+    expect(out).not.toContain('runtime selector candidate');
+  });
+});
+
+describe('renderAuditReport — the empty-state claims only the ground it covered', () => {
+  const empty: AuditMeta = { from: null, to: null, usageStatus: 'not_measured', providers: [], totalRequests: null, totalCostUsd: null, filesScanned: 5 };
+
+  it('does NOT claim "in usage" when usage was not measured', () => {
+    const out = renderAuditReport([], empty).join('\n');
+    expect(out).toContain('No deprecated models found in configuration');
+    expect(out).not.toContain('in usage or configuration');
+  });
+
+  it('does claim usage coverage when usage WAS measured clean', () => {
+    const out = renderAuditReport([], { ...empty, usageStatus: 'ok', providers: ['openai'], totalRequests: 0, totalCostUsd: 0 }).join('\n');
+    expect(out).toContain('in usage or configuration');
+  });
+});
+
 describe('renderAuditReport — matches the intended per-model report shape', () => {
   const usage = auditUsage(
     [{ provider: 'openai', model: 'gpt-4', requests: 48210, inputTokens: 1, outputTokens: 1, costUsd: 1284 }],
