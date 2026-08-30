@@ -45,10 +45,11 @@ function codeModel(id: string, tier: 'A' | 'B' | 'C', reason?: string): ExposedM
 
 function fullCoverage(over: Partial<AuditCoverage> = {}): AuditCoverage {
   return {
+    source: { analyzed: true, filesScanned: 10, tsFiles: 10, pyFiles: 0 },
     config: { analyzed: true, filesScanned: 5 },
-    typescript: { analyzed: true, filesScanned: 10 },
-    python: { analyzed: true, filesScanned: 0 },
+    registry: { providers: ['anthropic', 'google', 'openai'] },
     usage: { analyzed: false, provider: null },
+    readerTieBack: { proven: false },
     ...over,
   };
 }
@@ -77,7 +78,7 @@ describe('buildInvestigations — selector + observed usage => REVIEW, tie-back 
   });
 
   it('decides REVIEW REQUIRED and NEVER claims the tie-back is proven', () => {
-    expect(inv.decision).toBe('review_required');
+    expect(inv.decision).toBe('review');
     expect(inv.verification.readerTieBackProven).toBe(false);
     expect(inv.reason).toContain('tie-back');
     expect(inv.reason).toContain('not proven');
@@ -95,20 +96,27 @@ describe('buildInvestigations — selector + observed usage => REVIEW, tie-back 
   });
 });
 
-describe('buildInvestigations — a code call site is located and needs REVIEW', () => {
-  it('puts a Tier-A code occurrence in selectors as a code call site', () => {
+describe('buildInvestigations — code call sites drive the patch/review split', () => {
+  it('a Tier-A call site with a VERIFIED replacement => PATCH (a reviewed PR, never auto-merge)', () => {
     const [inv] = buildInvestigations(null, [], NOW, [codeModel('gpt-4', 'A')]);
     expect(inv.locations.selectors).toHaveLength(1);
     expect(inv.locations.selectors[0].surface).toBe('code');
     expect(inv.locations.selectors[0].role).toBe('code_call_site');
-    expect(inv.decision).toBe('review_required');
-    expect(inv.reason).toContain('code call site');
+    expect(inv.decision).toBe('patch');
+    expect(inv.reason).toContain('never auto-merged');
+  });
+
+  it('a config selector is NEVER patchable — tie-back is unproven', () => {
+    const config = foldConfigExposure(scanConfigText('app.yaml', 'model: gpt-4\n', REGISTRY));
+    const [inv] = buildInvestigations(null, config, NOW);
+    expect(inv.retirementEvidence.replacementVerdict).toBe('verified');
+    expect(inv.decision).toBe('review'); // verified successor, but config => never patch
   });
 
   it('treats a Tier-B usage_unverified occurrence as a candidate, not a proven call site', () => {
     const [inv] = buildInvestigations(null, [], NOW, [codeModel('gpt-4', 'B', 'usage_unverified')]);
     expect(inv.locations.selectors[0].role).toBe('code_candidate');
-    expect(inv.decision).toBe('review_required');
+    expect(inv.decision).toBe('review');
     expect(inv.reason).toContain('not proven');
   });
 
@@ -130,7 +138,7 @@ describe('buildInvestigations — usage without any located selector => REVIEW (
 
   it('flags it for review and says no code or config location was found', () => {
     expect(inv.model).toBe('gpt-3.5-turbo');
-    expect(inv.decision).toBe('review_required');
+    expect(inv.decision).toBe('review');
     expect(inv.locations.selectors).toHaveLength(0);
     expect(inv.reason).toContain('no code or config location was found');
   });
@@ -155,7 +163,7 @@ describe('buildInvestigations — a config selector with usage NOT measured => R
   const [inv] = buildInvestigations(null, config, NOW);
 
   it('still needs review, located as a candidate, deadline from the registry', () => {
-    expect(inv.decision).toBe('review_required');
+    expect(inv.decision).toBe('review');
     expect(inv.runtimeExposure.measured).toBe(false);
     expect(inv.reason).toContain('config selector candidate');
     expect(inv.reason).toContain('Human review required');
@@ -178,7 +186,7 @@ describe('buildInvestigations — ordering: review_required before monitor, by c
       ...scanConfigText('legacy/models.yaml', 'supported:\n  - text-davinci-003\n', REGISTRY),
     ]);
     const order = buildInvestigations(usage, config, NOW).map((i) => `${i.model}:${i.decision}`);
-    expect(order[0]).toBe('gpt-4:review_required');
+    expect(order[0]).toBe('gpt-4:review');
     expect(order[order.length - 1]).toBe('text-davinci-003:monitor');
   });
 });
@@ -210,45 +218,71 @@ describe('buildInvestigations — a deprecated id in a test/data fixture is NOT 
   });
 });
 
-describe('renderAuditReport — conclusion gate: a CLEAN bill needs usage AND source', () => {
+describe('renderAuditReport — the conclusion is one of exactly four, and never a general "clean"', () => {
   const base = { from: null, to: null, usageStatus: 'not_measured' as const, providers: [] as string[], totalRequests: null, totalCostUsd: null };
 
-  it('config+source but NO usage => INCONCLUSIVE, never CLEAN', () => {
+  it('config+source but NO usage => INCONCLUSIVE', () => {
     const out = renderAuditReport([], { ...base, coverage: fullCoverage() }).join('\n');
-    expect(out).toContain('INCONCLUSIVE');
-    expect(out).not.toContain('CLEAN —');
+    expect(out).toContain('Conclusion: INCONCLUSIVE');
     expect(out).toContain('provider usage/cost was not measured');
   });
 
-  it('usage measured + source scanned + 0 findings => CLEAN', () => {
+  it('usage measured + source scanned + 0 findings => NO EXPOSURE IN COMPLETED SURFACES (not "clean")', () => {
     const meta: AuditMeta = {
       ...base, usageStatus: 'ok', providers: ['openai'], totalRequests: 0, totalCostUsd: 0,
       coverage: fullCoverage({ usage: { analyzed: true, provider: 'openai' } }),
     };
     const out = renderAuditReport([], meta).join('\n');
-    expect(out).toContain('CLEAN —');
-    expect(out).not.toContain('INCONCLUSIVE');
+    expect(out).toContain('Conclusion: NO EXPOSURE IN COMPLETED SURFACES');
+    expect(out).toContain('not a general all-clear');
+    expect(out).not.toMatch(/\bCLEAN\b/);
   });
 
   it('source SKIPPED => INCONCLUSIVE even when usage was measured', () => {
     const meta: AuditMeta = {
       ...base, usageStatus: 'ok', providers: ['openai'], totalRequests: 0, totalCostUsd: 0,
       coverage: fullCoverage({
-        typescript: { analyzed: false, filesScanned: 0 },
-        python: { analyzed: false, filesScanned: 0 },
+        source: { analyzed: false, filesScanned: 0, tsFiles: 0, pyFiles: 0 },
         usage: { analyzed: true, provider: 'openai' },
       }),
     };
     const out = renderAuditReport([], meta).join('\n');
-    expect(out).toContain('INCONCLUSIVE');
+    expect(out).toContain('Conclusion: INCONCLUSIVE');
     expect(out).toContain('source code (TS/TSX/Python) was not scanned');
   });
 
-  it('always prints the coverage matrix', () => {
+  it('a FAILED surface => AUDIT FAILED, never a no-exposure verdict', () => {
+    const meta: AuditMeta = {
+      ...base, usageStatus: 'ok', providers: ['openai'], totalRequests: 0, totalCostUsd: 0,
+      coverage: fullCoverage({
+        source: { analyzed: false, failed: true, filesScanned: 0, tsFiles: 0, pyFiles: 0 },
+        usage: { analyzed: true, provider: 'openai' },
+      }),
+    };
+    const out = renderAuditReport([], meta).join('\n');
+    expect(out).toContain('Conclusion: AUDIT FAILED');
+    expect(out).toContain('these results are unreliable');
+  });
+
+  it('always prints the coverage report with every surface and the tie-back row', () => {
     const out = renderAuditReport([], { ...base, coverage: fullCoverage() }).join('\n');
-    expect(out).toContain('Coverage — what this audit analyzed:');
-    expect(out).toContain('TypeScript / TSX source');
-    expect(out).toContain('Provider usage & cost');
+    expect(out).toContain('Audit coverage');
+    expect(out).toContain('✓ Source code:');
+    expect(out).toContain('✓ Configuration:');
+    expect(out).toContain('✓ Registry:');
+    expect(out).toContain('○ Runtime usage:     not measured — no provider key supplied');
+    expect(out).toContain('○ Reader tie-back:   not proven');
+  });
+
+  it('discloses the provider notes (unqueried categories) when usage was read', () => {
+    const meta: AuditMeta = {
+      ...base, usageStatus: 'ok', providers: ['openai'], totalRequests: 5, totalCostUsd: 1,
+      coverage: fullCoverage({
+        usage: { analyzed: true, provider: 'openai', notes: ['Chat Completions + Responses only. Embeddings … are NOT queried.'] },
+      }),
+    };
+    const out = renderAuditReport([], meta).join('\n');
+    expect(out).toContain('are NOT queried');
   });
 });
 
@@ -272,7 +306,7 @@ describe('renderAuditReport — matches the intended per-model report shape', ()
     expect(out).toContain('Runtime usage: 48,210 requests, $1,284.00 observed cost');
     expect(out).toContain('app.yaml:1 — config runtime selector candidate');
     expect(out).toContain('pricing.yaml:1 — config catalog definition');
-    expect(out).toContain('Decision: REVIEW REQUIRED');
+    expect(out).toContain('Decision: REVIEW');
   });
 
   it('shows the replacement as registry evidence, never as an instruction to change code', () => {

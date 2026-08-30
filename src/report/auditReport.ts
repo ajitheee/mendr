@@ -69,31 +69,59 @@ function runtimeLine(inv: ModelInvestigation, status: UsageStatus): string {
   return 'Runtime usage: not measured (add a provider or --fixture to measure exposure)';
 }
 
-const pad = (s: string, n = 30): string => (s.length >= n ? s : s + ' '.repeat(n - s.length));
+const pad = (s: string, n = 18): string => (s.length >= n ? s : s + ' '.repeat(n - s.length));
 
-/** The coverage matrix — printed on EVERY run so the boundary is always visible. */
-function coverageMatrix(meta: AuditMeta): string[] {
+/**
+ * The coverage report — printed on EVERY run (human AND json) so the reader can
+ * always see exactly which surfaces ran. `✓` = completed, `○` = not run / not
+ * proven, `✗` = attempted and failed.
+ */
+export function coverageReport(meta: AuditMeta): string[] {
   const c = meta.coverage;
-  const surf = (label: string, s: { analyzed: boolean; filesScanned: number; note?: string }): string => {
-    const state = !s.analyzed ? 'NOT ANALYZED' : `scanned, ${int(s.filesScanned)} file(s)`;
-    return `  ${pad(label)}${state}${s.note ? ` — ${s.note}` : ''}`;
-  };
-  const usageState =
+  const row = (mark: string, label: string, detail: string): string => `${mark} ${pad(label + ':')} ${detail}`;
+  const lines = ['Audit coverage', ''];
+
+  const src = c.source;
+  lines.push(
+    src.failed
+      ? row('✗', 'Source code', `scan FAILED${src.note ? ` — ${src.note}` : ''}`)
+      : !src.analyzed
+        ? row('○', 'Source code', `not scanned${src.note ? ` — ${src.note}` : ''}`)
+        : row('✓', 'Source code', `${int(src.tsFiles + src.pyFiles)} files scanned (${int(src.tsFiles)} TS/TSX, ${int(src.pyFiles)} Python)`),
+  );
+
+  lines.push(
+    c.config.failed
+      ? row('✗', 'Configuration', 'scan FAILED')
+      : row('✓', 'Configuration', `${int(c.config.filesScanned)} files scanned`),
+  );
+
+  lines.push(row('✓', 'Registry', c.registry.providers.join(', ') || 'none'));
+
+  const usageDetail =
     meta.usageStatus === 'ok'
-      ? `measured (${c.usage.provider ?? (meta.providers.join(', ') || 'provider')}), ${int(meta.totalRequests ?? 0)} req, ${usd(meta.totalCostUsd ?? 0)}`
+      ? `measured — ${c.usage.provider ?? (meta.providers.join(', ') || 'provider')}, ${int(meta.totalRequests ?? 0)} requests, ${usd(meta.totalCostUsd ?? 0)}`
       : meta.usageStatus === 'no_data'
-        ? 'INCONCLUSIVE — no rows for this window'
+        ? 'inconclusive — the usage API returned no rows for this window'
         : meta.usageStatus === 'error'
-          ? 'NOT MEASURED — the usage read failed'
-          : 'NOT MEASURED — add a provider + read-only key';
-  return [
-    'Coverage — what this audit analyzed:',
-    surf('Config (yaml/json/toml/env)', c.config),
-    surf('TypeScript / TSX source', c.typescript),
-    surf('Python source', c.python),
-    `  ${pad('Provider usage & cost')}${usageState}`,
-  ];
+          ? 'FAILED — the usage read errored'
+          : 'not measured — no provider key supplied';
+  lines.push(
+    row(meta.usageStatus === 'ok' ? '✓' : meta.usageStatus === 'error' ? '✗' : '○', 'Runtime usage', usageDetail),
+  );
+
+  lines.push(row('○', 'Reader tie-back', 'not proven'));
+
+  for (const note of c.usage.notes ?? []) lines.push(`    · ${note}`);
+  return lines;
 }
+
+const CONCLUSION_LINE: Record<string, string> = {
+  exposure_detected: 'EXPOSURE DETECTED',
+  no_exposure_in_completed_surfaces: 'NO EXPOSURE IN COMPLETED SURFACES',
+  inconclusive: 'INCONCLUSIVE',
+  audit_failed: 'AUDIT FAILED',
+};
 
 /** Render the combined audit for a terminal. */
 export function renderAuditReport(investigations: readonly ModelInvestigation[], meta: AuditMeta): string[] {
@@ -101,20 +129,26 @@ export function renderAuditReport(investigations: readonly ModelInvestigation[],
   const period = meta.from && meta.to ? `${meta.from} to ${meta.to}` : 'no usage window';
   lines.push(`mendr audit (preview) — ${period}`);
   lines.push('');
-  for (const line of coverageMatrix(meta)) lines.push(line);
+  for (const line of coverageReport(meta)) lines.push(line);
   lines.push('');
 
-  const review = investigations.filter((i) => i.decision === 'review_required').length;
-  const monitor = investigations.length - review;
+  const count = (d: string): number => investigations.filter((i) => i.decision === d).length;
   const conclusion = concludeAudit(meta.coverage, investigations.length);
-  lines.push(`${investigations.length} deprecated model(s): ${review} need review, ${monitor} monitor`);
+  lines.push(`Conclusion: ${CONCLUSION_LINE[conclusion]}`);
+  lines.push(
+    `${investigations.length} deprecated model(s): ${count('patch')} patch, ${count('review')} review, ${count('monitor')} monitor`,
+  );
 
   if (investigations.length === 0) {
     lines.push('');
-    if (conclusion === 'clean') {
-      lines.push('CLEAN — no deprecated model ids in config, source (TS/TSX/Python), or provider usage for this audit.');
+    if (conclusion === 'no_exposure_in_completed_surfaces') {
+      lines.push('No deprecated model ids were found in the surfaces that completed (source, config, and provider usage).');
+      lines.push('This is not a general all-clear: surfaces mendr does not analyze are not covered.');
+    } else if (conclusion === 'audit_failed') {
+      lines.push('A surface was attempted and FAILED — these results are unreliable and prove nothing.');
+      for (const gap of coverageGaps(meta.coverage)) lines.push(`  • ${gap}`);
     } else {
-      lines.push('INCONCLUSIVE — this is NOT a clean bill of health. Zero findings here does not mean zero exposure.');
+      lines.push('Zero findings here does NOT mean zero exposure — a surface was skipped:');
       for (const gap of coverageGaps(meta.coverage)) lines.push(`  • ${gap}`);
     }
     lines.push('');
@@ -148,7 +182,8 @@ export function renderAuditReport(investigations: readonly ModelInvestigation[],
       lines.push('Located: nowhere in code or config (selector may be in a datastore, a flag, or an unscanned runtime)');
     }
 
-    lines.push(`Decision: ${inv.decision === 'review_required' ? 'REVIEW REQUIRED' : 'MONITOR'}`);
+    lines.push(`Reader tie-back: ${inv.verification.readerTieBackProven ? 'proven' : 'not proven'}`);
+    lines.push(`Decision: ${inv.decision.toUpperCase()}`);
     lines.push(`Reason: ${inv.reason}`);
   }
 
