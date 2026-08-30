@@ -1,9 +1,9 @@
-# mendr v0.2.1-alpha
+# mendr v0.2.2-alpha
 
 > **Why not `v0.2.0-alpha`?** That tag was published on 2026-08-27 against a
 > commit that predates the `audit` command. Re-pointing a published tag would
 > silently change the code under anyone who pinned it — the exact hazard this
-> tool warns about — so this ships as `v0.2.1-alpha` instead.
+> tool warns about — so this ships as `v0.2.2-alpha` instead.
 
 **This is an alpha.** It is offered to design partners for evaluation, not as a
 stable release. `v0.1.0` remains the stable line (`fix-llm`, `watch`).
@@ -104,7 +104,7 @@ outcome and volume. Never prompts, never responses.
 One command, no credentials, on a repository you care about:
 
 ```sh
-npx github:ajitheee/mendr#v0.2.1-alpha audit .
+npx github:ajitheee/mendr#v0.2.2-alpha audit .
 ```
 
 What we would like to learn:

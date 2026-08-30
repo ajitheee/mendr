@@ -1,5 +1,46 @@
 # Changelog
 
+## v0.2.2-alpha — 2026-08-30
+
+### Fixed — recursive self-detection (release blocker found in v0.2.1-alpha smoke test)
+
+Mendr scanned its own saved reports and read the model ids inside its own
+findings as configuration selectors. On the Mendr repository this produced **75
+false review findings, 106 supposed dependencies, and an incorrect
+`EXPOSURE DETECTED` conclusion**. The loop was self-amplifying: mendr output →
+scanned by mendr → becomes new mendr output.
+
+- **Generated-artifact protection.** `test-results/`, `test-output/`,
+  `playwright-report/`, `allure-results/`, `coverage/`, `reports/`, `artifacts/`,
+  `.mendr/`, and the usual build directories are never treated as configuration.
+- **`"generatedBy": "mendr"` marker** is stamped on every JSON document mendr
+  produces, and any file carrying it is refused **wherever it sits** — a report
+  renamed and committed at the repo root is still mendr output.
+- **Density rule.** A config file naming 8+ distinct deprecated ids is a catalog,
+  a registry, or a report — never a runtime selector — regardless of its path.
+  This is what stops a vendored model catalog (or Mendr's own
+  `registries/llm-deprecations.json`) from counting as dependency exposure.
+- **Examples, samples, demos and docs directories** are Tier-C informational data.
+
+### Fixed — catalog records are not dependencies
+
+Catalog, documentation, fixture and reference occurrences no longer count as
+exposure. A scan finding only those now concludes
+`NO EXPOSURE IN COMPLETED SURFACES` and lists them separately as informational
+references. The summary no longer calls them "retiring AI dependencies".
+
+### Fixed — other
+
+- `Next action: Track until the retirement date` is now `Monitor provider status`
+  for records with no dated deadline.
+- Repeatability is regression-tested: run mendr, save its JSON inside the
+  repository, run again — counts and decisions are unchanged.
+
+**Verified:** the Mendr repository self-scan went from 75 false review findings /
+`EXPOSURE DETECTED` to **0 exposures / `NO EXPOSURE IN COMPLETED SURFACES`**,
+while real exposures elsewhere were preserved (chatbot-ui 2, LibreChat 2,
+dify-official-plugins 23 genuine call sites).
+
 ## v0.2.1-alpha — 2026-08-30
 
 **Version note:** the `v0.2.0-alpha` tag was published on 2026-08-27 against an

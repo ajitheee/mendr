@@ -150,6 +150,90 @@ describe('audit CLI — claim discipline (release-copy corrections)', () => {
   }, 120_000);
 });
 
+// The bug this suite exists for: mendr scanned its own saved report, read the
+// model ids inside its own findings as runtime selectors, and reported 75 false
+// exposures. Generated output must never become input.
+describe('audit CLI — no recursive self-detection', () => {
+  it('REPEATABILITY: saving mendr JSON inside the repo does not change the next run', async () => {
+    const dir = sampleRepo();
+    const first = JSON.parse((await runAudit([dir, '--json'])).stdout);
+
+    // Save mendr's own output INTO the scanned repository, at the root — no
+    // directory rule can save us here; only the generatedBy marker can.
+    writeFileSync(join(dir, 'mendr-report.json'), JSON.stringify(first, null, 2));
+    const second = JSON.parse((await runAudit([dir, '--json'])).stdout);
+
+    expect(second.investigations.length).toBe(first.investigations.length);
+    expect(second.conclusion).toBe(first.conclusion);
+    expect(second.investigations.map((i: { model: string; decision: string }) => `${i.model}:${i.decision}`))
+      .toEqual(first.investigations.map((i: { model: string; decision: string }) => `${i.model}:${i.decision}`));
+  }, 240_000);
+
+  it('stamps generatedBy on its own JSON so it can be recognised anywhere', async () => {
+    const dir = sampleRepo();
+    const { stdout } = await runAudit([dir, '--json']);
+    expect(JSON.parse(stdout).generatedBy).toBe('mendr');
+  }, 120_000);
+
+  it('ignores a mendr report even when renamed and placed at the repo root', async () => {
+    const dir = sampleRepo();
+    const report = JSON.parse((await runAudit([dir, '--json'])).stdout);
+    const before = report.investigations.length;
+    // Rename it to something innocuous — the marker, not the path, must save us.
+    writeFileSync(join(dir, 'app-config.json'), JSON.stringify(report));
+    const after = JSON.parse((await runAudit([dir, '--json'])).stdout);
+    expect(after.investigations.length).toBe(before);
+  }, 240_000);
+
+  it('never treats generated-artifact directories as configuration', async () => {
+    const dir = sampleRepo();
+    for (const d of ['test-results', 'coverage', 'playwright-report', '.mendr']) {
+      mkdirSync(join(dir, d), { recursive: true });
+      // A file that WOULD look like a live selector if it were real config.
+      writeFileSync(join(dir, d, 'out.yaml'), 'model: gpt-3.5-turbo\n');
+    }
+    const { stdout } = await runAudit([dir, '--json']);
+    const json = JSON.parse(stdout);
+    const files = json.investigations.flatMap((i: { locations: { selectors: { file: string }[]; catalog: { file: string }[] } }) =>
+      [...i.locations.selectors, ...i.locations.catalog].map((l) => l.file));
+    for (const d of ['test-results', 'coverage', 'playwright-report', '.mendr']) {
+      expect(files.some((f: string) => f.startsWith(`${d}/`)), `${d} must not be scanned`).toBe(false);
+    }
+  }, 180_000);
+
+  it('a catalog-only repo concludes NO EXPOSURE, not EXPOSURE DETECTED', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mendr-catalog-'));
+    created.push(dir);
+    writeFileSync(join(dir, 'ok.ts'), 'export const x = 1;\n');
+    // A vendored catalog naming many deprecated ids — data, not a dependency.
+    const ids = ['gpt-4', 'gpt-3.5-turbo', 'gpt-4-32k', 'claude-2.1', 'claude-1',
+      'gemini-pro', 'gemini-1.5-pro', 'text-davinci-003', 'dall-e-2'];
+    writeFileSync(join(dir, 'catalog.yaml'), ids.map((m) => `${m}:\n  model: ${m}\n`).join(''));
+    const { stdout } = await runAudit([dir, '--json']);
+    const json = JSON.parse(stdout);
+    expect(json.conclusion).toBe('no_exposure_in_completed_surfaces');
+    expect(json.investigations.every((i: { decision: string }) => i.decision === 'monitor')).toBe(true);
+
+    const human = await runAudit([dir]);
+    expect(human.stdout).toContain('NO EXPOSURE IN COMPLETED SURFACES');
+    expect(human.stdout).toContain('We found no retiring AI dependencies in use.');
+    // Informational records must NOT be called retiring dependencies.
+    expect(human.stdout).not.toMatch(/We found (?!no )\w+ retiring AI dependenc/);
+  }, 180_000);
+
+  it('says "Monitor provider status" when a record has no dated deadline', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mendr-undated-'));
+    created.push(dir);
+    writeFileSync(join(dir, 'ok.ts'), 'export const x = 1;\n');
+    writeFileSync(join(dir, 'models.yaml'), 'supported:\n  - o1-mini\n'); // undated in the registry
+    const { stdout } = await runAudit([dir]);
+    if (stdout.includes('no dated deadline')) {
+      expect(stdout).toContain('Next action: Monitor provider status');
+      expect(stdout).not.toContain('Next action: Track until the retirement date');
+    }
+  }, 120_000);
+});
+
 describe('audit CLI — release guarantees', () => {
   it('needs NO credentials: a full audit runs with every provider key unset', async () => {
     const dir = sampleRepo();

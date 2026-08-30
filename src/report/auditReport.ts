@@ -12,6 +12,8 @@
 import {
   concludeAudit,
   coverageGaps,
+  partitionFindings,
+  isExposure as isExposureInv,
   type AuditCoverage,
   type LocationRef,
   type ModelInvestigation,
@@ -82,7 +84,13 @@ export function decisionLines(inv: ModelInvestigation): string[] {
   if (inv.decision === 'review') {
     return ['Decision: REVIEW REQUIRED', 'Status: No change applied', 'Next action: Human review before any change'];
   }
-  return ['Decision: MONITOR', 'Status: No change applied', 'Next action: Track until the retirement date'];
+  // "Track until the retirement date" is nonsense when there is no date. Say what
+  // the reader can actually do instead.
+  const next =
+    inv.retirementEvidence.shutdownDate === null
+      ? 'Monitor provider status'
+      : 'Track until the retirement date';
+  return ['Decision: MONITOR', 'Status: No change applied', `Next action: ${next}`];
 }
 
 const pad = (s: string, n = 18): string => (s.length >= n ? s : s + ' '.repeat(n - s.length));
@@ -150,8 +158,25 @@ const word = (n: number): string => (n < WORDS.length ? WORDS[n] : String(n));
  * runtime was measured, and that nothing was changed.
  */
 export function plainSummary(investigations: readonly ModelInvestigation[], coverage: AuditCoverage): string[] {
-  const n = investigations.length;
-  if (n === 0) return [];
+  const { exposure, informational } = partitionFindings(investigations);
+  const n = exposure.length;
+
+  // A catalog record is NOT a dependency. Only real exposure is counted here;
+  // informational references get their own, clearly-labelled line.
+  if (n === 0) {
+    if (investigations.length === 0) return [];
+    return [
+      'We found no retiring AI dependencies in use.',
+      '',
+      `${word(informational.length).replace(/^\w/, (c) => c.toUpperCase())} deprecated model ${informational.length === 1 ? 'id was' : 'ids were'} found only in catalog, documentation, fixture or reference data — not as something this application selects.`,
+      '',
+      coverage.runtime.connected
+        ? `Production usage was measured via ${RUNTIME_SOURCE_LABEL[coverage.runtime.source ?? 'usage_export']}.`
+        : 'Production usage was not measured.',
+      'No changes were applied.',
+    ];
+  }
+
   const lines = [`We found ${word(n)} retiring AI ${n === 1 ? 'dependency' : 'dependencies'}.`, ''];
 
   // WORDING DISCIPLINE: source analysis proves a DIRECT PROVIDER CALL SITE exists
@@ -166,9 +191,15 @@ export function plainSummary(investigations: readonly ModelInvestigation[], cove
     return 'informational only';
   };
   const buckets = new Map<string, number>();
-  for (const inv of investigations) buckets.set(kind(inv), (buckets.get(kind(inv)) ?? 0) + 1);
+  for (const inv of exposure) buckets.set(kind(inv), (buckets.get(kind(inv)) ?? 0) + 1);
   for (const [k, count] of buckets) {
     lines.push(`${word(count).replace(/^\w/, (c) => c.toUpperCase())} ${count === 1 ? 'is' : 'are'} ${k}.`);
+  }
+  if (informational.length > 0) {
+    lines.push('');
+    lines.push(
+      `${word(informational.length).replace(/^\w/, (c) => c.toUpperCase())} further deprecated model ${informational.length === 1 ? 'id appears' : 'ids appear'} only in catalog, documentation or fixture data (not dependencies).`,
+    );
   }
 
   lines.push('');
@@ -188,8 +219,33 @@ export function renderAuditReport(investigations: readonly ModelInvestigation[],
   lines.push('');
 
   const count = (d: string): number => investigations.filter((i) => i.decision === d).length;
-  const conclusion = concludeAudit(meta.coverage, investigations.length);
+  const { exposure, informational } = partitionFindings(investigations);
+  // The conclusion turns on EXPOSURE, never on informational catalog references.
+  const conclusion = concludeAudit(meta.coverage, exposure.length);
   lines.push(`Conclusion: ${CONCLUSION_LINE[conclusion]}`);
+
+  if (exposure.length === 0 && informational.length > 0) {
+    lines.push('');
+    for (const line of plainSummary(investigations, meta.coverage)) lines.push(line);
+    lines.push('');
+    lines.push(`Informational references (${informational.length}) — deprecated ids found only in catalog/doc/fixture data:`);
+    for (const inv of informational.slice(0, 20)) {
+      const where = [...inv.locations.selectors, ...inv.locations.catalog][0];
+      // Keep the evidence label: a reader must be able to see WHY this was judged
+      // a reference rather than a dependency.
+      lines.push(`  · ${inv.model} (${inv.provider})${where ? ` — ${locationPhrase(where)}` : ''}`);
+    }
+    if (informational.length > 20) lines.push(`  … and ${informational.length - 20} more`);
+    const gapsInfo = coverageGaps(meta.coverage);
+    if (gapsInfo.length > 0) {
+      lines.push('');
+      lines.push('Limits of this run:');
+      for (const gap of gapsInfo) lines.push(`  • ${gap}`);
+    }
+    lines.push('');
+    lines.push(footer());
+    return lines;
+  }
 
   if (investigations.length === 0) {
     lines.push('');
@@ -214,10 +270,10 @@ export function renderAuditReport(investigations: readonly ModelInvestigation[],
   lines.push('');
   lines.push(`${investigations.length} deprecated model(s): ${count('patch')} patch, ${count('review')} review, ${count('monitor')} monitor`);
 
-  for (const inv of investigations) {
+  for (const inv of [...exposure, ...informational]) {
     const r = inv.retirementEvidence;
     lines.push('');
-    lines.push('Deprecated model dependency located');
+    lines.push(isExposureInv(inv) ? 'Deprecated model dependency located' : 'Informational reference (not a dependency)');
     lines.push('');
     lines.push(`Model: ${inv.model}  (${inv.provider})`);
 

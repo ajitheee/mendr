@@ -177,8 +177,37 @@ function anySurfaceFailed(c: AuditCoverage): boolean {
  *
  * A general "clean" is unreachable in every branch.
  */
-export function concludeAudit(coverage: AuditCoverage, findingsCount: number): AuditConclusion {
-  if (findingsCount > 0) return 'exposure_detected';
+/**
+ * Is this model an actual DEPENDENCY EXPOSURE, or merely an informational
+ * reference?
+ *
+ * A catalog record, a documentation sample, a test fixture, or a line in a
+ * deprecation registry is NOT a dependency the application uses — calling it one
+ * inflates the count and buries the findings that matter. Exposure requires a
+ * selector (config or code) or observed production traffic.
+ */
+export function isExposure(inv: ModelInvestigation): boolean {
+  return inv.decision === 'patch' || inv.decision === 'review';
+}
+
+/** Split investigations into real exposure and informational references. */
+export function partitionFindings(investigations: readonly ModelInvestigation[]): {
+  exposure: ModelInvestigation[];
+  informational: ModelInvestigation[];
+} {
+  const exposure: ModelInvestigation[] = [];
+  const informational: ModelInvestigation[] = [];
+  for (const inv of investigations) (isExposure(inv) ? exposure : informational).push(inv);
+  return { exposure, informational };
+}
+
+/**
+ * @param exposureCount count of ACTUAL exposures — not the total investigation
+ *        count. Informational catalog/fixture references must never produce an
+ *        `exposure_detected` verdict.
+ */
+export function concludeAudit(coverage: AuditCoverage, exposureCount: number): AuditConclusion {
+  if (exposureCount > 0) return 'exposure_detected';
   if (anySurfaceFailed(coverage)) return 'audit_failed';
   const sourceComplete = coverage.source.analyzed && coverage.source.tsFiles + coverage.source.pyFiles > 0;
   return sourceComplete ? 'no_exposure_in_completed_surfaces' : 'inconclusive';

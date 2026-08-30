@@ -111,8 +111,17 @@ export function detectProviderSurface(file: string): ProviderSurface {
  * to a Tier-C `data_fixture` (still visible as exposure) rather than dropping —
  * an audit should still SHOW the id, just never flag it as a thing to change.
  */
+/**
+ * How many DISTINCT deprecated ids in one file mark it as a catalog rather than a
+ * runtime config. A real app config names one or two; a catalog names dozens.
+ */
+export const BULK_CATALOG_DISTINCT_IDS = 8;
+
 export function isTestFixturePath(file: string): boolean {
   const p = file.replace(/\\/g, '/').toLowerCase();
+  // Generated-output and example/demo trees are DATA, never runtime selectors.
+  if (/(^|\/)(test-results?|test-output|playwright-report|allure-results|coverage|reports?|artifacts|\.mendr)(\/)/.test(p)) return true;
+  if (/(^|\/)(examples?|samples?|demos?|docs?)(\/)/.test(p)) return true;
   // A test/fixture/mock DIRECTORY anywhere in the path.
   if (/(^|\/)(__data__|__fixtures?__|__mocks?__|fixtures?|testdata|test-data|mocks?|snapshots?)(\/)/.test(p)) return true;
   if (/(^|\/)(tests?|e2e|specs?|__tests__)(\/)/.test(p)) return true;
@@ -122,9 +131,51 @@ export function isTestFixturePath(file: string): boolean {
 }
 
 const CONFIG_EXT = /\.(ya?ml|json|json5|toml|ini|cfg|conf|properties|env)$/i;
+
+/**
+ * Directories holding GENERATED output, never hand-authored runtime config.
+ *
+ * This list exists because of a real, embarrassing failure: mendr scanned its own
+ * saved report (`test-results/dify-config-scan.json`), read the `"model": "gpt-4"`
+ * fields INSIDE its own findings as runtime selectors, and reported 75 false
+ * exposures. Generated output must never become input — the loop is
+ * self-amplifying, and every run makes the next one worse.
+ */
 const CONFIG_EXCLUDED_DIRS: ReadonlySet<string> = new Set([
-  '.git', 'node_modules', 'dist', 'build', 'out', '.next', 'coverage', '.venv', 'venv', '__pycache__',
+  '.git', 'node_modules', '.venv', 'venv', '__pycache__',
+  // build output
+  'dist', 'build', 'out', '.next', '.nuxt', '.svelte-kit', '.turbo', '.parcel-cache', 'target',
+  // report / artifact output
+  'coverage', 'test-results', 'test-output', 'playwright-report', 'allure-results',
+  '.nyc_output', '.pytest_cache', 'reports', 'artifacts',
+  // mendr's own working directory
+  '.mendr',
 ]);
+
+/**
+ * A marker mendr writes into every JSON document it generates. The scanner
+ * refuses any file carrying it, WHEREVER it sits — a report copied to the repo
+ * root, committed as a fixture, or renamed is still mendr output, and a directory
+ * list alone cannot catch that.
+ */
+export const GENERATED_BY_MARKER = '"generatedBy": "mendr"';
+
+/** Schema ids mendr stamps on its own machine-readable output. */
+const MENDR_SCHEMA_MARKERS = [
+  '"generatedBy":"mendr"',
+  GENERATED_BY_MARKER,
+  '"schema": "mendr-',
+  '"schema":"mendr-',
+];
+
+/**
+ * Is this file something MENDR produced? Checked against the head of the file, so
+ * a huge report costs one small read rather than a full parse.
+ */
+export function isMendrGeneratedOutput(text: string): boolean {
+  const head = text.slice(0, 4096);
+  return MENDR_SCHEMA_MARKERS.some((m) => head.includes(m));
+}
 
 function isConfigFileName(name: string): boolean {
   if (CONFIG_EXT.test(name)) return true;
@@ -234,6 +285,15 @@ export function scanConfigText(file: string, text: string, registry: LlmRegistry
   const catalogDef = isCatalogDefinitionFile(file, text);
   const surface = detectProviderSurface(file);
 
+  // DENSITY RULE. A runtime config selects ONE model per key. A file naming many
+  // DISTINCT deprecated ids is a catalog, a registry, or a report — never a
+  // selector — no matter where it lives or what its keys are called. This is what
+  // catches a vendored model catalog or mendr's own deprecation registry without
+  // needing a path rule for each.
+  let distinct = 0;
+  for (const id of byValue.keys()) if (text.includes(id)) distinct++;
+  const bulkCatalog = distinct >= BULK_CATALOG_DISTINCT_IDS;
+
   const out: ConfigMatch[] = [];
   const lines = text.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
@@ -244,7 +304,7 @@ export function scanConfigText(file: string, text: string, registry: LlmRegistry
         const idCol = m.index ?? 0;
         const cls = dataFixture
           ? ({ position: 'config_catalog', purpose: 'data_fixture', key: parseKey(line)?.key ?? null } as const)
-          : catalogDef
+          : bulkCatalog || catalogDef
             ? ({ position: 'config_catalog', purpose: 'catalog_definition', key: parseKey(line)?.key ?? null } as const)
             : classifyConfigOccurrence(line, idCol, id);
         for (const dep of deps) {
@@ -280,6 +340,8 @@ export function scanConfigFiles(repoPath: string, registry: LlmRegistry): {
   filesScanned: number;
   filesRead: number;
   filesUnreadable: number;
+  /** Files skipped because mendr generated them (never re-ingested). */
+  generatedSkipped: number;
 } {
   const abs = resolve(repoPath);
   const files = collectConfigFiles(abs);
@@ -287,6 +349,7 @@ export function scanConfigFiles(repoPath: string, registry: LlmRegistry): {
   const matches: ConfigMatch[] = [];
   let filesRead = 0;
   let filesUnreadable = 0;
+  let generatedSkipped = 0;
   for (const file of files) {
     let text: string;
     try {
@@ -296,9 +359,16 @@ export function scanConfigFiles(repoPath: string, registry: LlmRegistry): {
       filesUnreadable++;
       continue;
     }
+    // NEVER re-ingest mendr's own output, wherever it was saved. Without this,
+    // a committed report turns every finding it contains into a new "selector"
+    // on the next run — a self-amplifying loop.
+    if (isMendrGeneratedOutput(text)) {
+      generatedSkipped++;
+      continue;
+    }
     for (const m of scanConfigText(rel(file), text, registry)) matches.push(m);
   }
-  return { matches, filesScanned: files.length, filesRead, filesUnreadable };
+  return { matches, filesScanned: files.length, filesRead, filesUnreadable, generatedSkipped };
 }
 
 /** A found deprecated id, aggregated by model, with the registry facts and locations. */

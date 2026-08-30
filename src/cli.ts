@@ -154,7 +154,7 @@ import { auditUsage } from './recon/usageAudit.js';
 import { fetchProviderUsage, loadFixtureUsage, providerCoverageNotes } from './recon/providers.js';
 import type { Provider } from './recon/types.js';
 import { renderUsageReport } from './report/usageReport.js';
-import { buildInvestigations, concludeAudit, type AuditCoverage } from './audit/investigation.js';
+import { buildInvestigations, concludeAudit, partitionFindings, type AuditCoverage } from './audit/investigation.js';
 import { EMPTY_STATE, parseAuditState, renderAuditIssue } from './audit/issueReport.js';
 import { installAuditWorkflow } from './audit/installAuditWorkflow.js';
 import { unanalyzedLanguages } from './audit/languages.js';
@@ -2710,7 +2710,7 @@ program
     const exposures = foldConfigExposure(matches);
 
     if (json) {
-      console.log(JSON.stringify({ schema: 'mendr-config/v1', filesScanned, exposures }, null, 2));
+      console.log(JSON.stringify({ generatedBy: 'mendr', schema: 'mendr-config/v1', filesScanned, exposures }, null, 2));
       return;
     }
     for (const line of renderConfigReport(exposures, filesScanned, now)) say(line);
@@ -2776,7 +2776,7 @@ program
         if (json) {
           console.log(
             JSON.stringify(
-              { schema: 'mendr-usage/v1', provider: provider ?? null, connection: 'successful', status: 'no_data', deprecationExposure: 'inconclusive', from, to },
+              { generatedBy: 'mendr', schema: 'mendr-usage/v1', provider: provider ?? null, connection: 'successful', status: 'no_data', deprecationExposure: 'inconclusive', from, to },
               null,
               2,
             ),
@@ -2797,7 +2797,7 @@ program
       const audit = auditUsage(rows, loadLlmRegistry(), now, { start: from, end: to });
 
       if (json) {
-        console.log(JSON.stringify(audit, null, 2));
+        console.log(JSON.stringify({ generatedBy: 'mendr', schema: 'mendr-usage/v1', ...audit }, null, 2));
         return;
       }
       for (const line of renderUsageReport(audit)) say(line);
@@ -3004,7 +3004,10 @@ program
         },
         readerTieBack: { proven: false },
       };
-      const conclusion = concludeAudit(coverage, investigations.length);
+      // The verdict turns on real EXPOSURE. Informational catalog / documentation
+      // / fixture references are reported, but never produce exposure_detected.
+      const { exposure: exposureFindings } = partitionFindings(investigations);
+      const conclusion = concludeAudit(coverage, exposureFindings.length);
 
       // --- GitHub-native single-issue report (optional) ----------------------
       let issueRender: ReturnType<typeof renderAuditIssue> | null = null;
@@ -3040,6 +3043,7 @@ program
         console.log(
           JSON.stringify(
             {
+              generatedBy: 'mendr',
               schema: 'mendr-audit/v3',
               preview: true,
               period: { from, to },

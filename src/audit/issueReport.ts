@@ -20,6 +20,7 @@
 import {
   concludeAudit,
   coverageGaps,
+  isExposure,
   type AuditConclusion,
   type AuditCoverage,
   type ModelInvestigation,
@@ -280,7 +281,12 @@ export interface AuditIssueRender {
 /** Render the whole issue body. The returned body is sanitized and redacted. */
 export function renderAuditIssue(input: AuditIssueInput): AuditIssueRender {
   const { investigations, coverage, sha, scannedAt, previous } = input;
-  const findings = toFindings(investigations);
+  // Only real EXPOSURE enters the issue lifecycle. Informational catalog /
+  // fixture / documentation references are reported separately and must never
+  // open, hold open, or reopen an issue.
+  const exposureInvestigations = investigations.filter(isExposure);
+  const informationalCount = investigations.length - exposureInvestigations.length;
+  const findings = toFindings(exposureInvestigations);
   const diff = diffFindings(previous.open, findings, coverage);
 
   // Carried findings stay OPEN — they were never re-checked, so they are not gone.
@@ -396,10 +402,10 @@ export function renderAuditIssue(input: AuditIssueInput): AuditIssueRender {
     L.push('');
   }
 
-  if (investigations.length > 0) {
+  if (exposureInvestigations.length > 0) {
     L.push('<details><summary>Evidence and next actions</summary>');
     L.push('');
-    for (const inv of investigations.slice(0, MAX_LISTED_FINDINGS)) {
+    for (const inv of exposureInvestigations.slice(0, MAX_LISTED_FINDINGS)) {
       const r = inv.retirementEvidence;
       L.push(`#### \`${sanitizeRepoText(inv.model)}\` (${sanitizeRepoText(inv.provider)})`);
       L.push('');
@@ -424,6 +430,11 @@ export function renderAuditIssue(input: AuditIssueInput): AuditIssueRender {
       L.push('');
     }
     L.push('</details>');
+    L.push('');
+  }
+
+  if (informationalCount > 0) {
+    L.push(`_${informationalCount} further deprecated model id(s) appear only in catalog, documentation or fixture data. Those are references, not dependencies, and do not affect this issue._`);
     L.push('');
   }
 
