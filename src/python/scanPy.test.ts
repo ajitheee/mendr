@@ -75,20 +75,25 @@ const REGISTRY: LlmRegistry = [
 const CALL_SITE_SOURCE = `
 import google.generativeai as genai
 
-# MUST SWAP (a): model-like keyword argument, in any call.
-def vision(client):
-    return client.chat.completions.create(model="gpt-4-vision-preview")
+# MUST SWAP (a): a model kwarg on a RESOLVED first-party client. The client must
+# be constructed in-file — an injected/unresolved receiver caps at Tier B (G4).
+from openai import OpenAI
+oai = OpenAI()
+
+def vision():
+    return oai.chat.completions.create(model="gpt-4-vision-preview")
 
 # MUST SWAP (c): assignment to a model-named constant, traced to the sink below.
 MODEL_NAME = "gemini-2.0-flash"
 
-def default_call(client):
-    return client.chat.completions.create(model=MODEL_NAME)
+def default_call():
+    return oai.chat.completions.create(model=MODEL_NAME)
 
 # MUST SWAP (d): direct string argument to a known model factory.
 g_model = genai.GenerativeModel("gemini-2.0-flash")
 
-# MUST SWAP (b): value of a model-like dict key, dict PASSED TO A CALL.
+# NO LONGER A SWAP (b): a dict passed to an UNRECOGNIZED callee. client.post
+# is not a provider SDK sink, so this is real but capped at review (G2).
 def ask(client):
     return client.post("/v1/chat", json={"model": "gpt-4-vision-preview"})
 
@@ -124,15 +129,16 @@ describe('python call-site awareness: swap live model arguments, skip data', () 
     expect(text).toContain('create(model="gpt-4o")');
     // (c) model-named constant.
     expect(text).toContain('MODEL_NAME = "gemini-flash-latest"');
-    // (b) model-keyed dict passed to a call.
-    expect(text).toContain('json={"model": "gpt-4o"}');
+    // (b) GUARD G2: the dict goes to client.post, which is NOT a recognized
+    // provider SDK sink. Real, but capped at review — so it stays untouched.
+    expect(text).toContain('json={"model": "gpt-4-vision-preview"}');
 
     // (d) GUARD G1: the model-factory call here sits at MODULE LEVEL, so it runs
     // at import. That makes it REAL — but a genuine request executed at import is
     // capped at review (Tier B), never an unattended swap. It stays untouched.
     expect(text).toContain('genai.GenerativeModel("gemini-2.0-flash")');
 
-    expect(result.siteCount).toBe(3);
+    expect(result.siteCount).toBe(2);
     expect(result.changedFiles).toEqual(['app/llm.py']);
     expect(result.syntaxGate.passed).toBe(true);
   });
@@ -185,10 +191,11 @@ describe('python call-site awareness: swap live model arguments, skip data', () 
     const swaps = matches.filter((m) => m.position === 'model_arg');
     const data = matches.filter((m) => m.position === 'data');
     const capped = matches.filter((m) => m.position === 'surface_capped');
-    // Three swap-eligible positions; the module-level model factory is demoted by
-    // guard G1 to `surface_capped` (real at import, but review-only).
-    expect(swaps).toHaveLength(3);
-    expect(capped).toHaveLength(1);
+    // Two swap-eligible positions remain. The module-level model factory is
+    // demoted by G1 (real at import, review-only), and the dict passed to
+    // client.post by G2 (unrecognized sink) — both `surface_capped`.
+    expect(swaps).toHaveLength(2);
+    expect(capped).toHaveLength(2);
     expect(data).toHaveLength(5);
   });
 

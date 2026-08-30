@@ -13,9 +13,13 @@ import {
   isCatalogKwarg,
   isLegacySdkSink,
   isPlaceholderValue,
+  isProviderModelFactory,
   isRequestModelKwarg,
   matchSdkSink,
   pyContextOf,
+  receiverOf,
+  resolveReceiverSurface,
+  sinkFamily,
   SURFACE_MAX_TIER,
   TIER_A_ELIGIBLE_ENDPOINTS,
   type PySurface,
@@ -440,6 +444,12 @@ export const PY_SURFACE_REASON = 'provider surface is not a verified direct prov
 export const PY_ENDPOINT_REASON = 'the successor is not endpoint-compatibility verified for this endpoint';
 export const PY_LEGACY_SDK_REASON = 'legacy provider SDK — the migration differs from the modern client';
 export const PY_MODULE_REQUEST_REASON = 'a provider request executed at module import — real, but not an unattended swap';
+export const PY_UNRECOGNIZED_SINK_REASON =
+  'the call target is not a recognized provider SDK request — real, but not an unattended swap';
+export const PY_UNRESOLVED_RECEIVER_REASON =
+  'the client object this call is made on could not be resolved to a first-party provider client in this file';
+export const PY_FAMILY_MISMATCH_REASON =
+  'the resolved client belongs to a different provider family than this endpoint';
 export const PY_CATALOG_REASON = 'catalog / stored-metadata construction, not a provider request';
 
 /**
@@ -499,13 +509,16 @@ export function applyPyGuards(
   // G5 — legacy SDK generation caps at review.
   if (isLegacySdkSink(dotted)) return { position: 'surface_capped', reason: PY_LEGACY_SDK_REASON };
 
-  // G2 — a call that is NOT a recognized sink: unknown function or wrapper.
-  // Real enough to report, never swap-eligible.
-  if (call && !sink) {
+  // G2 — a call that is NOT a recognized sink is an unknown function or wrapper.
+  // We only reach here when the positional rules already said `model_arg`, so
+  // ANY such position must be capped: a raw `requests.post(json={"model": ...})`
+  // to a gateway, or a model-like kwarg on an unrecognized callee, is real but
+  // never swap-eligible. Recognized provider model factories are the exception.
+  if (call && !sink && !isProviderModelFactory(dotted)) {
     if (kwName && isModelLikeName(kwName)) {
       return { position: 'usage_unverified', reason: USAGE_UNVERIFIED_REASON };
     }
-    return null;
+    return { position: 'surface_capped', reason: PY_UNRECOGNIZED_SINK_REASON };
   }
 
   if (sink) {
@@ -517,6 +530,25 @@ export function applyPyGuards(
     const surface = ctx?.surface ?? 'unknown_wrapper';
     if (SURFACE_MAX_TIER[surface] !== 'A') {
       return { position: 'surface_capped', reason: `${PY_SURFACE_REASON} (${surface})` };
+    }
+    // G4 (receiver-bound). A file-wide text signal cannot say WHICH object the
+    // call is made on. Without this, one unused import — or the word "openai" in
+    // a DOCSTRING — conferred Tier A on a call whose client is a function
+    // parameter, and `fix-llm --write` then rewrote injected production code.
+    // The receiver must resolve to a single first-party constructor IN THIS FILE,
+    // and its provider family must MATCH the sink's (anthropic evidence must
+    // never authorize an OpenAI chat.completions swap).
+    const receiver = call ? receiverOf(dotted ?? '', sink.suffix) : null;
+    const bound = receiver ? resolveReceiverSurface(literal, receiver) : null;
+    const wanted = sinkFamily(sink.suffix);
+    if (!bound) {
+      return { position: 'surface_capped', reason: PY_UNRESOLVED_RECEIVER_REASON };
+    }
+    if (wanted && bound.family !== wanted) {
+      return {
+        position: 'surface_capped',
+        reason: `${PY_FAMILY_MISMATCH_REASON} (client is ${bound.family}, endpoint is ${wanted})`,
+      };
     }
     // G5 — endpoint family must be one whose successor mapping we can verify.
     if (!TIER_A_ELIGIBLE_ENDPOINTS.has(sink.endpoint)) {
@@ -812,7 +844,7 @@ export function toPyAzureDeploymentMatches(matches: PyLiteralMatch[]): AzureDepl
  */
 export function toPyUsageUnverifiedMatches(matches: PyLiteralMatch[]): UsageUnverifiedLocate[] {
   return matches
-    .filter((m) => m.position === 'usage_unverified')
+    .filter((m) => m.position === 'usage_unverified' || m.position === 'surface_capped')
     .map((m) => ({
       value: m.value,
       replacement: m.deprecation.replacement,

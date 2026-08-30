@@ -200,6 +200,69 @@ def go(fake):
     expect(t.find((x) => x.value === 'gpt-4')?.tier).toBe('B');
   }, 60_000);
 
+  // The minimal pair that defeated the first fix: file-wide TEXT evidence cannot
+  // say WHICH object the call is made on. One unused import flipped a
+  // byte-identical call site from B to A, and `fix-llm --write` then rewrote
+  // injected production code unattended.
+  it('an UNUSED import does not confer Tier A on a call with an injected client', async () => {
+    const t = await tiers('src/services/chat.py', `
+from openai import OpenAI  # noqa: F401  (re-exported for callers' type hints)
+
+
+def ask(client, prompt):
+    return client.chat.completions.create(model="gpt-4", messages=[])
+`);
+    expect(t.find((x) => x.value === 'gpt-4')?.tier).toBe('B');
+  }, 60_000);
+
+  it('a DOCSTRING mentioning the SDK does not confer Tier A', async () => {
+    const t = await tiers('src/services/chat.py', `
+"""Callers pass a client built with: from openai import OpenAI."""
+
+
+def ask(client, prompt):
+    return client.chat.completions.create(model="gpt-4", messages=[])
+`);
+    expect(t.find((x) => x.value === 'gpt-4')?.tier).toBe('B');
+  }, 60_000);
+
+  it('evidence from a DIFFERENT provider family never authorizes the swap', async () => {
+    const t = await tiers('src/services/chat.py', `
+import anthropic
+
+anthropic_client = anthropic.Anthropic()
+
+
+def ask(client, prompt):
+    return client.chat.completions.create(model="gpt-4", messages=[])
+`);
+    expect(t.find((x) => x.value === 'gpt-4')?.tier).toBe('B');
+  }, 60_000);
+
+  it('a client constructed with a base_url override is not `direct`', async () => {
+    const t = await tiers('app.py', `
+from openai import OpenAI
+client = OpenAI(base_url="https://gateway.internal/v1")
+
+def ask():
+    return client.chat.completions.create(model="gpt-4", messages=[])
+`);
+    expect(t.find((x) => x.value === 'gpt-4')?.tier).toBe('B');
+  }, 60_000);
+
+  it('a receiver bound TWICE is ambiguous and capped', async () => {
+    const t = await tiers('app.py', `
+from openai import OpenAI, AzureOpenAI
+client = OpenAI()
+if USE_AZURE:
+    client = AzureOpenAI(api_version="2024-02-01")
+
+def ask():
+    return client.chat.completions.create(model="gpt-4", messages=[])
+`);
+    expect(t.find((x) => x.value === 'gpt-4')?.tier).toBe('B');
+  }, 60_000);
+
   it('but a file with real first-party client evidence still reaches Tier A', async () => {
     const t = await tiers('app.py', `
 from openai import OpenAI

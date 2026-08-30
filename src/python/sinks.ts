@@ -110,6 +110,12 @@ export function isCatalogConstructor(dotted: string | null): boolean {
  * points, unlike metadata constructors, so they are exempt from the
  * catalog-constructor rule. Kept in sync with scanPy's PY_MODEL_FACTORIES.
  */
+/** Is this callee a recognized provider model factory (a real selection point)? */
+export function isProviderModelFactory(dotted: string | null): boolean {
+  if (!dotted) return false;
+  return PROVIDER_MODEL_FACTORIES.has(dotted.split('.').pop() ?? '');
+}
+
 export const PROVIDER_MODEL_FACTORIES: ReadonlySet<string> = new Set([
   'GenerativeModel',
   'ChatOpenAI',
@@ -282,6 +288,12 @@ export function detectPySurface(file: string, text: string): PySurface {
  * Positive evidence that this file imports or constructs a FIRST-PARTY provider
  * client. Azure is excluded deliberately — it is matched earlier and is its own
  * surface.
+ *
+ * WEAK BY CONSTRUCTION: this is whole-file TEXT, so it cannot say WHICH object
+ * the call is made on. It is retained only as a fast negative filter. Tier A is
+ * decided by {@link resolveReceiverSurface}, which binds the actual receiver.
+ * Relying on this alone let a single unused import — or the word "openai" inside
+ * a DOCSTRING — confer Tier A on a call whose client is a function parameter.
  */
 export function hasDirectClientEvidence(text: string): boolean {
   return (
@@ -289,4 +301,84 @@ export function hasDirectClientEvidence(text: string): boolean {
     /\bfrom\s+anthropic\s+import\b|\bimport\s+anthropic\b|\bAnthropic\s*\(|\bAsyncAnthropic\s*\(/.test(text) ||
     /\bfrom\s+google\s+import\s+genai\b|\bimport\s+google\.generativeai\b|\bgenai\.Client\s*\(|\bGenerativeModel\s*\(/.test(text)
   );
+}
+
+// --- receiver-bound surface resolution --------------------------------------
+
+/** Which provider family a sink belongs to. A receiver must MATCH it. */
+export type ProviderFamily = 'openai' | 'anthropic' | 'google';
+
+const SINK_FAMILY: Record<string, ProviderFamily> = {
+  'chat.completions.create': 'openai', 'chat.completions.parse': 'openai',
+  'responses.create': 'openai', 'responses.parse': 'openai',
+  'completions.create': 'openai', 'images.generate': 'openai', 'images.edit': 'openai',
+  'embeddings.create': 'openai', 'audio.speech.create': 'openai',
+  'audio.transcriptions.create': 'openai', 'audio.translations.create': 'openai',
+  'messages.create': 'anthropic', 'messages.stream': 'anthropic',
+  'models.generate_content': 'google', 'models.generate_content_stream': 'google',
+  'models.count_tokens': 'google', 'models.embed_content': 'google',
+};
+
+export const sinkFamily = (suffix: string): ProviderFamily | null => SINK_FAMILY[suffix] ?? null;
+
+/** First-party client constructors, by family. Azure/Bedrock/Vertex are NOT here. */
+const CLIENT_CTOR_FAMILY: Record<string, ProviderFamily> = {
+  OpenAI: 'openai', AsyncOpenAI: 'openai',
+  Anthropic: 'anthropic', AsyncAnthropic: 'anthropic',
+  Client: 'google', GenerativeModel: 'google',
+};
+
+/**
+ * The RECEIVER of a sink call: the dotted segments preceding the matched suffix.
+ * `client.chat.completions.create` -> `client`; `self._c.messages.create` -> `self._c`.
+ */
+export function receiverOf(dotted: string, suffix: string): string | null {
+  if (!dotted.endsWith(suffix)) return null;
+  const head = dotted.slice(0, dotted.length - suffix.length).replace(/\.$/, '');
+  return head.length > 0 ? head : null;
+}
+
+function rootOf(node: PyNode): PyNode {
+  let n: PyNode = node;
+  while (n.parent) n = n.parent;
+  return n;
+}
+
+/**
+ * Resolve what a receiver name is BOUND to, in this file.
+ *
+ * Returns the provider family only when the name has EXACTLY ONE binding whose
+ * right-hand side is a first-party constructor with no base_url/api_base override.
+ * Anything else — a function parameter, a subscript, a call result, a name bound
+ * more than once, or no binding at all — is unresolved, and unresolved must
+ * reduce authority.
+ */
+export function resolveReceiverSurface(
+  literal: PyNode,
+  receiver: string,
+): { family: ProviderFamily } | null {
+  const root = rootOf(literal);
+  let found: ProviderFamily | null = null;
+  let bindings = 0;
+
+  for (const assign of root.descendantsOfType('assignment')) {
+    const left = assign.childForFieldName('left');
+    const right = assign.childForFieldName('right');
+    if (!left || !right) continue;
+    if (left.text.replace(/\s+/g, '') !== receiver) continue;
+    bindings++;
+    if (right.type !== 'call') continue;
+    const dotted = dottedCallee(right);
+    if (!dotted) continue;
+    const ctor = dotted.split('.').pop() ?? '';
+    const family = CLIENT_CTOR_FAMILY[ctor];
+    if (!family) continue;
+    // A base_url / api_base override means the namespace is not provably the
+    // vendor's — that is a proxy surface, not `direct`.
+    const args = right.childForFieldName('arguments');
+    if (args && /\b(base_url|api_base|endpoint|endpoint_url)\s*=/.test(args.text)) continue;
+    found = family;
+  }
+  // Exactly one binding, and it resolved to a first-party constructor.
+  return bindings === 1 && found ? { family: found } : null;
 }

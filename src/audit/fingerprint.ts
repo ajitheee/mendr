@@ -105,7 +105,11 @@ export function toFindings(investigations: readonly ModelInvestigation[]): Findi
         // A merge must never hide a Tier-A occurrence behind a B/C sibling, nor
         // let a B/C sibling inherit a Tier-A one's authority.
         if (!existing.tiers.includes(loc.tier)) existing.tiers.push(loc.tier);
-        existing.tierByLine[loc.line] = loc.tier;
+        // Two occurrences can share a LINE. Keep the LEAST authoritative tier:
+        // a line carrying an unresolved occurrence must never be auto-patched
+        // because a confident sibling shares it. Deterministic, and fail-safe.
+        const prior = existing.tierByLine[loc.line];
+        existing.tierByLine[loc.line] = prior && prior > loc.tier ? prior : loc.tier;
         continue;
       }
       byId.set(id, {
