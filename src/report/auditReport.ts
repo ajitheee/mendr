@@ -1,13 +1,18 @@
 // Human render for the combined `audit` command (MEASURE + LOCATE in one record).
-// The --json output is the ModelInvestigation[] itself, wrapped with meta.
+// The --json output is the ModelInvestigation[] plus meta/coverage/conclusion.
 //
-// This renderer NEVER prints an instruction to change code. It prints the
-// registry replacement as EVIDENCE (with its verdict), the located occurrences
-// as CANDIDATES, and a decision that is `review_required` whenever anything is
-// actionable — because the reader tie-back that would connect a config location
-// to runtime selection does not exist yet.
+// This renderer NEVER prints an instruction to change code, and it prints a
+// COVERAGE MATRIX on every run so the reader always sees what was (and was not)
+// analyzed. A general "clean" conclusion is only reachable through concludeAudit,
+// which requires that BOTH usage and source code were actually analyzed.
 
-import type { LocationRef, ModelInvestigation } from '../audit/investigation.js';
+import {
+  concludeAudit,
+  coverageGaps,
+  type AuditCoverage,
+  type LocationRef,
+  type ModelInvestigation,
+} from '../audit/investigation.js';
 
 /** How usage was obtained — shapes what the runtime line is allowed to claim. */
 export type UsageStatus = 'ok' | 'no_data' | 'not_measured' | 'error';
@@ -17,10 +22,10 @@ export interface AuditMeta {
   to: string | null;
   usageStatus: UsageStatus;
   providers: string[];
-  /** Present only when usageStatus === 'ok'. */
   totalRequests: number | null;
   totalCostUsd: number | null;
-  filesScanned: number;
+  /** What each surface actually covered this run — drives the matrix + conclusion. */
+  coverage: AuditCoverage;
 }
 
 const int = (n: number): string => n.toLocaleString('en-US');
@@ -39,10 +44,13 @@ function deadline(status: string | null, days: number | null, shutdownDate: stri
 }
 
 const roleLabel = (r: LocationRef['role']): string =>
-  r === 'runtime_selector_candidate' ? 'runtime selector candidate'
-    : r === 'catalog_definition' ? 'catalog definition'
-      : r === 'test_fixture' ? 'test/data fixture (not a runtime selector)'
-        : 'catalog reference';
+  r === 'runtime_selector_candidate' ? 'config runtime selector candidate'
+    : r === 'catalog_definition' ? 'config catalog definition'
+      : r === 'test_fixture' ? 'config test/data fixture (not a selector)'
+        : r === 'code_call_site' ? 'code call site (model argument)'
+          : r === 'code_candidate' ? 'code model literal (use not proven)'
+            : r === 'code_reference' ? 'code data reference'
+              : 'config catalog reference';
 
 function locationPhrase(loc: LocationRef): string {
   const surface = loc.providerSurface ? ` (surface: ${loc.providerSurface})` : '';
@@ -58,39 +66,59 @@ function runtimeLine(inv: ModelInvestigation, status: UsageStatus): string {
   if (status === 'ok') return 'Runtime usage: not observed for this model in the audited period';
   if (status === 'no_data') return 'Runtime usage: inconclusive (the usage API returned no rows for this window)';
   if (status === 'error') return 'Runtime usage: not measured (the usage read failed)';
-  return 'Runtime usage: not measured (pass a provider or --fixture to measure exposure)';
+  return 'Runtime usage: not measured (add a provider or --fixture to measure exposure)';
+}
+
+const pad = (s: string, n = 30): string => (s.length >= n ? s : s + ' '.repeat(n - s.length));
+
+/** The coverage matrix — printed on EVERY run so the boundary is always visible. */
+function coverageMatrix(meta: AuditMeta): string[] {
+  const c = meta.coverage;
+  const surf = (label: string, s: { analyzed: boolean; filesScanned: number; note?: string }): string => {
+    const state = !s.analyzed ? 'NOT ANALYZED' : `scanned, ${int(s.filesScanned)} file(s)`;
+    return `  ${pad(label)}${state}${s.note ? ` — ${s.note}` : ''}`;
+  };
+  const usageState =
+    meta.usageStatus === 'ok'
+      ? `measured (${c.usage.provider ?? (meta.providers.join(', ') || 'provider')}), ${int(meta.totalRequests ?? 0)} req, ${usd(meta.totalCostUsd ?? 0)}`
+      : meta.usageStatus === 'no_data'
+        ? 'INCONCLUSIVE — no rows for this window'
+        : meta.usageStatus === 'error'
+          ? 'NOT MEASURED — the usage read failed'
+          : 'NOT MEASURED — add a provider + read-only key';
+  return [
+    'Coverage — what this audit analyzed:',
+    surf('Config (yaml/json/toml/env)', c.config),
+    surf('TypeScript / TSX source', c.typescript),
+    surf('Python source', c.python),
+    `  ${pad('Provider usage & cost')}${usageState}`,
+  ];
 }
 
 /** Render the combined audit for a terminal. */
 export function renderAuditReport(investigations: readonly ModelInvestigation[], meta: AuditMeta): string[] {
   const lines: string[] = [];
-  const period = meta.from && meta.to ? `${meta.from} to ${meta.to}` : 'config-only (no usage window)';
-  lines.push(`mendr audit — ${period}`);
-
-  const usageDesc =
-    meta.usageStatus === 'ok'
-      ? `usage: ${meta.providers.join(', ') || 'none'} — ${int(meta.totalRequests ?? 0)} requests, ${usd(meta.totalCostUsd ?? 0)}`
-      : meta.usageStatus === 'no_data'
-        ? `usage: ${meta.providers.join(', ') || 'provider'} — no rows for this window (inconclusive, NOT a clean result)`
-        : meta.usageStatus === 'error'
-          ? `usage: read failed — reporting config locations only`
-          : 'usage: not measured (config-only)';
-  lines.push(`${usageDesc}; config: ${int(meta.filesScanned)} file(s) scanned`);
+  const period = meta.from && meta.to ? `${meta.from} to ${meta.to}` : 'no usage window';
+  lines.push(`mendr audit (preview) — ${period}`);
+  lines.push('');
+  for (const line of coverageMatrix(meta)) lines.push(line);
+  lines.push('');
 
   const review = investigations.filter((i) => i.decision === 'review_required').length;
   const monitor = investigations.length - review;
+  const conclusion = concludeAudit(meta.coverage, investigations.length);
   lines.push(`${investigations.length} deprecated model(s): ${review} need review, ${monitor} monitor`);
 
   if (investigations.length === 0) {
     lines.push('');
-    // Only claim the ground we actually covered — usage was not necessarily measured.
-    const scope =
-      meta.usageStatus === 'ok'
-        ? 'usage or configuration'
-        : meta.usageStatus === 'no_data'
-          ? 'configuration (usage was inconclusive — no rows for this window)'
-          : 'configuration (usage was not measured — add a provider or --fixture to also check runtime exposure)';
-    lines.push(`No deprecated models found in ${scope} for this audit.`);
+    if (conclusion === 'clean') {
+      lines.push('CLEAN — no deprecated model ids in config, source (TS/TSX/Python), or provider usage for this audit.');
+    } else {
+      lines.push('INCONCLUSIVE — this is NOT a clean bill of health. Zero findings here does not mean zero exposure.');
+      for (const gap of coverageGaps(meta.coverage)) lines.push(`  • ${gap}`);
+    }
+    lines.push('');
+    lines.push(footer());
     return lines;
   }
 
@@ -100,7 +128,6 @@ export function renderAuditReport(investigations: readonly ModelInvestigation[],
     lines.push(`Model: ${inv.model}  (${inv.provider})`);
     lines.push(`Retirement: ${deadline(r.status, r.daysUntil, r.shutdownDate)}${r.sourceUrl ? `  [source: ${r.sourceUrl}]` : ''}`);
 
-    // Replacement is EVIDENCE, never an instruction. Label the verdict plainly.
     if (r.replacement) {
       const verdict = r.replacementVerdict ?? 'unstamped';
       const note =
@@ -116,18 +143,32 @@ export function renderAuditReport(investigations: readonly ModelInvestigation[],
     if (locs.length > 0) {
       const shown = locs.slice(0, 6).map(locationPhrase).join('; ');
       const more = locs.length > 6 ? `; … and ${locs.length - 6} more` : '';
-      lines.push(`Candidate locations: ${shown}${more}`);
+      lines.push(`Located: ${shown}${more}`);
     } else {
-      lines.push('Candidate locations: none located (selector may be in code, a datastore, or an unscanned runtime)');
+      lines.push('Located: nowhere in code or config (selector may be in a datastore, a flag, or an unscanned runtime)');
     }
 
     lines.push(`Decision: ${inv.decision === 'review_required' ? 'REVIEW REQUIRED' : 'MONITOR'}`);
     lines.push(`Reason: ${inv.reason}`);
   }
 
+  // Even WITH findings, name what was not covered — the list is not exhaustive if a surface was skipped.
+  const gaps = coverageGaps(meta.coverage);
+  if (gaps.length > 0) {
+    lines.push('');
+    lines.push('Note — this list is NOT exhaustive; the following were not analyzed:');
+    for (const gap of gaps) lines.push(`  • ${gap}`);
+  }
+
   lines.push('');
-  lines.push('mendr measures exposure and locates CANDIDATE selectors; it does not prove that a configuration');
-  lines.push('location controls runtime selection (no reader tie-back yet), so every change stays under human');
-  lines.push('review. Registry replacements are shown as evidence, never applied.');
+  lines.push(footer());
   return lines;
+}
+
+function footer(): string {
+  return (
+    'mendr locates candidate selectors and code call sites and measures usage; it does not prove that a\n' +
+    'config location controls runtime selection (no reader tie-back yet), so every change stays under human\n' +
+    'review. Registry replacements are shown as evidence, never applied. This command is a preview.'
+  );
 }

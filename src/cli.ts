@@ -10,6 +10,7 @@ import { diffSpecs } from './detect/diffSpec.js';
 import { formatChangeSet } from './detect/changeModel.js';
 import {
   buildRegistryPrefilter,
+  collectTsSourceFiles,
   loadPrefilteredProject,
   loadProject,
 } from './usage/scanRepo.js';
@@ -132,10 +133,12 @@ import type {
 } from './types.js';
 import {
   computeExposure,
+  foldExposure,
   modelDispositionCounts,
   mostOverdueDays,
   nearestUpcomingDeadlineDays,
   occurrenceTierCounts,
+  scanForExposure,
 } from './watch/exposure.js';
 import {
   EXPOSURE_RELATIVE_PATH,
@@ -151,7 +154,7 @@ import { auditUsage } from './recon/usageAudit.js';
 import { fetchProviderUsage, loadFixtureUsage } from './recon/providers.js';
 import type { Provider } from './recon/types.js';
 import { renderUsageReport } from './report/usageReport.js';
-import { buildInvestigations } from './audit/investigation.js';
+import { buildInvestigations, concludeAudit, type AuditCoverage } from './audit/investigation.js';
 import { renderAuditReport, type AuditMeta, type UsageStatus } from './report/auditReport.js';
 
 const program = new Command();
@@ -2673,7 +2676,7 @@ program
   .command('config-scan')
   .argument('[repoPath]', 'local path to the repo (default: current directory)', '.')
   .option('--json', 'emit the machine-readable config exposure on stdout')
-  .description('Locate deprecated model ids in config/IaC files (yaml/json/toml/env) — the LOCATE half of a migration audit')
+  .description('[preview] Locate deprecated model ids in config/IaC files (yaml/json/toml/env) — the LOCATE half of a migration audit')
   .action(async (repoPath: string, opts: { json?: boolean }) => {
     const json = !!opts.json;
     const say = (line = ''): void => {
@@ -2707,7 +2710,7 @@ program
   .option('--api-key-env <NAME>', 'env var holding your read-only provider Admin key', 'MENDR_PROVIDER_KEY')
   .option('--fixture <file>', 'read usage from a JSON fixture instead of the provider API (demo/test — no key)')
   .option('--json', 'emit the machine-readable audit on stdout instead of the human report')
-  .description('Read per-model usage/spend from a provider (read-only key) and report deprecated-model exposure in dollars')
+  .description('[preview] Read per-model usage/spend from a provider (read-only key) and report deprecated-model exposure in dollars')
   .action(
     async (
       provider: string | undefined,
@@ -2800,16 +2803,17 @@ program
   .option('--to <date>', 'ISO end date YYYY-MM-DD (default: today)')
   .option('--api-key-env <NAME>', 'env var holding your read-only provider Admin key', 'MENDR_PROVIDER_KEY')
   .option('--fixture <file>', 'read usage from a JSON fixture instead of the provider API (demo/test — no key)')
+  .option('--skip-source', 'skip the TS/TSX/Python source scan (a CLEAN conclusion then becomes impossible)')
   .option('--json', 'emit the machine-readable investigation record on stdout')
   .description(
-    'One audit: join registry retirement + provider usage/cost (MEASURE) + config locations (LOCATE) into ' +
-      'one per-model investigation record. Every actionable finding stays under human review.',
+    '[preview] One audit: join registry retirement + provider usage/cost (MEASURE) + config AND source-code ' +
+      'locations (LOCATE) into one per-model investigation record. Every actionable finding stays under human review.',
   )
   .action(
     async (
       repoPath: string,
       provider: string | undefined,
-      opts: { from?: string; to?: string; apiKeyEnv?: string; fixture?: string; json?: boolean },
+      opts: { from?: string; to?: string; apiKeyEnv?: string; fixture?: string; skipSource?: boolean; json?: boolean },
     ) => {
       const json = !!opts.json;
       if (/^(https?:\/\/|git@)/i.test(repoPath)) {
@@ -2824,9 +2828,27 @@ program
       const now = new Date();
       const iso = (d: Date): string => d.toISOString().slice(0, 10);
 
-      // --- LOCATE (always runs, never needs a key) ---------------------------
+      // --- LOCATE in CONFIG (always runs, never needs a key) -----------------
       const { matches, filesScanned } = scanConfigFiles(resolved, registry);
       const config = foldConfigExposure(matches);
+
+      // --- LOCATE in SOURCE CODE (TS/TSX + Python; the same scanner fix-llm uses) ---
+      let source: ReturnType<typeof foldExposure> = [];
+      let tsFiles = 0;
+      let pyFiles = 0;
+      let sourceAnalyzed = false;
+      if (!opts.skipSource) {
+        try {
+          tsFiles = collectTsSourceFiles(resolved).length;
+          pyFiles = collectPythonFiles(resolved).length;
+          if (!json) console.error(`Scanning source (${tsFiles} TS/TSX, ${pyFiles} Python file(s))...`);
+          const scan = await scanForExposure(resolved, registry);
+          source = foldExposure(scan.matches);
+          sourceAnalyzed = true;
+        } catch (err) {
+          console.error(`mendr: source scan failed (reporting config + usage only): ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
 
       // --- MEASURE (optional: needs a provider+key, or a --fixture) ----------
       let usageStatus: UsageStatus = 'not_measured';
@@ -2884,12 +2906,21 @@ program
         }
       }
 
-      const investigations = buildInvestigations(usageStatus === 'ok' ? usageAudit : null, config, now);
+      const investigations = buildInvestigations(usageStatus === 'ok' ? usageAudit : null, config, now, source);
+
+      const skipNote = opts.skipSource ? 'skipped (--skip-source)' : undefined;
+      const coverage: AuditCoverage = {
+        config: { analyzed: true, filesScanned },
+        typescript: { analyzed: sourceAnalyzed, filesScanned: tsFiles, note: skipNote },
+        python: { analyzed: sourceAnalyzed, filesScanned: pyFiles, note: skipNote },
+        usage: { analyzed: usageStatus === 'ok', provider: providers[0] ?? null },
+      };
+      const conclusion = concludeAudit(coverage, investigations.length);
 
       if (json) {
         console.log(
           JSON.stringify(
-            { schema: 'mendr-audit/v1', period: { from, to }, usageStatus, providers, filesScanned, investigations },
+            { schema: 'mendr-audit/v2', preview: true, period: { from, to }, usageStatus, providers, coverage, conclusion, investigations },
             null,
             2,
           ),
@@ -2904,7 +2935,7 @@ program
         providers,
         totalRequests: usageAudit ? usageAudit.totalRequests : null,
         totalCostUsd: usageAudit ? usageAudit.totalCostUsd : null,
-        filesScanned,
+        coverage,
       };
       for (const line of renderAuditReport(investigations, meta)) console.log(line);
     },
