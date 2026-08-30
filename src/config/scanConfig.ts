@@ -267,25 +267,38 @@ export function scanConfigText(file: string, text: string, registry: LlmRegistry
   return out;
 }
 
-/** Scan every config file under `repoPath` for deprecated model ids. */
+/**
+ * Scan every config file under `repoPath` for deprecated model ids.
+ *
+ * `filesScanned` counts files COLLECTED; `filesRead` counts files successfully
+ * READ. The two differ when a file is unreadable, and the caller needs the second
+ * number: a scan that collected 80 files and read 0 found nothing because it read
+ * nothing, which must never be reported as "no exposure".
+ */
 export function scanConfigFiles(repoPath: string, registry: LlmRegistry): {
   matches: ConfigMatch[];
   filesScanned: number;
+  filesRead: number;
+  filesUnreadable: number;
 } {
   const abs = resolve(repoPath);
   const files = collectConfigFiles(abs);
   const rel = (f: string): string => relative(abs, f).replace(/\\/g, '/');
   const matches: ConfigMatch[] = [];
+  let filesRead = 0;
+  let filesUnreadable = 0;
   for (const file of files) {
     let text: string;
     try {
       text = readFileSync(file, 'utf8');
+      filesRead++;
     } catch {
+      filesUnreadable++;
       continue;
     }
     for (const m of scanConfigText(rel(file), text, registry)) matches.push(m);
   }
-  return { matches, filesScanned: files.length };
+  return { matches, filesScanned: files.length, filesRead, filesUnreadable };
 }
 
 /** A found deprecated id, aggregated by model, with the registry facts and locations. */

@@ -118,6 +118,8 @@ export interface ModelInvestigation {
 export interface SurfaceCoverage {
   analyzed: boolean;
   filesScanned: number;
+  /** Files actually READ (a collected-but-unreadable file proves nothing). */
+  filesRead?: number;
   failed?: boolean;
   note?: string;
 }
@@ -125,6 +127,11 @@ export interface SurfaceCoverage {
 export interface SourceCoverage extends SurfaceCoverage {
   tsFiles: number;
   pyFiles: number;
+  /**
+   * Source languages PRESENT in the repo that mendr does not analyze. A repo that
+   * is 1% TypeScript and 99% Go must not read as fully covered.
+   */
+  unanalyzedLanguages?: string[];
 }
 
 /** Every surface the audit can cover, and whether it actually ran this time. */
@@ -184,6 +191,16 @@ export function coverageGaps(coverage: AuditCoverage): string[] {
   else if (!coverage.source.analyzed) gaps.push('source code (TS/TSX/Python) was not scanned');
   else if (coverage.source.tsFiles + coverage.source.pyFiles === 0) {
     gaps.push('no TS/TSX or Python source was found to scan (other languages are not analyzed)');
+  }
+  // Present-but-unanalyzed languages are a real coverage hole even when TS/Python
+  // were scanned: a repo that is 1% TypeScript is not a covered repo.
+  const other = coverage.source.unanalyzedLanguages ?? [];
+  if (other.length > 0) {
+    gaps.push(`these languages are present but NOT analyzed: ${other.join(', ')}`);
+  }
+  if (coverage.config.failed) gaps.push('config scan FAILED');
+  else if ((coverage.config.filesRead ?? coverage.config.filesScanned) === 0) {
+    gaps.push('no configuration files were read');
   }
   if (coverage.runtime.failed) gaps.push('the runtime evidence read FAILED');
   else if (!coverage.runtime.connected) {
