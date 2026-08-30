@@ -231,7 +231,13 @@ export function coverageMatrixLines(coverage: AuditCoverage): string[] {
   const configRead = c.config.filesRead ?? c.config.filesScanned;
   rows.push(
     `| Configuration | ${
-      c.config.failed ? '✗ **FAILED**' : configRead === 0 ? '○ **no config files read**' : `✓ ${configRead} files`
+      c.config.failed
+        ? '✗ **FAILED**'
+        : c.config.filesScanned === 0
+          ? '○ not applicable — no supported configuration files found'
+          : configRead === 0
+            ? `✗ **${c.config.filesScanned} files found but NONE could be read**`
+            : `✓ ${configRead} files`
     } |`,
   );
   rows.push(`| Deprecation registry | ✓ ${c.registry.providers.join(', ') || 'none'} |`);

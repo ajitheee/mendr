@@ -86,6 +86,70 @@ describe('audit CLI — the JSON contract the GitHub workflow depends on', () =>
   }, 180_000);
 });
 
+// The product promise: never claim more than the evidence proves.
+describe('audit CLI — claim discipline (release-copy corrections)', () => {
+  it('calls a located call site VERIFIED DIRECT PROVIDER, never "proven production"', async () => {
+    const dir = sampleRepo();
+    const { stdout } = await runAudit([dir]);
+    expect(stdout).toContain('verified direct provider call site');
+    // Source analysis cannot prove production executes anything.
+    expect(stdout).not.toContain('proven production call site');
+  }, 120_000);
+
+  it('states plainly that production usage was not measured', async () => {
+    const dir = sampleRepo();
+    const { stdout } = await runAudit([dir]);
+    expect(stdout).toContain('Production usage was not measured.');
+  }, 120_000);
+
+  it('renders a patch decision as ELIGIBILITY with no change applied', async () => {
+    const dir = sampleRepo();
+    const { stdout } = await runAudit([dir]);
+    expect(stdout).toContain('Decision: PATCH ELIGIBLE');
+    expect(stdout).toContain('Status: No change applied');
+    expect(stdout).toContain('Next action: Review the proposed migration');
+    // The bare lowercase form would read as "mendr patched it".
+    expect(stdout).not.toMatch(/^Decision: patch$/m);
+  }, 120_000);
+
+  it('JSON keeps decision:"patch" but states patchEligible/patchApplied/productionUsage', async () => {
+    const dir = sampleRepo();
+    const { stdout } = await runAudit([dir, '--json']);
+    const inv = JSON.parse(stdout).investigations.find((i: { decision: string }) => i.decision === 'patch');
+    expect(inv).toBeDefined();
+    expect(inv.decision).toBe('patch'); // compatibility
+    expect(inv.patchEligible).toBe(true);
+    expect(inv.patchApplied).toBe(false); // ALWAYS false — the audit applies nothing
+    expect(inv.productionUsage).toBe('not_measured');
+    expect(inv.productionUsageDetail.measured).toBe(false); // detail preserved
+  }, 120_000);
+
+  it('never reports patchApplied true for any finding', async () => {
+    const dir = sampleRepo();
+    const { stdout } = await runAudit([dir, '--json']);
+    for (const inv of JSON.parse(stdout).investigations) {
+      expect(inv.patchApplied).toBe(false);
+    }
+  }, 120_000);
+
+  it('marks configuration NOT APPLICABLE (○) when no supported config files exist', async () => {
+    const dir = sampleRepo(); // has .ts and .go only — no config files
+    const { stdout } = await runAudit([dir, '--json']);
+    expect(JSON.parse(stdout).coverage.config.filesScanned).toBe(0);
+    const human = await runAudit([dir]);
+    expect(human.stdout).toContain('○ Configuration:     not applicable — no supported configuration files found');
+    // A tick is reserved for a surface that actually scanned something.
+    expect(human.stdout).not.toContain('✓ Configuration:     0 files scanned');
+  }, 120_000);
+
+  it('still ticks configuration when real config files were scanned', async () => {
+    const dir = sampleRepo();
+    writeFileSync(join(dir, 'app.yaml'), 'model: gpt-4\n');
+    const { stdout } = await runAudit([dir]);
+    expect(stdout).toMatch(/✓ Configuration:\s+1 files scanned/);
+  }, 120_000);
+});
+
 describe('audit CLI — release guarantees', () => {
   it('needs NO credentials: a full audit runs with every provider key unset', async () => {
     const dir = sampleRepo();

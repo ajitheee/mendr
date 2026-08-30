@@ -182,7 +182,13 @@ export function surfaceCompleted(coverage: AuditCoverage, surface: FindingSurfac
     return coverage.source.analyzed && !coverage.source.failed && coverage.source.tsFiles + coverage.source.pyFiles > 0;
   }
   if (surface === 'config') {
-    return coverage.config.analyzed && !coverage.config.failed && (coverage.config.filesRead ?? coverage.config.filesScanned) > 0;
+    if (!coverage.config.analyzed || coverage.config.failed) return false;
+    // NOT APPLICABLE vs INCOMPLETE. A repo with no supported config files has a
+    // config surface that is trivially complete — there was nothing to read, and
+    // blocking on it would leave such a repo permanently unresolvable. But config
+    // files that EXIST and could not be read is a genuine gap.
+    if (coverage.config.filesScanned === 0) return true;
+    return (coverage.config.filesRead ?? coverage.config.filesScanned) > 0;
   }
   return coverage.runtime.connected && !coverage.runtime.failed;
 }

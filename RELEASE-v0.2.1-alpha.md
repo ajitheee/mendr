@@ -33,7 +33,8 @@ Retirement: deprecated — 54d left (2026-10-23)
 Migration evidence: gpt-4o [registry: verified] (evidence only — not applied here)
 Production usage: not measured
 Reader tie-back: not proven
-Decision: review required
+Decision: REVIEW REQUIRED
+Status: No change applied
 ```
 
 ### GitHub-native report
@@ -82,6 +83,13 @@ outcome and volume. Never prompts, never responses.
   are `exposure_detected`, `no_exposure_in_completed_surfaces`, `inconclusive`,
   and `audit_failed`. A skipped or failed surface stays visible and blocks any
   no-exposure claim.
+- **A located call site is a *verified direct provider call site*, not proof that
+  production runs it.** Source analysis proves the call exists in the code; only
+  runtime evidence can show it executes. The report says "Production usage was not
+  measured" whenever no runtime source is connected.
+- **`patch` means ELIGIBLE, not applied.** The human report renders it as
+  `PATCH ELIGIBLE` / `Status: No change applied`; the JSON carries
+  `patchEligible` and an always-false `patchApplied`.
 - **Nothing is applied.** A `patch` decision means a reviewed PR is possible for a
   verified Tier-A code call site — not that a change was made. There is no
   auto-merge, and PR generation is a separate, gated capability.

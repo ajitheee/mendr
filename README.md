@@ -86,7 +86,8 @@ Retirement: deprecated — 54d left (2026-10-23)
 Migration evidence: gpt-4o [registry: verified] (evidence only — not applied here)
 Production usage: not measured
 Reader tie-back: not proven
-Decision: review required
+Decision: REVIEW REQUIRED
+Status: No change applied
 ```
 
 That is already the risk, the location, the deadline, and the migration evidence

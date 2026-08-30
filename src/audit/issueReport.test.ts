@@ -251,6 +251,28 @@ describe('adversarial-review regressions — resolution must be surface-aware', 
   });
 });
 
+describe('configuration coverage — not applicable vs incomplete', () => {
+  it('no config files at all is NOT APPLICABLE and does not block closing', () => {
+    const none = coverage({ config: { analyzed: true, filesScanned: 0, filesRead: 0 } });
+    expect(surfaceCompleted(none, 'config')).toBe(true); // nothing to read = nothing missing
+    expect(requiredSurfacesCompleted(none)).toBe(true);
+    expect(mayClose(none, 0)).toBe(true);
+    // ...and it is NOT reported as a gap.
+    const r = renderAuditIssue({ investigations: [], coverage: none, sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
+    expect(r.body).toContain('not applicable — no supported configuration files found');
+    expect(r.body).not.toContain('NONE could be read');
+  });
+
+  it('config files that EXIST but could not be read is INCOMPLETE and blocks closing', () => {
+    const unreadable = coverage({ config: { analyzed: true, filesScanned: 12, filesRead: 0 } });
+    expect(surfaceCompleted(unreadable, 'config')).toBe(false);
+    expect(mayClose(unreadable, 0)).toBe(false);
+    const r = renderAuditIssue({ investigations: [], coverage: unreadable, sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
+    expect(r.body).toContain('NONE could be read');
+    expect(r.closable).toBe(false);
+  });
+});
+
 describe('renderAuditIssue', () => {
   it('carries the marker, the exact SHA, the timestamp and the coverage matrix', () => {
     const r = renderAuditIssue({ investigations: configInvestigations(), coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });

@@ -3046,7 +3046,20 @@ program
               sha: opts.sha ?? null,
               coverage,
               conclusion,
-              investigations,
+              // The audit is READ-ONLY: `decision` is kept for compatibility, but
+              // every record states explicitly that nothing was applied, and gives
+              // production usage as a scalar status alongside the detail object.
+              investigations: investigations.map((inv) => ({
+                ...inv,
+                patchEligible: inv.decision === 'patch',
+                patchApplied: false,
+                productionUsage: !inv.productionUsage.measured
+                  ? 'not_measured'
+                  : inv.productionUsage.observed
+                    ? 'observed'
+                    : 'not_observed',
+                productionUsageDetail: inv.productionUsage,
+              })),
               ...(issueRender
                 ? {
                     issue: {

@@ -199,8 +199,10 @@ export function coverageGaps(coverage: AuditCoverage): string[] {
     gaps.push(`these languages are present but NOT analyzed: ${other.join(', ')}`);
   }
   if (coverage.config.failed) gaps.push('config scan FAILED');
-  else if ((coverage.config.filesRead ?? coverage.config.filesScanned) === 0) {
-    gaps.push('no configuration files were read');
+  else if (coverage.config.filesScanned > 0 && (coverage.config.filesRead ?? 0) === 0) {
+    // Only a GAP when config files exist but could not be read. A repo with no
+    // config files at all has nothing missing — that is "not applicable".
+    gaps.push(`${coverage.config.filesScanned} configuration file(s) were found but NONE could be read`);
   }
   if (coverage.runtime.failed) gaps.push('the runtime evidence read FAILED');
   else if (!coverage.runtime.connected) {

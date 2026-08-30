@@ -67,6 +67,24 @@ function productionUsageLine(inv: ModelInvestigation): string {
   return `Production usage: OBSERVED — ${bits.join(', ')}`;
 }
 
+/**
+ * How a decision is spoken to a human. The audit applies nothing, so every branch
+ * says so explicitly: `patch` is ELIGIBILITY, not an action that happened.
+ */
+export function decisionLines(inv: ModelInvestigation): string[] {
+  if (inv.decision === 'patch') {
+    return [
+      'Decision: PATCH ELIGIBLE',
+      'Status: No change applied',
+      'Next action: Review the proposed migration',
+    ];
+  }
+  if (inv.decision === 'review') {
+    return ['Decision: REVIEW REQUIRED', 'Status: No change applied', 'Next action: Human review before any change'];
+  }
+  return ['Decision: MONITOR', 'Status: No change applied', 'Next action: Track until the retirement date'];
+}
+
 const pad = (s: string, n = 18): string => (s.length >= n ? s : s + ' '.repeat(n - s.length));
 
 /**
@@ -86,10 +104,18 @@ export function coverageReport(meta: AuditMeta): string[] {
         ? row('○', 'Source code', `not scanned${src.note ? ` — ${src.note}` : ''}`)
         : row('✓', 'Source code', `${int(src.tsFiles + src.pyFiles)} files scanned (${int(src.tsFiles)} TS/TSX, ${int(src.pyFiles)} Python)`),
   );
+  // `✓` is reserved for a surface that actually scanned something. No supported
+  // config files at all is NOT APPLICABLE; files present but unreadable is a real
+  // gap. Neither may wear a tick.
+  const cfgRead = c.config.filesRead ?? c.config.filesScanned;
   lines.push(
     c.config.failed
       ? row('✗', 'Configuration', 'scan FAILED')
-      : row('✓', 'Configuration', `${int(c.config.filesScanned)} files scanned`),
+      : c.config.filesScanned === 0
+        ? row('○', 'Configuration', 'not applicable — no supported configuration files found')
+        : cfgRead === 0
+          ? row('✗', 'Configuration', `${int(c.config.filesScanned)} files found but NONE could be read`)
+          : row('✓', 'Configuration', `${int(cfgRead)} files scanned`),
   );
   lines.push(row('✓', 'Registry', c.registry.providers.join(', ') || 'none'));
 
@@ -128,9 +154,12 @@ export function plainSummary(investigations: readonly ModelInvestigation[], cove
   if (n === 0) return [];
   const lines = [`We found ${word(n)} retiring AI ${n === 1 ? 'dependency' : 'dependencies'}.`, ''];
 
+  // WORDING DISCIPLINE: source analysis proves a DIRECT PROVIDER CALL SITE exists
+  // in the code. It does not prove production executes it — only runtime evidence
+  // can say that. Never let a located call site read as proven production traffic.
   const kind = (inv: ModelInvestigation): string => {
     if (inv.productionUsage.observed) return 'receiving production traffic';
-    if (inv.locations.selectors.some((s) => s.role === 'code_call_site')) return 'a proven production call site';
+    if (inv.locations.selectors.some((s) => s.role === 'code_call_site')) return 'a verified direct provider call site';
     if (inv.locations.selectors.some((s) => s.role === 'code_candidate')) return 'a possible code call';
     if (inv.locations.selectors.some((s) => s.surface === 'config')) return 'a possible configuration selector';
     if (inv.locations.catalog.some((c) => c.role === 'test_fixture')) return 'test data';
@@ -145,8 +174,8 @@ export function plainSummary(investigations: readonly ModelInvestigation[], cove
   lines.push('');
   lines.push(
     coverage.runtime.connected
-      ? `Runtime measurement: ${RUNTIME_SOURCE_LABEL[coverage.runtime.source ?? 'usage_export']}.`
-      : 'Runtime measurement was not enabled.',
+      ? `Production usage was measured via ${RUNTIME_SOURCE_LABEL[coverage.runtime.source ?? 'usage_export']}.`
+      : 'Production usage was not measured.',
   );
   lines.push('No changes were applied.');
   return lines;
@@ -212,7 +241,9 @@ export function renderAuditReport(investigations: readonly ModelInvestigation[],
     }
     lines.push(productionUsageLine(inv));
     lines.push(`Reader tie-back: ${inv.verification.readerTieBackProven ? 'proven' : 'not proven'}`);
-    lines.push(`Decision: ${inv.decision === 'review' ? 'review required' : inv.decision}`);
+    // The audit is READ-ONLY. "patch" must never read as though mendr changed
+    // something — it means a migration is ELIGIBLE, pending human review.
+    for (const line of decisionLines(inv)) lines.push(line);
     lines.push(`Reason: ${inv.reason}`);
   }
 

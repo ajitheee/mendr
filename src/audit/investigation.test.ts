@@ -309,7 +309,8 @@ describe('renderAuditReport — matches the intended per-model report shape', ()
     expect(out).toContain('Production usage: OBSERVED — 48,210 requests');
     expect(out).toContain('app.yaml:1 — config runtime selector candidate');
     expect(out).toContain('pricing.yaml:1 — config catalog definition');
-    expect(out).toContain('Decision: review required');
+    expect(out).toContain('Decision: REVIEW REQUIRED');
+    expect(out).toContain('Status: No change applied');
   });
 
   it('shows the replacement as registry evidence, never as an instruction to change code', () => {
