@@ -46,6 +46,8 @@ export function classifyOccurrenceTier(m: OccurrenceInput): OccurrenceTier {
   }
   if (m.position === 'usage_unverified') return { tier: 'B', reason: 'usage_unverified' };
   if (m.position === 'azure_deployment') return { tier: 'B', reason: 'platform_blocked' };
+  // A real call site the guards capped at review — never an unattended swap.
+  if (m.position === 'surface_capped') return { tier: 'B', reason: 'platform_blocked' };
   if (m.reason === TYPE_CAST_REASON) return { tier: 'B', reason: 'type_cast_masked' };
   return { tier: 'C' };
 }

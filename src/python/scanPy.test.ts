@@ -124,12 +124,15 @@ describe('python call-site awareness: swap live model arguments, skip data', () 
     expect(text).toContain('create(model="gpt-4o")');
     // (c) model-named constant.
     expect(text).toContain('MODEL_NAME = "gemini-flash-latest"');
-    // (d) model-factory positional argument.
-    expect(text).toContain('genai.GenerativeModel("gemini-flash-latest")');
     // (b) model-keyed dict passed to a call.
     expect(text).toContain('json={"model": "gpt-4o"}');
 
-    expect(result.siteCount).toBe(4);
+    // (d) GUARD G1: the model-factory call here sits at MODULE LEVEL, so it runs
+    // at import. That makes it REAL — but a genuine request executed at import is
+    // capped at review (Tier B), never an unattended swap. It stays untouched.
+    expect(text).toContain('genai.GenerativeModel("gemini-2.0-flash")');
+
+    expect(result.siteCount).toBe(3);
     expect(result.changedFiles).toEqual(['app/llm.py']);
     expect(result.syntaxGate.passed).toBe(true);
   });
@@ -181,7 +184,11 @@ describe('python call-site awareness: swap live model arguments, skip data', () 
 
     const swaps = matches.filter((m) => m.position === 'model_arg');
     const data = matches.filter((m) => m.position === 'data');
-    expect(swaps).toHaveLength(4);
+    const capped = matches.filter((m) => m.position === 'surface_capped');
+    // Three swap-eligible positions; the module-level model factory is demoted by
+    // guard G1 to `surface_capped` (real at import, but review-only).
+    expect(swaps).toHaveLength(3);
+    expect(capped).toHaveLength(1);
     expect(data).toHaveLength(5);
   });
 

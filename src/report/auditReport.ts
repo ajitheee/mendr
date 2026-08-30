@@ -136,6 +136,16 @@ export function coverageReport(meta: AuditMeta): string[] {
         ? row('✓', 'Runtime usage', `${RUNTIME_SOURCE_LABEL[rt.source ?? 'usage_export']}${window}`)
         : row('○', 'Runtime usage', 'not measured — no runtime source connected (optional)'),
   );
+  // Disclose what was deliberately NOT scanned, so an exclusion is visible rather
+  // than silently shrinking coverage.
+  const skipped = c.config.generatedSkipped ?? 0;
+  const exDirs = c.config.excludedDirs ?? [];
+  if (skipped > 0 || exDirs.length > 0) {
+    const bits: string[] = [];
+    if (skipped > 0) bits.push(`${int(skipped)} mendr-generated file(s)`);
+    if (exDirs.length > 0) bits.push(`dirs: ${exDirs.join(', ')}`);
+    lines.push(row('○', 'Generated output', `excluded — ${bits.join('; ')}`));
+  }
   lines.push(row('○', 'Reader tie-back', 'not proven'));
 
   for (const note of rt.notes ?? []) lines.push(`    · ${note}`);

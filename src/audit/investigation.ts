@@ -120,6 +120,10 @@ export interface SurfaceCoverage {
   filesScanned: number;
   /** Files actually READ (a collected-but-unreadable file proves nothing). */
   filesRead?: number;
+  /** Files skipped because MENDR generated them (never re-ingested). */
+  generatedSkipped?: number;
+  /** Generated-artifact directories excluded from the scan, for disclosure. */
+  excludedDirs?: string[];
   failed?: boolean;
   note?: string;
 }

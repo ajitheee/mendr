@@ -49,7 +49,19 @@ import {
  * scanner's sink rule only — see src/python/scanPy.ts). A usage-unverified
  * candidate is never auto-applied and never included in --write.
  */
-export type LiteralPosition = 'model_arg' | 'data' | 'azure_deployment' | 'usage_unverified';
+export type LiteralPosition =
+  | 'model_arg'
+  | 'data'
+  | 'azure_deployment'
+  | 'usage_unverified'
+  /**
+   * A REAL call site whose provider surface, endpoint or SDK generation caps it
+   * at review (Tier B): an Azure deployment, an OpenAI-compatible proxy, a legacy
+   * SDK, an image/embedding endpoint whose successor is not endpoint-verified, or
+   * a genuine SDK request executed at module import. Detection is right; an
+   * unattended swap is not safe.
+   */
+  | 'surface_capped';
 
 /**
  * WHY a data-position literal is data — the purpose-aware refinement of the old

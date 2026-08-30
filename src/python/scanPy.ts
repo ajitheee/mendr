@@ -5,6 +5,22 @@ import { Language, Parser, type Node as PyNode, type Tree } from 'web-tree-sitte
 import type { LlmModelIdDeprecation, LlmRegistry, SourceLocation } from '../types.js';
 import { effectiveVerificationState, isVerified, modelIdEntries } from '../usage/llmRegistry.js';
 import {
+  detectPySurface,
+  dottedCallee,
+  enclosingCall,
+  inCollectionDisplay,
+  isCatalogConstructor,
+  isCatalogKwarg,
+  isLegacySdkSink,
+  isPlaceholderValue,
+  isRequestModelKwarg,
+  matchSdkSink,
+  pyContextOf,
+  SURFACE_MAX_TIER,
+  TIER_A_ELIGIBLE_ENDPOINTS,
+  type PySurface,
+} from './sinks.js';
+import {
   catalogIdsInText,
   fileAnnotation,
   isAzureDeploymentName,
@@ -414,6 +430,103 @@ export function collectPySinkNames(tree: Tree): Set<string> {
   return names;
 }
 
+/** Per-file evidence the guards need: the provider surface of this file. */
+export interface PyGuardContext {
+  surface: PySurface;
+  value?: string;
+}
+
+export const PY_SURFACE_REASON = 'provider surface is not a verified direct provider — a direct replacement is not valid here';
+export const PY_ENDPOINT_REASON = 'the successor is not endpoint-compatibility verified for this endpoint';
+export const PY_LEGACY_SDK_REASON = 'legacy provider SDK — the migration differs from the modern client';
+export const PY_MODULE_REQUEST_REASON = 'a provider request executed at module import — real, but not an unattended swap';
+export const PY_CATALOG_REASON = 'catalog / stored-metadata construction, not a provider request';
+
+/**
+ * G1–G5. Returns a classification when a guard DECIDES the outcome, else null so
+ * the positional rules below still apply.
+ *
+ * Ordering matters: a placeholder is suppressed; catalog construction is data
+ * whatever the keyword looks like; a module-level SDK request is REAL (Python
+ * executes module bodies at import) but capped at review rather than dropped; and
+ * only a qualified sink, on a verified direct surface, at a Tier-A-eligible
+ * endpoint, may stay swap-eligible.
+ */
+export function applyPyGuards(
+  literal: PyNode,
+  ctx?: PyGuardContext,
+): { position: LiteralPosition; purpose?: DataPurpose; reason?: string } | null {
+  // G3 — an obvious placeholder is never a real model id.
+  const raw = ctx?.value ?? plainStringContent(literal)?.value;
+  if (raw && isPlaceholderValue(raw)) {
+    return { position: 'data', purpose: 'generic', reason: 'placeholder value' };
+  }
+
+  const call = enclosingCall(literal);
+  const dotted = call ? dottedCallee(call) : null;
+  const sink = matchSdkSink(dotted);
+
+  // G3 — a catalog/metadata keyword never proves model selection, whatever call
+  // it sits in. `base_model_name="gpt-4"` is a stored-credential lookup key:
+  // rewriting it breaks every workspace whose credentials name that base model.
+  const kwName = literal.parent?.type === 'keyword_argument'
+    ? literal.parent.childForFieldName('name')?.text
+    : undefined;
+  if (kwName && isCatalogKwarg(kwName)) {
+    return { position: 'data', purpose: 'catalog_entry', reason: PY_CATALOG_REASON };
+  }
+
+  // G1/G2 — a constructor building stored metadata is DATA, never a sink.
+  if (call && isCatalogConstructor(dotted)) {
+    return { position: 'data', purpose: 'catalog_entry', reason: PY_CATALOG_REASON };
+  }
+
+  // G1 — executability AND context. Module level is not "unreachable": a
+  // recognized SDK request there fires at import, so it is capped at B. What
+  // earns C is module-level DATA construction.
+  const context = pyContextOf(literal);
+  if (context === 'module_sdk_request') {
+    return { position: 'surface_capped', reason: PY_MODULE_REQUEST_REASON };
+  }
+  // Module-level / class-level DATA CONSTRUCTION is Tier C — but only when the
+  // literal is genuinely inside a call or a collection display. A bare
+  // `MODEL_NAME = "gpt-4"` constant is NOT data: a function below may feed it to
+  // a real SDK call, which is exactly what the existing sink rule decides.
+  if ((context === 'module_data' || context === 'class_body') && (call !== null || inCollectionDisplay(literal))) {
+    return { position: 'data', purpose: 'catalog_entry', reason: PY_CATALOG_REASON };
+  }
+
+  // G5 — legacy SDK generation caps at review.
+  if (isLegacySdkSink(dotted)) return { position: 'surface_capped', reason: PY_LEGACY_SDK_REASON };
+
+  // G2 — a call that is NOT a recognized sink: unknown function or wrapper.
+  // Real enough to report, never swap-eligible.
+  if (call && !sink) {
+    if (kwName && isModelLikeName(kwName)) {
+      return { position: 'usage_unverified', reason: USAGE_UNVERIFIED_REASON };
+    }
+    return null;
+  }
+
+  if (sink) {
+    // G3 — the keyword must be a request-model argument for THIS endpoint.
+    if (kwName && !isRequestModelKwarg(kwName, sink.endpoint)) {
+      return { position: 'data', purpose: 'catalog_entry', reason: PY_CATALOG_REASON };
+    }
+    // G4 — the surface caps the tier. Only a verified direct provider reaches A.
+    const surface = ctx?.surface ?? 'unknown_wrapper';
+    if (SURFACE_MAX_TIER[surface] !== 'A') {
+      return { position: 'surface_capped', reason: `${PY_SURFACE_REASON} (${surface})` };
+    }
+    // G5 — endpoint family must be one whose successor mapping we can verify.
+    if (!TIER_A_ELIGIBLE_ENDPOINTS.has(sink.endpoint)) {
+      return { position: 'surface_capped', reason: `${PY_ENDPOINT_REASON} (${sink.endpoint})` };
+    }
+  }
+
+  return null;
+}
+
 /**
  * Classify a matched model-id literal by its CST position.
  *
@@ -440,11 +553,31 @@ export function collectPySinkNames(tree: Tree): Set<string> {
  * `sinkNames` is the file's {@link collectPySinkNames} result. Omitting it
  * means "no sinks known", so rule (c) can only ever demote — the safe default.
  */
-export function classifyPyLiteral(literal: PyNode, sinkNames?: ReadonlySet<string>): {
+export function classifyPyLiteral(
+  literal: PyNode,
+  sinkNames?: ReadonlySet<string>,
+  ctx?: PyGuardContext,
+): { position: LiteralPosition; purpose?: DataPurpose; reason?: string } {
+  const base = classifyPyPosition(literal, sinkNames);
+  // Guards only DEMOTE. A data position keeps its precise purpose; only a
+  // swap-eligible `model_arg` is re-examined against G1-G5.
+  if (base.position !== 'model_arg') return base;
+  return applyPyGuards(literal, ctx) ?? base;
+}
+
+/** The positional (CST-shape) classification, before any guard. */
+export function classifyPyPosition(
+  literal: PyNode,
+  sinkNames?: ReadonlySet<string>,
+): {
   position: LiteralPosition;
   purpose?: DataPurpose;
   reason?: string;
 } {
+  // GUARDS G1-G5 run AFTER the positional rules, in classifyPyLiteral's wrapper
+  // below. They may only ever DEMOTE a `model_arg`, never invent one and never
+  // overwrite a more precise data purpose (lookup_key / list_entry / comparison).
+
   // Climb through value-transparent wrappers so a literal inside a fallback /
   // parenthesis / conditional branch is judged by its real enclosing position.
   let node: PyNode = literal;
@@ -604,6 +737,8 @@ export async function findPyModelIdLiterals(
     try {
       // The sink rule's evidence set, computed once per file (see above).
       const sinkNames = collectPySinkNames(tree);
+      // G4: the provider surface, resolved once per file, caps every tier below.
+      const surface = detectPySurface(source.path, source.text);
       for (const node of tree.rootNode.descendantsOfType('string')) {
         const content = plainStringContent(node);
         if (!content) continue; // f-string / prefixed / concatenation fragment
@@ -612,7 +747,7 @@ export async function findPyModelIdLiterals(
 
         // Position/purpose belong to the CST node, not the registry entry, so
         // classify once and emit one match per matching record (multimap).
-        const classification = classifyPyLiteral(node, sinkNames);
+        const classification = classifyPyLiteral(node, sinkNames, { surface });
         const line = node.startPosition.row + 1;
         const column = node.startPosition.column + 1;
         for (const deprecation of deprecations) {

@@ -2873,12 +2873,16 @@ program
       // incomplete — never as "found nothing".
       let filesScanned = 0;
       let filesRead = 0;
+      let generatedSkipped = 0;
+      let excludedDirs: string[] = [];
       let configFailed = false;
       let config: ReturnType<typeof foldConfigExposure> = [];
       try {
         const scan = scanConfigFiles(resolved, registry);
         filesScanned = scan.filesScanned;
         filesRead = scan.filesRead;
+        generatedSkipped = scan.generatedSkipped;
+        excludedDirs = scan.excludedDirs;
         config = foldConfigExposure(scan.matches);
         if (scan.filesUnreadable > 0 && !json) {
           console.error(`mendr: ${scan.filesUnreadable} config file(s) could not be read.`);
@@ -2994,7 +2998,7 @@ program
           unanalyzedLanguages: otherLanguages,
           note: opts.skipSource ? 'skipped (--skip-source)' : undefined,
         },
-        config: { analyzed: !configFailed, failed: configFailed, filesScanned, filesRead },
+        config: { analyzed: !configFailed, failed: configFailed, filesScanned, filesRead, generatedSkipped, excludedDirs },
         registry: { providers: registryProviders(registry) },
         runtime: {
           connected: runtime.connected,
