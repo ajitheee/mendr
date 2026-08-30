@@ -1,6 +1,13 @@
 # Changelog
 
-## v0.2.0-alpha — 2026-08-30
+## v0.2.1-alpha — 2026-08-30
+
+**Version note:** the `v0.2.0-alpha` tag was published on 2026-08-27 against an
+earlier commit that predates the `audit` command. Rather than re-point a
+published tag — which would silently change the code under anyone who pinned it,
+exactly the hazard this project warns about — this release ships as
+`v0.2.1-alpha`. `v0.2.0-alpha` remains valid for what it originally contained
+(`usage-audit` / `config-scan`).
 
 **Preview release for design partners.** `v0.1.0` remains the stable line
 (`fix-llm`, `watch`). Everything below is marked preview and may change.
