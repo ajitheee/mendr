@@ -1,53 +1,106 @@
-# v0.2.0-alpha — AI dependency audit (MEASURE + LOCATE)
+# mendr v0.2.0-alpha
 
-Prerelease. Adds the read-only audit pair — `usage-audit` (MEASURE) and
-`config-scan` (LOCATE) — on top of the stable v0.1.0 (`fix-llm`, `watch`). The
-v0.1.0 install instructions remain the recommended path until v0.2.0-alpha is
-verified from a fresh installation.
+**This is an alpha.** It is offered to design partners for evaluation, not as a
+stable release. `v0.1.0` remains the stable line (`fix-llm`, `watch`).
 
-## What's new
-- `mendr usage-audit [provider]` — per-model usage/spend from a provider's
-  read-only usage API, joined to the deprecation registry: which deprecated
-  models actually consume requests and money, with deadlines. Fixture path for
-  demo/test; live OpenAI/Anthropic via a read-only Admin key in an env var.
-- `mendr config-scan [path]` — locate deprecated ids in config/IaC files,
-  separating live selectors (Tier B) from catalog definitions and references
-  (Tier C). Report-only.
+## What this release is
 
-## Test evidence
-- Build: `npm run build` (tsc) — PASS.
-- Suite: **664 tests across 51 files — PASS** (625 baseline + 17 config + 7 recon
-  + 15 positive-path render tests for the MEASURE/LOCATE reports).
-- Registry integrity: `node scripts/validate-registry.mjs` — 0 violations.
-- CI: GitHub Actions `build-and-test` (ubuntu, node 22) — **GREEN**. Landing the
-  suite on Linux CI surfaced a pre-existing eval-gate bug: on POSIX the deadline
-  only signalled the shell, so a `sh -c` that forks the program orphaned it and
-  the run hung. Fixed by group-killing (`detached` + negative-pid SIGKILL); the
-  timeout still reports `inconclusive`, never a behavioral `fail`.
+**Connect your repository and mendr locates retiring AI dependencies. If you
+choose to connect runtime evidence, mendr can also verify which ones are live.**
 
-## Real-repository validation — dify-official-plugins
-- Scanned commit: `c62e9d4771e6a46296547c5a08e9b935f2fbff44`
-- Scale: 3,845 config files scanned, 75 deprecated ids found.
-- **Incorrect Tier B "selectors to change": 148 → 0** after the catalog-definition,
-  provider-surface, and verified-gating fixes. Every one of Dify's 75 ids is now a
-  Tier C catalog reference, which is correct — Dify defines models in catalogs, it
-  does not select them at a call site.
+No provider key is required. The entry requirement is a repository.
 
-## Known limitations (alpha)
-- `config-scan`: report-only (no fix writer); leaf key not full nested key path;
-  no override-precedence resolution; non-direct surfaces (Bedrock/Vertex/Azure/
-  proxy) → provider-ambiguous, no direct replacement; model-definition catalogs
-  are Tier C.
-- `usage-audit`: chat/completions usage only; Google/Vertex not supported; the
-  live fetch follows the documented usage API and should be verified against a
-  live account; an empty live result reports `no_data` / `inconclusive`, not clean.
-- MEASURE does not LOCATE; LOCATE does not verify behavioral safety. The report is
-  the deliverable — a human decides.
-
-## Fresh-install verification
-Before promoting v0.2.0-alpha over the v0.1.0 instructions, verify from a clean
-install:
 ```sh
-npx github:ajitheee/mendr#v0.2.0-alpha config-scan <a-repo>
-npx github:ajitheee/mendr#v0.2.0-alpha usage-audit --fixture examples/usage-fixture.example.json
+mendr audit .
 ```
+
+It scans TypeScript, TSX, Python and supported configuration files, finds
+provider call sites and model identifiers, joins them to the deprecation
+registry, and reports each finding with its location, retirement deadline,
+migration evidence, and a decision:
+
+```
+Deprecated model dependency located
+
+Model: gpt-4
+Location: src/ai/client.ts:42 — code call site (model argument)
+Retirement: deprecated — 54d left (2026-10-23)
+Migration evidence: gpt-4o [registry: verified] (evidence only — not applied here)
+Production usage: not measured
+Reader tie-back: not proven
+Decision: review required
+```
+
+### GitHub-native report
+
+```sh
+mendr audit . --install
+```
+
+Scaffolds a workflow that runs in **your** CI and maintains **one** issue per
+repository — created on the first run, updated in place afterwards, grouping
+findings into new / continuing / resolved, with the exact scanned commit and a
+coverage matrix. Findings have stable semantic identities, so a reformat does not
+churn the issue.
+
+Permissions requested: `contents: read` and `issues: write`. Nothing else. The
+default branch cannot be modified, no PR is opened, and nothing is ever merged.
+
+### Optional runtime evidence — four ways, none required
+
+1. **OpenTelemetry** — `--runtime otel.json --runtime-source otel`
+2. **Your own sanitized usage export** — `--runtime export.csv`
+3. **Your own read-only provider key**, kept in your CI/secret manager
+4. **Gateway / Sentry / Datadog / structured app logs** — `--runtime logs.csv --runtime-source gateway_logs`
+
+mendr reads only provider, model, service, environment, timestamp, request
+outcome and volume. Never prompts, never responses.
+
+## Honest limits — read this before evaluating
+
+- **Live provider reconciliation has NOT been completed.** The OpenAI and
+  Anthropic connectors are available as optional preview functionality, but their
+  request and cost figures have **not yet been validated against a non-empty
+  organization's provider dashboard**. Do not rely on them as measured spend or
+  measured usage. We are not claiming validated live-usage or spending
+  measurement, and this release should not be evaluated on that basis.
+  (The connectors were repaired against the current provider documentation in
+  this release — including an Anthropic endpoint path that previously returned
+  zero rows for every request — but repaired-against-docs is not the same as
+  reconciled-against-a-real-account.)
+- **A config finding is a candidate, not a proven control.** Reader tie-back
+  analysis does not exist yet, so mendr says "candidate selector" and keeps every
+  config finding review-only.
+- **Absence of runtime evidence is not proof a model is unused.** It only means
+  liveness is unknown, or that the connected source did not record it.
+- **mendr never claims a general "clean" result.** The four possible conclusions
+  are `exposure_detected`, `no_exposure_in_completed_surfaces`, `inconclusive`,
+  and `audit_failed`. A skipped or failed surface stays visible and blocks any
+  no-exposure claim.
+- **Nothing is applied.** A `patch` decision means a reviewed PR is possible for a
+  verified Tier-A code call site — not that a change was made. There is no
+  auto-merge, and PR generation is a separate, gated capability.
+- **Language coverage** is TypeScript, TSX and Python. Other languages are not
+  analyzed, and the coverage report says so.
+- **Provider usage reads cover chat/completions only** (not embeddings, images,
+  audio, batch, fine-tuning). Anthropic's usage API reports no request counts.
+  Google/Vertex is not supported.
+
+## For design partners
+
+One command, no credentials, on a repository you care about:
+
+```sh
+npx github:ajitheee/mendr#v0.2.0-alpha audit .
+```
+
+What we would like to learn:
+
+1. Did it find anything you did not already know about?
+2. Was any finding wrong — and specifically, was anything called a *call site*
+   that is not one?
+3. Did it MISS a retiring model you know is in the codebase?
+4. Is the report readable enough to act on without asking us?
+5. Would you connect a runtime source, and which of the four would you accept?
+
+Everything runs locally. Nothing is uploaded, and no key is ever sent to us.
