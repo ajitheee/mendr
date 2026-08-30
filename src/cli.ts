@@ -155,6 +155,8 @@ import { fetchProviderUsage, loadFixtureUsage, providerCoverageNotes } from './r
 import type { Provider } from './recon/types.js';
 import { renderUsageReport } from './report/usageReport.js';
 import { buildInvestigations, concludeAudit, type AuditCoverage } from './audit/investigation.js';
+import { EMPTY_STATE, parseAuditState, renderAuditIssue } from './audit/issueReport.js';
+import { installAuditWorkflow } from './audit/installAuditWorkflow.js';
 import {
   loadRuntimeEvidenceFile,
   runtimeEvidenceFromUsage,
@@ -2817,6 +2819,11 @@ program
   .option('--api-key-env <NAME>', 'env var holding your read-only provider Admin key', 'MENDR_PROVIDER_KEY')
   .option('--fixture <file>', 'read usage from a JSON fixture (demo/test — no key)')
   .option('--skip-source', 'skip the TS/TSX/Python source scan (the audit then cannot conclude anything)')
+  .option('--sha <sha>', 'the exact commit being scanned (recorded in the GitHub issue report)')
+  .option('--previous-body <file>', 'the resident issue body from the last run, to diff new/continuing/resolved')
+  .option('--issue-body <file>', 'write the GitHub issue body (markdown) to this file')
+  .option('--install', 'scaffold .github/workflows/mendr-audit.yml (runs in YOUR CI; no provider key)')
+  .option('--force', 'with --install, overwrite an existing workflow file')
   .option('--json', 'emit the machine-readable investigation record on stdout')
   .description(
     '[preview] Audit a repository for retiring AI dependencies. Needs only the REPO: scans TS/TSX/Python ' +
@@ -2831,9 +2838,23 @@ program
       opts: {
         runtime?: string; runtimeSource?: string; from?: string; to?: string;
         apiKeyEnv?: string; fixture?: string; skipSource?: boolean; json?: boolean;
+        sha?: string; previousBody?: string; issueBody?: string; install?: boolean; force?: boolean;
       },
     ) => {
       const json = !!opts.json;
+      if (opts.install) {
+        const target = resolveRepoOrExit(repoPath);
+        const res = installAuditWorkflow(target, !!opts.force);
+        if (!res.written) {
+          console.error(`mendr: ${res.path} ${res.reason}`);
+          process.exit(1);
+          return;
+        }
+        console.log(`Wrote ${res.path}`);
+        console.log('It runs in YOUR CI, needs no provider key, and asks only for contents:read + issues:write.');
+        console.log('Commit it, and the first run opens one audit issue that later runs update in place.');
+        return;
+      }
       if (/^(https?:\/\/|git@)/i.test(repoPath)) {
         console.error(
           'mendr: audit needs a LOCAL path — remote URLs are not supported. Clone the repo first:\n' +
@@ -2960,10 +2981,59 @@ program
       };
       const conclusion = concludeAudit(coverage, investigations.length);
 
+      // --- GitHub-native single-issue report (optional) ----------------------
+      let issueRender: ReturnType<typeof renderAuditIssue> | null = null;
+      if (opts.issueBody || opts.previousBody || opts.sha) {
+        let previous = EMPTY_STATE;
+        if (opts.previousBody) {
+          try {
+            previous = parseAuditState(readFileSync(opts.previousBody, 'utf8'));
+          } catch {
+            // A missing prior-body file is the FIRST run, not an error.
+            previous = EMPTY_STATE;
+          }
+        }
+        issueRender = renderAuditIssue({
+          investigations,
+          coverage,
+          sha: opts.sha ?? 'unknown',
+          scannedAt: now.toISOString(),
+          previous,
+        });
+        if (opts.issueBody) {
+          try {
+            writeFileSync(opts.issueBody, issueRender.body, 'utf8');
+          } catch (err) {
+            console.error(`mendr: could not write --issue-body: ${err instanceof Error ? err.message : String(err)}`);
+            process.exit(1);
+            return;
+          }
+        }
+      }
+
       if (json) {
         console.log(
           JSON.stringify(
-            { schema: 'mendr-audit/v3', preview: true, period: { from, to }, coverage, conclusion, investigations },
+            {
+              schema: 'mendr-audit/v3',
+              preview: true,
+              period: { from, to },
+              sha: opts.sha ?? null,
+              coverage,
+              conclusion,
+              investigations,
+              ...(issueRender
+                ? {
+                    issue: {
+                      openCount: issueRender.openCount,
+                      newCount: issueRender.newCount,
+                      resolvedCount: issueRender.resolvedCount,
+                      closable: issueRender.closable,
+                      conclusion: issueRender.conclusion,
+                    },
+                  }
+                : {}),
+            },
             null,
             2,
           ),
