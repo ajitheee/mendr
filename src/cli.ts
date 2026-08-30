@@ -155,7 +155,13 @@ import { fetchProviderUsage, loadFixtureUsage, providerCoverageNotes } from './r
 import type { Provider } from './recon/types.js';
 import { renderUsageReport } from './report/usageReport.js';
 import { buildInvestigations, concludeAudit, type AuditCoverage } from './audit/investigation.js';
-import { renderAuditReport, type AuditMeta, type UsageStatus } from './report/auditReport.js';
+import {
+  loadRuntimeEvidenceFile,
+  runtimeEvidenceFromUsage,
+  NO_RUNTIME_EVIDENCE,
+  type RuntimeSource,
+} from './runtime/evidence.js';
+import { renderAuditReport, type AuditMeta } from './report/auditReport.js';
 
 const program = new Command();
 
@@ -2803,22 +2809,29 @@ program
 program
   .command('audit')
   .argument('[repoPath]', 'local path to the repo (default: current directory)', '.')
-  .argument('[provider]', 'openai | anthropic | google — measure live usage (omit for config-only, or use --fixture)')
-  .option('--from <date>', 'ISO start date YYYY-MM-DD (default: 30 days ago)')
-  .option('--to <date>', 'ISO end date YYYY-MM-DD (default: today)')
+  .argument('[provider]', 'OPTIONAL: openai | anthropic — read usage with your own read-only key (see --runtime for key-free options)')
+  .option('--runtime <file>', 'OPTIONAL runtime evidence, no credentials: a sanitized OTel/usage-export/gateway-log CSV or JSON')
+  .option('--runtime-source <kind>', 'label the --runtime file: otel | usage_export | gateway_logs', 'usage_export')
+  .option('--from <date>', 'ISO start date YYYY-MM-DD (default: 30 days ago) — only with a provider')
+  .option('--to <date>', 'ISO end date YYYY-MM-DD (default: today) — only with a provider')
   .option('--api-key-env <NAME>', 'env var holding your read-only provider Admin key', 'MENDR_PROVIDER_KEY')
-  .option('--fixture <file>', 'read usage from a JSON fixture instead of the provider API (demo/test — no key)')
-  .option('--skip-source', 'skip the TS/TSX/Python source scan (a CLEAN conclusion then becomes impossible)')
+  .option('--fixture <file>', 'read usage from a JSON fixture (demo/test — no key)')
+  .option('--skip-source', 'skip the TS/TSX/Python source scan (the audit then cannot conclude anything)')
   .option('--json', 'emit the machine-readable investigation record on stdout')
   .description(
-    '[preview] One audit: join registry retirement + provider usage/cost (MEASURE) + config AND source-code ' +
-      'locations (LOCATE) into one per-model investigation record. Every actionable finding stays under human review.',
+    '[preview] Audit a repository for retiring AI dependencies. Needs only the REPO: scans TS/TSX/Python ' +
+      'source + config, joins the deprecation registry, and locates every occurrence. Runtime evidence ' +
+      '(is it actually live?) is OPTIONAL — connect OTel/an export/gateway logs via --runtime, or your own ' +
+      'read-only key via [provider]. Nothing is ever changed.',
   )
   .action(
     async (
       repoPath: string,
       provider: string | undefined,
-      opts: { from?: string; to?: string; apiKeyEnv?: string; fixture?: string; skipSource?: boolean; json?: boolean },
+      opts: {
+        runtime?: string; runtimeSource?: string; from?: string; to?: string;
+        apiKeyEnv?: string; fixture?: string; skipSource?: boolean; json?: boolean;
+      },
     ) => {
       const json = !!opts.json;
       if (/^(https?:\/\/|git@)/i.test(repoPath)) {
@@ -2857,25 +2870,37 @@ program
         }
       }
 
-      // --- MEASURE (optional: needs a provider+key, or a --fixture) ----------
-      let usageStatus: UsageStatus = 'not_measured';
-      let usageAudit = null;
+      // --- RUNTIME EVIDENCE (OPTIONAL — four ways in, none required) ---------
+      // The default audit connects nothing: liveness is reported as unknown, never
+      // as "unused". A customer opts in with whichever they are comfortable with.
+      let runtime = NO_RUNTIME_EVIDENCE;
+      let runtimeFailed = false;
       let from: string | null = null;
       let to: string | null = null;
-      let providers: string[] = [];
 
-      const wantUsage = !!opts.fixture || provider !== undefined;
-      if (wantUsage) {
-        to = opts.to ?? iso(now);
-        from = opts.from ?? iso(new Date(now.getTime() - 30 * 86_400_000));
-        try {
+      try {
+        if (opts.runtime) {
+          // Options 1/2/4: a sanitized file the CUSTOMER produced. No credentials.
+          const kind = opts.runtimeSource as RuntimeSource | undefined;
+          const src: RuntimeSource =
+            kind === 'otel' || kind === 'gateway_logs' || kind === 'usage_export' ? kind : 'usage_export';
+          runtime = loadRuntimeEvidenceFile(opts.runtime, src);
+          if (!json) console.error(`Read runtime evidence from ${opts.runtime} (${runtime.observations.length} model(s)).`);
+        } else if (opts.fixture || provider !== undefined) {
+          // Option 3: the customer's OWN read-only key, kept in their CI/secret manager.
+          to = opts.to ?? iso(now);
+          from = opts.from ?? iso(new Date(now.getTime() - 30 * 86_400_000));
           let rows;
+          let usedProvider: Provider | null = null;
           if (opts.fixture) {
             rows = loadFixtureUsage(opts.fixture);
-            providers = [...new Set(rows.map((r) => r.provider))].sort();
           } else {
             if (provider !== 'openai' && provider !== 'anthropic' && provider !== 'google') {
-              console.error('mendr: pass a provider (openai | anthropic | google), use --fixture, or omit both for a config-only audit.');
+              console.error(
+                'mendr: a provider must be openai | anthropic | google.\n' +
+                  'You do NOT need one — `mendr audit .` works on the repository alone. To prove which models are\n' +
+                  'live without sharing credentials, use --runtime <file> with an OTel/usage-export/gateway-log file.',
+              );
               process.exit(2);
               return;
             }
@@ -2883,39 +2908,37 @@ program
             const apiKey = process.env[keyEnv];
             if (!apiKey) {
               console.error(
-                `mendr: no provider key found in $${keyEnv}. Set a READ-ONLY usage/cost Admin key there, e.g.\n` +
-                  `  $env:${keyEnv}="sk-admin-..."   (PowerShell)\n` +
-                  'The key reads usage data only; mendr never invokes a model, moves money, or reads prompts.',
+                `mendr: no provider key found in $${keyEnv}. This is OPTIONAL — \`mendr audit .\` already works.\n` +
+                  `If you want runtime proof: set a READ-ONLY usage key ($env:${keyEnv}="sk-admin-...") and keep it in\n` +
+                  'your own CI/secret manager, or avoid credentials entirely with --runtime <sanitized file>.',
               );
               process.exit(2);
               return;
             }
-            providers = [provider];
+            usedProvider = provider as Provider;
             console.error(`Reading ${provider} usage ${from}..${to} (read-only)...`);
-            rows = await fetchProviderUsage(provider as Provider, apiKey, { start: from, end: to });
+            rows = await fetchProviderUsage(usedProvider, apiKey, { start: from, end: to });
           }
-          if (!opts.fixture && rows.length === 0) {
-            // Empty live result is inconclusive, NOT a clean measure — say so, but
-            // still deliver the LOCATE half below.
-            usageStatus = 'no_data';
+          if (rows.length === 0 && !opts.fixture) {
+            runtimeFailed = false;
             console.error(
-              'mendr: the usage API returned zero rows for this window — a new/empty org, or all traffic is in a ' +
-                'usage category not yet queried (only chat/completions is). This part of the audit is inconclusive.',
+              'mendr: the usage API returned zero rows for this window — a new/empty org, or traffic in a usage ' +
+                'category not queried. Runtime stays UNMEASURED rather than being read as "no usage".',
             );
           } else {
-            usageStatus = 'ok';
-            usageAudit = auditUsage(rows, registry, now, { start: from, end: to });
+            const audit = auditUsage(rows, registry, now, { start: from, end: to });
+            const notes = usedProvider ? providerCoverageNotes(usedProvider) : [];
+            runtime = runtimeEvidenceFromUsage(audit, notes);
           }
-        } catch (err) {
-          usageStatus = 'error';
-          process.exitCode = 1;
-          console.error(`mendr: could not read usage (reporting config locations only): ${err instanceof Error ? err.message : String(err)}`);
         }
+      } catch (err) {
+        runtimeFailed = true;
+        process.exitCode = 1;
+        console.error(`mendr: runtime evidence read FAILED: ${err instanceof Error ? err.message : String(err)}`);
       }
 
-      const investigations = buildInvestigations(usageStatus === 'ok' ? usageAudit : null, config, now, source);
+      const investigations = buildInvestigations(runtime, config, now, source, registry);
 
-      const skipNote = opts.skipSource ? 'skipped (--skip-source)' : sourceFailed ? undefined : undefined;
       const coverage: AuditCoverage = {
         source: {
           analyzed: sourceAnalyzed,
@@ -2923,15 +2946,15 @@ program
           filesScanned: tsFiles + pyFiles,
           tsFiles,
           pyFiles,
-          note: skipNote,
+          note: opts.skipSource ? 'skipped (--skip-source)' : undefined,
         },
         config: { analyzed: true, filesScanned },
         registry: { providers: registryProviders(registry) },
-        usage: {
-          analyzed: usageStatus === 'ok',
-          provider: providers[0] ?? null,
-          failed: usageStatus === 'error',
-          notes: wantUsage && providers[0] ? providerCoverageNotes(providers[0] as Provider) : undefined,
+        runtime: {
+          connected: runtime.connected,
+          source: runtime.source,
+          failed: runtimeFailed,
+          notes: runtime.notes.length > 0 ? runtime.notes : undefined,
         },
         readerTieBack: { proven: false },
       };
@@ -2940,7 +2963,7 @@ program
       if (json) {
         console.log(
           JSON.stringify(
-            { schema: 'mendr-audit/v2', preview: true, period: { from, to }, usageStatus, providers, coverage, conclusion, investigations },
+            { schema: 'mendr-audit/v3', preview: true, period: { from, to }, coverage, conclusion, investigations },
             null,
             2,
           ),
@@ -2948,15 +2971,7 @@ program
         return;
       }
 
-      const meta: AuditMeta = {
-        from,
-        to,
-        usageStatus,
-        providers,
-        totalRequests: usageAudit ? usageAudit.totalRequests : null,
-        totalCostUsd: usageAudit ? usageAudit.totalCostUsd : null,
-        coverage,
-      };
+      const meta: AuditMeta = { from, to, coverage };
       for (const line of renderAuditReport(investigations, meta)) console.log(line);
     },
   );

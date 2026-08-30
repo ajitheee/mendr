@@ -1,30 +1,36 @@
-// The canonical evidence record (roadmap #3) — ONE investigation per deprecated
-// model, joining every surface mendr has, so `watch`, `fix-llm`, and `audit`
-// cannot disagree: the source-code classification comes from the SAME scanner
-// (scanForExposure -> classifyOccurrenceTier) that watch/fix-llm use.
+// The canonical evidence record — ONE investigation per deprecated model, joining
+// every surface mendr has, so `watch`, `fix-llm`, and `audit` cannot disagree: the
+// source-code classification comes from the SAME scanner (scanForExposure ->
+// classifyOccurrenceTier) that watch/fix-llm use.
 //
-//   Source scan         TS / TSX / Python literals -> tier A/B/C
-//   Configuration scan  yaml/json/toml/env selectors vs catalog/data
-//   Usage measurement   provider requests + cost (MEASURE)
-//   Registry join       retirement evidence + successor verdict
+//   Source scan         TS / TSX / Python literals -> tier A/B/C   [always]
+//   Configuration scan  yaml/json/toml/env selectors vs catalog     [always]
+//   Registry join       retirement evidence + successor verdict     [always]
+//   Runtime evidence    otel | export | provider API | gateway logs [OPTIONAL]
 //   Decision engine     patch | review | monitor
+//
+// ENTRY REQUIREMENT IS A REPOSITORY, NOT A KEY. The first four rows stand alone:
+// they find the risk, the location, the deadline, and the migration evidence, and
+// state plainly that production usage is unknown. Runtime evidence is the optional
+// upgrade that turns "declared here" into "and it is live".
 //
 // HONESTY INVARIANTS baked in here, not left to the renderer:
 //   * A CONFIG match is a "runtime selector candidate", never a proven control —
 //     readerTieBackProven is ALWAYS false (no config data-flow analysis yet).
 //   * A CODE match keeps the fix scanner's own verdict: a proven model argument
-//     ("code call site", Tier A/B) vs an unproven literal ("code candidate",
-//     Tier-B usage_unverified) vs data ("code reference", Tier C). We never
-//     upgrade a candidate to a call site.
+//     ("code call site") vs an unproven literal ("code candidate") vs data
+//     ("code reference"). We never upgrade a candidate to a call site.
+//   * Absence of runtime evidence is never read as "not live" — only as unknown.
 //   * `patch` is emitted ONLY for a Tier-A code call site with a VERIFIED
-//     replacement — the one case whose data flow the scanner actually proved.
-//     Config is never `patch`. A `patch` is a reviewed PR, never an auto-merge.
-//   * The registry replacement is EVIDENCE only; no decision instructs a swap.
+//     successor. Config is never `patch`. A patch is a reviewed PR, never a merge.
 
 import type { ConfigExposure, ConfigMatch } from '../config/scanConfig.js';
-import type { ExposureFinding, UsageAudit } from '../recon/types.js';
 import type { ExposedModel, ExposureOccurrence } from '../watch/exposure.js';
+import type { RuntimeEvidence, RuntimeSource } from '../runtime/evidence.js';
+import type { LlmRegistry } from '../types.js';
 import type { Tier } from '../report/tiers.js';
+import { displayEntryId } from '../registry/entryId.js';
+import { effectiveVerificationState, modelIdEntries } from '../usage/llmRegistry.js';
 import { daysUntil } from '../watch/exposure.js';
 
 /** The per-model decision. `patch` = a verified auto-fix exists for a code call site. */
@@ -32,15 +38,14 @@ export type AuditDecision = 'patch' | 'review' | 'monitor';
 
 /** What ROLE a located occurrence plays. A candidate is never a proven control. */
 export type LocationRole =
-  | 'runtime_selector_candidate' // config: model-like key = exact deprecated id
-  | 'catalog_definition' // config: a model-definition catalog file
-  | 'catalog_reference' // config: data reference
-  | 'test_fixture' // config: serialized data in a test/fixture path
-  | 'code_call_site' // code: a proven model argument (fix scanner Tier A / model_arg B)
-  | 'code_candidate' // code: a model-like literal whose use is NOT proven (Tier B usage_unverified)
-  | 'code_reference'; // code: data position (Tier C)
+  | 'runtime_selector_candidate'
+  | 'catalog_definition'
+  | 'catalog_reference'
+  | 'test_fixture'
+  | 'code_call_site'
+  | 'code_candidate'
+  | 'code_reference';
 
-/** Which surface an occurrence was located on. */
 export type LocationSurface = 'config' | 'code';
 
 /** One located occurrence of the model id, with its (unproven-by-default) role. */
@@ -67,14 +72,24 @@ export interface RetirementEvidence {
   sourceUrl: string | null;
 }
 
-/** What the provider usage API observed for this model over the period. */
-export interface RuntimeExposure {
+/**
+ * Whether this model is actually being called in production. `measured: false` is
+ * the DEFAULT and is not a defect — it means the customer connected no runtime
+ * source, so liveness is unknown (never "unused").
+ */
+export interface ProductionUsage {
   measured: boolean;
+  source: RuntimeSource | null;
   observed: boolean;
+  /** False when the source reports no request counts (e.g. Anthropic's usage API). */
+  requestsReported: boolean;
   requests: number;
-  inputTokens: number;
-  outputTokens: number;
-  costUsd: number;
+  failures: number;
+  lastSeen: string | null;
+  services: string[];
+  environments: string[];
+  /** Optional and secondary — mendr is not a cost dashboard. */
+  costUsd: number | null;
 }
 
 /** One model's full investigation record — the join of every surface. */
@@ -83,36 +98,30 @@ export interface ModelInvestigation {
   provider: string;
   model: string;
   retirementEvidence: RetirementEvidence;
-  runtimeExposure: RuntimeExposure;
+  productionUsage: ProductionUsage;
   locations: {
-    /** Actionable — config selector candidates + code call sites/candidates. */
     selectors: LocationRef[];
-    /** Informational — catalog definitions, references, data, fixtures. */
     catalog: LocationRef[];
   };
-  /** Migration compatibility — not evaluated in this build (no sandbox verify yet). */
   compatibility: { checked: false; result: null };
   verification: {
     replacementVerdict: string | null;
-    /** ALWAYS false: no CONFIG reader tie-back analysis exists yet (roadmap #5). */
+    /** ALWAYS false: no CONFIG reader tie-back analysis exists yet. */
     readerTieBackProven: false;
   };
   decision: AuditDecision;
   reason: string;
 }
 
-// --- coverage + conclusion (the "no false clean" gate) ----------------------
+// --- coverage + conclusion --------------------------------------------------
 
-/** What was analyzed on one surface, and how much. */
 export interface SurfaceCoverage {
   analyzed: boolean;
   filesScanned: number;
-  /** True when the surface was attempted but threw — distinct from skipped. */
   failed?: boolean;
   note?: string;
 }
 
-/** Source is one surface in the report, but two scanners underneath. */
 export interface SourceCoverage extends SurfaceCoverage {
   tsFiles: number;
   pyFiles: number;
@@ -123,19 +132,18 @@ export interface AuditCoverage {
   source: SourceCoverage;
   config: SurfaceCoverage;
   registry: { providers: string[] };
-  usage: {
-    analyzed: boolean;
-    provider: string | null;
+  /** OPTIONAL by design — an unconnected runtime is disclosed, not a failure. */
+  runtime: {
+    connected: boolean;
+    source: RuntimeSource | null;
     failed?: boolean;
     note?: string;
-    /** What the provider read does NOT cover (unqueried categories, missing fields). */
     notes?: string[];
   };
-  /** Structurally always unproven — surfaced so the reader never assumes it. */
   readerTieBack: { proven: false };
 }
 
-/** The only four verdicts an audit may reach. `clean` is deliberately NOT one. */
+/** The only four verdicts an audit may reach. A general `clean` is not one. */
 export type AuditConclusion =
   | 'exposure_detected'
   | 'no_exposure_in_completed_surfaces'
@@ -143,36 +151,44 @@ export type AuditConclusion =
   | 'audit_failed';
 
 function anySurfaceFailed(c: AuditCoverage): boolean {
-  return !!c.source.failed || !!c.config.failed || !!c.usage.failed;
+  return !!c.source.failed || !!c.config.failed || !!c.runtime.failed;
 }
 
 /**
  * The conclusion gate, computed in ONE place so no renderer can route around it.
- *   * exposure_detected — at least one deprecated model was located/observed.
- *   * audit_failed — a surface was attempted and threw; results are unreliable.
- *   * no_exposure_in_completed_surfaces — 0 findings AND both skippable surfaces
- *     (source + usage) actually completed. Named for exactly what it claims — no
- *     exposure in the surfaces that finished — never a general "clean".
- *   * inconclusive — 0 findings but source or usage was skipped/empty, so silence
- *     proves nothing.
- * A general `clean` is unreachable when a surface was skipped or failed.
+ *
+ *   exposure_detected                  — at least one deprecated model located/observed.
+ *   audit_failed                       — a surface was attempted and threw.
+ *   no_exposure_in_completed_surfaces  — 0 findings AND the source scan completed.
+ *                                        Named for exactly what it claims; runtime
+ *                                        being unconnected is disclosed in coverage,
+ *                                        and does NOT downgrade this, because runtime
+ *                                        is optional by design.
+ *   inconclusive                       — 0 findings but the CORE surface (source) did
+ *                                        not run or found nothing to scan, so silence
+ *                                        proves nothing.
+ *
+ * A general "clean" is unreachable in every branch.
  */
 export function concludeAudit(coverage: AuditCoverage, findingsCount: number): AuditConclusion {
   if (findingsCount > 0) return 'exposure_detected';
   if (anySurfaceFailed(coverage)) return 'audit_failed';
   const sourceComplete = coverage.source.analyzed && coverage.source.tsFiles + coverage.source.pyFiles > 0;
-  const usageComplete = coverage.usage.analyzed;
-  return sourceComplete && usageComplete ? 'no_exposure_in_completed_surfaces' : 'inconclusive';
+  return sourceComplete ? 'no_exposure_in_completed_surfaces' : 'inconclusive';
 }
 
-/** The surfaces that were NOT completed — why a zero-finding run is inconclusive. */
+/** The limits on this run — what a zero-finding result does NOT prove. */
 export function coverageGaps(coverage: AuditCoverage): string[] {
   const gaps: string[] = [];
-  if (coverage.usage.failed) gaps.push('provider usage read FAILED');
-  else if (!coverage.usage.analyzed) gaps.push('provider usage/cost was not measured (add a provider + a read-only key)');
   if (coverage.source.failed) gaps.push('source scan FAILED');
   else if (!coverage.source.analyzed) gaps.push('source code (TS/TSX/Python) was not scanned');
-  else if (coverage.source.tsFiles + coverage.source.pyFiles === 0) gaps.push('no TS/TSX or Python source was found to scan (other languages are not analyzed)');
+  else if (coverage.source.tsFiles + coverage.source.pyFiles === 0) {
+    gaps.push('no TS/TSX or Python source was found to scan (other languages are not analyzed)');
+  }
+  if (coverage.runtime.failed) gaps.push('the runtime evidence read FAILED');
+  else if (!coverage.runtime.connected) {
+    gaps.push('runtime measurement was not enabled — whether these models receive production traffic is unknown');
+  }
   return gaps;
 }
 
@@ -188,19 +204,12 @@ function toConfigLocation(m: ConfigMatch): LocationRef {
           ? 'test_fixture'
           : 'catalog_reference';
   return {
-    file: m.file,
-    line: m.line,
-    column: m.column,
-    key: m.key,
-    value: m.value,
-    role,
-    surface: 'config',
-    tier: m.tier,
-    providerSurface: m.providerSurface,
+    file: m.file, line: m.line, column: m.column, key: m.key, value: m.value,
+    role, surface: 'config', tier: m.tier, providerSurface: m.providerSurface,
   };
 }
 
-/** A tier-B code occurrence is a PROVEN call site unless its reason says the use is unproven. */
+/** A tier-B code occurrence is a PROVEN call site unless its reason says otherwise. */
 function isProvenCallSite(o: ExposureOccurrence): boolean {
   if (o.tier === 'A') return true;
   if (o.tier !== 'B') return false;
@@ -211,15 +220,38 @@ function toSourceLocation(o: ExposureOccurrence, model: string): LocationRef {
   const role: LocationRole =
     o.tier === 'C' ? 'code_reference' : isProvenCallSite(o) ? 'code_call_site' : 'code_candidate';
   return {
-    file: o.file,
-    line: o.line,
-    column: o.column,
-    key: null,
-    value: model,
-    role,
-    surface: 'code',
-    tier: o.tier,
-    providerSurface: null,
+    file: o.file, line: o.line, column: o.column, key: null, value: model,
+    role, surface: 'code', tier: o.tier, providerSurface: null,
+  };
+}
+
+/**
+ * The registry record for an observed model, so runtime evidence alone can raise a
+ * finding. Prefers the soonest-shutting entry, matching usageAudit's rule.
+ */
+function registryEntryFor(
+  model: string,
+  provider: string,
+  registry: LlmRegistry,
+): { entryId: string; provider: string; status: string | null; shutdownDate: string | null; replacement: string; replacementVerdict: string; sourceUrl: string | null } | null {
+  const matches = modelIdEntries(registry).filter(
+    (e) => e.deprecated === model && (e.provider === provider || provider === 'unknown'),
+  );
+  if (matches.length === 0) return null;
+  const entry = [...matches].sort((a, b) => {
+    if (a.shutdownDate && b.shutdownDate) return a.shutdownDate < b.shutdownDate ? -1 : 1;
+    if (a.shutdownDate) return -1;
+    if (b.shutdownDate) return 1;
+    return 0;
+  })[0];
+  return {
+    entryId: displayEntryId(entry),
+    provider: entry.provider,
+    status: entry.status ?? null,
+    shutdownDate: entry.shutdownDate ?? null,
+    replacement: entry.replacement,
+    replacementVerdict: effectiveVerificationState(entry),
+    sourceUrl: entry.sourceUrl ?? null,
   };
 }
 
@@ -230,22 +262,29 @@ function decide(inv: ModelInvestigation): { decision: AuditDecision; reason: str
   const hasCodeCandidate = sel.some((s) => s.role === 'code_candidate');
   const hasConfig = sel.some((s) => s.surface === 'config');
   const hasSelector = sel.length > 0;
-  const hasUsage = inv.runtimeExposure.observed && inv.runtimeExposure.requests > 0;
+  const u = inv.productionUsage;
+  const live = u.observed;
   const hasCatalog = inv.locations.catalog.length > 0;
 
-  // PATCH: a proven code call site (Tier A) whose replacement is verified — the
-  // one case whose data flow the scanner proved AND whose successor is verified.
   const patchable =
     inv.retirementEvidence.replacementVerdict === 'verified' &&
     sel.some((s) => s.surface === 'code' && s.role === 'code_call_site' && s.tier === 'A');
+
+  // How runtime evidence modifies the sentence — never asserting "unused".
+  const runtimeClause = !u.measured
+    ? ' Production usage was not measured.'
+    : live
+      ? ` Production traffic is OBSERVED${u.requestsReported && u.requests > 0 ? ` (${u.requests.toLocaleString('en-US')} requests)` : ''}.`
+      : ' It was NOT observed in the connected runtime source (which covers only what that source records).';
 
   if (patchable) {
     const configNote = hasConfig ? ' Config occurrences remain review-only (reader tie-back not proven).' : '';
     return {
       decision: 'patch',
       reason:
-        `A verified auto-fix exists for the code call site(s) — fix-llm can migrate to ${inv.retirementEvidence.replacement} ` +
-        `in place. It is proposed as a reviewed PR, never auto-merged.${configNote}`,
+        `A verified auto-fix exists for the code call site(s) — fix-llm can migrate to ` +
+        `${inv.retirementEvidence.replacement} in place. It is proposed as a reviewed PR, never auto-merged.` +
+        `${runtimeClause}${configNote}`,
     };
   }
   if (hasSelector) {
@@ -253,43 +292,40 @@ function decide(inv: ModelInvestigation): { decision: AuditDecision; reason: str
     if (hasCall) parts.push('a code call site (the model id is a call argument)');
     if (hasCodeCandidate) parts.push('a code model literal (its use as a live call is not proven)');
     if (hasConfig) parts.push('a config selector candidate (reader tie-back not proven)');
-    const usagePart = hasUsage ? ' Runtime usage is observed on this model.' : '';
     return {
       decision: 'review',
-      reason: `Located at ${parts.join(' and ')}.${usagePart} Human review required before any change.`,
+      reason: `Located at ${parts.join(' and ')}.${runtimeClause} Human review required before any change.`,
     };
   }
-  if (hasUsage) {
+  if (live) {
     return {
       decision: 'review',
       reason:
-        'Runtime usage observed, but no code or config location was found — the selector may live in a ' +
-        'datastore, a feature flag, or a runtime this scan did not cover. Human review required to find it.',
+        'Production traffic is OBSERVED, but no code or config location was found — the selector may live ' +
+        'in a datastore, a feature flag, or a runtime this scan did not cover. Human review required to find it.',
     };
   }
   if (hasCatalog) {
     return {
       decision: 'monitor',
       reason:
-        'Only catalog / reference / data occurrences found (no selector, no observed usage). Nothing is ' +
-        'proven live to change — monitor.',
+        'Only catalog / reference / data occurrences found (no selector).' + runtimeClause +
+        ' Nothing is proven live to change — monitor.',
     };
   }
   return {
     decision: 'monitor',
-    reason: inv.runtimeExposure.measured
-      ? 'Listed as retiring in the registry, but no runtime usage and no code/config occurrence were found in this audit.'
-      : 'Listed as retiring in the registry and located, but runtime usage was not measured (no provider key or --fixture).',
+    reason: `Listed as retiring in the registry, but no code or config occurrence was found.${runtimeClause}`,
   };
 }
 
 const DECISION_RANK: Record<AuditDecision, number> = { patch: 0, review: 1, monitor: 2 };
 
-/** patch, then review, then monitor; within, by cost, requests, soonest deadline, id. */
+/** patch, then review, then monitor; within, observed-first, then volume, deadline, id. */
 function compareInvestigation(a: ModelInvestigation, b: ModelInvestigation): number {
   if (DECISION_RANK[a.decision] !== DECISION_RANK[b.decision]) return DECISION_RANK[a.decision] - DECISION_RANK[b.decision];
-  if (a.runtimeExposure.costUsd !== b.runtimeExposure.costUsd) return b.runtimeExposure.costUsd - a.runtimeExposure.costUsd;
-  if (a.runtimeExposure.requests !== b.runtimeExposure.requests) return b.runtimeExposure.requests - a.runtimeExposure.requests;
+  if (a.productionUsage.observed !== b.productionUsage.observed) return a.productionUsage.observed ? -1 : 1;
+  if (a.productionUsage.requests !== b.productionUsage.requests) return b.productionUsage.requests - a.productionUsage.requests;
   const ad = a.retirementEvidence.daysUntil;
   const bd = b.retirementEvidence.daysUntil;
   if (ad !== null && bd !== null && ad !== bd) return ad - bd;
@@ -299,16 +335,20 @@ function compareInvestigation(a: ModelInvestigation, b: ModelInvestigation): num
 }
 
 /**
- * Join provider usage (MEASURE) with config + source-code locations (LOCATE) into
+ * Join located occurrences (source + config) with OPTIONAL runtime evidence into
  * one investigation record per deprecated model.
+ *
+ * @param runtime optional runtime evidence; pass NO_RUNTIME_EVIDENCE for the
+ *               default GitHub-only audit (no key, no telemetry).
  */
 export function buildInvestigations(
-  usage: UsageAudit | null,
+  runtime: RuntimeEvidence,
   config: readonly ConfigExposure[],
   now: Date,
   source: readonly ExposedModel[] = [],
+  registry: LlmRegistry = [],
 ): ModelInvestigation[] {
-  const measured = usage !== null;
+  const measured = runtime.connected;
   const map = new Map<string, ModelInvestigation>();
 
   const seed = (key: string, entryId: string | null, provider: string, model: string): ModelInvestigation => {
@@ -319,15 +359,13 @@ export function buildInvestigations(
         provider,
         model,
         retirementEvidence: {
-          deprecated: true,
-          status: null,
-          shutdownDate: null,
-          daysUntil: null,
-          replacement: null,
-          replacementVerdict: null,
-          sourceUrl: null,
+          deprecated: true, status: null, shutdownDate: null, daysUntil: null,
+          replacement: null, replacementVerdict: null, sourceUrl: null,
         },
-        runtimeExposure: { measured, observed: false, requests: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 },
+        productionUsage: {
+          measured, source: runtime.source, observed: false, requestsReported: false,
+          requests: 0, failures: 0, lastSeen: null, services: [], environments: [], costUsd: null,
+        },
         locations: { selectors: [], catalog: [] },
         compatibility: { checked: false, result: null },
         verification: { replacementVerdict: null, readerTieBackProven: false },
@@ -361,7 +399,7 @@ export function buildInvestigations(
     for (const m of e.catalog) inv.locations.catalog.push(toConfigLocation(m));
   }
 
-  // LOCATE (source code) — SAME classifier watch/fix-llm use.
+  // LOCATE (source code) — the SAME classifier watch/fix-llm use.
   for (const m of source) {
     const inv = seed(m.entryId, m.entryId, m.provider, m.id);
     fillRetirement(inv, m);
@@ -372,25 +410,30 @@ export function buildInvestigations(
     }
   }
 
-  // MEASURE
-  for (const f of usage?.exposed ?? []) {
-    const key = f.entryId ?? `${f.provider}:${f.model}`;
-    const inv = seed(key, f.entryId, f.provider, f.model);
-    inv.runtimeExposure = {
-      measured: true,
-      observed: true,
-      requests: f.requests,
-      inputTokens: f.inputTokens,
-      outputTokens: f.outputTokens,
-      costUsd: f.costUsd,
-    };
-    inv.retirementEvidence.status = f.status ?? inv.retirementEvidence.status;
-    inv.retirementEvidence.shutdownDate = f.shutdownDate ?? inv.retirementEvidence.shutdownDate;
-    inv.retirementEvidence.daysUntil = f.daysUntil;
-    inv.retirementEvidence.replacement = f.replacement ?? inv.retirementEvidence.replacement;
-    inv.retirementEvidence.replacementVerdict = f.replacementVerdict ?? inv.retirementEvidence.replacementVerdict;
-    inv.retirementEvidence.sourceUrl = f.sourceUrl ?? inv.retirementEvidence.sourceUrl;
-    if (inv.verification.replacementVerdict === null) inv.verification.replacementVerdict = f.replacementVerdict;
+  // RUNTIME EVIDENCE (optional) — attach to models we already located, and seed
+  // observed-but-UNLOCATED deprecated models too: traffic on a retiring model whose
+  // selector we cannot find is the most urgent finding there is, not a silent drop.
+  for (const obs of runtime.observations) {
+    let match = [...map.values()].find(
+      (inv) => inv.model === obs.model && (inv.provider === obs.provider || obs.provider === 'unknown'),
+    );
+    if (!match) {
+      const entry = registryEntryFor(obs.model, obs.provider, registry);
+      if (!entry) continue; // observed but not deprecated — not an exposure
+      match = seed(entry.entryId, entry.entryId, entry.provider, obs.model);
+      fillRetirement(match, entry);
+    }
+    const u = match.productionUsage;
+    u.measured = true;
+    u.source = runtime.source;
+    u.observed = obs.requests > 0 || !obs.requestsReported;
+    u.requestsReported = obs.requestsReported;
+    u.requests += obs.requests;
+    u.failures += obs.failures;
+    if (obs.lastSeen && (!u.lastSeen || obs.lastSeen > u.lastSeen)) u.lastSeen = obs.lastSeen;
+    if (obs.service && !u.services.includes(obs.service)) u.services.push(obs.service);
+    if (obs.environment && !u.environments.includes(obs.environment)) u.environments.push(obs.environment);
+    if (obs.costUsd !== null) u.costUsd = (u.costUsd ?? 0) + obs.costUsd;
   }
 
   for (const inv of map.values()) {

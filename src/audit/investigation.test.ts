@@ -6,6 +6,7 @@ import { foldConfigExposure, scanConfigText } from '../config/scanConfig.js';
 import type { ConfigMatch } from '../config/scanConfig.js';
 import type { ExposedModel } from '../watch/exposure.js';
 import { buildInvestigations, type AuditCoverage } from './investigation.js';
+import { NO_RUNTIME_EVIDENCE, runtimeEvidenceFromUsage, type RuntimeEvidence } from '../runtime/evidence.js';
 import { renderAuditReport, type AuditMeta } from '../report/auditReport.js';
 
 const REGISTRY: LlmRegistry = [
@@ -48,7 +49,7 @@ function fullCoverage(over: Partial<AuditCoverage> = {}): AuditCoverage {
     source: { analyzed: true, filesScanned: 10, tsFiles: 10, pyFiles: 0 },
     config: { analyzed: true, filesScanned: 5 },
     registry: { providers: ['anthropic', 'google', 'openai'] },
-    usage: { analyzed: false, provider: null },
+    runtime: { connected: false, source: null },
     readerTieBack: { proven: false },
     ...over,
   };
@@ -62,13 +63,13 @@ describe('buildInvestigations — selector + observed usage => REVIEW, tie-back 
     { start: '2026-07-27', end: '2026-08-26' },
   );
   const config = foldConfigExposure(gpt4Config());
-  const [inv] = buildInvestigations(usage, config, NOW);
+  const [inv] = buildInvestigations(runtimeEvidenceFromUsage(usage), config, NOW);
 
   it('joins the same model across MEASURE and LOCATE into one record', () => {
     expect(inv.model).toBe('gpt-4');
-    expect(inv.runtimeExposure.observed).toBe(true);
-    expect(inv.runtimeExposure.requests).toBe(48210);
-    expect(inv.runtimeExposure.costUsd).toBe(1284);
+    expect(inv.productionUsage.observed).toBe(true);
+    expect(inv.productionUsage.requests).toBe(48210);
+    expect(inv.productionUsage.costUsd).toBe(1284);
     expect(inv.locations.selectors).toHaveLength(1);
     expect(inv.locations.selectors[0].file).toBe('app.yaml');
     expect(inv.locations.selectors[0].role).toBe('runtime_selector_candidate');
@@ -98,7 +99,7 @@ describe('buildInvestigations — selector + observed usage => REVIEW, tie-back 
 
 describe('buildInvestigations — code call sites drive the patch/review split', () => {
   it('a Tier-A call site with a VERIFIED replacement => PATCH (a reviewed PR, never auto-merge)', () => {
-    const [inv] = buildInvestigations(null, [], NOW, [codeModel('gpt-4', 'A')]);
+    const [inv] = buildInvestigations(NO_RUNTIME_EVIDENCE, [], NOW, [codeModel('gpt-4', 'A')]);
     expect(inv.locations.selectors).toHaveLength(1);
     expect(inv.locations.selectors[0].surface).toBe('code');
     expect(inv.locations.selectors[0].role).toBe('code_call_site');
@@ -108,20 +109,20 @@ describe('buildInvestigations — code call sites drive the patch/review split',
 
   it('a config selector is NEVER patchable — tie-back is unproven', () => {
     const config = foldConfigExposure(scanConfigText('app.yaml', 'model: gpt-4\n', REGISTRY));
-    const [inv] = buildInvestigations(null, config, NOW);
+    const [inv] = buildInvestigations(NO_RUNTIME_EVIDENCE, config, NOW);
     expect(inv.retirementEvidence.replacementVerdict).toBe('verified');
     expect(inv.decision).toBe('review'); // verified successor, but config => never patch
   });
 
   it('treats a Tier-B usage_unverified occurrence as a candidate, not a proven call site', () => {
-    const [inv] = buildInvestigations(null, [], NOW, [codeModel('gpt-4', 'B', 'usage_unverified')]);
+    const [inv] = buildInvestigations(NO_RUNTIME_EVIDENCE, [], NOW, [codeModel('gpt-4', 'B', 'usage_unverified')]);
     expect(inv.locations.selectors[0].role).toBe('code_candidate');
     expect(inv.decision).toBe('review');
     expect(inv.reason).toContain('not proven');
   });
 
   it('treats a Tier-C code occurrence as a data reference => MONITOR', () => {
-    const [inv] = buildInvestigations(null, [], NOW, [codeModel('gpt-4', 'C')]);
+    const [inv] = buildInvestigations(NO_RUNTIME_EVIDENCE, [], NOW, [codeModel('gpt-4', 'C')]);
     expect(inv.locations.selectors).toHaveLength(0);
     expect(inv.locations.catalog[0].role).toBe('code_reference');
     expect(inv.decision).toBe('monitor');
@@ -134,7 +135,7 @@ describe('buildInvestigations — usage without any located selector => REVIEW (
     REGISTRY,
     NOW,
   );
-  const [inv] = buildInvestigations(usage, [], NOW);
+  const [inv] = buildInvestigations(runtimeEvidenceFromUsage(usage), [], NOW, [], REGISTRY);
 
   it('flags it for review and says no code or config location was found', () => {
     expect(inv.model).toBe('gpt-3.5-turbo');
@@ -147,7 +148,7 @@ describe('buildInvestigations — usage without any located selector => REVIEW (
 describe('buildInvestigations — catalog reference only, no usage => MONITOR', () => {
   const usage = auditUsage([], REGISTRY, NOW);
   const config = foldConfigExposure(scanConfigText('legacy/models.yaml', 'supported:\n  - text-davinci-003\n', REGISTRY));
-  const [inv] = buildInvestigations(usage, config, NOW);
+  const [inv] = buildInvestigations(runtimeEvidenceFromUsage(usage), config, NOW);
 
   it('does not treat a bare reference as something live to change', () => {
     expect(inv.model).toBe('text-davinci-003');
@@ -160,11 +161,11 @@ describe('buildInvestigations — catalog reference only, no usage => MONITOR', 
 
 describe('buildInvestigations — a config selector with usage NOT measured => REVIEW', () => {
   const config = foldConfigExposure(scanConfigText('app.yaml', 'model: gpt-4\n', REGISTRY));
-  const [inv] = buildInvestigations(null, config, NOW);
+  const [inv] = buildInvestigations(NO_RUNTIME_EVIDENCE, config, NOW);
 
   it('still needs review, located as a candidate, deadline from the registry', () => {
     expect(inv.decision).toBe('review');
-    expect(inv.runtimeExposure.measured).toBe(false);
+    expect(inv.productionUsage.measured).toBe(false);
     expect(inv.reason).toContain('config selector candidate');
     expect(inv.reason).toContain('Human review required');
     expect(inv.retirementEvidence.daysUntil).toBe(58); // 2026-08-26 -> 2026-10-23
@@ -185,7 +186,7 @@ describe('buildInvestigations — ordering: review_required before monitor, by c
       ...gpt4Config(),
       ...scanConfigText('legacy/models.yaml', 'supported:\n  - text-davinci-003\n', REGISTRY),
     ]);
-    const order = buildInvestigations(usage, config, NOW).map((i) => `${i.model}:${i.decision}`);
+    const order = buildInvestigations(runtimeEvidenceFromUsage(usage), config, NOW).map((i) => `${i.model}:${i.decision}`);
     expect(order[0]).toBe('gpt-4:review');
     expect(order[order.length - 1]).toBe('text-davinci-003:monitor');
   });
@@ -197,7 +198,7 @@ describe('buildInvestigations — a deprecated id in a test/data fixture is NOT 
   const config = foldConfigExposure(
     scanConfigText('api/server/utils/import/__data__/chatgpt-export.json', '  "model_slug": "gpt-4",\n', REGISTRY),
   );
-  const [inv] = buildInvestigations(null, config, NOW);
+  const [inv] = buildInvestigations(NO_RUNTIME_EVIDENCE, config, NOW);
 
   it('demotes the fixture occurrence to a Tier-C data role and MONITOR', () => {
     expect(inv.model).toBe('gpt-4');
@@ -209,27 +210,30 @@ describe('buildInvestigations — a deprecated id in a test/data fixture is NOT 
 
   it('renders it as a fixture, never a runtime selector candidate', () => {
     const meta: AuditMeta = {
-      from: null, to: null, usageStatus: 'not_measured', providers: [],
-      totalRequests: null, totalCostUsd: null, coverage: fullCoverage(),
+      from: null, to: null,  coverage: fullCoverage(),
     };
-    const out = renderAuditReport(buildInvestigations(null, config, NOW), meta).join('\n');
+    const out = renderAuditReport(buildInvestigations(NO_RUNTIME_EVIDENCE, config, NOW), meta).join('\n');
     expect(out).toContain('test/data fixture (not a selector)');
     expect(out).not.toContain('runtime selector candidate');
   });
 });
 
 describe('renderAuditReport — the conclusion is one of exactly four, and never a general "clean"', () => {
-  const base = { from: null, to: null, usageStatus: 'not_measured' as const, providers: [] as string[], totalRequests: null, totalCostUsd: null };
+  const base = { from: null, to: null,  };
 
-  it('config+source but NO usage => INCONCLUSIVE', () => {
+  // Runtime is OPTIONAL by design: a repo-only audit is a COMPLETE audit of the
+  // surfaces it covers. It must not be downgraded merely for having no key — but
+  // it must still disclose that liveness is unknown.
+  it('source completed, runtime NOT connected => NO EXPOSURE IN COMPLETED SURFACES', () => {
     const out = renderAuditReport([], { ...base, coverage: fullCoverage() }).join('\n');
-    expect(out).toContain('Conclusion: INCONCLUSIVE');
-    expect(out).toContain('provider usage/cost was not measured');
+    expect(out).toContain('Conclusion: NO EXPOSURE IN COMPLETED SURFACES');
+    expect(out).toContain('runtime measurement was not enabled');
+    expect(out).not.toMatch(/\bCLEAN\b/);
   });
 
   it('usage measured + source scanned + 0 findings => NO EXPOSURE IN COMPLETED SURFACES (not "clean")', () => {
     const meta: AuditMeta = {
-      ...base, usageStatus: 'ok', providers: ['openai'], totalRequests: 0, totalCostUsd: 0,
+      ...base, 
       coverage: fullCoverage({ usage: { analyzed: true, provider: 'openai' } }),
     };
     const out = renderAuditReport([], meta).join('\n');
@@ -240,10 +244,10 @@ describe('renderAuditReport — the conclusion is one of exactly four, and never
 
   it('source SKIPPED => INCONCLUSIVE even when usage was measured', () => {
     const meta: AuditMeta = {
-      ...base, usageStatus: 'ok', providers: ['openai'], totalRequests: 0, totalCostUsd: 0,
+      ...base, 
       coverage: fullCoverage({
         source: { analyzed: false, filesScanned: 0, tsFiles: 0, pyFiles: 0 },
-        usage: { analyzed: true, provider: 'openai' },
+        runtime: { connected: true, source: 'provider_api' },
       }),
     };
     const out = renderAuditReport([], meta).join('\n');
@@ -253,10 +257,10 @@ describe('renderAuditReport — the conclusion is one of exactly four, and never
 
   it('a FAILED surface => AUDIT FAILED, never a no-exposure verdict', () => {
     const meta: AuditMeta = {
-      ...base, usageStatus: 'ok', providers: ['openai'], totalRequests: 0, totalCostUsd: 0,
+      ...base, 
       coverage: fullCoverage({
         source: { analyzed: false, failed: true, filesScanned: 0, tsFiles: 0, pyFiles: 0 },
-        usage: { analyzed: true, provider: 'openai' },
+        runtime: { connected: true, source: 'provider_api' },
       }),
     };
     const out = renderAuditReport([], meta).join('\n');
@@ -270,15 +274,15 @@ describe('renderAuditReport — the conclusion is one of exactly four, and never
     expect(out).toContain('✓ Source code:');
     expect(out).toContain('✓ Configuration:');
     expect(out).toContain('✓ Registry:');
-    expect(out).toContain('○ Runtime usage:     not measured — no provider key supplied');
+    expect(out).toContain('○ Runtime usage:     not measured — no runtime source connected (optional)');
     expect(out).toContain('○ Reader tie-back:   not proven');
   });
 
   it('discloses the provider notes (unqueried categories) when usage was read', () => {
     const meta: AuditMeta = {
-      ...base, usageStatus: 'ok', providers: ['openai'], totalRequests: 5, totalCostUsd: 1,
+      ...base, 
       coverage: fullCoverage({
-        usage: { analyzed: true, provider: 'openai', notes: ['Chat Completions + Responses only. Embeddings … are NOT queried.'] },
+        runtime: { connected: true, source: 'provider_api', notes: ['Chat Completions + Responses only. Embeddings … are NOT queried.'] },
       }),
     };
     const out = renderAuditReport([], meta).join('\n');
@@ -293,24 +297,23 @@ describe('renderAuditReport — matches the intended per-model report shape', ()
     NOW,
     { start: '2026-07-27', end: '2026-08-26' },
   );
-  const investigations = buildInvestigations(usage, foldConfigExposure(gpt4Config()), NOW);
+  const investigations = buildInvestigations(runtimeEvidenceFromUsage(usage), foldConfigExposure(gpt4Config()), NOW);
   const meta: AuditMeta = {
-    from: '2026-07-27', to: '2026-08-26', usageStatus: 'ok', providers: ['openai'],
-    totalRequests: 48210, totalCostUsd: 1284,
+    from: '2026-07-27', to: '2026-08-26', 
     coverage: fullCoverage({ config: { analyzed: true, filesScanned: 2 }, usage: { analyzed: true, provider: 'openai' } }),
   };
   const out = renderAuditReport(investigations, meta).join('\n');
 
   it('prints the per-model investigation fields', () => {
     expect(out).toContain('Model: gpt-4  (openai)');
-    expect(out).toContain('Runtime usage: 48,210 requests, $1,284.00 observed cost');
+    expect(out).toContain('Production usage: OBSERVED — 48,210 requests');
     expect(out).toContain('app.yaml:1 — config runtime selector candidate');
     expect(out).toContain('pricing.yaml:1 — config catalog definition');
-    expect(out).toContain('Decision: REVIEW');
+    expect(out).toContain('Decision: review required');
   });
 
   it('shows the replacement as registry evidence, never as an instruction to change code', () => {
-    expect(out).toContain('Registry replacement: gpt-4o [registry: verified]');
+    expect(out).toContain('Migration evidence: gpt-4o [registry: verified]');
     expect(out).not.toMatch(/change .*gpt-4.* to gpt-4o/i);
   });
 

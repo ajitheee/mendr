@@ -57,53 +57,100 @@ Nothing, unless you pass `--write`. By default mendr loads your code in memory, 
 - `mendr fix <path> --from <specA> --to <specB>` — Stripe field-rename codemod.
 - `mendr verify-registry` — check every model-id replacement in the registry against the live public model catalogs and print an audit.
 - `mendr validate-registry` — check the registry for internal contradictions (offline); exits non-zero on any violation.
-- `mendr usage-audit [provider]` — **(experimental, v0.2.0-alpha)** read per-model usage/spend from a provider's read-only usage API and report which deprecated models are actually consuming requests and money. The MEASURE half of an AI-dependency audit. See below.
-- `mendr config-scan [path]` — **(experimental, v0.2.0-alpha)** locate deprecated model ids in config/IaC files (yaml/json/toml/.env/Helm/compose), separating live selectors from catalog definitions. The LOCATE half. See below.
+- `mendr audit [path]` — **(preview)** the unified audit: scan TS/TSX/Python source + config, join the deprecation registry, and report every retiring AI dependency with its location, deadline, and migration evidence. **Needs only the repository.** See below.
+- `mendr usage-audit [provider]` — **(preview)** read per-model usage from a provider's read-only usage API. Superseded by `audit`.
+- `mendr config-scan [path]` — **(preview)** locate deprecated model ids in config/IaC files. Superseded by `audit`.
 
 Run any command with `--help` for its flags.
 
-## AI dependency audit (experimental — v0.2.0-alpha)
+## AI dependency audit (preview)
 
-For products whose model ids don't live at a call site — they're in config, a
-database, a feature flag, or only in the runtime request — the `fix-llm` scanner
-finds nothing. Two commands close that gap as a **read-only audit** that runs
-entirely in your own environment (no keys or source ever leave it):
+**Connect your repository and mendr locates retiring AI dependencies. If you
+choose to connect runtime evidence, mendr can also verify which ones are live.**
 
-- **MEASURE** — `usage-audit` reads per-model request counts and spend from a
-  provider's usage API (read-only Admin key from an env var) and reports the
-  deprecated models actually running, in dollars, with deadlines.
-- **LOCATE** — `config-scan` finds deprecated ids in config/IaC files and
-  separates live *selectors* (`model: gpt-4` — the place to change) from *catalog
-  definitions* and list/map references (informational, never a change target).
+No provider key is required to get value. The default audit is repository-only:
 
 ```sh
-# LOCATE (local repo, no key):
-npx github:ajitheee/mendr#v0.2.0-alpha config-scan .
-
-# MEASURE (demo, no key):
-npx github:ajitheee/mendr#v0.2.0-alpha usage-audit --fixture examples/usage-fixture.example.json
-
-# MEASURE (live, read-only usage/cost Admin key in an env var):
-MENDR_PROVIDER_KEY=sk-admin-... npx github:ajitheee/mendr#v0.2.0-alpha usage-audit openai --from 2026-07-01 --to 2026-07-31
+mendr audit .
 ```
 
-**Limitations (this is an alpha):**
-- `config-scan` is **report-only** — it locates, it does not write a fix; it
-  reports the leaf key, not a full nested YAML key path; it does not resolve
-  layer/override precedence (a base value beaten by an env override).
+It scans TypeScript, TSX, Python, and supported config files, finds provider call
+sites and model identifiers, joins them to the deprecation registry, and reports:
+
+```
+Deprecated model dependency located
+
+Model: gpt-4
+Location: src/ai/client.ts:42 — code call site (model argument)
+Retirement: deprecated — 54d left (2026-10-23)
+Migration evidence: gpt-4o [registry: verified] (evidence only — not applied here)
+Production usage: not measured
+Reader tie-back: not proven
+Decision: review required
+```
+
+That is already the risk, the location, the deadline, and the migration evidence
+— and it is honest that runtime usage is unknown. **Code tells you where a model
+is declared, not whether production calls it.** Runtime evidence closes that gap.
+
+### Optional: prove which ones are live
+
+Four ways in, all optional, all refusable. Pick whichever you're comfortable with:
+
+```sh
+# 1. OpenTelemetry — export your gen_ai/llm span or metric attributes. No key.
+mendr audit . --runtime otel-export.json --runtime-source otel
+
+# 2. Your own sanitized usage export (CSV or JSON). No credentials shared.
+mendr audit . --runtime usage-export.csv
+
+# 3. Your own read-only provider key, kept in YOUR CI or secret manager.
+MENDR_PROVIDER_KEY=sk-admin-... mendr audit . openai --from 2026-07-01 --to 2026-07-31
+
+# 4. Model gateway / Sentry / Datadog / structured app logs.
+mendr audit . --runtime gateway.csv --runtime-source gateway_logs
+```
+
+mendr reads only **provider, model, service, environment, timestamp, request
+outcome, and volume**. Never prompts, never responses. Cost is accepted if your
+source carries it, but it is not required — you already have a billing dashboard,
+and mendr is not trying to be another one.
+
+Connect telemetry later and the same finding gains a line:
+
+```
+Production usage: OBSERVED — 18,342 requests, last seen 2026-08-29, service customer-support, env production
+```
+
+### What the conclusion can say
+
+Exactly four verdicts — **never a general "clean"**:
+
+| conclusion | meaning |
+|---|---|
+| `exposure_detected` | at least one retiring dependency was found |
+| `no_exposure_in_completed_surfaces` | none found in the surfaces that finished |
+| `inconclusive` | the core source scan did not complete — silence proves nothing |
+| `audit_failed` | a surface was attempted and errored |
+
+Every run prints a coverage report showing which surfaces ran, so a skipped or
+failed surface is always visible.
+
+**Limitations (this is a preview):**
+- Report-only. Nothing is written, nothing is merged. `patch` means a *reviewed
+  PR is possible*, not that a change was applied.
+- A config match is a **candidate selector**, never proven to control runtime
+  selection — reader tie-back does not exist yet, and the report says so.
+- Absence from a runtime source is **not** proof a model is unused; it only
+  covers what that source records.
 - A deprecated id under a non-direct surface (Bedrock, Vertex, Azure, an
   OpenAI-compatible proxy) is reported as *provider-ambiguous* with **no** direct
-  replacement; model-definition catalogs are Tier C, never "change this".
-- `usage-audit` covers **chat/completions usage only** (not embeddings, images,
-  audio, batch, fine-tuning); **Google/Vertex is not supported** (BigQuery billing
-  export only); the live OpenAI/Anthropic fetch follows the documented usage API
-  but should be verified against your live account.
-- MEASURE tells you *what* runs and *how much*; LOCATE tells you *where* it's set.
-  Neither evaluates whether a replacement is behaviorally safe — that's your
-  call, on an inspectable report.
+  replacement; model-definition catalogs and test fixtures are never change targets.
+- Provider usage reads cover **chat/completions only** (not embeddings, images,
+  audio, batch, fine-tuning); Anthropic's usage API reports **no request counts**;
+  **Google/Vertex is not supported**. All of this is disclosed in the coverage report.
 
-Both commands write nothing and send nothing. `config-scan` needs a local path
-(clone a repo first; remote URLs are refused).
+Everything runs locally. Nothing is uploaded; no key is ever sent to us.
 
 ## standing watch
 
