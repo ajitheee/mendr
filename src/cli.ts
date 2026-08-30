@@ -151,6 +151,8 @@ import { auditUsage } from './recon/usageAudit.js';
 import { fetchProviderUsage, loadFixtureUsage } from './recon/providers.js';
 import type { Provider } from './recon/types.js';
 import { renderUsageReport } from './report/usageReport.js';
+import { buildInvestigations } from './audit/investigation.js';
+import { renderAuditReport, type AuditMeta, type UsageStatus } from './report/auditReport.js';
 
 const program = new Command();
 
@@ -2787,6 +2789,124 @@ program
         say('Coverage: chat/completions usage only. A deprecated model used ONLY via embeddings, images, audio,');
         say('batch, or fine-tuning would not appear here yet.');
       }
+    },
+  );
+
+program
+  .command('audit')
+  .argument('[repoPath]', 'local path to the repo (default: current directory)', '.')
+  .argument('[provider]', 'openai | anthropic | google — measure live usage (omit for config-only, or use --fixture)')
+  .option('--from <date>', 'ISO start date YYYY-MM-DD (default: 30 days ago)')
+  .option('--to <date>', 'ISO end date YYYY-MM-DD (default: today)')
+  .option('--api-key-env <NAME>', 'env var holding your read-only provider Admin key', 'MENDR_PROVIDER_KEY')
+  .option('--fixture <file>', 'read usage from a JSON fixture instead of the provider API (demo/test — no key)')
+  .option('--json', 'emit the machine-readable investigation record on stdout')
+  .description(
+    'One audit: join registry retirement + provider usage/cost (MEASURE) + config locations (LOCATE) into ' +
+      'one per-model investigation record. Every actionable finding stays under human review.',
+  )
+  .action(
+    async (
+      repoPath: string,
+      provider: string | undefined,
+      opts: { from?: string; to?: string; apiKeyEnv?: string; fixture?: string; json?: boolean },
+    ) => {
+      const json = !!opts.json;
+      if (/^(https?:\/\/|git@)/i.test(repoPath)) {
+        console.error(
+          'mendr: audit needs a LOCAL path — remote URLs are not supported. Clone the repo first:\n' +
+            '  git clone <url>\n  mendr audit <cloned-dir> [provider]',
+        );
+        process.exit(2);
+      }
+      const resolved = resolveRepoOrExit(repoPath);
+      const registry = loadLlmRegistry();
+      const now = new Date();
+      const iso = (d: Date): string => d.toISOString().slice(0, 10);
+
+      // --- LOCATE (always runs, never needs a key) ---------------------------
+      const { matches, filesScanned } = scanConfigFiles(resolved, registry);
+      const config = foldConfigExposure(matches);
+
+      // --- MEASURE (optional: needs a provider+key, or a --fixture) ----------
+      let usageStatus: UsageStatus = 'not_measured';
+      let usageAudit = null;
+      let from: string | null = null;
+      let to: string | null = null;
+      let providers: string[] = [];
+
+      const wantUsage = !!opts.fixture || provider !== undefined;
+      if (wantUsage) {
+        to = opts.to ?? iso(now);
+        from = opts.from ?? iso(new Date(now.getTime() - 30 * 86_400_000));
+        try {
+          let rows;
+          if (opts.fixture) {
+            rows = loadFixtureUsage(opts.fixture);
+            providers = [...new Set(rows.map((r) => r.provider))].sort();
+          } else {
+            if (provider !== 'openai' && provider !== 'anthropic' && provider !== 'google') {
+              console.error('mendr: pass a provider (openai | anthropic | google), use --fixture, or omit both for a config-only audit.');
+              process.exit(2);
+              return;
+            }
+            const keyEnv = opts.apiKeyEnv ?? 'MENDR_PROVIDER_KEY';
+            const apiKey = process.env[keyEnv];
+            if (!apiKey) {
+              console.error(
+                `mendr: no provider key found in $${keyEnv}. Set a READ-ONLY usage/cost Admin key there, e.g.\n` +
+                  `  $env:${keyEnv}="sk-admin-..."   (PowerShell)\n` +
+                  'The key reads usage data only; mendr never invokes a model, moves money, or reads prompts.',
+              );
+              process.exit(2);
+              return;
+            }
+            providers = [provider];
+            console.error(`Reading ${provider} usage ${from}..${to} (read-only)...`);
+            rows = await fetchProviderUsage(provider as Provider, apiKey, { start: from, end: to });
+          }
+          if (!opts.fixture && rows.length === 0) {
+            // Empty live result is inconclusive, NOT a clean measure — say so, but
+            // still deliver the LOCATE half below.
+            usageStatus = 'no_data';
+            console.error(
+              'mendr: the usage API returned zero rows for this window — a new/empty org, or all traffic is in a ' +
+                'usage category not yet queried (only chat/completions is). This part of the audit is inconclusive.',
+            );
+          } else {
+            usageStatus = 'ok';
+            usageAudit = auditUsage(rows, registry, now, { start: from, end: to });
+          }
+        } catch (err) {
+          usageStatus = 'error';
+          process.exitCode = 1;
+          console.error(`mendr: could not read usage (reporting config locations only): ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
+      const investigations = buildInvestigations(usageStatus === 'ok' ? usageAudit : null, config, now);
+
+      if (json) {
+        console.log(
+          JSON.stringify(
+            { schema: 'mendr-audit/v1', period: { from, to }, usageStatus, providers, filesScanned, investigations },
+            null,
+            2,
+          ),
+        );
+        return;
+      }
+
+      const meta: AuditMeta = {
+        from,
+        to,
+        usageStatus,
+        providers,
+        totalRequests: usageAudit ? usageAudit.totalRequests : null,
+        totalCostUsd: usageAudit ? usageAudit.totalCostUsd : null,
+        filesScanned,
+      };
+      for (const line of renderAuditReport(investigations, meta)) console.log(line);
     },
   );
 

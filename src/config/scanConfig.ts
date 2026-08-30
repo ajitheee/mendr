@@ -22,7 +22,13 @@ import type { Tier } from '../report/tiers.js';
 export type ConfigPosition = 'config_selector' | 'config_catalog';
 
 /** Why a catalog occurrence is data (parallels the code scanner's DataPurpose). */
-export type ConfigPurpose = 'lookup_key' | 'list_entry' | 'catalog_entry' | 'generic' | 'catalog_definition';
+export type ConfigPurpose =
+  | 'lookup_key'
+  | 'list_entry'
+  | 'catalog_entry'
+  | 'generic'
+  | 'catalog_definition'
+  | 'data_fixture';
 
 /**
  * The provider SURFACE a config file belongs to. A model id under a non-direct
@@ -91,6 +97,28 @@ export function detectProviderSurface(file: string): ProviderSurface {
     return 'provider_ambiguous';
   }
   return null;
+}
+
+/**
+ * Is this a TEST / DATA fixture whose model ids are serialized DATA — chat
+ * exports, import fixtures, mocks, eval logs — rather than a runtime selector?
+ *
+ * Real repos ship these by the hundred (e.g. LibreChat's
+ * `api/server/utils/import/__data__/*.json`, where `model_slug: "gpt-4"` records
+ * which model produced an EXPORTED message). Treating them as live selectors
+ * floods the review bucket with un-actionable noise around the one genuine
+ * selector. This mirrors the code scanner's test-file skip, but here we DEMOTE
+ * to a Tier-C `data_fixture` (still visible as exposure) rather than dropping —
+ * an audit should still SHOW the id, just never flag it as a thing to change.
+ */
+export function isTestFixturePath(file: string): boolean {
+  const p = file.replace(/\\/g, '/').toLowerCase();
+  // A test/fixture/mock DIRECTORY anywhere in the path.
+  if (/(^|\/)(__data__|__fixtures?__|__mocks?__|fixtures?|testdata|test-data|mocks?|snapshots?)(\/)/.test(p)) return true;
+  if (/(^|\/)(tests?|e2e|specs?|__tests__)(\/)/.test(p)) return true;
+  // A `*.test.*` / `*.spec.*` / `*.fixture.*` / `*.mock.*` FILE.
+  if (/(^|\/)[^/]*\.(test|spec|fixture|mock)\.[^/]+$/.test(p)) return true;
+  return false;
 }
 
 const CONFIG_EXT = /\.(ya?ml|json|json5|toml|ini|cfg|conf|properties|env)$/i;
@@ -199,6 +227,10 @@ export function scanConfigText(file: string, text: string, registry: LlmRegistry
   // File-level context: a model-definition catalog file classifies EVERY match
   // as a catalog definition (Tier C) — a root `model:` there names the model the
   // file defines, not a runtime selection. Surface rides on every match.
+  // A test/data fixture demotes EVERY match to Tier-C data (a serialized model
+  // id is never a runtime selector); a model-definition catalog file does the
+  // same with a catalog_definition purpose. Fixture wins when both apply.
+  const dataFixture = isTestFixturePath(file);
   const catalogDef = isCatalogDefinitionFile(file, text);
   const surface = detectProviderSurface(file);
 
@@ -210,9 +242,11 @@ export function scanConfigText(file: string, text: string, registry: LlmRegistry
       if (!line.includes(id)) continue;
       for (const m of line.matchAll(idMatcher(id))) {
         const idCol = m.index ?? 0;
-        const cls = catalogDef
-          ? ({ position: 'config_catalog', purpose: 'catalog_definition', key: parseKey(line)?.key ?? null } as const)
-          : classifyConfigOccurrence(line, idCol, id);
+        const cls = dataFixture
+          ? ({ position: 'config_catalog', purpose: 'data_fixture', key: parseKey(line)?.key ?? null } as const)
+          : catalogDef
+            ? ({ position: 'config_catalog', purpose: 'catalog_definition', key: parseKey(line)?.key ?? null } as const)
+            : classifyConfigOccurrence(line, idCol, id);
         for (const dep of deps) {
           out.push({
             file,
