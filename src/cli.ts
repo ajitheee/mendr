@@ -157,6 +157,7 @@ import { renderUsageReport } from './report/usageReport.js';
 import { buildInvestigations, concludeAudit, type AuditCoverage } from './audit/investigation.js';
 import { EMPTY_STATE, parseAuditState, renderAuditIssue } from './audit/issueReport.js';
 import { installAuditWorkflow } from './audit/installAuditWorkflow.js';
+import { unanalyzedLanguages } from './audit/languages.js';
 import {
   loadRuntimeEvidenceFile,
   runtimeEvidenceFromUsage,
@@ -2868,8 +2869,24 @@ program
       const iso = (d: Date): string => d.toISOString().slice(0, 10);
 
       // --- LOCATE in CONFIG (always runs, never needs a key) -----------------
-      const { matches, filesScanned } = scanConfigFiles(resolved, registry);
-      const config = foldConfigExposure(matches);
+      // A config scan that throws, or reads zero files, must be reported as
+      // incomplete — never as "found nothing".
+      let filesScanned = 0;
+      let filesRead = 0;
+      let configFailed = false;
+      let config: ReturnType<typeof foldConfigExposure> = [];
+      try {
+        const scan = scanConfigFiles(resolved, registry);
+        filesScanned = scan.filesScanned;
+        filesRead = scan.filesRead;
+        config = foldConfigExposure(scan.matches);
+        if (scan.filesUnreadable > 0 && !json) {
+          console.error(`mendr: ${scan.filesUnreadable} config file(s) could not be read.`);
+        }
+      } catch (err) {
+        configFailed = true;
+        console.error(`mendr: config scan FAILED: ${err instanceof Error ? err.message : String(err)}`);
+      }
 
       // --- LOCATE in SOURCE CODE (TS/TSX + Python; the same scanner fix-llm uses) ---
       let source: ReturnType<typeof foldExposure> = [];
@@ -2877,6 +2894,12 @@ program
       let pyFiles = 0;
       let sourceAnalyzed = false;
       let sourceFailed = false;
+      let otherLanguages: string[] = [];
+      try {
+        otherLanguages = unanalyzedLanguages(resolved);
+      } catch {
+        // A language census failure must not fail the audit; it only enriches coverage.
+      }
       if (!opts.skipSource) {
         try {
           tsFiles = collectTsSourceFiles(resolved).length;
@@ -2965,11 +2988,13 @@ program
           analyzed: sourceAnalyzed,
           failed: sourceFailed,
           filesScanned: tsFiles + pyFiles,
+          filesRead: tsFiles + pyFiles,
           tsFiles,
           pyFiles,
+          unanalyzedLanguages: otherLanguages,
           note: opts.skipSource ? 'skipped (--skip-source)' : undefined,
         },
-        config: { analyzed: true, filesScanned },
+        config: { analyzed: !configFailed, failed: configFailed, filesScanned, filesRead },
         registry: { providers: registryProviders(registry) },
         runtime: {
           connected: runtime.connected,
@@ -3028,6 +3053,7 @@ program
                       openCount: issueRender.openCount,
                       newCount: issueRender.newCount,
                       resolvedCount: issueRender.resolvedCount,
+                      carriedCount: issueRender.carriedCount,
                       closable: issueRender.closable,
                       conclusion: issueRender.conclusion,
                     },

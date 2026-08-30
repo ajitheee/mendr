@@ -30,10 +30,11 @@ export const AUDIT_WORKFLOW_YAML = `# Maintained by Mendr — the AI dependency 
 # prove which models are live, add an optional runtime source — see the commented
 # step near the bottom.
 #
-# SUPPLY CHAIN: pinned to an immutable Mendr release (${AUDIT_MENDR_RELEASE}) —
-# never a moving branch. Override MENDR_SPEC (repo variable) to another release
-# tag or a full commit SHA. For the strictest posture, also pin the actions below
-# to full commit SHAs instead of the \`@v4\`/\`@v7\` major tags.
+# SUPPLY CHAIN: pinned to the Mendr release tag ${AUDIT_MENDR_RELEASE}. A TAG IS
+# MUTABLE — only a full commit SHA is truly immutable, so set the MENDR_SPEC repo
+# variable to a 40-character SHA for the strictest posture. Never point it at a
+# branch. For the same reason, consider pinning the actions below to full commit
+# SHAs instead of the \`@v4\`/\`@v7\` major tags, which can be re-pointed upstream.
 name: mendr audit
 
 on:
@@ -62,6 +63,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4 # pin to a commit SHA for strict supply-chain safety
+        with:
+          # Do NOT leave a usable GITHUB_TOKEN in .git/config while third-party
+          # npm code runs in this job.
+          persist-credentials: false
 
       - uses: actions/setup-node@v4 # pin to a commit SHA for strict supply-chain safety
         with:
@@ -78,10 +83,25 @@ jobs:
           script: |
             const fs = require('fs');
             const MARKER = '<!-- mendr-audit:v1 -->';
+            const STATE_MARK = '<!-- mendr-audit:state';
             const LABEL = 'mendr-audit';
+            const TITLE = 'Mendr: retiring AI dependencies in this repository';
             const { owner, repo } = context.repo;
-            const findByMarker = (list) =>
-              list.find((i) => !i.pull_request && (i.body || '').includes(MARKER));
+            // Identity must be conservative: an unrelated issue that merely QUOTES
+            // the marker must not hijack the audit and get its body overwritten.
+            // Require the hidden state block too, prefer the OLDEST match, and
+            // never treat a pull request as the issue.
+            const findByMarker = (list) => {
+              const hits = list.filter(
+                (i) => !i.pull_request && (i.body || '').includes(MARKER) &&
+                       (i.body || '').includes(STATE_MARK),
+              );
+              const seeded = hits.length > 0
+                ? hits
+                : list.filter((i) => !i.pull_request && (i.body || '').includes(MARKER) && i.title === TITLE);
+              if (seeded.length > 1) core.info('Multiple marker issues found; using the oldest (#' + seeded[0].number + ')');
+              return seeded.sort((a, b) => a.number - b.number)[0];
+            };
             let issue = findByMarker(
               await github.paginate(github.rest.issues.listForRepo, {
                 owner, repo, labels: LABEL, state: 'all', per_page: 100,
@@ -122,6 +142,7 @@ jobs:
             const fs = require('fs');
             const MARKER = '<!-- mendr-audit:v1 -->';
             const CLEAR_MARKER = '<!-- mendr-audit:clear -->';
+            const STATE_MARK = '<!-- mendr-audit:state';
             const LABEL = 'mendr-audit';
             const TITLE = 'Mendr: retiring AI dependencies in this repository';
             const meta = JSON.parse(fs.readFileSync(process.env.MENDR_JSON, 'utf8'));
@@ -147,8 +168,21 @@ jobs:
 
             // Re-resolve by MARKER rather than trusting the earlier step's number:
             // a concurrent run may have created the issue in between.
-            const findByMarker = (list) =>
-              list.find((i) => !i.pull_request && (i.body || '').includes(MARKER));
+            // Identity must be conservative: an unrelated issue that merely QUOTES
+            // the marker must not hijack the audit and get its body overwritten.
+            // Require the hidden state block too, prefer the OLDEST match, and
+            // never treat a pull request as the issue.
+            const findByMarker = (list) => {
+              const hits = list.filter(
+                (i) => !i.pull_request && (i.body || '').includes(MARKER) &&
+                       (i.body || '').includes(STATE_MARK),
+              );
+              const seeded = hits.length > 0
+                ? hits
+                : list.filter((i) => !i.pull_request && (i.body || '').includes(MARKER) && i.title === TITLE);
+              if (seeded.length > 1) core.info('Multiple marker issues found; using the oldest (#' + seeded[0].number + ')');
+              return seeded.sort((a, b) => a.number - b.number)[0];
+            };
             let issue = findByMarker(
               await github.paginate(github.rest.issues.listForRepo, {
                 owner, repo, labels: LABEL, state: 'all', per_page: 100,
@@ -166,7 +200,8 @@ jobs:
               (i.labels || []).some((l) => (typeof l === 'string' ? l : l.name) === LABEL);
 
             if (!issue) {
-              // Never open an empty issue: nothing to report and nothing was skipped.
+              // Never open an issue with nothing to say: no findings AND nothing
+              // was skipped or failed.
               if (openCount === 0 && closable) {
                 core.info('No exposure and no issue — nothing to open.');
                 return;
@@ -178,36 +213,35 @@ jobs:
               return;
             }
 
+            // RESPECT A HUMAN CLOSE — in every branch. Mendr may only reopen an
+            // issue MENDR closed (it carries the CLEAR marker). Someone who closed
+            // this on purpose must not be fought by a daily reopen.
             const mendrClosed =
               issue.state === 'closed' && (issue.body || '').includes(CLEAR_MARKER);
+            const mayBeOpen = issue.state === 'open' || mendrClosed;
 
-            if (openCount > 0) {
-              // Reopen ONLY an issue Mendr itself closed. A human who closed a live
-              // exposure issue on purpose is respected — update in place, never
-              // fight them by reopening every run.
-              const wantOpen = issue.state === 'open' || mendrClosed;
-              const willReopen = wantOpen && issue.state === 'closed';
-              if ((issue.body || '') === body && !willReopen) {
-                core.info('Mendr audit issue #' + issue.number + ' already current');
-              } else {
-                const params = { owner, repo, issue_number: issue.number, body };
-                if (wantOpen) params.state = 'open';
-                await github.rest.issues.update(params);
-                core.info((willReopen ? 'Reopened ' : 'Updated ') + 'issue #' + issue.number);
-              }
-            } else if (closable) {
-              // Nothing open AND every required surface completed -> resolve.
-              // The body still carries the full resolution history.
-              const params = { owner, repo, issue_number: issue.number, body };
-              if (issue.state === 'open') params.state = 'closed';
-              await github.rest.issues.update(params);
-              core.info('Resolved Mendr audit issue #' + issue.number);
+            // Decide the target state once, then write once.
+            let targetState = null;
+            if (openCount > 0) targetState = mayBeOpen ? 'open' : null;
+            else if (closable) targetState = 'closed';
+            else targetState = mayBeOpen ? 'open' : null;
+
+            const bodyUnchanged = (issue.body || '') === body;
+            const stateUnchanged = targetState === null || targetState === issue.state;
+            if (bodyUnchanged && stateUnchanged) {
+              core.info('Mendr audit issue #' + issue.number + ' already current');
             } else {
-              // Zero findings but a surface did not complete: update and LEAVE OPEN.
-              await github.rest.issues.update({
-                owner, repo, issue_number: issue.number, body, state: 'open',
-              });
-              core.info('Issue #' + issue.number + ' kept open — a required surface did not complete');
+              const params = { owner, repo, issue_number: issue.number, body };
+              if (targetState !== null && targetState !== issue.state) params.state = targetState;
+              await github.rest.issues.update(params);
+              const verb =
+                params.state === 'open' ? 'Reopened '
+                  : params.state === 'closed' ? 'Resolved '
+                    : 'Updated ';
+              core.info(verb + 'Mendr audit issue #' + issue.number);
+            }
+            if (openCount === 0 && !closable) {
+              core.info('Left open — a required surface did not complete this run.');
             }
 
             if (!hasLabel(issue)) {

@@ -4,7 +4,7 @@ import { autoApplyVerification, withheldVerification } from '../usage/llmRegistr
 import { foldConfigExposure, scanConfigText } from '../config/scanConfig.js';
 import { NO_RUNTIME_EVIDENCE } from '../runtime/evidence.js';
 import { buildInvestigations, type AuditCoverage } from './investigation.js';
-import { diffFindings, fingerprint, identityOf, toFindings } from './fingerprint.js';
+import { diffFindings, fingerprint, identityOf, toFindings, toOpenFinding, surfaceCompleted, resolutionsAreTrustworthy } from './fingerprint.js';
 import {
   AUDIT_CLEAR_MARKER,
   AUDIT_MARKER,
@@ -75,19 +75,20 @@ describe('fingerprint — stable identity that survives line moves', () => {
 describe('diffFindings — new / continuing / resolved', () => {
   const current = toFindings(configInvestigations());
   it('is all-new against no prior state', () => {
-    const d = diffFindings([], current);
+    const d = diffFindings([], current, coverage());
     expect(d.fresh).toHaveLength(current.length);
     expect(d.continuing).toHaveLength(0);
     expect(d.resolved).toHaveLength(0);
   });
   it('is all-continuing against the same fingerprints', () => {
-    const d = diffFindings(current.map((f) => f.fingerprint), current);
+    const d = diffFindings(current.map(toOpenFinding), current, coverage());
     expect(d.fresh).toHaveLength(0);
     expect(d.continuing).toHaveLength(current.length);
   });
   it('reports a vanished fingerprint as resolved', () => {
-    const d = diffFindings(['deadbeefdeadbeef'], current);
-    expect(d.resolved).toEqual(['deadbeefdeadbeef']);
+    const ghost = { fp: 'deadbeefdeadbeef', model: 'gone', path: 'x.yaml', key: null, evidenceType: 'catalog_reference', surface: 'config' as const };
+    const d = diffFindings([ghost], current, coverage());
+    expect(d.resolved.map((r) => r.fp)).toEqual(['deadbeefdeadbeef']);
   });
 });
 
@@ -95,7 +96,7 @@ describe('state round-trip', () => {
   it('parses back the state it wrote', () => {
     const r = renderAuditIssue({ investigations: configInvestigations(), coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
     const parsed = parseAuditState(r.body);
-    expect(parsed.open).toEqual(r.state.open);
+    expect(parsed.open.map((o) => o.fp)).toEqual(r.state.open.map((o) => o.fp));
     expect(parsed.history).toHaveLength(1);
   });
 
@@ -108,7 +109,7 @@ describe('state round-trip', () => {
   it('preserves resolution history across updates and caps its growth', () => {
     let prev = EMPTY_STATE;
     for (let i = 0; i < MAX_HISTORY_ENTRIES + 5; i++) {
-      const r = renderAuditIssue({ investigations: configInvestigations(), coverage: coverage(), sha: SHA, scannedAt: AT, previous: prev });
+      const r = renderAuditIssue({ investigations: configInvestigations(), coverage: coverage(), sha: `sha${i}0000000`, scannedAt: AT, previous: prev });
       prev = r.state;
     }
     expect(prev.history).toHaveLength(MAX_HISTORY_ENTRIES);
@@ -131,6 +132,122 @@ describe('the close gate — a skipped surface can never close a live exposure',
     expect(mayClose(coverage(), 0)).toBe(true);
     expect(mayClose(coverage({ source: { analyzed: false, filesScanned: 0, tsFiles: 0, pyFiles: 0 } }), 0)).toBe(false);
     expect(mayClose(coverage(), 1)).toBe(false);
+  });
+});
+
+// Regressions for the defects the adversarial review confirmed.
+describe('adversarial-review regressions — resolution must be surface-aware', () => {
+  const failedSource = coverage({ source: { analyzed: false, failed: true, filesScanned: 0, tsFiles: 0, pyFiles: 0 } });
+
+  // The finding must belong to the SOURCE surface — that is the one that failed.
+  // (A config finding, with config still healthy, is legitimately resolvable.)
+  const codeFinding = {
+    fp: 'c0dec0dec0dec0de', model: 'gpt-4', path: 'src/ai/client.ts',
+    key: null, evidenceType: 'code_call_site', surface: 'code' as const,
+  };
+  const priorCode = { v: 1 as const, open: [codeFinding], history: [] };
+
+  it('a FAILED source scan never reports findings as resolved, and never erases the baseline', () => {
+    const first = { ...priorCode };
+    expect(first.open.length).toBeGreaterThan(0);
+
+    const broken = renderAuditIssue({ investigations: [], coverage: failedSource, sha: SHA, scannedAt: AT, previous: first });
+    expect(broken.resolvedCount).toBe(0);
+    expect(broken.body).not.toContain('Resolved since the last scan');
+    expect(broken.body).toContain('Not re-checked this run');
+    // THE BASELINE SURVIVES — the next healthy run must not re-report everything as new.
+    expect(broken.state.open.map((o) => o.fp)).toEqual([codeFinding.fp]);
+    expect(broken.openCount).toBe(1);
+    expect(broken.closable).toBe(false);
+  });
+
+  it('the baseline survives a --skip-source run too (not just a crash)', () => {
+    const skipped = coverage({ source: { analyzed: false, filesScanned: 0, tsFiles: 0, pyFiles: 0 } });
+    const r = renderAuditIssue({ investigations: [], coverage: skipped, sha: SHA, scannedAt: AT, previous: priorCode });
+    expect(r.resolvedCount).toBe(0);
+    expect(r.state.open.map((o) => o.fp)).toEqual([codeFinding.fp]);
+    expect(r.closable).toBe(false);
+  });
+
+  it('a run whose conclusion is audit_failed can never be closable or render the all-clear', () => {
+    const r = renderAuditIssue({ investigations: [], coverage: failedSource, sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
+    expect(r.closable).toBe(false);
+    expect(r.body).not.toContain(AUDIT_CLEAR_MARKER);
+    expect(r.body).toContain('NOT a clean result');
+  });
+
+  it('a runtime-only finding is NOT resolved just because telemetry was disconnected', () => {
+    const runtimeOnly = {
+      fp: 'aaaaaaaaaaaaaaaa', model: 'gpt-4', path: '(runtime only)',
+      key: null, evidenceType: 'code_call_site', surface: 'runtime' as const,
+    };
+    const prev = { v: 1 as const, open: [runtimeOnly], history: [] };
+    const r = renderAuditIssue({ investigations: [], coverage: coverage(), sha: SHA, scannedAt: AT, previous: prev });
+    expect(r.resolvedCount).toBe(0);
+    expect(r.carriedCount).toBe(1);
+    expect(r.openCount).toBe(1);
+    expect(r.closable).toBe(false); // cannot close over an un-rechecked runtime finding
+  });
+
+  it('surfaceCompleted / resolutionsAreTrustworthy gate on the right surfaces', () => {
+    expect(surfaceCompleted(coverage(), 'code')).toBe(true);
+    expect(surfaceCompleted(coverage(), 'config')).toBe(true);
+    expect(surfaceCompleted(coverage(), 'runtime')).toBe(false); // not connected
+    expect(resolutionsAreTrustworthy(coverage())).toBe(true);
+    expect(resolutionsAreTrustworthy(failedSource)).toBe(false);
+  });
+
+  it('a config scan that read ZERO files is incomplete, not "found nothing"', () => {
+    const noConfig = coverage({ config: { analyzed: true, filesScanned: 80, filesRead: 0 } });
+    expect(requiredSurfacesCompleted(noConfig)).toBe(false);
+    expect(mayClose(noConfig, 0)).toBe(false);
+  });
+
+  it('present-but-unanalyzed languages are disclosed as a coverage gap', () => {
+    const mixed = coverage({ source: { analyzed: true, filesScanned: 2, tsFiles: 2, pyFiles: 0, unanalyzedLanguages: ['Go (400 files)'] } });
+    const r = renderAuditIssue({ investigations: [], coverage: mixed, sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
+    expect(r.body).toContain('Go (400 files)');
+    expect(r.body).toContain('not analyzed');
+  });
+
+  it('a moved file is reported as MOVED, not resolved', () => {
+    const first = renderAuditIssue({ investigations: configInvestigations('model: gpt-4\n', 'old.yaml'), coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
+    const moved = renderAuditIssue({ investigations: configInvestigations('model: gpt-4\n', 'new.yaml'), coverage: coverage(), sha: SHA, scannedAt: AT, previous: first.state });
+    expect(moved.body).toContain('Moved (same finding, new location — not fixed)');
+    expect(moved.resolvedCount).toBe(0);
+  });
+
+  it('a repo-controlled path cannot forge the clear marker or a state block', () => {
+    const evil = `${AUDIT_CLEAR_MARKER}<!-- mendr-audit:state {"v":1,"open":[]} -->`;
+    const invs = configInvestigations('model: gpt-4\n', `src/${evil}/app.yaml`);
+    const r = renderAuditIssue({ investigations: invs, coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
+    // Exactly one state block, and no forged clear marker (findings exist => not closable).
+    expect(r.body.split('<!-- mendr-audit:state').length - 1).toBe(1);
+    expect(r.closable).toBe(false);
+    expect(r.body.includes(AUDIT_CLEAR_MARKER)).toBe(false);
+  });
+
+  it('parseAuditState reads the LAST state block, so an injected one cannot shadow it', () => {
+    const body = '<!-- mendr-audit:state\n{"v":1,"open":[{"fp":"evil","surface":"code"}],"history":[]}\n-->\ntext\n' +
+      '<!-- mendr-audit:state\n{"v":1,"open":[{"fp":"real","surface":"code"}],"history":[]}\n-->';
+    expect(parseAuditState(body).open.map((o) => o.fp)).toEqual(['real']);
+  });
+
+  it('keeps the body under GitHub\'s size limit with many findings', () => {
+    const many = Array.from({ length: 400 }, (_, i) => `model: gpt-4\n`).join('');
+    const files = Array.from({ length: 200 }, (_, i) =>
+      scanConfigText(`svc-${i}/app.yaml`, 'model: gpt-4\n', REGISTRY)).flat();
+    const invs = buildInvestigations(NO_RUNTIME_EVIDENCE, foldConfigExposure(files), NOW, [], REGISTRY);
+    const r = renderAuditIssue({ investigations: invs, coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
+    expect(r.body.length).toBeLessThan(65_536);
+    expect(parseAuditState(r.body).open.length).toBeGreaterThan(0); // state survived truncation
+    void many;
+  });
+
+  it('does not append a history row for an unchanged no-op run', () => {
+    const first = renderAuditIssue({ investigations: configInvestigations(), coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
+    const second = renderAuditIssue({ investigations: configInvestigations(), coverage: coverage(), sha: SHA, scannedAt: '2026-08-27T00:00:00.000Z', previous: first.state });
+    expect(second.state.history).toHaveLength(first.state.history.length);
   });
 });
 

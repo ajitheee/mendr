@@ -137,8 +137,13 @@ async function runUpsert(gh: GitHubMock, opts: RunOpts): Promise<string[]> {
   return logs;
 }
 
+/** A realistic Mendr body: the marker, an optional clear marker, and the state block. */
+const STATE_BLOCK = '<!-- mendr-audit:state\n{"v":1,"open":[],"history":[]}\n-->';
 const bodyWith = (extra = '', clear = false): string =>
-  `${AUDIT_MARKER}\n${clear ? AUDIT_CLEAR_MARKER + '\n' : ''}## Mendr audit\n${extra}`;
+  `${AUDIT_MARKER}\n${clear ? AUDIT_CLEAR_MARKER + '\n' : ''}## Mendr audit\n${extra}\n${STATE_BLOCK}`;
+
+/** A body that only QUOTES the marker (e.g. someone pasted it) — must NOT be hijacked. */
+const impostorBody = `Someone pasted our marker here: ${AUDIT_MARKER} — please help`;
 
 describe('audit action — issue lifecycle', () => {
   let gh: GitHubMock;
@@ -244,6 +249,41 @@ describe('audit action — issue lifecycle', () => {
   });
 });
 
+// Regressions for the defects the adversarial review confirmed.
+describe('audit action — adversarial-review regressions', () => {
+  let gh: GitHubMock;
+  beforeEach(() => { gh = new GitHubMock(); });
+
+  it('does NOT reopen a human-closed issue on the zero-findings/incomplete-surface path', async () => {
+    await runUpsert(gh, { body: bodyWith('finding'), openCount: 1, closable: false });
+    gh.issues[0].state = 'closed'; // a human closed it; no CLEAR marker
+    await runUpsert(gh, { body: bodyWith('scan skipped'), openCount: 0, closable: false });
+    expect(gh.issues[0].state).toBe('closed'); // must stay closed
+  });
+
+  it('does not rewrite the issue when nothing changed on ANY branch', async () => {
+    await runUpsert(gh, { body: bodyWith('x'), openCount: 0, closable: false });
+    const before = gh.calls.filter((c) => c === 'update').length;
+    await runUpsert(gh, { body: bodyWith('x'), openCount: 0, closable: false });
+    expect(gh.calls.filter((c) => c === 'update').length).toBe(before);
+  });
+
+  it('an issue that merely QUOTES the marker is not hijacked', async () => {
+    gh.issues.push({ number: 3, title: 'Help', body: impostorBody, state: 'open', labels: [] });
+    await runUpsert(gh, { body: bodyWith('real'), openCount: 1, closable: false });
+    expect(gh.issues.find((i) => i.number === 3)!.body).toBe(impostorBody); // untouched
+    expect(gh.issues).toHaveLength(2); // ours was created separately
+  });
+
+  it('prefers the OLDEST marker-bearing issue when several exist', async () => {
+    gh.issues.push({ number: 2, title: 'Mendr', body: bodyWith('older'), state: 'open', labels: ['mendr-audit'] });
+    gh.issues.push({ number: 9, title: 'Mendr', body: bodyWith('newer'), state: 'open', labels: ['mendr-audit'] });
+    await runUpsert(gh, { body: bodyWith('mine'), openCount: 1, closable: false });
+    expect(gh.issues.find((i) => i.number === 2)!.body).toContain('mine');
+    expect(gh.issues.find((i) => i.number === 9)!.body).toContain('newer'); // untouched
+  });
+});
+
 describe('audit workflow — least privilege and safety', () => {
   it('requests only contents:read and issues:write', () => {
     expect(AUDIT_WORKFLOW_YAML).toContain('contents: read');
@@ -264,6 +304,15 @@ describe('audit workflow — least privilege and safety', () => {
 
   it('records the exact scanned commit', () => {
     expect(AUDIT_WORKFLOW_YAML).toContain('--sha "$GITHUB_SHA"');
+  });
+
+  it('does not persist a usable GITHUB_TOKEN while third-party npm code runs', () => {
+    expect(AUDIT_WORKFLOW_YAML).toContain('persist-credentials: false');
+  });
+
+  it('states honestly that a tag is mutable and a SHA is the only immutable pin', () => {
+    expect(AUDIT_WORKFLOW_YAML).toContain('A TAG IS');
+    expect(AUDIT_WORKFLOW_YAML).toContain('MUTABLE');
   });
 
   it('needs no provider key for the default run', () => {
