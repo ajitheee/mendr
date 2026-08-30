@@ -40,6 +40,11 @@ export interface Finding {
   occurrences: number;
   /** Every tier present across the merged occurrences (a merge must not hide an A). */
   tiers: string[];
+  /**
+   * The tier of EACH line, so a merge can never let a lower-confidence sibling
+   * ride along on a Tier-A one. A PR must be offered the Tier-A lines only.
+   */
+  tierByLine: Record<number, string>;
   decision: ModelInvestigation['decision'];
   entryId: string | null;
   shutdownDate: string | null;
@@ -97,8 +102,10 @@ export function toFindings(investigations: readonly ModelInvestigation[]): Findi
       if (existing) {
         existing.occurrences += 1;
         if (!existing.lines.includes(loc.line)) existing.lines.push(loc.line);
-        // A merge must never hide a Tier-A occurrence behind a B/C sibling.
+        // A merge must never hide a Tier-A occurrence behind a B/C sibling, nor
+        // let a B/C sibling inherit a Tier-A one's authority.
         if (!existing.tiers.includes(loc.tier)) existing.tiers.push(loc.tier);
+        existing.tierByLine[loc.line] = loc.tier;
         continue;
       }
       byId.set(id, {
@@ -112,6 +119,7 @@ export function toFindings(investigations: readonly ModelInvestigation[]): Findi
         lines: [loc.line],
         occurrences: 1,
         tiers: [loc.tier],
+        tierByLine: { [loc.line]: loc.tier },
         decision: inv.decision,
         entryId: inv.entryId,
         shutdownDate: inv.retirementEvidence.shutdownDate,
@@ -145,6 +153,7 @@ export function toFindings(investigations: readonly ModelInvestigation[]): Findi
           lines: [],
           occurrences: 1,
           tiers: ['B'],
+          tierByLine: {},
           decision: inv.decision,
           entryId: inv.entryId,
           shutdownDate: inv.retirementEvidence.shutdownDate,

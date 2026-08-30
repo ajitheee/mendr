@@ -335,6 +335,34 @@ describe('PR eligibility — verified Tier-A code call sites only', () => {
   it('never proposes a PR for a config finding, however verified', () => {
     expect(prEligibleFindings(configInvestigations())).toHaveLength(0);
   });
+
+  // Adversarial-review defect: the same model id used in a chat call (Tier A) AND
+  // an images call (Tier B) in ONE file merges into a single Finding. Before the
+  // fix, prEligibleFindings handed the PR BOTH lines — the Tier-B occurrence
+  // inherited its Tier-A sibling's authority.
+  it('a merged finding carries ONLY its Tier-A lines into PR eligibility', () => {
+    const loc = (line: number, tier: string) => ({
+      file: 'app/svc.py', line, column: 1, key: null, value: 'gpt-4',
+      role: 'code_call_site' as const, surface: 'code' as const, tier, providerSurface: null,
+    });
+    const inv = [{
+      entryId: 'e', provider: 'openai', model: 'gpt-4',
+      retirementEvidence: { deprecated: true, status: 'deprecated', shutdownDate: '2026-10-23', daysUntil: 54, replacement: 'gpt-4o', replacementVerdict: 'verified', sourceUrl: null },
+      productionUsage: { measured: false, source: null, observed: false, requestsReported: false, requests: 0, failures: 0, lastSeen: null, services: [], environments: [], costUsd: null },
+      locations: { selectors: [loc(6, 'A'), loc(13, 'B')], catalog: [] },
+      compatibility: { checked: false as const, result: null },
+      verification: { replacementVerdict: 'verified', readerTieBackProven: false as const },
+      decision: 'patch' as const, reason: '',
+    }];
+    // The merge itself must still EXPOSE both tiers…
+    const [merged] = toFindings(inv as never);
+    expect(merged.tiers).toEqual(['A', 'B']);
+    // …but the PR gets the Tier-A line only.
+    const pr = prEligibleFindings(inv as never);
+    expect(pr).toHaveLength(1);
+    expect(pr[0].lines).toEqual([6]);
+    expect(pr[0].lines).not.toContain(13);
+  });
 });
 
 describe('redactSecrets — nothing credential-shaped reaches a public issue', () => {

@@ -268,5 +268,25 @@ export function detectPySurface(file: string, text: string): PySurface {
     return 'openai_compatible_proxy';
   }
   if (/OAICompat|OpenAICompatible|openai_api_compatible/i.test(text)) return 'openai_compatible_proxy';
-  return 'direct';
+
+  // FAIL CLOSED. `direct` is the only surface that permits Tier A, so it must be
+  // EARNED by positive evidence that this file builds/imports a first-party
+  // client. Defaulting to `direct` let four attacks through: a call on an untyped
+  // parameter, a client pulled out of a dict, a method chain that merely LOOKS
+  // like the SDK path, and a locally-shadowed `create`. In each the client type is
+  // unresolved — and an unresolved client must reduce authority, not grant it.
+  return hasDirectClientEvidence(text) ? 'direct' : 'unknown_wrapper';
+}
+
+/**
+ * Positive evidence that this file imports or constructs a FIRST-PARTY provider
+ * client. Azure is excluded deliberately — it is matched earlier and is its own
+ * surface.
+ */
+export function hasDirectClientEvidence(text: string): boolean {
+  return (
+    /\bfrom\s+openai\s+import\b|\bimport\s+openai\b|\bOpenAI\s*\(|\bAsyncOpenAI\s*\(/.test(text) ||
+    /\bfrom\s+anthropic\s+import\b|\bimport\s+anthropic\b|\bAnthropic\s*\(|\bAsyncAnthropic\s*\(/.test(text) ||
+    /\bfrom\s+google\s+import\s+genai\b|\bimport\s+google\.generativeai\b|\bgenai\.Client\s*\(|\bGenerativeModel\s*\(/.test(text)
+  );
 }

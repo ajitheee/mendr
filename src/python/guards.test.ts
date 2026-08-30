@@ -155,6 +155,63 @@ def ask():
   }, 60_000);
 });
 
+// Defects found by the Tier-A adversarial review. Each of these reached Tier A
+// before the fix, on a file where the CLIENT TYPE is unresolved.
+describe('adversarial: an UNRESOLVED client must reduce authority (never Tier A)', () => {
+  it('a call on an untyped parameter is not Tier A', async () => {
+    const t = await tiers('app.py', `
+def ask(client):
+    return client.chat.completions.create(model="gpt-4", messages=[])
+`);
+    expect(t.find((x) => x.value === 'gpt-4')?.tier).toBe('B');
+  }, 60_000);
+
+  it('a client pulled out of a dict is not Tier A', async () => {
+    const t = await tiers('app.py', `
+clients = {}
+
+def ask():
+    return clients["a"].chat.completions.create(model="gpt-4", messages=[])
+`);
+    expect(t.find((x) => x.value === 'gpt-4')?.tier).toBe('B');
+  }, 60_000);
+
+  it('a locally SHADOWED create() is not Tier A', async () => {
+    const t = await tiers('app.py', `
+class Foo:
+    def create(self, model): pass
+
+class Bar:
+    completions = Foo()
+    chat = None
+
+def go():
+    b = Bar()
+    return b.chat.completions.create(model="gpt-4")
+`);
+    expect(t.find((x) => x.value === 'gpt-4')?.tier).toBe('B');
+  }, 60_000);
+
+  it('a method chain that merely LOOKS like the SDK path is not Tier A', async () => {
+    const t = await tiers('app.py', `
+def go(fake):
+    return fake.chat.completions.create(model="gpt-4")
+`);
+    expect(t.find((x) => x.value === 'gpt-4')?.tier).toBe('B');
+  }, 60_000);
+
+  it('but a file with real first-party client evidence still reaches Tier A', async () => {
+    const t = await tiers('app.py', `
+from openai import OpenAI
+client = OpenAI()
+
+def ask(q):
+    return client.chat.completions.create(model="gpt-4", messages=[])
+`);
+    expect(t.find((x) => x.value === 'gpt-4')?.tier).toBe('A');
+  }, 60_000);
+});
+
 describe('G5 — replacement and endpoint compatibility', () => {
   it('a direct IMAGE request with an unverifiable successor stays Tier B', async () => {
     const t = await tiers('tools/dalle3.py', `

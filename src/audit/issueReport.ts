@@ -499,11 +499,21 @@ export function renderAuditIssue(input: AuditIssueInput): AuditIssueRender {
  * replacement. Empty means: do not open a PR.
  */
 export function prEligibleFindings(investigations: readonly ModelInvestigation[]): Finding[] {
-  return toFindings(investigations).filter(
-    (f) =>
-      f.surface === 'code' &&
-      f.evidenceType === 'code_call_site' &&
-      f.tiers.includes('A') &&
-      f.replacementVerdict === 'verified',
-  );
+  return toFindings(investigations)
+    .filter(
+      (f) =>
+        f.surface === 'code' &&
+        f.evidenceType === 'code_call_site' &&
+        f.tiers.includes('A') &&
+        f.replacementVerdict === 'verified',
+    )
+    // A merged finding may hold a Tier-B sibling (e.g. the same model id used in
+    // a chat call AND an images call in one file). The PR must carry the Tier-A
+    // LINES ONLY — a lower-confidence occurrence must never inherit a Tier-A
+    // sibling's authority.
+    .map((f) => {
+      const aLines = f.lines.filter((l) => f.tierByLine[l] === 'A');
+      return { ...f, lines: aLines, occurrences: aLines.length, tiers: ['A'] };
+    })
+    .filter((f) => f.lines.length > 0);
 }
