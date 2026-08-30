@@ -400,6 +400,66 @@ function traceableName(node: PyNode): string | undefined {
  * call argument — the exact positions where a LITERAL would classify as
  * `model_arg`, applied to names instead.
  */
+/**
+ * Where a traced name actually FLOWS. The plain name set is not enough: a guard
+ * that only inspects the literal's own enclosing call is bypassed by one hop
+ * through a variable —
+ *
+ *     MODEL = "gpt-4"                       # no enclosing call here…
+ *     client.embeddings.create(model=MODEL) # …so the endpoint cap never ran
+ *
+ * and Azure, embeddings, legacy-SDK and unknown-wrapper call sites all reached
+ * Tier A that way. Recording the SINK NODE per name lets the caps apply at the
+ * place the value is actually used.
+ */
+export interface PySinkTarget {
+  /** The call the traced name flows into. */
+  call: PyNode;
+  /** The keyword it arrives under, when it is a keyword argument. */
+  kwName?: string;
+}
+
+/** Every traced name mapped to the call(s) it reaches. */
+export function collectPySinkTargets(tree: Tree): Map<string, PySinkTarget[]> {
+  const out = new Map<string, PySinkTarget[]>();
+  const add = (name: string, call: PyNode | null, kwName?: string): void => {
+    if (!call) return;
+    const list = out.get(name) ?? [];
+    list.push({ call, kwName });
+    out.set(name, list);
+  };
+  for (const kw of tree.rootNode.descendantsOfType('keyword_argument')) {
+    if (!kw) continue;
+    const name = kw.childForFieldName('name');
+    const value = kw.childForFieldName('value');
+    if (!name || !value || !isModelLikeName(name.text)) continue;
+    const traced = traceableName(value);
+    if (traced) add(traced, enclosingCall(value), name.text);
+  }
+  for (const call of tree.rootNode.descendantsOfType('call')) {
+    if (!call) continue;
+    const factory = calleeLastIdentifier(call);
+    if (!factory || !PY_MODEL_FACTORIES.has(factory)) continue;
+    const args = call.childForFieldName('arguments');
+    if (!args) continue;
+    for (const arg of args.namedChildren) {
+      if (!arg) continue;
+      const traced = traceableName(arg);
+      if (traced) add(traced, call);
+    }
+  }
+  for (const pair of tree.rootNode.descendantsOfType('pair')) {
+    if (!pair) continue;
+    const key = pair.childForFieldName('key');
+    const value = pair.childForFieldName('value');
+    if (!key || !value || !isModelLikeStringKey(key)) continue;
+    if (!isEnclosingDictACallArgument(pair)) continue;
+    const traced = traceableName(value);
+    if (traced) add(traced, enclosingCall(value));
+  }
+  return out;
+}
+
 export function collectPySinkNames(tree: Tree): Set<string> {
   const names = new Set<string>();
   for (const kw of tree.rootNode.descendantsOfType('keyword_argument')) {
@@ -438,6 +498,8 @@ export function collectPySinkNames(tree: Tree): Set<string> {
 export interface PyGuardContext {
   surface: PySurface;
   value?: string;
+  /** Where each traced name flows — lets the caps follow a variable hop. */
+  sinkTargets?: Map<string, PySinkTarget[]>;
 }
 
 export const PY_SURFACE_REASON = 'provider surface is not a verified direct provider — a direct replacement is not valid here';
@@ -556,6 +618,82 @@ export function applyPyGuards(
     }
   }
 
+  // THE VARIABLE-HOP PATH. When the literal has no enclosing call it reached
+  // `model_arg` through the sink TRACE (an assignment or a parameter default).
+  // The caps must then be applied where the value is USED, not where it is
+  // written — otherwise `MODEL = "gpt-4"` next to an Azure/embeddings/legacy call
+  // bypasses G2, G4 and G5 entirely. Every reachable sink must qualify; the
+  // strictest verdict wins, and an unresolvable one caps.
+  if (!call) {
+    const traced = tracedNameOf(literal);
+    const targets = traced ? ctx?.sinkTargets?.get(traced) ?? [] : [];
+    if (targets.length === 0) {
+      return { position: 'usage_unverified', reason: USAGE_UNVERIFIED_REASON };
+    }
+    for (const t of targets) {
+      const verdict = judgeSinkCall(literal, t.call, t.kwName, ctx);
+      if (verdict) return verdict;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Apply G2/G4/G5 to ONE call the value reaches. Returns a capping classification
+ * when that call fails a gate, else null (this call is fine).
+ */
+function judgeSinkCall(
+  literal: PyNode,
+  call: PyNode,
+  kwName: string | undefined,
+  ctx?: PyGuardContext,
+): { position: LiteralPosition; purpose?: DataPurpose; reason?: string } | null {
+  const dotted = dottedCallee(call);
+  if (isLegacySdkSink(dotted)) return { position: 'surface_capped', reason: PY_LEGACY_SDK_REASON };
+  const sink = matchSdkSink(dotted);
+  if (!sink) {
+    if (isProviderModelFactory(dotted)) {
+      // A factory is a real selection point, but still surface-capped.
+      const surface = ctx?.surface ?? 'unknown_wrapper';
+      return SURFACE_MAX_TIER[surface] === 'A'
+        ? null
+        : { position: 'surface_capped', reason: `${PY_SURFACE_REASON} (${surface})` };
+    }
+    return { position: 'surface_capped', reason: PY_UNRECOGNIZED_SINK_REASON };
+  }
+  if (kwName && !isRequestModelKwarg(kwName, sink.endpoint)) {
+    return { position: 'data', purpose: 'catalog_entry', reason: PY_CATALOG_REASON };
+  }
+  const surface = ctx?.surface ?? 'unknown_wrapper';
+  if (SURFACE_MAX_TIER[surface] !== 'A') {
+    return { position: 'surface_capped', reason: `${PY_SURFACE_REASON} (${surface})` };
+  }
+  const receiver = receiverOf(dotted ?? '', sink.suffix);
+  const bound = receiver ? resolveReceiverSurface(literal, receiver) : null;
+  if (!bound) return { position: 'surface_capped', reason: PY_UNRESOLVED_RECEIVER_REASON };
+  const wanted = sinkFamily(sink.suffix);
+  if (wanted && bound.family !== wanted) {
+    return { position: 'surface_capped', reason: `${PY_FAMILY_MISMATCH_REASON} (client is ${bound.family}, endpoint is ${wanted})` };
+  }
+  if (!TIER_A_ELIGIBLE_ENDPOINTS.has(sink.endpoint)) {
+    return { position: 'surface_capped', reason: `${PY_ENDPOINT_REASON} (${sink.endpoint})` };
+  }
+  return null;
+}
+
+/** The traced name this literal is bound to, if it is an assignment/param default. */
+function tracedNameOf(literal: PyNode): string | null {
+  const p = literal.parent;
+  if (!p) return null;
+  if (p.type === 'assignment') {
+    const left = p.childForFieldName('left');
+    return left ? traceableName(left) ?? null : null;
+  }
+  if (p.type === 'default_parameter' || p.type === 'typed_default_parameter') {
+    const n = p.childForFieldName('name');
+    return n ? n.text : null;
+  }
   return null;
 }
 
@@ -769,6 +907,7 @@ export async function findPyModelIdLiterals(
     try {
       // The sink rule's evidence set, computed once per file (see above).
       const sinkNames = collectPySinkNames(tree);
+      const sinkTargets = collectPySinkTargets(tree);
       // G4: the provider surface, resolved once per file, caps every tier below.
       const surface = detectPySurface(source.path, source.text);
       for (const node of tree.rootNode.descendantsOfType('string')) {
@@ -779,7 +918,7 @@ export async function findPyModelIdLiterals(
 
         // Position/purpose belong to the CST node, not the registry entry, so
         // classify once and emit one match per matching record (multimap).
-        const classification = classifyPyLiteral(node, sinkNames, { surface });
+        const classification = classifyPyLiteral(node, sinkNames, { surface, sinkTargets });
         const line = node.startPosition.row + 1;
         const column = node.startPosition.column + 1;
         for (const deprecation of deprecations) {

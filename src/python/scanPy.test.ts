@@ -219,8 +219,12 @@ describe('python engine gate: unverified replacements are BLOCKED, never swapped
   it('surfaces an unverified id in a live model-arg position as blocked', async () => {
     // The sink usage makes the assignment a LIVE model arg — only the entry's
     // unverified replacement blocks it (isolating the verification gate).
+    // The client must be CONSTRUCTED and the call must sit inside a function:
+    // an injected receiver, or a request at module level, caps at Tier B (G1/G4)
+    // and would mask the verification gate this test is isolating.
     const source =
-      'SMALL_MODEL = "o1-mini"\nresp = client.chat.completions.create(model=SMALL_MODEL)\n';
+      'from openai import OpenAI\noai = OpenAI()\nSMALL_MODEL = "o1-mini"\n' +
+      'def go():\n    return oai.chat.completions.create(model=SMALL_MODEL)\n';
     const result = await applyPyModelIdFixesToSources([src('app/pick.py', source)], REGISTRY);
 
     // o1-mini is model_arg here, but its entry is `unverified` — no swap.
@@ -264,12 +268,17 @@ describe('python azure deployment keys: dedicated locate surface, never a swap',
 describe('python quote + prefix discipline', () => {
   it('preserves single/double/triple quote style (content-only splice)', async () => {
     const source = [
+      'from openai import OpenAI',
+      'oai = OpenAI()',
       "model_single = 'gemini-2.0-flash'",
       'model_double = "gemini-2.0-flash"',
       'model_triple = """gemini-2.0-flash"""',
-      'client.create(model=model_single)',
-      'client.create(model=model_double)',
-      'client.create(model=model_triple)',
+      'def go():',
+      '    return oai.chat.completions.create(model=model_single)',
+      'def go():',
+      '    return oai.chat.completions.create(model=model_double)',
+      'def go():',
+      '    return oai.chat.completions.create(model=model_triple)',
       '',
     ].join('\n');
     const result = await applyPyModelIdFixesToSources([src('app/quotes.py', source)], REGISTRY);
@@ -303,7 +312,7 @@ describe('python test-file hardening', () => {
     'tests/helpers.py',
     'src/tests/deep/fixture.py',
   ])('skips %s outright (nothing swapped, nothing surfaced)', async (path) => {
-    const source = 'MODEL_NAME = "gemini-2.0-flash"\nPRICES = {"o1-mini": 1}\n';
+    const source = 'from openai import OpenAI\noai = OpenAI()\nMODEL_NAME = "gemini-2.0-flash"\nPRICES = {"o1-mini": 1}\n';
     const result = await applyPyModelIdFixesToSources([src(path, source)], REGISTRY);
 
     expect(result.siteCount).toBe(0);
@@ -314,7 +323,7 @@ describe('python test-file hardening', () => {
   });
 
   it('still scans a non-test sibling in the same batch', async () => {
-    const live = 'MODEL_NAME = "gemini-2.0-flash"\nclient.create(model=MODEL_NAME)\n';
+    const live = 'from openai import OpenAI\noai = OpenAI()\nMODEL_NAME = "gemini-2.0-flash"\ndef go():\n    return oai.chat.completions.create(model=MODEL_NAME)\n';
     const result = await applyPyModelIdFixesToSources(
       [src('app/test_routes.py', live), src('app/live.py', live)],
       REGISTRY,
@@ -338,7 +347,7 @@ describe('python syntax gate (the honesty backstop)', () => {
         verification: autoApplyVerification(),
       },
     ];
-    const source = 'MODEL_NAME = "gpt-4-vision-preview"\nclient.create(model=MODEL_NAME)\n';
+    const source = 'from openai import OpenAI\noai = OpenAI()\nMODEL_NAME = "gpt-4-vision-preview"\ndef go():\n    return oai.chat.completions.create(model=MODEL_NAME)\n';
     const result = await applyPyModelIdFixesToSources([src('app/broken.py', source)], poisoned);
 
     // The swap itself happened in-memory (diff is shown for review)...
@@ -352,7 +361,7 @@ describe('python syntax gate (the honesty backstop)', () => {
   });
 
   it('PASSES for a benign swap (baseline-relative: zero new errors)', async () => {
-    const source = 'MODEL_NAME = "gemini-2.0-flash"\nclient.create(model=MODEL_NAME)\n';
+    const source = 'from openai import OpenAI\noai = OpenAI()\nMODEL_NAME = "gemini-2.0-flash"\ndef go():\n    return oai.chat.completions.create(model=MODEL_NAME)\n';
     const result = await applyPyModelIdFixesToSources([src('app/fine.py', source)], REGISTRY);
     expect(result.syntaxGate.passed).toBe(true);
     expect(result.syntaxGate.failures).toHaveLength(0);
@@ -388,9 +397,11 @@ describe('python sink rule: assignments swap ONLY when traced to an in-file sink
 
   it('the SAME assignment swaps once the file passes the name to a provider sink', async () => {
     const source = [
+      'from openai import OpenAI',
+      'oai = OpenAI()',
       'def generate_cost_spike_event(client):',
       '    model = "gpt-4"',
-      '    client.chat.completions.create(model=model)',
+      '    oai.chat.completions.create(model=model)',
       '    return {"event": "cost_spike", "model": model, "cost": 42.0}',
       '',
     ].join('\n');
@@ -414,25 +425,35 @@ describe('python sink rule: assignments swap ONLY when traced to an in-file sink
     expect(result.patchedFiles[0]!.newText).toContain('model_id = "gemini-flash-latest"');
   });
 
-  it('a model-keyed dict passed to a call counts as a sink', async () => {
+  // GUARD G2 (reversed premise). A model-keyed dict handed to an UNRECOGNIZED
+  // callee used to count as a sink and earn Tier A. It must not: `requests.post`
+  // to an arbitrary URL may be Azure, a proxy, a gateway or a vLLM host, so the
+  // id namespace is unproven. The finding is real — it is reported for review —
+  // but it is never an unattended swap.
+  it('a model-keyed dict passed to an UNRECOGNIZED callee is NOT swapped', async () => {
     const source = [
-      'model = "gpt-4"',
-      'resp = requests.post("/v1/chat", json={"model": model})',
+      'def go():',
+      '    model = "gpt-4"',
+      '    return requests.post("/v1/chat", json={"model": model})',
       '',
     ].join('\n');
     const result = await applyPyModelIdFixesToSources([src('app/post.py', source)], REGISTRY);
 
-    expect(result.siteCount).toBe(1);
-    expect(result.patchedFiles[0]!.newText).toContain('model = "gpt-5.6-sol"');
+    expect(result.siteCount).toBe(0);
+    expect(result.patchedFiles).toHaveLength(0);
+    // …and it is still SURFACED, not silently dropped.
+    expect(result.usageUnverifiedMatches.length).toBeGreaterThan(0);
   });
 
   it('a self.model assignment traces through the attribute name', async () => {
     const source = [
+      'from openai import OpenAI',
+      'oai = OpenAI()',
       'class Bot:',
       '    def __init__(self):',
       '        self.model = "gpt-4"',
       '    def run(self, client):',
-      '        return client.chat.completions.create(model=self.model)',
+      '        return oai.chat.completions.create(model=self.model)',
       '',
     ].join('\n');
     const result = await applyPyModelIdFixesToSources([src('app/bot.py', source)], REGISTRY);
@@ -456,8 +477,10 @@ describe('python sink rule: assignments swap ONLY when traced to an in-file sink
 
   it('a parameter default swaps when the body reaches a sink', async () => {
     const source = [
+      'from openai import OpenAI',
+      'oai = OpenAI()',
       'def ask(client, model="gpt-4"):',
-      '    return client.chat.completions.create(model=model)',
+      '    return oai.chat.completions.create(model=model)',
       '',
     ].join('\n');
     const result = await applyPyModelIdFixesToSources([src('app/ask.py', source)], REGISTRY);
@@ -496,8 +519,9 @@ describe('python file annotations (mendr magic comments)', () => {
   it('a `# mendr: ignore-file` file is skipped entirely and counted', async () => {
     const source = [
       '# mendr: ignore-file',
-      'MODEL_NAME = "gemini-2.0-flash"',
-      'client.create(model=MODEL_NAME)',
+      'from openai import OpenAI\noai = OpenAI()\nMODEL_NAME = "gemini-2.0-flash"',
+      'def go():',
+      '    return oai.chat.completions.create(model=MODEL_NAME)',
       '',
     ].join('\n');
     const sources = [src('app/skipme.py', source)];
@@ -518,8 +542,9 @@ describe('python file annotations (mendr magic comments)', () => {
       '# line 4',
       '# line 5',
       '# mendr: ignore-file',
-      'MODEL_NAME = "gemini-2.0-flash"',
-      'client.create(model=MODEL_NAME)',
+      'from openai import OpenAI\noai = OpenAI()\nMODEL_NAME = "gemini-2.0-flash"',
+      'def go():',
+      '    return oai.chat.completions.create(model=MODEL_NAME)',
       '',
     ].join('\n');
     const sources = [src('app/late.py', source)];
@@ -534,7 +559,7 @@ describe('python diff output', () => {
   it('produces a git-appliable unified diff touching only changed files', async () => {
     const result = await applyPyModelIdFixesToSources(
       [
-        src('app/llm.py', 'MODEL_NAME = "gemini-2.0-flash"\nclient.create(model=MODEL_NAME)\n'),
+        src('app/llm.py', 'from openai import OpenAI\noai = OpenAI()\nMODEL_NAME = "gemini-2.0-flash"\ndef go():\n    return oai.chat.completions.create(model=MODEL_NAME)\n'),
         src('app/other.py', 'GREETING = "hello world"\n'),
       ],
       REGISTRY,
@@ -574,7 +599,7 @@ describe('duplicate registry records for one value (multimap)', () => {
     },
   ];
 
-  const SOURCE = ['MODEL_NAME = "gpt-4"', 'client.chat.completions.create(model=MODEL_NAME)', ''].join(
+  const SOURCE = ['from openai import OpenAI\noai = OpenAI()\nMODEL_NAME = "gpt-4"', 'oai.chat.completions.create(model=MODEL_NAME)', ''].join(
     '\n',
   );
 
@@ -595,7 +620,7 @@ describe('duplicate registry records for one value (multimap)', () => {
 
     expect(result.siteCount).toBe(1);
     expect(result.syntaxGate.passed).toBe(true);
-    expect(result.patchedFiles[0]!.newText).toContain('MODEL_NAME = "gpt-5.6-sol"');
+    expect(result.patchedFiles[0]!.newText).toContain('from openai import OpenAI\noai = OpenAI()\nMODEL_NAME = "gpt-5.6-sol"');
     // The id appears once in the source; it is replaced exactly once, not twice.
     expect(result.patchedFiles[0]!.newText).not.toContain('"gpt-4"');
   });

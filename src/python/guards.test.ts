@@ -275,6 +275,80 @@ def ask(q):
   }, 60_000);
 });
 
+// THE STRUCTURAL BYPASS. Every guard inspected the literal's OWN enclosing call,
+// so hoisting the model id into a variable skipped all of them: Azure,
+// embeddings, legacy SDK and unknown wrappers each reached Tier A that way.
+// The caps now follow the value to the sink it actually flows into.
+describe('adversarial: a variable hop must not bypass any cap', () => {
+  it('AZURE cap survives a variable hop', async () => {
+    const t = await tiers('app.py', `
+from openai import AzureOpenAI
+client = AzureOpenAI(api_version="2024-02-01")
+MODEL = "gpt-4"
+
+def ask():
+    return client.chat.completions.create(model=MODEL, messages=[])
+`);
+    expect(t.find((x) => x.value === 'gpt-4')?.tier).toBe('B');
+  }, 60_000);
+
+  it('ENDPOINT cap survives a variable hop', async () => {
+    const t = await tiers('app.py', `
+from openai import OpenAI
+client = OpenAI()
+MODEL = "gpt-4"
+
+def ask():
+    return client.embeddings.create(model=MODEL, input="x")
+`);
+    expect(t.find((x) => x.value === 'gpt-4')?.tier).toBe('B');
+  }, 60_000);
+
+  it('LEGACY-SDK cap survives a variable hop', async () => {
+    const t = await tiers('app.py', `
+import openai
+MODEL = "gpt-4"
+
+def ask():
+    return openai.ChatCompletion.create(model=MODEL, messages=[])
+`);
+    expect(t.find((x) => x.value === 'gpt-4')?.tier).toBe('B');
+  }, 60_000);
+
+  it('UNRECOGNIZED-SINK cap survives a variable hop', async () => {
+    const t = await tiers('app.py', `
+MODEL = "gpt-4"
+
+def ask(gateway):
+    return gateway.dispatch(model=MODEL)
+`);
+    expect(t.find((x) => x.value === 'gpt-4')?.tier).toBe('B');
+  }, 60_000);
+
+  it('a raw HTTP POST with a model dict is capped, not auto-migratable', async () => {
+    const t = await tiers('app.py', `
+import requests
+
+def ask():
+    return requests.post("https://openrouter.ai/api/v1/chat/completions",
+                         json={"model": "gpt-4", "messages": []})
+`);
+    expect(t.find((x) => x.value === 'gpt-4')?.tier).toBe('B');
+  }, 60_000);
+
+  it('but a LEGITIMATE hoisted constant into a real sink still reaches Tier A', async () => {
+    const t = await tiers('app.py', `
+from openai import OpenAI
+client = OpenAI()
+MODEL_NAME = "gpt-4"
+
+def ask():
+    return client.chat.completions.create(model=MODEL_NAME, messages=[])
+`);
+    expect(t.find((x) => x.value === 'gpt-4')?.tier).toBe('A');
+  }, 60_000);
+});
+
 describe('G5 — replacement and endpoint compatibility', () => {
   it('a direct IMAGE request with an unverifiable successor stays Tier B', async () => {
     const t = await tiers('tools/dalle3.py', `
