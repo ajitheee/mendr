@@ -151,7 +151,7 @@ import { installWatchWorkflow, MENDR_RELEASE } from './watch/installWorkflow.js'
 import { foldConfigExposure, scanConfigFiles } from './config/scanConfig.js';
 import { renderConfigReport } from './report/configReport.js';
 import { auditUsage } from './recon/usageAudit.js';
-import { fetchProviderUsage, loadFixtureUsage } from './recon/providers.js';
+import { fetchProviderUsage, loadFixtureUsage, providerCoverageNotes } from './recon/providers.js';
 import type { Provider } from './recon/types.js';
 import { renderUsageReport } from './report/usageReport.js';
 import { buildInvestigations, concludeAudit, type AuditCoverage } from './audit/investigation.js';
@@ -190,6 +190,11 @@ async function cloneRemoteOrExit(url: string): Promise<string> {
 }
 
 /** Resolve a repo path, exiting non-zero if it is missing or not a directory. */
+/** The distinct providers the loaded registry actually covers (for the coverage report). */
+function registryProviders(registry: ReturnType<typeof loadLlmRegistry>): string[] {
+  return [...new Set(registry.map((e) => e.provider))].sort();
+}
+
 function resolveRepoOrExit(repoPath: string): string {
   const resolved = resolve(repoPath);
   if (!existsSync(resolved) || !statSync(resolved).isDirectory()) {
@@ -2837,6 +2842,7 @@ program
       let tsFiles = 0;
       let pyFiles = 0;
       let sourceAnalyzed = false;
+      let sourceFailed = false;
       if (!opts.skipSource) {
         try {
           tsFiles = collectTsSourceFiles(resolved).length;
@@ -2846,7 +2852,8 @@ program
           source = foldExposure(scan.matches);
           sourceAnalyzed = true;
         } catch (err) {
-          console.error(`mendr: source scan failed (reporting config + usage only): ${err instanceof Error ? err.message : String(err)}`);
+          sourceFailed = true;
+          console.error(`mendr: source scan FAILED (results are unreliable): ${err instanceof Error ? err.message : String(err)}`);
         }
       }
 
@@ -2908,12 +2915,25 @@ program
 
       const investigations = buildInvestigations(usageStatus === 'ok' ? usageAudit : null, config, now, source);
 
-      const skipNote = opts.skipSource ? 'skipped (--skip-source)' : undefined;
+      const skipNote = opts.skipSource ? 'skipped (--skip-source)' : sourceFailed ? undefined : undefined;
       const coverage: AuditCoverage = {
+        source: {
+          analyzed: sourceAnalyzed,
+          failed: sourceFailed,
+          filesScanned: tsFiles + pyFiles,
+          tsFiles,
+          pyFiles,
+          note: skipNote,
+        },
         config: { analyzed: true, filesScanned },
-        typescript: { analyzed: sourceAnalyzed, filesScanned: tsFiles, note: skipNote },
-        python: { analyzed: sourceAnalyzed, filesScanned: pyFiles, note: skipNote },
-        usage: { analyzed: usageStatus === 'ok', provider: providers[0] ?? null },
+        registry: { providers: registryProviders(registry) },
+        usage: {
+          analyzed: usageStatus === 'ok',
+          provider: providers[0] ?? null,
+          failed: usageStatus === 'error',
+          notes: wantUsage && providers[0] ? providerCoverageNotes(providers[0] as Provider) : undefined,
+        },
+        readerTieBack: { proven: false },
       };
       const conclusion = concludeAudit(coverage, investigations.length);
 
