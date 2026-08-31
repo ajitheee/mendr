@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { renderedLocations } from './exposure.js';
 import { dirname, join } from 'node:path';
 import type { ExposedModel } from './exposure.js';
 
@@ -48,7 +49,15 @@ export function serializeExposure(
   models: readonly ExposedModel[],
   registryVersion: string,
 ): string {
-  const file: ExposureFile = { schema: EXPOSURE_SCHEMA, registryVersion, models: [...models] };
+  // The persisted snapshot is a PRESENTATION surface: it stays bounded, while the
+  // in-memory model keeps the complete occurrence set that classification uses.
+  // renderedLocations never drops a whole tier, so a lower-tier occurrence is
+  // still visible here even behind many higher-tier siblings.
+  const file: ExposureFile = {
+    schema: EXPOSURE_SCHEMA,
+    registryVersion,
+    models: models.map((m) => ({ ...m, locations: renderedLocations(m) })),
+  };
   return `${JSON.stringify(file, null, 2)}\n`;
 }
 

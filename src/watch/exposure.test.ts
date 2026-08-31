@@ -15,6 +15,7 @@ import {
   mostOverdueDays,
   nearestUpcomingDeadlineDays,
   occurrenceTierCounts,
+  renderedLocations,
   type ExposureMatch,
 } from './exposure.js';
 
@@ -143,14 +144,31 @@ describe('foldExposure', () => {
     expect(models.map((m) => m.id)).toEqual(['b', 'a', 'c']);
   });
 
-  it('caps persisted locations but keeps the true occurrence count', () => {
+  // CORRECTED CONTRACT. foldExposure used to truncate `locations` itself, which
+  // ERASED lower-tier occurrences from the DATA: a Tier-B finding sitting behind
+  // 50 Tier-A siblings vanished, and the audit then reported it "resolved" with
+  // the code unchanged. Classification now uses the complete occurrence set; the
+  // cap belongs to presentation (renderedLocations) and to the persisted file.
+  it('keeps the COMPLETE occurrence set in the data', () => {
     const many: ExposureMatch[] = Array.from({ length: MAX_LOCATIONS_PER_MODEL + 20 }, (_, i) =>
       match({ file: 'src/app.ts', line: i + 1, tier: 'C' }),
     );
     const [m] = foldExposure(many);
     expect(m.occurrences).toBe(MAX_LOCATIONS_PER_MODEL + 20);
     expect(m.tierCounts.C).toBe(MAX_LOCATIONS_PER_MODEL + 20);
-    expect(m.locations).toHaveLength(MAX_LOCATIONS_PER_MODEL);
+    expect(m.locations).toHaveLength(MAX_LOCATIONS_PER_MODEL + 20);
+  });
+
+  it('caps only what is RENDERED, and never hides a whole tier', () => {
+    const many: ExposureMatch[] = Array.from({ length: MAX_LOCATIONS_PER_MODEL + 20 }, (_, i) =>
+      match({ file: 'src/app.ts', line: i + 1, tier: 'A' }),
+    );
+    many.push(match({ file: 'src/zzz_last.py', line: 5, tier: 'B' }));
+    const [m] = foldExposure(many);
+    const shown = renderedLocations(m);
+    expect(shown.length).toBeLessThanOrEqual(MAX_LOCATIONS_PER_MODEL);
+    // The single Tier-B occurrence survives truncation — it is what a reader needs.
+    expect(shown.some((l) => l.tier === 'B')).toBe(true);
   });
 
   it('disposition is decided by the tier MIX, not highestTier', () => {

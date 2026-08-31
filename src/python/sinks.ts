@@ -28,6 +28,8 @@ export const PROVIDER_SDK_SINKS: ReadonlyArray<{ suffix: string; endpoint: SinkE
   { suffix: 'chat.completions.create', endpoint: 'chat' },
   { suffix: 'chat.completions.parse', endpoint: 'chat' },
   { suffix: 'responses.create', endpoint: 'responses' },
+  { suffix: 'responses.stream', endpoint: 'responses' },
+  { suffix: 'chat.completions.stream', endpoint: 'chat' },
   { suffix: 'responses.parse', endpoint: 'responses' },
   { suffix: 'completions.create', endpoint: 'completions' },
   { suffix: 'images.generate', endpoint: 'images' },
@@ -259,9 +261,33 @@ const PROXY_HOSTS = /(cometapi|deerapi|aihubmix|openrouter|together\.xyz|groq\.c
  * construction and any base_url override. Deliberately conservative: anything
  * that smells non-first-party caps the tier at B.
  */
-export function detectPySurface(file: string, text: string): PySurface {
+/**
+ * Drop comments so PROSE never drives surface attribution. The word `localhost`
+ * in a comment made a genuine direct client look like a proxy and demoted a real
+ * Tier-A call site — the same class of bug as the docstring granting Tier A, in
+ * the opposite direction.
+ */
+export function stripPyComments(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => {
+      // Only strip a `#` that is not inside a string on this line (approximate,
+      // and deliberately conservative: when in doubt, keep the text).
+      const q = line.search(/["']/);
+      const h = line.indexOf('#');
+      if (h === -1) return line;
+      if (q !== -1 && q < h) return line;
+      return line.slice(0, h);
+    })
+    .join('\n');
+}
+
+export function detectPySurface(file: string, rawText: string): PySurface {
+  const text = stripPyComments(rawText);
   const p = file.replace(/\\/g, '/').toLowerCase();
-  if (/(^|\/)(azure|azure_openai)(\/|_|$)/.test(p) || /AzureOpenAI\s*\(|api_version\s*=/.test(text)) {
+  // `api_version =` alone is NOT Azure — plenty of code has an unrelated one.
+  // Require a real Azure client construction, or an azure path segment.
+  if (/(^|\/)(azure|azure_openai)(\/|_|$)/.test(p) || /Azure(Async)?OpenAI\s*\(/.test(text)) {
     return 'azure_openai';
   }
   if (/(^|\/)(bedrock|sagemaker)(\/|_|$)/.test(p) || /boto3\.client\(\s*["']bedrock/.test(text)) return 'aws_bedrock';

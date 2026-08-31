@@ -626,7 +626,16 @@ export function applyPyGuards(
   // strictest verdict wins, and an unresolvable one caps.
   if (!call) {
     const traced = tracedNameOf(literal);
-    const targets = traced ? ctx?.sinkTargets?.get(traced) ?? [] : [];
+    // SCOPE-AWARE. Sink names are collected file-globally, so an unrelated local
+    // `model = "gpt-4"` matched a sink fed by a same-named parameter in ANOTHER
+    // function — and fix-llm rewrote that unrelated assignment. A local binding
+    // is only trusted against a sink in the same function.
+    const reachable = traced ? ctx?.sinkTargets?.get(traced) ?? [] : [];
+    // `traceableName` returns the ATTRIBUTE name for `self.model`, so detect the
+    // self-attribute case from the AST instead of the traced string.
+    const left = literal.parent?.type === 'assignment' ? literal.parent.childForFieldName('left') : null;
+    const isSelfAttr = left?.type === 'attribute';
+    const targets = reachable.filter((t) => sinkIsInScope(literal, t.call, isSelfAttr));
     if (targets.length === 0) {
       return { position: 'usage_unverified', reason: USAGE_UNVERIFIED_REASON };
     }
@@ -678,6 +687,49 @@ function judgeSinkCall(
   }
   if (!TIER_A_ELIGIBLE_ENDPOINTS.has(sink.endpoint)) {
     return { position: 'surface_capped', reason: `${PY_ENDPOINT_REASON} (${sink.endpoint})` };
+  }
+  return null;
+}
+
+/** The nearest enclosing function node, or null at module level. */
+function enclosingFunction(node: PyNode): PyNode | null {
+  let n: PyNode | null = node;
+  while (n) {
+    if (n.type === 'function_definition' || n.type === 'lambda') return n;
+    n = n.parent;
+  }
+  return null;
+}
+
+/**
+ * Do these two nodes share a scope for the purpose of trusting a sink trace?
+ *
+ * A module-level constant may legitimately feed a sink inside any function. But a
+ * LOCAL binding must only be trusted against a sink in the SAME function — a
+ * `model = "gpt-4"` inside an unrelated metadata helper must not inherit
+ * authority from a same-named parameter that reaches a real sink elsewhere.
+ */
+function sinkIsInScope(literal: PyNode, sinkCall: PyNode, isSelfAttr: boolean): boolean {
+  // A self-attribute is INSTANCE state — set in one method, used in another — so
+  // its scope is the enclosing CLASS, not the enclosing function.
+  if (isSelfAttr) {
+    const declClass = enclosingClass(literal);
+    if (!declClass) return true;
+    const useClass = enclosingClass(sinkCall);
+    return useClass !== null && useClass.equals(declClass);
+  }
+  const declScope = enclosingFunction(literal);
+  if (!declScope) return true; // module-level constant: visible everywhere
+  const useScope = enclosingFunction(sinkCall);
+  return useScope !== null && useScope.equals(declScope);
+}
+
+/** The nearest enclosing class, or null. */
+function enclosingClass(node: PyNode): PyNode | null {
+  let n: PyNode | null = node;
+  while (n) {
+    if (n.type === 'class_definition') return n;
+    n = n.parent;
   }
   return null;
 }

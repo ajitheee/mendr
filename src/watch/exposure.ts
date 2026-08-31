@@ -104,6 +104,27 @@ export interface Exposure {
 export const MAX_LOCATIONS_PER_MODEL = 50;
 
 /**
+ * The locations a RENDERER should show: at most {@link MAX_LOCATIONS_PER_MODEL},
+ * but never dropping a tier entirely — at least one occurrence of every tier
+ * present survives, so a reader can always see that a lower-tier sibling exists.
+ */
+export function renderedLocations(model: ExposedModel): ExposureOccurrence[] {
+  if (model.locations.length <= MAX_LOCATIONS_PER_MODEL) return model.locations;
+  const keep: ExposureOccurrence[] = [];
+  const seenTier = new Set<string>();
+  for (const l of model.locations) {
+    if (seenTier.has(l.tier)) continue;
+    seenTier.add(l.tier);
+    keep.push(l);
+  }
+  for (const l of model.locations) {
+    if (keep.length >= MAX_LOCATIONS_PER_MODEL) break;
+    if (!keep.includes(l)) keep.push(l);
+  }
+  return keep.sort(compareOccurrence);
+}
+
+/**
  * Whole days from `now` (at UTC day granularity) until `shutdownDate`. Negative
  * when the date has passed, 0 on the day itself, null when undated or invalid.
  */
@@ -239,10 +260,12 @@ export function foldExposure(matches: readonly ExposureMatch[]): ExposedModel[] 
   for (const model of models) {
     model.highestTier = highestOf(model.tierCounts);
     model.disposition = dispositionOf(model.tierCounts);
+    // CLASSIFICATION USES THE COMPLETE SET. A location cap belongs to
+    // PRESENTATION only: truncating here erased lower-tier occurrences from the
+    // data itself, so a Tier-B finding sitting behind 50 Tier-A siblings simply
+    // vanished — and the issue then reported it "resolved" with the code
+    // unchanged. Renderers call renderedLocations() instead.
     model.locations.sort(compareOccurrence);
-    if (model.locations.length > MAX_LOCATIONS_PER_MODEL) {
-      model.locations = model.locations.slice(0, MAX_LOCATIONS_PER_MODEL);
-    }
   }
   models.sort(compareByRiskThenDeadline);
   return models;

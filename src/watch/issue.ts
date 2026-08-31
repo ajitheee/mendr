@@ -5,6 +5,7 @@ import { TIER_B_REASON_ORDER } from '../report/tiers.js';
 import {
   daysUntil,
   hasReadyFix,
+  renderedLocations,
   totalOccurrences,
   type ExposedModel,
   type Exposure,
@@ -85,13 +86,13 @@ function formatLocations(locs: readonly ExposureOccurrence[]): string {
 export function tierDetailLines(model: ExposedModel): string[] {
   const lines: string[] = [];
   if (model.tierCounts.A > 0) {
-    const locs = model.locations.filter((l) => l.tier === 'A');
+    const locs = renderedLocations(model).filter((l) => l.tier === 'A');
     lines.push(
       `Tier A: ${model.tierCounts.A} auto-fixable ${plural(model.tierCounts.A, 'occurrence')}` +
         (locs.length ? ` at ${formatLocations(locs)}` : ''),
     );
   }
-  const bLocs = model.locations.filter((l) => l.tier === 'B');
+  const bLocs = renderedLocations(model).filter((l) => l.tier === 'B');
   const reasonsPresent = new Set(bLocs.map((l) => l.reason).filter(Boolean) as TierBReason[]);
   for (const reason of TIER_B_REASON_ORDER) {
     if (!reasonsPresent.has(reason)) continue;
@@ -101,7 +102,7 @@ export function tierDetailLines(model: ExposedModel): string[] {
     );
   }
   if (model.tierCounts.C > 0) {
-    const locs = model.locations.filter((l) => l.tier === 'C');
+    const locs = renderedLocations(model).filter((l) => l.tier === 'C');
     lines.push(
       `Tier C: ${model.tierCounts.C} data ${plural(model.tierCounts.C, 'occurrence')}` +
         (locs.length ? ` at ${formatLocations(locs)}` : ''),
