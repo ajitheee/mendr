@@ -1,5 +1,7 @@
 # mendr go-to-market and monetization plan
 
+> **update 2026-09-03.** three things changed since this was written. (1) the entry product is now the key-free `mendr audit`: repository only, no provider key, four honest conclusions, one self-updating github issue per repo, with `fix-llm` as the verified-diff step behind it. (2) python shipped in v0.2.2-alpha, so every "typescript-only" caveat below is retired. (3) launch is fixed: product hunt on 2026-09-20, show hn on 2026-09-22, yc application after three weeks of launch data (deadline 2026-11-02). the money decision below is unchanged.
+
 this is the committed plan, not a set of options. the decision on money is made and not reopened. the whole thing is built to keep you talking to people instead of disappearing into the editor.
 
 ## the north star
@@ -17,7 +19,7 @@ the published ladder (this is also the public anchor):
 - **free, $0 forever.** the full CLI, unlimited, run locally as often as you want. the public deprecation registry. the GitHub Action watching one private repo and opening verified PRs. this is a deliberate loss leader, the same posture as dependabot being free inside github. it is the funnel, never counted as revenue.
 - **team, $49/mo or $490/yr.** continuous watch on up to 10 private repos across openai, anthropic and google. the private early-warning registry that carries a retirement date before it becomes an outage. verified auto-PRs, slack and email alerts, a 48-hour SLA to open a PR once a deprecation is public.
 - **business, $199/mo or $1,990/yr.** unlimited repos, a 24-hour SLA, SSO and audit log, and the insurance clause: if a deprecation already in our registry breaks your prod and we failed to open a PR, we credit you. that clause is what turns an occasional pain into a standing subscription.
-- **enterprise / on-prem, custom from ~$1,500/mo.** self-hosted action and registry inside their VPC, bring-your-own-LLM for the verify step, SAML and a DPA. this is also the home for python once it ships.
+- **enterprise / on-prem, custom from ~$1,500/mo.** self-hosted action and registry inside their VPC, bring-your-own-LLM for the verify step, SAML and a DPA. this is also the home for a self-hosted registry and on-prem scanning.
 
 first ten customers are signed as design partners at a flat $500 for a 3-month concierge pilot, or free, in exchange for a logo and a dated testimonial. the $49 and $199 numbers stay the published price so those early deals read as a discount, not a ceiling. the price is a reasoned guess, not a validated number. let real willingness to pay reveal itself before touching it.
 
@@ -31,14 +33,14 @@ it has three jobs and none of them is revenue.
 
 ## track one: visibility (free users and amplifiers)
 
-the audience is the javascript and typescript ecosystem, not "ai devs" in general. every post states the typescript-only scope up front. most agent and LLM repos are python and you cannot touch them yet, and getting caught overclaiming costs more trust than the extra reach is worth.
+the audience is the javascript and typescript ecosystem, not "ai devs" in general. every post states the scope up front: typescript, tsx and python source plus config, with any other language named as not analyzed. python shipped in v0.2.2-alpha; the earlier typescript-only caveat is retired. getting caught overclaiming still costs more trust than the extra reach is worth, so the coverage matrix goes in every screenshot.
 
 the unit of amplification is a verified diff on the target's own public repo, handed over. never a cold ask. the hard rule is real diff or no diff. zero wrong edits across 26 repos is your only moat against copilot autofix, and one bogus PR burns it permanently.
 
 - **keystone: land a Show HN first**, on a tuesday or wednesday around 9-10am ET. plain title, three real diffs from recognizable projects in the first comment, and pre-empt the dependabot and intermittent-pain objections in the post itself. the newsletters and the big accounts mostly react to what already landed on HN.
 - **primary channels for a founder with no audience:** cooperpress (javascript weekly, ~400k, and node weekly), console.dev, and bytes.dev, all submission-based and exactly your audience. plus X through matt pocock with a verified PR on one of his own repos.
 - **wow-play PR targets:** matt pocock, syntax.fm (syntaxfm/website), theo / t3.gg, and librechat.
-- **secondary:** latent space discord (share the registry as a resource, be upfront that python is unsupported), and r/typescript, r/ChatGPTCoding, r/LLMDevs, r/SideProject, posting the outcome not the tool.
+- **secondary:** latent space discord (share the registry as a resource, be upfront about what is and is not covered), and r/typescript, r/ChatGPTCoding, r/LLMDevs, r/SideProject, posting the outcome not the tool.
 - **skip:** product hunt, fireship, paid TLDR sponsorship.
 - **cadence, two tracks.** an evergreen proof once a week: run mendr on one recognizable public TS repo and publish the verified diff. plus an event-pegged loud push whenever a provider actually deprecates something, fired across HN, cooperpress, console, bytes and X at once. the concrete trigger is gemini 2.5 retiring on oct 16 2026. do not manufacture urgency in the quiet weeks.
 
@@ -65,7 +67,7 @@ to charge the standing hosted subscription, six things get built, in this order,
 3. slack and email alerting on new exposure and PR-open (about 1 week).
 4. stripe billing gated on a flat per-org plan (1-2 weeks).
 5. a dashboard with org and team accounts and a one-screen exposure view (3-5 weeks, where scope balloons, gated behind real paying demand).
-6. python support, a second detection engine with its own verify gate (4-8 weeks). do not attempt this before a paying typescript customer exists.
+6. python support — SHIPPED in v0.2.2-alpha (tree-sitter scanner behind the same verify gate). go, java and ruby stay out of scope until a paying customer asks.
 
 **already built and real:** call-site-aware model-id and param fixes for openai/anthropic/google plus stripe renames (370 tests; 0 wrong edits across the 26 repos measured in the aug-2026 recall audit), the verify-before-apply gate, a dated registry carrying a per-entry verdict from a live-oracle check (94 of 106 stamped `verified` today, the rest blocked from auto-apply; a handful carry a recheck date with a note that the id was not researched on that pass), and the end-to-end github action. **not built:** any server, app, accounts, dashboard, billing, alerting, dated data, or python. realistically 3 to 5 months of focused build for the hosted product, and that is not the risky part. the risky part is proof that anyone pays.
 
@@ -98,7 +100,7 @@ goal: now the tool works unattended and you know the paid shape. reach developer
 goal: first real money, and build the hosted product only as far as paying demand justifies.
 - put the published price in front of the teams that said they'd pay.
 - ask for a signed pilot or written commitment from the named companies and any visibility-sourced team.
-- build the hosted watch in dependency order (dated feed, then app and backend and scan worker, then alerting, then billing) only for customers who already agreed to pay. dashboard and python stay unbuilt until a paying customer demands them.
+- build the hosted watch in dependency order (dated feed, then app and backend and scan worker, then alerting, then billing) only for customers who already agreed to pay. the dashboard stays unbuilt until a paying customer demands it.
 - gate to pass: at least 1 team paying real money, or 3 signed pilots. first dollar counts more than any number of users. kill: if after 90 days no team will pay anything despite a working product and a clear offer, keep mendr as a free open-source tool and a maintained registry, and sink no more build time into a paid product until a team asks with money.
 
 ## this week
@@ -114,4 +116,4 @@ the tool is real and the hard part is done. accurate detection, a working verify
 
 the whole plan exists to stop you from doing the thing you default to, which is building when you should be talking to people. through day 50 you write no product code beyond bug fixes real users surface and registry updates. you measure yourself on verified fixes merged into repos you do not own. you do not let a pile of stars feel like traction, because the devs who amplify mendr are almost never the teams who pay for it.
 
-the money decision is settled. flat per-org insurance, the CLI free forever, $49 and $199 published, first ten partners at $500 pilots for logos. but the price is a guess and the typescript-only scope caps the buyable market hard until python ships, which you must not build until a paying TS customer exists. if by day 90 no team will pay anything despite a working product and a clear offer, the honest outcome is a free open-source tool and a maintained registry, and you take that answer rather than sink two more months into a product nobody bought.
+the money decision is settled. flat per-org insurance, the CLI free forever, $49 and $199 published, first ten partners at $500 pilots for logos. but the price is a guess. python shipped in v0.2.2-alpha, so scope no longer caps the market; the open question is unchanged — proof that anyone pays. if by day 90 no team will pay anything despite a working product and a clear offer, the honest outcome is a free open-source tool and a maintained registry, and you take that answer rather than sink two more months into a product nobody bought.

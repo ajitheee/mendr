@@ -1,37 +1,73 @@
 # mendr
 
-mendr auto-fixes third-party API breaking changes in your TypeScript repo. Today it covers deprecated LLM model ids and the params that die with them (OpenAI, Anthropic, Google), plus Stripe field renames.
+**Find every retiring AI model your repo still calls, before the provider shuts it off.**
+
+One command scans TypeScript, TSX, Python and config files, joins a dated retirement registry for OpenAI, Anthropic and Google, and tells you what breaks, where, and by when. No API key. Nothing is changed.
+
+```sh
+npx github:ajitheee/mendr#v0.2.2-alpha audit .
+```
+
+(`npx mendr audit .` once the package lands on the npm registry.)
 
 ## the problem
 
-A provider retires a model id, or flips a param like `max_tokens` to `max_completion_tokens` on the newer models. Your code keeps compiling until it doesn't, and you usually find out when it 404s or 400s in prod. mendr finds those spots and hands you the exact diff.
+A provider retires a model id, or flips a param like `max_tokens` to `max_completion_tokens` on the newer models. Your code keeps compiling until it doesn't, and you usually find out when it 404s or 400s in prod. Dependabot and Renovate never fire on it: `gpt-4` is a string in your application code, not a package version.
 
-## quickstart
+## what you get
 
-```sh
-npx github:ajitheee/mendr fix-llm .
+```
+Audit coverage
+
+✓ Source code:       342 files scanned (301 TS/TSX, 41 Python)
+○ Configuration:     not applicable — no supported configuration files found
+✓ Registry:          anthropic, google, openai
+○ Runtime usage:     not measured — no runtime source connected (optional)
+
+Conclusion: EXPOSURE DETECTED
+
+Model: gpt-4
+Location: src/ai/client.ts:42 — verified direct provider call site
+Retirement: 2026-10-23
+Migration evidence: gpt-5.6-sol [registry: verified] (evidence only — not applied here)
+Decision: PATCH ELIGIBLE
+Status: No change applied
 ```
 
-(once the package lands on the npm registry this shortens to `npx mendr fix-llm .`)
+Every output carries the coverage matrix, so a skipped surface can never read as "clean". There are exactly four conclusions and none of them is a general all-clear — see [AI dependency audit](#ai-dependency-audit-preview).
 
-Point it at a repo and it prints a unified diff of the fixes it wants to make. Read the patch. If it's right, apply it.
+## keep it watched
+
+```sh
+npx github:ajitheee/mendr#v0.2.2-alpha audit . --install
+```
+
+scaffolds a GitHub workflow that keeps **one issue per repository** current: new, continuing and resolved findings, the exact commit scanned, and the coverage matrix. It asks for `contents: read` and `issues: write`, never touches your default branch, and never merges anything.
+
+## want the fix, not just the finding?
+
+`fix-llm` goes one step further: it writes the exact diff for a retired id at a verified call site and proves it against your type-check and tests before anything is applied. Print-only by default — read the patch, and if it's right, apply it:
+
+```sh
+npx github:ajitheee/mendr#v0.2.2-alpha fix-llm .
+```
 
 You can also point it straight at a GitHub link. mendr clones a throwaway copy and scans that, so the real repo is never touched:
 
 ```sh
-npx github:ajitheee/mendr fix-llm https://github.com/someone/their-repo
+npx github:ajitheee/mendr#v0.2.2-alpha fix-llm https://github.com/someone/their-repo
 ```
 
 It never writes to your working tree on its own. The default is print-only. When you're ready to apply:
 
 ```sh
-npx github:ajitheee/mendr fix-llm . --write
+npx github:ajitheee/mendr#v0.2.2-alpha fix-llm . --write
 ```
 
 `--write` only applies a fix that passed the gates (type-check, plus your tests when they can run). Anything it can't verify is shown for review and left alone. You can also pipe the diff straight into git, since it's a standard patch:
 
 ```sh
-npx github:ajitheee/mendr fix-llm . -o mendr.patch && git apply mendr.patch
+npx github:ajitheee/mendr#v0.2.2-alpha fix-llm . -o mendr.patch && git apply mendr.patch
 ```
 
 ### keep watching a repo
@@ -39,7 +75,7 @@ npx github:ajitheee/mendr fix-llm . -o mendr.patch && git apply mendr.patch
 `fix-llm` is one-shot. `mendr watch` is the resident version — it scans in your own GitHub Actions and keeps one issue listing every deprecated model id you use, grouped by risk and deadline, so you find out before a model retires. Run it once to see your exposure, or `--install` to make it resident:
 
 ```sh
-npx github:ajitheee/mendr watch .
+npx github:ajitheee/mendr#v0.2.2-alpha watch .
 ```
 
 See [standing watch](#standing-watch) for the details and [WATCH-SCHEMA.md](WATCH-SCHEMA.md) for the JSON.
@@ -50,6 +86,7 @@ Nothing, unless you pass `--write`. By default mendr loads your code in memory, 
 
 ## commands
 
+- `mendr audit [path]` — **(preview)** the unified audit: scan TS/TSX/Python source + config, join the deprecation registry, and report every retiring AI dependency with its location, deadline, and migration evidence. **Needs only the repository.** See below.
 - `mendr fix-llm <path>` — scan a repo for retired model ids and coupled params, print the gated diff. This is the one you'll use. Add `--eval-command "<cmd>"` to have it run your own evaluation against the patched code (see below).
 - `mendr watch [path]` — list the deprecated model ids your code touches, sorted by the nearest provider retirement date. `--install` scaffolds a GitHub Action that keeps one self-updating issue current (see [standing watch](#standing-watch)).
 - `mendr check --repo <path> --from <specA> --to <specB>` — list the breaking changes between two Stripe specs that your repo actually uses.
@@ -57,7 +94,6 @@ Nothing, unless you pass `--write`. By default mendr loads your code in memory, 
 - `mendr fix <path> --from <specA> --to <specB>` — Stripe field-rename codemod.
 - `mendr verify-registry` — check every model-id replacement in the registry against the live public model catalogs and print an audit.
 - `mendr validate-registry` — check the registry for internal contradictions (offline); exits non-zero on any violation.
-- `mendr audit [path]` — **(preview)** the unified audit: scan TS/TSX/Python source + config, join the deprecation registry, and report every retiring AI dependency with its location, deadline, and migration evidence. **Needs only the repository.** See below.
 - `mendr usage-audit [provider]` — **(preview)** read per-model usage from a provider's read-only usage API. Superseded by `audit`.
 - `mendr config-scan [path]` — **(preview)** locate deprecated model ids in config/IaC files. Superseded by `audit`.
 
@@ -83,7 +119,7 @@ Deprecated model dependency located
 Model: gpt-4
 Location: src/ai/client.ts:42 — code call site (model argument)
 Retirement: deprecated — 54d left (2026-10-23)
-Migration evidence: gpt-4o [registry: verified] (evidence only — not applied here)
+Migration evidence: gpt-5.6-sol [registry: verified] (evidence only — not applied here)
 Production usage: not measured
 Reader tie-back: not proven
 Decision: REVIEW REQUIRED
@@ -162,7 +198,7 @@ Mendr Watch continuously rescans your repository inside your own GitHub Actions 
 Run it once to see your exposure (a local path, or a GitHub URL to scan a read-only copy):
 
 ```sh
-npx github:ajitheee/mendr watch .
+npx github:ajitheee/mendr#v0.2.2-alpha watch .
 ```
 
 ```
@@ -184,7 +220,7 @@ Every occurrence carries the same A/B/C tier `fix-llm` uses, so the two tools al
 Then make it resident:
 
 ```sh
-npx github:ajitheee/mendr watch --install
+npx github:ajitheee/mendr#v0.2.2-alpha watch --install
 ```
 
 That scaffolds `.github/workflows/mendr-watch.yml` — a workflow that runs in **your own CI** (no server, nothing on our infrastructure) and maintains **one** GitHub issue: your deprecated model ids, each mapped to its retirement date, sorted by the nearest deadline. It's the [Renovate dashboard](https://docs.renovatebot.com/key-concepts/dashboard/) mechanic — the issue is found by a hidden marker and edited in place forever, never re-posted, so it re-surfaces itself without ever spamming you. It asks for `issues: write` and `contents: read` and nothing else: it opens no pull requests, runs none of your tests, and pushes no commits. It's pinned to an immutable Mendr release (overridable via a `MENDR_SPEC` repo variable), so a future upstream change can't run in your CI without you choosing it.
@@ -341,7 +377,7 @@ The collapsed Tier C line carries line numbers for the same reason:
 ### gating CI on a tier
 
 ```sh
-npx github:ajitheee/mendr fix-llm . --fail-on tierB
+npx github:ajitheee/mendr#v0.2.2-alpha fix-llm . --fail-on tierB
 ```
 
 `--fail-on` takes `tierA`, `tierB`, or `none` (the default). `blocked` still works as a **deprecated alias for `tierB`** and prints a notice on stderr — note that it now covers every review-required finding, not just unverified replacements.

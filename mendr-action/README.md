@@ -22,10 +22,15 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
-      - uses: ajitheee/mendr/mendr-action@v1
+      - uses: ajitheee/mendr/mendr-action@v0.2.2-alpha
+        with:
+          # pin the CLI the action runs to the same release as the action itself
+          mendr-spec: github:ajitheee/mendr#v0.2.2-alpha
 ```
 
 That's the whole setup. It runs every Monday and whenever you trigger it by hand from the Actions tab.
+
+Want the read-only version first? `npx github:ajitheee/mendr#v0.2.2-alpha audit . --install` scaffolds a workflow that keeps one tracking issue current and changes no code — `contents: read`, `issues: write`, nothing else. This action is the step after that: it opens the verified fix as a PR.
 
 ## what it does on each run
 
@@ -40,7 +45,7 @@ Re-running never stacks new PRs. It keeps the one branch current.
 | input | default | purpose |
 | --- | --- | --- |
 | `working-directory` | `.` | where your code lives, if not the repo root |
-| `mendr-spec` | `mendr@^0.1` | the CLI version that runs in your CI |
+| `mendr-spec` | `github:ajitheee/mendr#v0.2.2-alpha` | the CLI that runs in your CI (npm spec once published) |
 | `install-command` | auto | override the dependency install step |
 | `node-version` | `22` | Mendr needs Node 22 or newer |
 | `branch` | `mendr/deprecated-model-ids` | the branch Mendr owns |
@@ -58,13 +63,13 @@ permissions:
   pull-requests: write
 ```
 
-No secrets, no org scopes. `npx mendr` pulls the public package, so it needs no auth.
+No secrets, no org scopes. The CLI is pulled from the pinned public GitHub release, so it needs no auth.
 
 Note: a PR opened by the default `GITHUB_TOKEN` doesn't retrigger your own `on: pull_request` workflows. That's fine here, since Mendr already ran the type-check and your tests as its gate. If you also want your normal PR CI to fire on Mendr's PR, pass a PAT or GitHub App token as `github-token`.
 
 ## limits
 
-Mendr is TypeScript/TSX first. On a pure-JS repo it currently finds nothing to analyze and the run is a no-op. Coverage today is OpenAI, Anthropic, and Google model ids and their coupled params.
+Coverage is TypeScript, TSX and Python source plus supported config files, for OpenAI, Anthropic and Google model ids and their coupled params. On a repo with none of those it finds nothing to analyze and the run is a no-op; other languages are named in the report as not analyzed.
 
 ## license
 

@@ -3,8 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>mendr</title>
-<meta name="description" content="Mendr connects provider retirement evidence, observed usage and configuration locations, without taking control away from your team.">
+<title>mendr — find the AI models retiring under your code</title>
+<meta name="description" content="One command scans your TypeScript and Python repo, joins the provider retirement registry, and tells you which AI models break, where, and by when. No API key. Nothing is changed.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://mendr-mu.vercel.app/">
+<meta property="og:title" content="mendr — find the AI models retiring under your code">
+<meta property="og:description" content="One command. TypeScript, Python and config. No API key, nothing changed. Every retiring model with its location, deadline and migration evidence.">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="mendr — find the AI models retiring under your code">
+<meta name="twitter:description" content="One command. TypeScript, Python and config. No API key, nothing changed.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%23F4F1EA'/><line x1='30' y1='24' x2='30' y2='76' stroke='%23315CFF' stroke-width='7'/><line x1='30' y1='50' x2='68' y2='50' stroke='%23D88916' stroke-width='7'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -231,6 +238,7 @@
   .rise{opacity:0;transform:translateY(14px);transition:opacity .7s ease,transform .7s ease}.rise.in{opacity:1;transform:none}
   @media (prefers-reduced-motion:reduce){.rise{opacity:1;transform:none;transition:none}}
 </style>
+<script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body>
 
@@ -238,7 +246,7 @@
   <div class="nav">
     <a class="mark" href="#"><span class="sig"></span> mendr</a>
     <nav class="links"><a href="#demo">Product</a><a href="#detect">How it works</a><a href="#evidence">Evidence</a><a href="#safety">Security</a><a href="https://github.com/ajitheee/mendr">GitHub</a></nav>
-    <a class="run" href="#install">Run Watch →</a>
+    <a class="run" href="#install">Run the audit →</a>
   </div>
 </header>
 
@@ -247,26 +255,26 @@
   <div class="wrap">
     <div class="hero-grid">
       <div>
-        <p class="label" style="margin-bottom:22px">AI dependency exposure</p>
-        <h1>AI dependencies retire.<br><span class="dim">Know what is exposed.</span></h1>
-        <p class="body">Mendr connects provider retirement evidence, observed usage and configuration locations—without taking control away from your team.</p>
+        <p class="label" style="margin-bottom:22px">AI dependency audit · no API key</p>
+        <h1>AI models retire.<br><span class="dim">Find every one your repo still calls.</span></h1>
+        <p class="body">One command scans your TypeScript and Python source and config, joins the provider retirement registry, and tells you what breaks, where, and by when. Nothing is changed. No key is required.</p>
         <div class="actions">
-          <a class="btn" href="#install">Run Watch</a>
-          <a class="tlink" href="#demo">Watch the demo <span aria-hidden="true">→</span></a>
+          <a class="btn" href="#install">Run the audit</a>
+          <a class="tlink" href="#demo">See it work <span aria-hidden="true">→</span></a>
         </div>
       </div>
-      <figure class="canvas" style="margin:0" role="img" aria-label="Example organization usage: gpt-4 retiring, 48,210 observed requests, 1,284 dollars cost, candidate selector app.yaml line 3, decision review required.">
-        <div class="clabel">OPENAI / ORGANIZATION USAGE · EXAMPLE</div>
+      <figure class="canvas" style="margin:0" role="img" aria-label="Example audit finding: gpt-4 retiring, verified direct provider call site at src/ai/client.ts line 42, deadline 2026-10-23, replacement gpt-5.6-sol verified in the registry, decision patch eligible, no change applied.">
+        <div class="clabel">MENDR AUDIT · EXAMPLE FINDING</div>
         <div class="crule"></div>
         <div class="cmodel"><span class="cid">gpt-4</span><span class="st">RETIRING</span></div>
         <div class="branch">
           <span class="spine"><span class="pulse"></span></span>
-          <div class="bi"><span class="stub"></span><span class="co">48,210</span> <span class="lbl">observed requests</span></div>
-          <div class="bi"><span class="stub"></span><span class="co">$1,284</span> <span class="lbl">observed cost</span></div>
-          <div class="bi risk"><span class="stub"></span><span class="lbl">deadline ·</span> <span class="am">57 days</span></div>
-          <div class="bi"><span class="stub"></span><span class="lbl">candidate selector ·</span> <span class="co">app.yaml:3</span></div>
+          <div class="bi"><span class="stub"></span><span class="lbl">call site ·</span> <span class="co">src/ai/client.ts:42</span></div>
+          <div class="bi"><span class="stub"></span><span class="lbl">surface ·</span> <span class="co">direct OpenAI SDK</span> <span class="lbl">· verified</span></div>
+          <div class="bi risk"><span class="stub"></span><span class="lbl">deadline ·</span> <span class="am">2026-10-23</span></div>
+          <div class="bi"><span class="stub"></span><span class="lbl">replacement ·</span> <span class="co">gpt-5.6-sol</span> <span class="lbl">· registry verified</span></div>
         </div>
-        <div class="decision"><span class="dspine"></span><span class="dstub"></span><div class="dnode"><div class="drev">REVIEW REQUIRED</div><div class="dsub">reader tie-back not proven</div></div></div>
+        <div class="decision"><span class="dspine"></span><span class="dstub"></span><div class="dnode"><div class="drev">PATCH ELIGIBLE</div><div class="dsub">no change applied · runtime usage not measured</div></div></div>
       </figure>
     </div>
   </div>
@@ -278,7 +286,7 @@
     <div class="demo-head rise">
       <p class="kick" style="text-align:center">See it work</p>
       <h2 style="margin:0 auto;max-width:26ch">How it searches your code, finds the problem, and fixes it.</h2>
-      <p class="body" style="margin:14px auto 0;text-align:center;max-width:56ch">One run of <span class="mono">fix-llm</span> — it walks every file, tells a live call from catalog data, matches the registry, writes the exact diff, and proves it before anything is applied.</p>
+      <p class="body" style="margin:14px auto 0;text-align:center;max-width:56ch">The audit walks every file, tells a live call from catalog data, and matches the registry. <span class="mono">fix-llm</span> goes one step further: it writes the exact diff and proves it before anything is applied.</p>
     </div>
     <figure class="player rise" style="margin:0" role="img" aria-label="A run of mendr fix-llm: it walks 342 files, finds a deprecated id at a live call site while leaving catalog and test data alone, matches the registry to a verified replacement, writes a diff, passes type-check and tests, and marks it Tier A verified for review.">
       <div class="pbar"><span class="pi">▶</span> mendr fix-llm · services/geminiService.ts <span class="dur" id="dur">0:00</span></div>
@@ -339,12 +347,12 @@
         <p class="body">Mendr tracks a dated deprecation registry and flags the models your systems depend on, ordered by deadline.</p>
         <ul class="flist"><li>Dated, sourced retirement records</li><li>Ordered by nearest deadline</li><li>OpenAI, Anthropic and Google</li></ul>
       </div>
-      <figure class="pv" role="img" aria-label="Registry: gpt-4 and gpt-3.5-turbo retiring in 57 days, gpt-4-turbo in 210 days.">
+      <figure class="pv" role="img" aria-label="Registry: gpt-4, gpt-3.5-turbo and gpt-4-turbo with their dated shutdowns, claude-3-opus already retired.">
         <div class="pvh"><span class="d"></span> deprecation registry</div>
         <div class="pvb">
-          <div class="row"><span class="id">gpt-4</span><span class="tag risk">57 days</span></div>
-          <div class="row"><span class="id">gpt-3.5-turbo</span><span class="tag risk">57 days</span></div>
-          <div class="row"><span class="id">gpt-4-turbo</span><span class="tag slate">210 days</span></div>
+          <div class="row"><span class="id">gpt-4</span><span class="tag risk">2026-10-23</span></div>
+          <div class="row"><span class="id">gpt-3.5-turbo</span><span class="tag risk">2026-10-23</span></div>
+          <div class="row"><span class="id">gpt-4-turbo</span><span class="tag risk">2026-10-23</span></div>
           <div class="row"><span class="id">claude-3-opus</span><span class="tag slate">retired</span></div>
         </div>
       </figure>
@@ -356,19 +364,21 @@
 <section id="measure">
   <div class="wrap">
     <div class="feature rev rise">
-      <figure class="pv" role="img" aria-label="usage-audit: gpt-4 48,210 requests $1,284, gpt-3.5-turbo 215,600 requests $448.">
-        <div class="pvh"><span class="d"></span> usage-audit · openai</div>
+      <figure class="pv" role="img" aria-label="Runtime evidence is optional: an OpenTelemetry export, a sanitized usage export, your own read-only key kept in your own CI, or gateway and application logs. Without any of them usage is reported as not measured.">
+        <div class="pvh"><span class="d"></span> runtime evidence · optional</div>
         <div class="pvb">
-          <div class="row"><span class="del">gpt-4</span><span><span class="co">48,210</span> · <span class="co">$1,284</span></span></div>
-          <div class="row"><span class="del">gpt-3.5-turbo</span><span><span class="co">215,600</span> · <span class="co">$448</span></span></div>
-          <div class="row"><span class="k">exposed spend</span><span class="co">$2,060</span></div>
+          <div class="row"><span class="id">otel-export.json</span><span class="tag slate">no key</span></div>
+          <div class="row"><span class="id">usage-export.csv</span><span class="tag slate">sanitized</span></div>
+          <div class="row"><span class="id">your read-only key</span><span class="tag slate">stays in your CI</span></div>
+          <div class="row"><span class="id">gateway / app logs</span><span class="tag slate">no key</span></div>
+          <div class="row"><span class="k">with none of these</span><span class="co">usage: not measured</span></div>
         </div>
       </figure>
       <div class="ftext">
-        <p class="kick">Measure</p>
-        <h2>See the exposure in requests and dollars.</h2>
-        <p class="body">Read-only, from your provider's own usage API. Mendr shows which deprecated models are actually taking traffic and cost—not just which ones exist.</p>
-        <ul class="flist"><li>Read-only usage key, set in your shell</li><li>No prompts, responses or customer records</li><li>Real requests and observed spend</li></ul>
+        <p class="kick">Optional · Measure</p>
+        <h2>Prove which ones are live. If you want to.</h2>
+        <p class="body">Code says where a model is declared, not whether production calls it. Connect telemetry you already have and the same finding gains an observed-usage line. Until then the report says <span class="mono">not measured</span>—never "unused".</p>
+        <ul class="flist"><li>OpenTelemetry, a usage export, your own key in your own CI, or gateway logs</li><li>Reads provider, model, service, timestamp and volume. Never prompts or responses</li><li>Never required. Absence is never treated as proof</li></ul>
       </div>
     </div>
   </div>
@@ -424,21 +434,21 @@
     <div class="ev-top">
       <div class="rise">
         <div class="ehead"><span>Signal</span><span>Evidence</span><span>Source</span><span>Confidence</span></div>
-        <div class="erow v"><span class="node"></span><span class="sig">Retirement</span><span class="evi">57 days</span><span class="src">Registry</span><span class="conf">Verified</span></div>
-        <div class="erow o"><span class="node"></span><span class="sig">Usage</span><span class="evi">48,210 requests</span><span class="src">Provider API</span><span class="conf">Observed</span></div>
-        <div class="erow c"><span class="node"></span><span class="sig">Location</span><span class="evi">app.yaml:3</span><span class="src">Config scan</span><span class="conf">Candidate</span></div>
-        <div class="erow w"><span class="node"></span><span class="sig">Decision</span><span class="evi">Human review</span><span class="src">Safety gate</span><span class="conf">Withheld</span></div>
+        <div class="erow v"><span class="node"></span><span class="sig">Retirement</span><span class="evi">2026-10-23</span><span class="src">Registry</span><span class="conf">Verified</span></div>
+        <div class="erow w"><span class="node"></span><span class="sig">Usage</span><span class="evi">not measured</span><span class="src">Runtime · optional</span><span class="conf">Unknown</span></div>
+        <div class="erow o"><span class="node"></span><span class="sig">Location</span><span class="evi">src/ai/client.ts:42</span><span class="src">Source scan</span><span class="conf">Verified</span></div>
+        <div class="erow w"><span class="node"></span><span class="sig">Decision</span><span class="evi">Patch eligible</span><span class="src">Safety gate</span><span class="conf">Not applied</span></div>
       </div>
       <div class="timeline rise">
         <div class="tl-label">RETIREMENT WINDOW</div>
-        <div class="tstep announced"><span class="m"></span><div class="k">ANNOUNCED</div><div class="d">2026-06-01</div></div>
-        <div class="tstep now"><span class="m"></span><div class="k">NOW · 57 DAYS LEFT</div><div class="d">2026-08-28</div></div>
-        <div class="tstep deadline"><span class="m"></span><div class="k">DEADLINE</div><div class="d">2026-10-24</div></div>
+        <div class="tstep announced"><span class="m"></span><div class="k">ANNOUNCED</div><div class="d">provider notice</div></div>
+        <div class="tstep now"><span class="m"></span><div class="k">NOW</div><div class="d">mendr audit .</div></div>
+        <div class="tstep deadline"><span class="m"></span><div class="k">DEADLINE · gpt-4</div><div class="d">2026-10-23</div></div>
       </div>
     </div>
     <div class="result rise">
       <div class="rl">RESULT</div>
-      <p>Usage observed. Candidate selector located. <span class="un">Runtime reader connection remains unproven.</span></p>
+      <p>Call site located and verified. Migration evidence attached. <span class="un">Runtime usage not measured—and reported that way.</span></p>
     </div>
   </div>
 </section>
@@ -448,10 +458,10 @@
   <div class="wrap">
     <div class="ev-head rise"><p class="kick">The commands</p><h2>A small set, run in your own environment.</h2></div>
     <div class="cmds rise">
-      <div class="cmd"><span class="c">mendr watch [path]</span><span class="d">Track the deprecated ids a repo uses and keep one self-updating GitHub issue. Released, v0.1.0.</span></div>
-      <div class="cmd"><span class="c">mendr usage-audit [provider] <span class="a">· alpha</span></span><span class="d">Read-only exposure: which deprecated models take requests and cost, with deadlines.</span></div>
-      <div class="cmd"><span class="c">mendr config-scan [path] <span class="a">· alpha</span></span><span class="d">Locate deprecated ids in config, separating a live selector from catalog data.</span></div>
-      <div class="cmd"><span class="c">mendr fix-llm [path]</span><span class="d">Print the gated diff for a retired id at a call site—verified before it touches your code.</span></div>
+      <div class="cmd"><span class="c">mendr audit [path] <span class="a">· preview</span></span><span class="d">The audit. Source, config and registry in one report with four honest conclusions. Needs only the repository.</span></div>
+      <div class="cmd"><span class="c">mendr audit . --install <span class="a">· preview</span></span><span class="d">Scaffolds a GitHub workflow that keeps one issue per repo current: new, continuing, resolved. <span class="mono">contents: read</span>, <span class="mono">issues: write</span>.</span></div>
+      <div class="cmd"><span class="c">mendr fix-llm [path]</span><span class="d">Print the gated diff for a retired id at a verified call site—proved against your type-check and tests before it touches your code. Released, v0.1.0.</span></div>
+      <div class="cmd"><span class="c">mendr watch [path]</span><span class="d">The lightweight tracker: which deprecated ids a repo uses, by deadline, in one self-updating issue. Released, v0.1.0.</span></div>
     </div>
   </div>
 </section>
@@ -462,19 +472,23 @@
     <div class="install-grid">
       <div class="rise">
         <p class="kick">Install</p>
-        <h2>Start with the free Watch.</h2>
-        <p class="body">The released v0.1.0 <span class="mono">watch</span> reads your repository, finds the deprecated model ids you use, and opens one GitHub issue that tracks them by deadline. It changes no code.</p>
+        <h2>Run the audit. Thirty seconds, no key, nothing changed.</h2>
+        <p class="body">Point it at a repo. It scans TypeScript, TSX, Python and config, joins the retirement registry, and prints every retiring model with its location, deadline and migration evidence. Add <span class="mono">--install</span> to keep one GitHub issue current.</p>
       </div>
-      <figure class="term rise" style="margin:0" role="img" aria-label="Terminal: npx github ajitheee mendr v0.1.0 watch dot; reports two deprecated ids and opens one tracking issue.">
-        <div class="th">watch · v0.1.0</div>
-<div class="tb"><span class="pr">$</span> npx github:ajitheee/mendr#v0.1.0 watch .
-<span class="dim">scanning repository…</span>
+      <figure class="term rise" style="margin:0" role="img" aria-label="Terminal: npx github ajitheee mendr v0.2.2-alpha audit dot. Coverage: source code scanned, configuration not applicable, registry loaded, runtime usage not measured. Conclusion: exposure detected. gpt-4 at src/ai/client.ts line 42, verified direct call site, deadline 2026-10-23, patch eligible, no change applied.">
+        <div class="th">audit · v0.2.2-alpha</div>
+<div class="tb"><span class="pr">$</span> npx github:ajitheee/mendr#v0.2.2-alpha audit .
+<span class="dim">mendr audit (preview)</span>
 
-<span class="am">2 deprecated</span> model ids in use
-  gpt-4          <span class="am">57d</span>
-  gpt-3.5-turbo  <span class="am">57d</span>
+<span class="ok">✓</span> Source code     342 files (301 TS/TSX, 41 Python)
+<span class="dim">○ Configuration   not applicable</span>
+<span class="ok">✓</span> Registry        anthropic, google, openai
+<span class="dim">○ Runtime usage   not measured (optional)</span>
 
-<span class="ok">✓ opened issue</span> · code unchanged</div>
+Conclusion: <span class="am">EXPOSURE DETECTED</span>
+  gpt-4  src/ai/client.ts:42  <span class="am">2026-10-23</span>
+  verified direct call site · replacement gpt-5.6-sol
+  Decision: PATCH ELIGIBLE · <span class="dim">No change applied</span></div>
       </figure>
     </div>
   </div>
@@ -484,18 +498,18 @@
 <section class="cta" id="cta">
   <div class="wrap rise">
     <p class="kick" style="text-align:center">Get started</p>
-    <h2>See your AI dependency exposure before it becomes an incident.</h2>
+    <h2>Know what retires under your code before it becomes an incident.</h2>
     <div class="actions">
-      <a class="btn" href="https://github.com/ajitheee/mendr">Run Watch</a>
-      <a class="tlink" href="https://github.com/ajitheee/mendr">Request an audit <span aria-hidden="true">→</span></a>
+      <a class="btn" href="#install">Run the audit</a>
+      <a class="tlink" href="https://github.com/ajitheee/mendr/issues/new?title=Read-only%20audit%20request&body=Repo%20(public%20URL%2C%20or%20say%20%22private%22)%3A%0ALanguages%3A%0AProviders%20you%20call%20(OpenAI%20%2F%20Anthropic%20%2F%20Google)%3A%0ABest%20way%20to%20reach%20you%3A%0A%0AWhat%20happens%20next%3A%20you%20run%20%60npx%20github%3Aajitheee%2Fmendr%23v0.2.2-alpha%20audit%20.%60%20yourself%2C%20or%20for%20a%20public%20repo%20I%20run%20it%20and%20send%20you%20the%20report.%20No%20keys.%20No%20source%20leaves%20your%20machine." rel="noopener">Book a 20-minute read-only audit <span aria-hidden="true">→</span></a>
     </div>
   </div>
 </section>
 
 <footer>
   <div class="foot">
-    <span>mendr — evidence for AI dependency risk · MIT</span>
-    <span class="fl"><a href="https://github.com/ajitheee/mendr">GitHub</a><a href="https://github.com/ajitheee/mendr#readme">Docs</a><a href="https://github.com/ajitheee/mendr/releases">Changelog</a></span>
+    <span>mendr — find retiring AI models before they break prod · MIT</span>
+    <span class="fl"><a href="https://github.com/ajitheee/mendr">GitHub</a><a href="https://github.com/ajitheee/mendr#readme">Docs</a><a href="https://github.com/ajitheee/mendr/releases">Releases</a></span>
   </div>
 </footer>
 
