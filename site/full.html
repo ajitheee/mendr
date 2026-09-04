@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mendr — find the AI models retiring under your code</title>
+<meta name="description" content="One command scans your TypeScript and Python repo, joins the provider retirement registry, and tells you which AI models break, where, and by when. No API key. Nothing is changed.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://mendr-mu.vercel.app/">
+<meta property="og:title" content="mendr — find the AI models retiring under your code">
+<meta property="og:description" content="One command. TypeScript, Python and config. No API key, nothing changed. Every retiring model with its location, deadline and migration evidence.">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="mendr — find the AI models retiring under your code">
+<meta name="twitter:description" content="One command. TypeScript, Python and config. No API key, nothing changed.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%23F4F1EA'/><line x1='30' y1='24' x2='30' y2='76' stroke='%23315CFF' stroke-width='7'/><line x1='30' y1='50' x2='68' y2='50' stroke='%23D88916' stroke-width='7'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ivory:#F4F1EA; --ivory-2:#EEEAE0; --data:#FAF8F3; --carbon:#0B0D10;
+    --ink-2:#33383f; --grey:#747B89; --grey-2:#9aa0a9;
+    --cobalt:#315CFF; --amber:#D88916; --jade:#15805D; --red:#B0392C;
+    --hair:#DED7C7; --hair-2:#E7E1D4;
+    --sans:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --maxw:1180px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+  body{margin:0;color:var(--carbon);font-family:var(--sans);font-size:18px;line-height:1.55;overflow-x:clip;-webkit-font-smoothing:antialiased;
+    background:
+      radial-gradient(42% 34% at 82% 16%, rgba(49,92,255,.11), transparent 62%),
+      radial-gradient(40% 38% at 14% 60%, rgba(216,137,22,.09), transparent 62%),
+      radial-gradient(34% 32% at 62% 98%, rgba(21,128,93,.07), transparent 62%),
+      var(--ivory);
+    background-attachment:fixed}
+  /* glassmorphism surfaces */
+  .glass{background:rgba(250,248,243,.5);backdrop-filter:blur(18px) saturate(1.35);-webkit-backdrop-filter:blur(18px) saturate(1.35);border:1px solid rgba(255,255,255,.55);box-shadow:inset 0 1px 0 rgba(255,255,255,.72),0 16px 46px -22px rgba(11,13,16,.24)}
+  .glass-dark{background:rgba(12,15,20,.62);backdrop-filter:blur(18px) saturate(1.2);-webkit-backdrop-filter:blur(18px) saturate(1.2);border:1px solid rgba(255,255,255,.09);box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 16px 46px -22px rgba(0,0,0,.45)}
+  @media (prefers-reduced-transparency:reduce){
+    .glass{background:var(--data);backdrop-filter:none;-webkit-backdrop-filter:none}
+    .glass-dark{background:var(--carbon);backdrop-filter:none;-webkit-backdrop-filter:none}
+  }
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 clamp(22px,4.5vw,44px)}
+  a{color:inherit;text-decoration:none}
+  .mono{font-family:var(--mono)}
+  .co{color:var(--cobalt)}.am{color:var(--amber)}.jd{color:var(--jade)}.gy{color:var(--grey)}
+  .label{font-family:var(--mono);font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--grey)}
+
+  header{position:sticky;top:0;z-index:40;background:color-mix(in srgb,var(--ivory) 90%,transparent);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+  .nav{max-width:var(--maxw);margin:0 auto;padding:20px clamp(22px,4.5vw,44px);display:flex;align-items:center;gap:22px}
+  .mark{display:inline-flex;align-items:center;gap:11px;font-weight:600;font-size:1.06rem;letter-spacing:-.01em}
+  .mark .sig{width:16px;height:16px;position:relative;flex:none}
+  .mark .sig::before{content:"";position:absolute;left:5px;top:1px;bottom:1px;width:2px;background:var(--cobalt)}
+  .mark .sig::after{content:"";position:absolute;left:5px;top:7px;width:9px;height:2px;background:var(--amber)}
+  .nav .links{display:flex;gap:24px;margin-left:14px}
+  .nav .links a{font-size:.93rem;color:var(--grey)}.nav .links a:hover{color:var(--carbon)}
+  .nav .run{margin-left:auto;color:var(--carbon);font-family:var(--mono);font-size:.86rem;border-bottom:1px solid var(--hair);padding-bottom:2px}
+  .nav .run:hover{border-color:var(--cobalt);color:var(--cobalt)}
+  @media (max-width:820px){.nav .links{display:none}}
+
+  section{padding:clamp(56px,7vw,92px) 0;border-top:1px solid var(--hair)}
+  section.first{border-top:0}
+  h1{margin:0;font-weight:500;font-size:clamp(2rem,4.4vw,3.2rem);line-height:1.06;letter-spacing:-.02em}
+  h1 .dim{color:var(--grey)}
+  h2{margin:0;font-weight:600;font-size:clamp(1.5rem,2.7vw,2.05rem);line-height:1.14;letter-spacing:-.015em;max-width:20ch}
+  .body{font-size:1.1rem;color:var(--grey);line-height:1.5;max-width:52ch}
+  .kick{font-family:var(--mono);font-size:.74rem;letter-spacing:.12em;text-transform:uppercase;color:var(--grey);margin:0 0 16px}
+
+  .btn{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono);font-size:.86rem;font-weight:500;padding:12px 18px;border-radius:2px;background:var(--carbon);color:var(--ivory);transition:opacity .14s}
+  .btn:hover{opacity:.86}
+  .tlink{font-family:var(--mono);font-size:.86rem;color:var(--carbon);display:inline-flex;align-items:center;gap:8px;border-bottom:1px solid var(--hair);padding-bottom:2px}
+  .tlink:hover{border-color:var(--cobalt);color:var(--cobalt)}
+
+  /* HERO (kept from the version you liked) */
+  .hero{min-height:0}
+  .hero-grid{display:grid;grid-template-columns:0.9fr 1.1fr;gap:clamp(30px,5vw,72px);align-items:center}
+  @media (max-width:900px){.hero-grid{grid-template-columns:1fr;gap:44px}}
+  .hero h1{max-width:12ch;margin-bottom:24px}
+  .hero .body{margin-bottom:0}
+  .actions{display:flex;align-items:center;gap:24px;margin-top:34px;flex-wrap:wrap}
+
+  .canvas{font-family:var(--mono);font-size:clamp(.8rem,1.15vw,.9rem);line-height:1.5;color:var(--carbon);padding:clamp(22px,2.6vw,32px);border-radius:16px;
+    background:rgba(250,248,243,.44);backdrop-filter:blur(16px) saturate(1.3);-webkit-backdrop-filter:blur(16px) saturate(1.3);border:1px solid rgba(255,255,255,.5);box-shadow:inset 0 1px 0 rgba(255,255,255,.7),0 16px 46px -22px rgba(11,13,16,.22)}
+  @media (prefers-reduced-transparency:reduce){.canvas{background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none;border-color:var(--hair)}}
+  .canvas .clabel{color:var(--grey);letter-spacing:.14em;font-size:.72rem}
+  .canvas .crule{height:1px;background:var(--hair);margin:12px 0 20px}
+  .cmodel{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+  .cmodel .cid{font-size:1.05rem;font-weight:500}
+  .cmodel .st{color:var(--amber);letter-spacing:.1em;font-size:.72rem}
+  .branch{position:relative;padding-left:26px;margin-top:10px}
+  .branch .spine{position:absolute;left:6px;top:2px;bottom:34px;width:2px;background:var(--cobalt);opacity:.85}
+  .branch .spine .pulse{position:absolute;left:-1px;width:4px;height:22px;border-radius:2px;background:linear-gradient(var(--cobalt),transparent);animation:flow 3.4s cubic-bezier(.5,0,.5,1) infinite}
+  .bi{position:relative;padding:7px 0}
+  .bi .stub{position:absolute;left:-20px;top:50%;width:16px;height:2px;background:var(--cobalt);opacity:.85}
+  .bi.risk .stub{background:var(--amber);opacity:1}
+  .bi .lbl{color:var(--grey)}
+  .decision{position:relative;margin-left:26px;padding-left:32px;padding-top:4px}
+  .decision .dspine{position:absolute;left:6px;top:-6px;height:26px;width:2px;background:var(--amber)}
+  .decision .dstub{position:absolute;left:6px;top:20px;width:24px;height:2px;background:var(--amber)}
+  .decision .dnode{padding-top:12px}
+  .decision .drev{color:var(--amber);letter-spacing:.08em;font-weight:500}
+  .decision .dsub{color:var(--grey);font-size:.82rem;margin-top:4px}
+  @keyframes flow{0%{top:0;opacity:0}12%{opacity:1}88%{opacity:1}100%{top:100%;opacity:0}}
+  @media (prefers-reduced-motion:reduce){.branch .spine .pulse{animation:none;opacity:0}}
+
+  /* DEMO screencast */
+  .demo-head{text-align:center;max-width:56ch;margin:0 auto clamp(30px,4vw,44px)}
+  .player{max-width:720px;margin:0 auto;border-radius:14px;overflow:hidden;background:rgba(250,248,243,.5);backdrop-filter:blur(18px) saturate(1.35);-webkit-backdrop-filter:blur(18px) saturate(1.35);border:1px solid rgba(255,255,255,.55);box-shadow:inset 0 1px 0 rgba(255,255,255,.72),0 18px 50px -24px rgba(11,13,16,.26)}
+  @media (prefers-reduced-transparency:reduce){.player{background:var(--data);backdrop-filter:none;-webkit-backdrop-filter:none;border-color:var(--hair)}}
+  .player .pbar{display:flex;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid var(--hair);font-family:var(--mono);font-size:.74rem;color:var(--grey)}
+  .player .pbar .pi{width:22px;height:22px;border-radius:50%;background:var(--carbon);color:var(--ivory);display:grid;place-items:center;font-size:.6rem}
+  .player .pbar .dur{margin-left:auto}
+  .player .screen{padding:16px clamp(16px,2.4vw,26px) 14px;font-family:var(--mono);font-size:clamp(.72rem,.95vw,.82rem);line-height:1.6}
+  .dl{display:block;opacity:0;transform:translateY(5px);transition:opacity .35s,transform .35s;white-space:pre-wrap}
+  .dl.show{opacity:1;transform:none}
+  .dl .cmd{color:var(--cobalt)}.dl .dim{color:var(--grey)}.dl .risk{color:var(--amber)}.dl .del{color:var(--red)}.dl .ok{color:var(--jade)}.dl .num{color:var(--cobalt)}
+  .player .prog{height:3px;background:var(--hair)}
+  .player .prog .fill{height:100%;width:0;background:var(--cobalt);transition:width .3s linear}
+  .demo-cap{text-align:center;font-family:var(--mono);font-size:.72rem;color:var(--grey);margin-top:16px}
+  .player .stages{display:flex;flex-wrap:wrap;gap:7px;padding:11px 16px;border-bottom:1px solid var(--hair);font-family:var(--mono);font-size:.65rem;letter-spacing:.08em;text-transform:uppercase;color:var(--grey-2)}
+  .player .stages span{padding:3px 9px;border-radius:3px;border:1px solid transparent;transition:color .3s,background .3s,border-color .3s}
+  .player .stages span.done{color:var(--grey)}
+  .player .stages span.on{color:var(--cobalt);background:rgba(49,92,255,.1);border-color:rgba(49,92,255,.28)}
+  .dl .add{color:var(--jade)}
+  .provintro{text-align:center;max-width:52ch;margin:0 auto clamp(38px,5vw,54px)}
+  .provintro h2{margin:0 auto 12px}
+  .provintro .body{margin:0 auto}
+  .logowall{display:flex;align-items:center;justify-content:center;gap:clamp(30px,6vw,76px);flex-wrap:wrap}
+  .logo{display:inline-flex;align-items:center;gap:13px;color:var(--ink-2);transition:color .18s;opacity:.82}
+  .logo:hover{color:var(--carbon);opacity:1}
+  .logo svg{width:30px;height:30px;fill:currentColor;flex:none}
+  .logo b{font-weight:600;font-size:1.2rem;letter-spacing:-.01em}
+  @media (max-width:520px){.logowall{gap:22px 34px}}
+
+  /* feature (show the product) row — alternating, not identical */
+  .feature{display:grid;grid-template-columns:0.85fr 1.15fr;gap:clamp(30px,5vw,64px);align-items:center}
+  .feature.rev{grid-template-columns:1.15fr 0.85fr}
+  .feature.rev .ftext{order:2}
+  @media (max-width:860px){.feature,.feature.rev{grid-template-columns:1fr;gap:30px}.feature.rev .ftext{order:0}}
+  .ftext h2{margin-bottom:14px}
+  .ftext .body{font-size:1.05rem}
+  .ftext .flist{margin:18px 0 0;padding:0;list-style:none}
+  .ftext .flist li{position:relative;padding:6px 0 6px 22px;color:var(--ink-2);font-size:.98rem}
+  .ftext .flist li::before{content:"";position:absolute;left:0;top:14px;width:11px;height:2px;background:var(--cobalt)}
+
+  /* product visual panel (light, hairline, mono) */
+  .pv{border-radius:14px;overflow:hidden;font-family:var(--mono);background:rgba(250,248,243,.5);backdrop-filter:blur(16px) saturate(1.35);-webkit-backdrop-filter:blur(16px) saturate(1.35);border:1px solid rgba(255,255,255,.55);box-shadow:inset 0 1px 0 rgba(255,255,255,.72),0 16px 46px -22px rgba(11,13,16,.22)}
+  @media (prefers-reduced-transparency:reduce){.pv{background:var(--data);backdrop-filter:none;-webkit-backdrop-filter:none;border-color:var(--hair)}}
+  .pv .pvh{padding:12px 18px;border-bottom:1px solid var(--hair);font-size:.74rem;color:var(--grey);display:flex;align-items:center;gap:8px}
+  .pv .pvh .d{width:7px;height:7px;border-radius:50%;background:var(--jade)}
+  .pv .pvb{padding:16px 18px;font-size:.86rem;line-height:1.9}
+  .pv .row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0}
+  .pv .row+.row{border-top:1px solid var(--hair-2)}
+  .pv .k{color:var(--grey)}
+  .pv .id{color:var(--carbon);font-weight:500}
+  .pv .del{color:var(--red);text-decoration:line-through}
+  .pv .tag{font-size:.66rem;padding:2px 8px;border-radius:3px}
+  .pv .tag.risk{color:var(--amber);background:rgba(216,137,22,.12)}
+  .pv .tag.ok{color:var(--jade);background:rgba(21,128,93,.12)}
+  .pv .tag.rev{color:var(--amber);background:rgba(216,137,22,.12)}
+  .pv .tag.slate{color:var(--grey);background:rgba(116,123,137,.12)}
+  .pv .cmt{color:var(--grey)}
+  .pv .flag{color:var(--amber)}
+
+  /* EVIDENCE table + timeline */
+  .ev-head{max-width:52ch;margin-bottom:clamp(30px,4vw,44px)}
+  .ev-head h2{margin-bottom:14px}
+  .ev-top{display:grid;grid-template-columns:1.7fr 1fr;gap:clamp(30px,5vw,56px)}
+  @media (max-width:840px){.ev-top{grid-template-columns:1fr;gap:38px}}
+  .ehead,.erow{display:grid;grid-template-columns:1.1fr 1.5fr 1fr .9fr;gap:16px;align-items:center}
+  .ehead{padding:0 0 12px 30px;border-bottom:1px solid var(--hair)}
+  .ehead span{font-family:var(--mono);font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--grey-2)}
+  .erow{padding:18px 0 18px 30px;border-bottom:1px solid var(--hair);position:relative}
+  .erow::before{content:"";position:absolute;left:5px;top:0;bottom:0;width:2px;background:var(--hair)}
+  .erow:first-of-type::before{top:50%}.erow:last-of-type::before{bottom:50%}
+  .erow .node{position:absolute;left:0;top:50%;transform:translateY(-50%);width:12px;height:12px;border-radius:50%;background:var(--ivory);border:2px solid var(--grey);z-index:1}
+  .erow.v .node,.erow.o .node{border-color:var(--jade)}.erow.c .node{border-color:var(--grey)}.erow.w .node{border-color:var(--amber)}
+  .erow .sig{font-weight:500;font-size:1.02rem}
+  .erow .evi{font-family:var(--mono);font-size:.9rem}
+  .erow .src{color:var(--grey);font-size:.92rem}
+  .erow .conf{font-family:var(--mono);font-size:.74rem;letter-spacing:.05em;text-transform:uppercase}
+  .erow.v .conf,.erow.o .conf{color:var(--jade)}.erow.c .conf{color:var(--grey)}.erow.w .conf{color:var(--amber)}
+  @media (max-width:520px){.ehead{display:none}.erow{grid-template-columns:1fr auto;gap:5px 14px}.erow .evi{grid-column:1;order:2}.erow .src{grid-column:1;order:3;font-size:.84rem}.erow .conf{order:1;justify-self:end}.erow .sig{order:0}}
+  .timeline .tl-label{font-family:var(--mono);font-size:.72rem;letter-spacing:.08em;color:var(--grey);margin-bottom:20px}
+  .tstep{position:relative;padding:0 0 24px 26px}
+  .tstep::before{content:"";position:absolute;left:5px;top:16px;bottom:-6px;width:2px;background:var(--hair)}
+  .tstep:last-child::before{display:none}
+  .tstep .m{position:absolute;left:0;top:5px;width:12px;height:12px;border-radius:50%;background:var(--ivory);border:2px solid var(--grey)}
+  .tstep.now .m{border-color:var(--carbon);background:var(--carbon)}.tstep.deadline .m{border-color:var(--amber);background:var(--amber)}
+  .tstep .k{font-family:var(--mono);font-size:.78rem;letter-spacing:.06em}.tstep.deadline .k{color:var(--amber)}
+  .tstep .d{font-family:var(--mono);font-size:.82rem;color:var(--grey);margin-top:3px}
+  .result{margin-top:clamp(30px,4vw,44px);max-width:58ch}
+  .result .rl{font-family:var(--mono);font-size:.74rem;letter-spacing:.1em;color:var(--grey);margin-bottom:10px}
+  .result p{margin:0;font-size:1.2rem;font-weight:500;line-height:1.4}
+  .result p .un{color:var(--amber)}
+
+  /* SAFETY carbon strip */
+  .strip{background:var(--carbon);color:var(--ivory);border:0}
+  .strip-in{max-width:var(--maxw);margin:0 auto;padding:clamp(38px,5vw,58px) clamp(22px,4.5vw,44px);display:grid;grid-template-columns:auto 1fr;gap:clamp(28px,5vw,64px);align-items:center}
+  @media (max-width:760px){.strip-in{grid-template-columns:1fr;gap:26px}}
+  .strip .dw{font-family:var(--mono);font-size:1.5rem;font-weight:500;letter-spacing:.02em;white-space:nowrap}
+  .strip .dw .w{color:var(--amber)}
+  .strip .dsig{margin-top:14px;display:flex;align-items:center}
+  .strip .dsig .s{height:2px;width:44px;background:var(--jade)}
+  .strip .dsig .stop{width:12px;height:12px;border-radius:2px;background:var(--amber);margin-left:8px}
+  .strip .dsig .aft{height:2px;flex:1;min-width:40px;margin-left:8px;background:repeating-linear-gradient(90deg,var(--grey) 0 4px,transparent 4px 9px);opacity:.6}
+  .strip .detail{display:grid;grid-template-columns:1fr 1fr;gap:18px 34px}
+  @media (max-width:520px){.strip .detail{grid-template-columns:1fr}}
+  .strip .dk{font-family:var(--mono);font-size:.7rem;letter-spacing:.06em;color:#8f9aa5;margin-bottom:5px}
+  .strip .dv{font-size:1rem}.strip .dv.mono{font-family:var(--mono);font-size:.9rem}
+
+  /* commands */
+  .cmds{border-top:1px solid var(--hair);margin-top:8px}
+  .cmd{display:grid;grid-template-columns:minmax(0,26ch) 1fr;gap:6px 24px;padding:18px 0;border-bottom:1px solid var(--hair);align-items:baseline}
+  @media (max-width:620px){.cmd{grid-template-columns:1fr}}
+  .cmd .c{font-family:var(--mono);font-size:.9rem;color:var(--carbon)}
+  .cmd .c .a{color:var(--amber)}
+  .cmd .d{color:var(--grey);font-size:.98rem}
+
+  /* install + CTA */
+  .install-grid{display:grid;grid-template-columns:0.9fr 1.1fr;gap:clamp(30px,5vw,56px);align-items:center}
+  @media (max-width:820px){.install-grid{grid-template-columns:1fr;gap:28px}}
+  .term{border-radius:14px;overflow:hidden;font-family:var(--mono);background:rgba(12,15,20,.64);backdrop-filter:blur(18px) saturate(1.2);-webkit-backdrop-filter:blur(18px) saturate(1.2);border:1px solid rgba(255,255,255,.09);box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 18px 50px -24px rgba(0,0,0,.46)}
+  @media (prefers-reduced-transparency:reduce){.term{background:var(--carbon);backdrop-filter:none;-webkit-backdrop-filter:none}}
+  .term .th{padding:11px 16px;border-bottom:1px solid #1e2733;font-size:.72rem;color:#7b8794}
+  .term .tb{padding:18px;font-size:.86rem;line-height:1.9;color:#e7ecf2}
+  .term .tb .pr{color:#7b8794}.term .tb .ok{color:var(--jade)}.term .tb .am{color:var(--amber)}.term .tb .dim{color:#7b8794}
+  .cta{text-align:center}
+  .cta h2{margin:0 auto 22px;max-width:22ch}
+  .cta .actions{justify-content:center}
+
+  footer{border-top:1px solid var(--hair);padding:34px 0 46px}
+  .foot{max-width:var(--maxw);margin:0 auto;padding:0 clamp(22px,4.5vw,44px);display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;font-family:var(--mono);font-size:.76rem;color:var(--grey)}
+  .foot .fl{display:flex;gap:22px;flex-wrap:wrap}.foot .fl a:hover{color:var(--carbon)}
+
+  .rise{opacity:0;transform:translateY(14px);transition:opacity .7s ease,transform .7s ease}.rise.in{opacity:1;transform:none}
+  @media (prefers-reduced-motion:reduce){.rise{opacity:1;transform:none;transition:none}}
+</style>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+
+<header>
+  <div class="nav">
+    <a class="mark" href="#"><span class="sig"></span> mendr</a>
+    <nav class="links"><a href="#demo">Product</a><a href="#detect">How it works</a><a href="#evidence">Evidence</a><a href="#safety">Security</a><a href="https://github.com/ajitheee/mendr">GitHub</a></nav>
+    <a class="run" href="#install">Run the audit →</a>
+  </div>
+</header>
+
+<!-- HERO -->
+<section class="hero first">
+  <div class="wrap">
+    <div class="hero-grid">
+      <div>
+        <p class="label" style="margin-bottom:22px">AI dependency audit · no API key</p>
+        <h1>AI models retire.<br><span class="dim">Find every one your repo still calls.</span></h1>
+        <p class="body">One command scans your TypeScript and Python source and config, joins the provider retirement registry, and tells you what breaks, where, and by when. Nothing is changed. No key is required.</p>
+        <div class="actions">
+          <a class="btn" href="#install">Run the audit</a>
+          <a class="tlink" href="#demo">See it work <span aria-hidden="true">→</span></a>
+        </div>
+      </div>
+      <figure class="canvas" style="margin:0" role="img" aria-label="Example audit finding: gpt-4 retiring, verified direct provider call site at src/ai/client.ts line 42, deadline 2026-10-23, replacement gpt-5.6-sol verified in the registry, decision patch eligible, no change applied.">
+        <div class="clabel">MENDR AUDIT · EXAMPLE FINDING</div>
+        <div class="crule"></div>
+        <div class="cmodel"><span class="cid">gpt-4</span><span class="st">RETIRING</span></div>
+        <div class="branch">
+          <span class="spine"><span class="pulse"></span></span>
+          <div class="bi"><span class="stub"></span><span class="lbl">call site ·</span> <span class="co">src/ai/client.ts:42</span></div>
+          <div class="bi"><span class="stub"></span><span class="lbl">surface ·</span> <span class="co">direct OpenAI SDK</span> <span class="lbl">· verified</span></div>
+          <div class="bi risk"><span class="stub"></span><span class="lbl">deadline ·</span> <span class="am">2026-10-23</span></div>
+          <div class="bi"><span class="stub"></span><span class="lbl">replacement ·</span> <span class="co">gpt-5.6-sol</span> <span class="lbl">· registry verified</span></div>
+        </div>
+        <div class="decision"><span class="dspine"></span><span class="dstub"></span><div class="dnode"><div class="drev">PATCH ELIGIBLE</div><div class="dsub">no change applied · runtime usage not measured</div></div></div>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- DEMO -->
+<section id="demo">
+  <div class="wrap">
+    <div class="demo-head rise">
+      <p class="kick" style="text-align:center">See it work</p>
+      <h2 style="margin:0 auto;max-width:26ch">How it searches your code, finds the problem, and fixes it.</h2>
+      <p class="body" style="margin:14px auto 0;text-align:center;max-width:56ch">The audit walks every file, tells a live call from catalog data, and matches the registry. <span class="mono">fix-llm</span> goes one step further: it writes the exact diff and proves it before anything is applied.</p>
+    </div>
+    <figure class="player rise" style="margin:0" role="img" aria-label="A run of mendr fix-llm: it walks 342 files, finds a deprecated id at a live call site while leaving catalog and test data alone, matches the registry to a verified replacement, writes a diff, passes type-check and tests, and marks it Tier A verified for review.">
+      <div class="pbar"><span class="pi">▶</span> mendr fix-llm · services/geminiService.ts <span class="dur" id="dur">0:00</span></div>
+      <div class="stages" id="stages"><span data-s="0">scan</span><span data-s="1">find</span><span data-s="2">classify</span><span data-s="3">match</span><span data-s="4">change</span><span data-s="5">verify</span><span data-s="6">decide</span></div>
+      <div class="screen" id="screen"><span class="dl" data-s="0"><span class="cmd">$</span> mendr fix-llm .</span>
+<span class="dl" data-s="0"><span class="dim">walking 342 files · typescript + python</span></span>
+<span class="dl" data-s="1"> </span>
+<span class="dl" data-s="1"><span class="dim">3 references to</span> gemini-2.0-flash</span>
+<span class="dl" data-s="1">  services/geminiService.ts:18   <span class="co">call argument</span></span>
+<span class="dl" data-s="1">  config/pricing.ts:22           <span class="dim">object key · catalog</span></span>
+<span class="dl" data-s="1">  tests/mock.spec.ts:9           <span class="dim">test fixture</span></span>
+<span class="dl" data-s="2"> </span>
+<span class="dl" data-s="2"><span class="dim">classify · services/geminiService.ts:18</span></span>
+<span class="dl" data-s="2">  ai.getGenerativeModel({ model: MODEL_NAME })  <span class="co">→ live call</span></span>
+<span class="dl" data-s="2">  <span class="dim">catalog + fixture are data · left alone</span></span>
+<span class="dl" data-s="3"> </span>
+<span class="dl" data-s="3"><span class="dim">registry ·</span> <span class="del">gemini-2.0-flash</span> <span class="dim">retired</span></span>
+<span class="dl" data-s="3">  replacement <span class="add">gemini-flash-latest</span> <span class="dim">· verified vs live catalog</span></span>
+<span class="dl" data-s="4"> </span>
+<span class="dl" data-s="4"><span class="dim">diff · services/geminiService.ts:18</span></span>
+<span class="dl" data-s="4">  <span class="del">- const MODEL_NAME = "gemini-2.0-flash"</span></span>
+<span class="dl" data-s="4">  <span class="add">+ const MODEL_NAME = "gemini-flash-latest"</span></span>
+<span class="dl" data-s="5"> </span>
+<span class="dl" data-s="5"><span class="dim">gate · patched copy</span></span>
+<span class="dl" data-s="5">  <span class="ok">✓</span> type-check   <span class="ok">✓</span> tests   <span class="dim">(your own suite)</span></span>
+<span class="dl" data-s="6"> </span>
+<span class="dl" data-s="6"><span class="am">Tier A · verified</span> — 1 change ready to review, catalog untouched</span></div>
+      <div class="prog"><span class="fill" id="fill"></span></div>
+    </figure>
+    <p class="demo-cap">Animated walkthrough of real fix-llm output · example data — drop in a screen recording to replace it</p>
+  </div>
+</section>
+
+<!-- PROVIDERS -->
+<section id="providers">
+  <div class="wrap">
+    <div class="provintro rise">
+      <p class="kick" style="text-align:center">Works with</p>
+      <h2>The LLMs your product already calls.</h2>
+      <p class="body">Deprecated model ids and the params coupled to them, tracked across every major provider—in TypeScript and Python.</p>
+    </div>
+    <div class="logowall rise">
+      <span class="logo"><svg viewBox="0 0 24 24" role="img" aria-label="OpenAI"><path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/></svg><b>OpenAI</b></span>
+      <span class="logo"><svg viewBox="0 0 24 24" role="img" aria-label="Claude"><path d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/></svg><b>Claude</b></span>
+      <span class="logo"><svg viewBox="0 0 24 24" role="img" aria-label="Gemini"><path d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81"/></svg><b>Gemini</b></span>
+    </div>
+    <p class="demo-cap" style="margin-top:clamp(34px,4vw,44px)">Dated, sourced and re-verified against each provider's live catalog.</p>
+  </div>
+</section>
+
+<!-- DETECT -->
+<section id="detect">
+  <div class="wrap">
+    <div class="feature rise">
+      <div class="ftext">
+        <p class="kick">Detect</p>
+        <h2>Know what is retiring before the notice lands.</h2>
+        <p class="body">Mendr tracks a dated deprecation registry and flags the models your systems depend on, ordered by deadline.</p>
+        <ul class="flist"><li>Dated, sourced retirement records</li><li>Ordered by nearest deadline</li><li>OpenAI, Anthropic and Google</li></ul>
+      </div>
+      <figure class="pv" role="img" aria-label="Registry: gpt-4, gpt-3.5-turbo and gpt-4-turbo with their dated shutdowns, claude-3-opus already retired.">
+        <div class="pvh"><span class="d"></span> deprecation registry</div>
+        <div class="pvb">
+          <div class="row"><span class="id">gpt-4</span><span class="tag risk">2026-10-23</span></div>
+          <div class="row"><span class="id">gpt-3.5-turbo</span><span class="tag risk">2026-10-23</span></div>
+          <div class="row"><span class="id">gpt-4-turbo</span><span class="tag risk">2026-10-23</span></div>
+          <div class="row"><span class="id">claude-3-opus</span><span class="tag slate">retired</span></div>
+        </div>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- MEASURE -->
+<section id="measure">
+  <div class="wrap">
+    <div class="feature rev rise">
+      <figure class="pv" role="img" aria-label="Runtime evidence is optional: an OpenTelemetry export, a sanitized usage export, your own read-only key kept in your own CI, or gateway and application logs. Without any of them usage is reported as not measured.">
+        <div class="pvh"><span class="d"></span> runtime evidence · optional</div>
+        <div class="pvb">
+          <div class="row"><span class="id">otel-export.json</span><span class="tag slate">no key</span></div>
+          <div class="row"><span class="id">usage-export.csv</span><span class="tag slate">sanitized</span></div>
+          <div class="row"><span class="id">your read-only key</span><span class="tag slate">stays in your CI</span></div>
+          <div class="row"><span class="id">gateway / app logs</span><span class="tag slate">no key</span></div>
+          <div class="row"><span class="k">with none of these</span><span class="co">usage: not measured</span></div>
+        </div>
+      </figure>
+      <div class="ftext">
+        <p class="kick">Optional · Measure</p>
+        <h2>Prove which ones are live. If you want to.</h2>
+        <p class="body">Code says where a model is declared, not whether production calls it. Connect telemetry you already have and the same finding gains an observed-usage line. Until then the report says <span class="mono">not measured</span>—never "unused".</p>
+        <ul class="flist"><li>OpenTelemetry, a usage export, your own key in your own CI, or gateway logs</li><li>Reads provider, model, service, timestamp and volume. Never prompts or responses</li><li>Never required. Absence is never treated as proof</li></ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- LOCATE -->
+<section id="locate">
+  <div class="wrap">
+    <div class="feature rise">
+      <div class="ftext">
+        <p class="kick">Locate</p>
+        <h2>Find the configuration that selects it.</h2>
+        <p class="body">Mendr separates a live selector from catalog data, so your team changes the right line—and only the right line.</p>
+        <ul class="flist"><li>Config and IaC: yaml, json, .env, helm</li><li>Selector vs. catalog, told apart</li><li>Reported as a candidate for review</li></ul>
+      </div>
+      <figure class="pv" role="img" aria-label="config-scan: app.yaml line 3 model gpt-4 is a candidate selector to review; models.yaml gpt-4 is catalog data left alone.">
+        <div class="pvh"><span class="d"></span> config-scan · .</div>
+        <div class="pvb" style="line-height:2">
+<div><span class="cmt">app.yaml</span></div>
+<div>  model: <span class="flag">gpt-4</span>          <span class="tag rev">candidate · review</span></div>
+<div style="margin-top:8px"><span class="cmt">models.yaml</span></div>
+<div>  gpt-4: { ... }        <span class="tag slate">catalog · left alone</span></div>
+        </div>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- SAFETY strip -->
+<section class="strip" id="safety" style="padding:0">
+  <div class="strip-in">
+    <div>
+      <div class="dw">DECISION <span class="gy">/</span> <span class="w">WITHHELD</span></div>
+      <div class="dsig"><span class="s"></span><span class="stop"></span><span class="aft"></span></div>
+    </div>
+    <div class="detail">
+      <div><div class="dk">CANDIDATE SELECTOR</div><div class="dv mono">app.yaml:3</div></div>
+      <div><div class="dk">EVIDENCE MISSING</div><div class="dv">Runtime reader tie-back</div></div>
+      <div><div class="dk">REQUIRED</div><div class="dv">Human confirmation</div></div>
+      <div><div class="dk">APPLIED</div><div class="dv">No code changed</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- EVIDENCE -->
+<section id="evidence">
+  <div class="wrap">
+    <div class="ev-head rise">
+      <p class="kick">Evidence</p>
+      <h2>One route, read as evidence.</h2>
+      <p class="body">Each signal carries its evidence, its source, and how far it can be trusted. Nothing is asserted past what the data shows.</p>
+    </div>
+    <div class="ev-top">
+      <div class="rise">
+        <div class="ehead"><span>Signal</span><span>Evidence</span><span>Source</span><span>Confidence</span></div>
+        <div class="erow v"><span class="node"></span><span class="sig">Retirement</span><span class="evi">2026-10-23</span><span class="src">Registry</span><span class="conf">Verified</span></div>
+        <div class="erow w"><span class="node"></span><span class="sig">Usage</span><span class="evi">not measured</span><span class="src">Runtime · optional</span><span class="conf">Unknown</span></div>
+        <div class="erow o"><span class="node"></span><span class="sig">Location</span><span class="evi">src/ai/client.ts:42</span><span class="src">Source scan</span><span class="conf">Verified</span></div>
+        <div class="erow w"><span class="node"></span><span class="sig">Decision</span><span class="evi">Patch eligible</span><span class="src">Safety gate</span><span class="conf">Not applied</span></div>
+      </div>
+      <div class="timeline rise">
+        <div class="tl-label">RETIREMENT WINDOW</div>
+        <div class="tstep announced"><span class="m"></span><div class="k">ANNOUNCED</div><div class="d">provider notice</div></div>
+        <div class="tstep now"><span class="m"></span><div class="k">NOW</div><div class="d">mendr audit .</div></div>
+        <div class="tstep deadline"><span class="m"></span><div class="k">DEADLINE · gpt-4</div><div class="d">2026-10-23</div></div>
+      </div>
+    </div>
+    <div class="result rise">
+      <div class="rl">RESULT</div>
+      <p>Call site located and verified. Migration evidence attached. <span class="un">Runtime usage not measured—and reported that way.</span></p>
+    </div>
+  </div>
+</section>
+
+<!-- COMMANDS -->
+<section id="commands">
+  <div class="wrap">
+    <div class="ev-head rise"><p class="kick">The commands</p><h2>A small set, run in your own environment.</h2></div>
+    <div class="cmds rise">
+      <div class="cmd"><span class="c">mendr audit [path] <span class="a">· preview</span></span><span class="d">The audit. Source, config and registry in one report with four honest conclusions. Needs only the repository.</span></div>
+      <div class="cmd"><span class="c">mendr audit . --install <span class="a">· preview</span></span><span class="d">Scaffolds a GitHub workflow that keeps one issue per repo current: new, continuing, resolved. <span class="mono">contents: read</span>, <span class="mono">issues: write</span>.</span></div>
+      <div class="cmd"><span class="c">mendr fix-llm [path]</span><span class="d">Print the gated diff for a retired id at a verified call site—proved against your type-check and tests before it touches your code. Released, v0.1.0.</span></div>
+      <div class="cmd"><span class="c">mendr watch [path]</span><span class="d">The lightweight tracker: which deprecated ids a repo uses, by deadline, in one self-updating issue. Released, v0.1.0.</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- INSTALL -->
+<section id="install">
+  <div class="wrap">
+    <div class="install-grid">
+      <div class="rise">
+        <p class="kick">Install</p>
+        <h2>Run the audit. Thirty seconds, no key, nothing changed.</h2>
+        <p class="body">Point it at a repo. It scans TypeScript, TSX, Python and config, joins the retirement registry, and prints every retiring model with its location, deadline and migration evidence. Add <span class="mono">--install</span> to keep one GitHub issue current.</p>
+      </div>
+      <figure class="term rise" style="margin:0" role="img" aria-label="Terminal: npx github ajitheee mendr v0.2.4-alpha audit dot. Coverage: source code scanned, configuration not applicable, registry loaded, runtime usage not measured. Conclusion: exposure detected. gpt-4 at src/ai/client.ts line 42, verified direct call site, deadline 2026-10-23, patch eligible, no change applied.">
+        <div class="th">audit · v0.2.4-alpha</div>
+<div class="tb"><span class="pr">$</span> npx github:ajitheee/mendr#v0.2.4-alpha audit .
+<span class="dim">mendr audit (preview)</span>
+
+<span class="ok">✓</span> Source code     342 files (301 TS/TSX, 41 Python)
+<span class="dim">○ Configuration   not applicable</span>
+<span class="ok">✓</span> Registry        anthropic, google, openai
+<span class="dim">○ Runtime usage   not measured (optional)</span>
+
+Conclusion: <span class="am">EXPOSURE DETECTED</span>
+  gpt-4  src/ai/client.ts:42  <span class="am">2026-10-23</span>
+  verified direct call site · replacement gpt-5.6-sol
+  Decision: PATCH ELIGIBLE · <span class="dim">No change applied</span></div>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta" id="cta">
+  <div class="wrap rise">
+    <p class="kick" style="text-align:center">Get started</p>
+    <h2>Know what retires under your code before it becomes an incident.</h2>
+    <div class="actions">
+      <a class="btn" href="#install">Run the audit</a>
+      <a class="tlink" href="https://github.com/ajitheee/mendr/issues/new?title=Read-only%20audit%20request&body=Repo%20(public%20URL%2C%20or%20say%20%22private%22)%3A%0ALanguages%3A%0AProviders%20you%20call%20(OpenAI%20%2F%20Anthropic%20%2F%20Google)%3A%0ABest%20way%20to%20reach%20you%3A%0A%0AWhat%20happens%20next%3A%20you%20run%20%60npx%20github%3Aajitheee%2Fmendr%23v0.2.4-alpha%20audit%20.%60%20yourself%2C%20or%20for%20a%20public%20repo%20I%20run%20it%20and%20send%20you%20the%20report.%20No%20keys.%20No%20source%20leaves%20your%20machine." rel="noopener">Book a 20-minute read-only audit <span aria-hidden="true">→</span></a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="foot">
+    <span>mendr — find retiring AI models before they break prod · MIT</span>
+    <span class="fl"><a href="https://github.com/ajitheee/mendr">GitHub</a><a href="https://github.com/ajitheee/mendr#readme">Docs</a><a href="https://github.com/ajitheee/mendr/releases">Releases</a></span>
+  </div>
+</footer>
+
+<script>
+  (function(){
+    var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var items=document.querySelectorAll('.rise');
+    if(reduce||!('IntersectionObserver'in window))items.forEach(function(el){el.classList.add('in');});
+    else{var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});},{rootMargin:'0px 0px -8% 0px',threshold:0.1});items.forEach(function(el){io.observe(el);});}
+
+    // demo screencast: reveal lines in sequence, light the stage tracker, loop
+    var lines=Array.prototype.slice.call(document.querySelectorAll('#screen .dl'));
+    var stages=Array.prototype.slice.call(document.querySelectorAll('#stages span'));
+    var fill=document.getElementById('fill'), dur=document.getElementById('dur');
+    function setStage(s){stages.forEach(function(el,idx){el.classList.toggle('on',idx===s);el.classList.toggle('done',idx<s);});}
+    if(lines.length){
+      if(reduce){lines.forEach(function(l){l.classList.add('show');});stages.forEach(function(el){el.classList.add('done');});if(fill)fill.style.width='100%';}
+      else{
+        var i=0,total=lines.length,pause=0;
+        var step=function(){
+          if(pause>0){pause--;if(pause===0){lines.forEach(function(l){l.classList.remove('show');});i=0;setStage(-1);if(fill)fill.style.width='0';}return;}
+          if(i<total){
+            lines[i].classList.add('show');
+            var s=parseInt(lines[i].getAttribute('data-s'),10);if(!isNaN(s))setStage(s);
+            i++;
+            if(fill)fill.style.width=Math.round(i/total*100)+'%';
+            if(dur)dur.textContent='0:'+String(Math.round(i/total*18)).padStart(2,'0');
+            if(i===total)pause=5;
+          }
+        };
+        setInterval(step,820);
+      }
+    }
+  })();
+</script>
+</body>
+</html>

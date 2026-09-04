@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mendr</title>
+<meta name="description" content="Mendr connects provider retirement evidence, observed usage and configuration locations, without taking control away from your team.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%23F4F1EA'/><line x1='30' y1='24' x2='30' y2='76' stroke='%23315CFF' stroke-width='7'/><line x1='30' y1='50' x2='68' y2='50' stroke='%23D88916' stroke-width='7'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ivory:#F4F1EA; --ivory-2:#EEEAE0; --carbon:#0B0D10;
+    --ink-2:#33383f; --grey:#747B89; --grey-2:#9aa0a9;
+    --cobalt:#315CFF; --amber:#D88916; --green:#15805D; --red:#B0392C;
+    --hair:#DED7C7; --hair-2:#E7E1D4;
+    --sans:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --maxw:1180px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+  body{margin:0;background:var(--ivory);color:var(--carbon);font-family:var(--sans);font-size:18px;line-height:1.6;overflow-x:clip;-webkit-font-smoothing:antialiased;font-feature-settings:"ss01","cv01"}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 clamp(22px,4.5vw,48px)}
+  a{color:inherit;text-decoration:none}
+  .mono{font-family:var(--mono)}
+  .label{font-family:var(--mono);font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;color:var(--grey)}
+
+  /* top wordmark — restrained */
+  header{padding:26px 0}
+  .head-in{max-width:var(--maxw);margin:0 auto;padding:0 clamp(22px,4.5vw,48px);display:flex;align-items:center;justify-content:space-between}
+  .mark{display:inline-flex;align-items:center;gap:11px;font-weight:600;font-size:1.05rem;letter-spacing:-.01em}
+  .mark .sig{width:16px;height:16px;position:relative;flex:none}
+  .mark .sig::before{content:"";position:absolute;left:5px;top:1px;bottom:1px;width:2px;background:var(--cobalt)}
+  .mark .sig::after{content:"";position:absolute;left:5px;top:7px;width:9px;height:2px;background:var(--amber)}
+  .head-in .nav{display:flex;gap:26px}
+  .head-in .nav a{font-size:.92rem;color:var(--grey)}.head-in .nav a:hover{color:var(--carbon)}
+  @media (max-width:680px){.head-in .nav{display:none}}
+
+  .screen{padding:clamp(56px,8vw,104px) 0;border-top:1px solid var(--hair)}
+  .screen.first{border-top:0}
+  .screenlabel{margin-bottom:clamp(30px,5vw,52px)}
+  .screenlabel .n{color:var(--grey-2)}
+
+  h1{margin:0;font-weight:500;font-size:clamp(2rem,4.6vw,3.3rem);line-height:1.06;letter-spacing:-.02em}
+  h1 .dim{color:var(--grey)}
+  h2{margin:0;font-weight:600;font-size:clamp(1.5rem,2.8vw,2.1rem);line-height:1.14;letter-spacing:-.015em}
+  .body{font-size:1.12rem;color:var(--grey);line-height:1.55;max-width:46ch}
+  .carbon{color:var(--carbon)}.co{color:var(--cobalt)}.am{color:var(--amber)}.gr{color:var(--green)}.ev{color:var(--grey)}.rd{color:var(--red)}
+
+  /* buttons — restrained, editorial */
+  .actions{display:flex;align-items:center;gap:24px;margin-top:34px;flex-wrap:wrap}
+  .btn{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono);font-size:.86rem;font-weight:500;padding:12px 18px;border-radius:2px;background:var(--carbon);color:var(--ivory);transition:opacity .14s}
+  .btn:hover{opacity:.86}
+  .tlink{font-family:var(--mono);font-size:.86rem;color:var(--carbon);display:inline-flex;align-items:center;gap:8px;border-bottom:1px solid var(--hair);padding-bottom:2px}
+  .tlink:hover{border-color:var(--cobalt);color:var(--cobalt)}
+
+  /* ---------- SCREEN 1: HERO ---------- */
+  .hero-grid{display:grid;grid-template-columns:0.9fr 1.1fr;gap:clamp(30px,5vw,72px);align-items:center}
+  @media (max-width:900px){.hero-grid{grid-template-columns:1fr;gap:44px}}
+  .hero h1{max-width:12ch;margin-bottom:24px}
+  .hero .body{margin-bottom:0}
+
+  /* integrated technical canvas (NOT a card) */
+  .canvas{font-family:var(--mono);font-size:clamp(.8rem,1.15vw,.9rem);line-height:1.5;color:var(--carbon)}
+  .canvas .clabel{color:var(--grey);letter-spacing:.14em;font-size:.72rem}
+  .canvas .crule{height:1px;background:var(--hair);margin:12px 0 20px}
+  .cmodel{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+  .cmodel .cid{font-size:1.05rem;font-weight:500}
+  .cmodel .st{color:var(--amber);letter-spacing:.1em;font-size:.72rem}
+  /* branch = the Signal Line + evidence rows */
+  .branch{position:relative;padding-left:26px;margin-top:10px}
+  .branch .spine{position:absolute;left:6px;top:2px;bottom:34px;width:2px;background:var(--cobalt);opacity:.85;overflow:visible}
+  .branch .spine .pulse{position:absolute;left:-1px;width:4px;height:22px;border-radius:2px;background:linear-gradient(var(--cobalt),transparent);box-shadow:0 0 10px 1px rgba(49,92,255,.5);animation:flow 3.4s cubic-bezier(.5,0,.5,1) infinite}
+  .bi{position:relative;padding:7px 0}
+  .bi .stub{position:absolute;left:-20px;top:50%;width:16px;height:2px;background:var(--cobalt);opacity:.85}
+  .bi.risk .stub{background:var(--amber);opacity:1}
+  .bi .lbl{color:var(--grey)}
+  .decision{position:relative;margin-left:26px;padding-left:32px;padding-top:4px}
+  .decision .dspine{position:absolute;left:6px;top:-6px;height:26px;width:2px;background:var(--amber)}
+  .decision .dstub{position:absolute;left:6px;top:20px;width:24px;height:2px;background:var(--amber)}
+  .decision .dnode{padding-top:12px}
+  .decision .drev{color:var(--amber);letter-spacing:.08em;font-weight:500}
+  .decision .dsub{color:var(--grey);font-size:.82rem;margin-top:4px}
+  @keyframes flow{0%{top:0;opacity:0}12%{opacity:1}88%{opacity:1}100%{top:100%;opacity:0}}
+  @media (prefers-reduced-motion:reduce){.branch .spine .pulse{animation:none;opacity:0}}
+
+  /* ---------- SCREEN 2: EVIDENCE CANVAS ---------- */
+  .ev-head{max-width:52ch;margin-bottom:clamp(34px,5vw,54px)}
+  .ev-head h2{margin-bottom:16px}
+  .etable{position:relative}
+  .ehead,.erow{display:grid;grid-template-columns:1.1fr 1.5fr 1.1fr 1fr;gap:20px;align-items:center}
+  .ehead{padding:0 0 14px 34px;border-bottom:1px solid var(--hair)}
+  .ehead span{font-family:var(--mono);font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;color:var(--grey-2)}
+  .erow{padding:22px 0 22px 34px;border-bottom:1px solid var(--hair);position:relative}
+  /* the Signal Line down the left, node per row */
+  .erow::before{content:"";position:absolute;left:5px;top:0;bottom:0;width:2px;background:var(--hair)}
+  .erow:first-of-type::before{top:50%}
+  .erow:last-of-type::before{bottom:50%}
+  .erow .node{position:absolute;left:0;top:50%;transform:translateY(-50%);width:12px;height:12px;border-radius:50%;background:var(--ivory);border:2px solid var(--grey);z-index:1}
+  .erow.verified .node{border-color:var(--green)}.erow.observed .node{border-color:var(--cobalt)}.erow.candidate .node{border-color:var(--grey)}.erow.withheld .node{border-color:var(--amber)}
+  .erow .sig{font-weight:500;font-size:1.05rem}
+  .erow .evi{font-family:var(--mono);font-size:.92rem}
+  .erow .src{color:var(--grey);font-size:.95rem}
+  .erow .conf{font-family:var(--mono);font-size:.78rem;letter-spacing:.06em;text-transform:uppercase}
+  .erow.verified .conf{color:var(--green)}.erow.observed .conf{color:var(--cobalt)}.erow.candidate .conf{color:var(--grey)}.erow.withheld .conf{color:var(--amber)}
+  @media (max-width:760px){
+    .ehead{display:none}
+    .erow{grid-template-columns:1fr auto;gap:6px 16px;padding:18px 0 18px 30px}
+    .erow .evi{grid-column:1;order:2}.erow .src{grid-column:1;order:3;font-size:.85rem}.erow .conf{grid-column:2;order:1;justify-self:end}
+    .erow .sig{grid-column:1;order:0}
+  }
+
+  /* ---------- SCREEN 3: SAFETY DECISION ---------- */
+  .safety-grid{display:grid;grid-template-columns:1fr 1fr;gap:clamp(30px,5vw,64px);align-items:center}
+  @media (max-width:840px){.safety-grid{grid-template-columns:1fr;gap:38px}}
+  .safety h2{max-width:14ch;margin-bottom:18px}
+  .gate{font-family:var(--mono);font-size:clamp(.82rem,1.1vw,.92rem);line-height:1.5}
+  .gate .glabel{color:var(--grey);letter-spacing:.14em;font-size:.72rem}
+  .gate .grule{height:1px;background:var(--hair);margin:12px 0 6px}
+  .grow{display:grid;grid-template-columns:96px 1fr;gap:10px 18px;padding:11px 0;align-items:baseline}
+  .grow+.grow{border-top:1px solid var(--hair-2)}
+  .grow .gk{color:var(--grey);font-size:.78rem;letter-spacing:.04em}
+  .grow .gv{color:var(--carbon)}
+  /* the withheld signal: line runs, then stops at an amber block */
+  .sigrun{display:flex;align-items:center;gap:0;height:14px}
+  .sigrun .seg{height:2px;background:var(--cobalt)}
+  .sigrun .seg.s1{width:36px}
+  .sigrun .stop{width:12px;height:12px;border-radius:2px;background:var(--amber);margin-left:8px;position:relative}
+  .sigrun .after{height:2px;flex:1;margin-left:8px;background:repeating-linear-gradient(90deg,var(--grey-2) 0 4px,transparent 4px 9px);opacity:.7}
+  .withheld-tag{color:var(--amber);letter-spacing:.08em;font-weight:500}
+
+  footer{border-top:1px solid var(--hair);padding:26px 0 40px}
+  .foot{max-width:var(--maxw);margin:0 auto;padding:0 clamp(22px,4.5vw,48px);display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;font-family:var(--mono);font-size:.76rem;color:var(--grey)}
+
+  .rise{opacity:0;transform:translateY(14px);transition:opacity .7s ease,transform .7s ease}.rise.in{opacity:1;transform:none}
+  @media (prefers-reduced-motion:reduce){.rise{opacity:1;transform:none;transition:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="head-in">
+    <a class="mark" href="#"><span class="sig"></span> mendr</a>
+    <nav class="nav"><a href="#evidence">Evidence</a><a href="#safety">Safety</a><a href="https://github.com/ajitheee/mendr">GitHub</a></nav>
+  </div>
+</header>
+
+<!-- SCREEN 1 — HERO -->
+<section class="screen first">
+  <div class="wrap">
+    <div class="hero-grid">
+      <div>
+        <p class="label" style="margin-bottom:22px">AI dependency exposure</p>
+        <h1>AI dependencies retire.<br><span class="dim">Know what is exposed.</span></h1>
+        <p class="body">Mendr connects provider retirement evidence, observed usage and configuration locations—without taking control away from your team.</p>
+        <div class="actions">
+          <a class="btn" href="https://github.com/ajitheee/mendr">Run Watch</a>
+          <a class="tlink" href="#evidence">View the evidence <span aria-hidden="true">→</span></a>
+        </div>
+      </div>
+
+      <figure class="canvas" style="margin:0" role="img" aria-label="Example organization usage: gpt-4 is retiring; 48,210 observed requests, 1,284 dollars observed cost, deadline 57 days, candidate selector app.yaml line 3; decision is review required because reader tie-back is not proven.">
+        <div class="clabel">OPENAI / ORGANIZATION USAGE · EXAMPLE</div>
+        <div class="crule"></div>
+        <div class="cmodel"><span class="cid">gpt-4</span><span class="st">RETIRING</span></div>
+        <div class="branch">
+          <span class="spine"><span class="pulse"></span></span>
+          <div class="bi"><span class="stub"></span><span class="co">48,210</span> <span class="lbl">observed requests</span></div>
+          <div class="bi"><span class="stub"></span><span class="co">$1,284</span> <span class="lbl">observed cost</span></div>
+          <div class="bi risk"><span class="stub"></span><span class="lbl">deadline ·</span> <span class="am">57 days</span></div>
+          <div class="bi"><span class="stub"></span><span class="lbl">candidate selector ·</span> <span class="co">app.yaml:3</span></div>
+        </div>
+        <div class="decision">
+          <span class="dspine"></span><span class="dstub"></span>
+          <div class="dnode">
+            <div class="drev">REVIEW REQUIRED</div>
+            <div class="dsub">reader tie-back not proven</div>
+          </div>
+        </div>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- SCREEN 2 — COMBINED EVIDENCE CANVAS -->
+<section class="screen" id="evidence">
+  <div class="wrap">
+    <div class="ev-head rise">
+      <p class="label screenlabel" style="margin:0 0 18px"><span class="n">02 /</span> The evidence</p>
+      <h2>One investigation, joined by the signal line.</h2>
+      <p class="body">Every signal carries its evidence, its source, and how far it can be trusted. Nothing is asserted beyond what the data shows.</p>
+    </div>
+
+    <div class="etable rise">
+      <div class="ehead"><span>Signal</span><span>Evidence</span><span>Source</span><span>Confidence</span></div>
+      <div class="erow verified"><span class="node"></span><span class="sig">Retirement</span><span class="evi">57 days</span><span class="src">Registry</span><span class="conf">Verified</span></div>
+      <div class="erow observed"><span class="node"></span><span class="sig">Usage</span><span class="evi">48,210 requests</span><span class="src">Provider API</span><span class="conf">Observed</span></div>
+      <div class="erow candidate"><span class="node"></span><span class="sig">Location</span><span class="evi">app.yaml:3</span><span class="src">Config scan</span><span class="conf">Candidate</span></div>
+      <div class="erow withheld"><span class="node"></span><span class="sig">Decision</span><span class="evi">Human review</span><span class="src">Safety gate</span><span class="conf">Withheld</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- SCREEN 3 — SAFETY DECISION -->
+<section class="screen" id="safety">
+  <div class="wrap">
+    <div class="safety-grid">
+      <div class="rise">
+        <p class="label" style="margin-bottom:18px"><span class="ev">03 /</span> Safety</p>
+        <h2>Unverified changes are withheld.</h2>
+        <p class="body">Mendr identifies the candidate selector and reports what remains unproven. It never applies a change your team has not confirmed.</p>
+      </div>
+
+      <figure class="gate rise" style="margin:0" role="img" aria-label="Safety gate. Status withheld. The signal line runs, then stops at an amber hold. Reason: candidate selector unverified. Required: human confirmation.">
+        <div class="glabel">SAFETY GATE</div>
+        <div class="grule"></div>
+        <div class="grow"><span class="gk">status</span><span class="gv withheld-tag">WITHHELD</span></div>
+        <div class="grow"><span class="gk">signal</span><span class="gv"><span class="sigrun"><span class="seg s1"></span><span class="stop"></span><span class="after"></span></span></span></div>
+        <div class="grow"><span class="gk">reason</span><span class="gv">candidate selector unverified</span></div>
+        <div class="grow"><span class="gk">required</span><span class="gv">human confirmation</span></div>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="foot">
+    <span>mendr — precision for AI dependency risk · three validation screens</span>
+    <span>example audit data · not customer results</span>
+  </div>
+</footer>
+
+<script>
+  (function(){
+    var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var items=document.querySelectorAll('.rise');
+    if(reduce||!('IntersectionObserver'in window))items.forEach(function(el){el.classList.add('in');});
+    else{var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});},{rootMargin:'0px 0px -8% 0px',threshold:0.12});items.forEach(function(el){io.observe(el);});}
+  })();
+</script>
+</body>
+</html>

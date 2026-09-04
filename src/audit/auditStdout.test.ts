@@ -34,6 +34,8 @@ afterEach(() => {
 });
 
 /** A repo with a live gpt-4 call site in TS, plus Go files we cannot analyze. */
+const EOL_LF = String.fromCharCode(10);
+
 function sampleRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'mendr-audit-cli-'));
   created.push(dir);
@@ -158,6 +160,34 @@ describe('audit CLI — claim discipline (release-copy corrections)', () => {
     expect(loc.snippet.lines.length).toBeLessThanOrEqual(7);
     expect(loc.snippet.lines[loc.line - loc.snippet.startLine]).toContain('gpt-4');
     expect(loc.lineHash).toMatch(/^[0-9a-f]{16}$/);
+  }, 120_000);
+
+  it('JSON snippets pass through the same secret redaction as the issue body', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mendr-audit-cli-'));
+    created.push(dir);
+    // A key on the line right after a model literal: it lands inside the ±3-line
+    // snippet window and must never leave the machine intact, even in JSON.
+    writeFileSync(
+      join(dir, 'client.ts'),
+      [
+        'import OpenAI from "openai";',
+        'const client = new OpenAI();',
+        'export async function ask() {',
+        '  return client.chat.completions.create({ model: "gpt-4", messages: [] });',
+        '}',
+        'const leaked = "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789";',
+        'process.env.OPENAI_API_KEY = "sk-abcdefghijklmnopqrstuvwxyz0123";',
+        '',
+      ].join(EOL_LF),
+    );
+    const { stdout } = await runAudit([dir, '--json']);
+    expect(stdout).not.toContain('sk-proj-abcdefghijklmnopqrstuvwxyz0123456789');
+    expect(stdout).not.toContain('sk-abcdefghijklmnopqrstuvwxyz0123');
+    const report = JSON.parse(stdout);
+    const loc = report.investigations.find((i: { decision: string }) => i.decision === 'patch').locations.selectors[0];
+    const snippet = loc.snippet.lines.join(EOL_LF);
+    expect(snippet).toContain('gpt-4');
+    expect(snippet).toContain('REDACTED');
   }, 120_000);
 
   it('never reports patchApplied true for any finding', async () => {

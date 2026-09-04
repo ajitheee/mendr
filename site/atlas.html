@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mendr</title>
+<meta name="description" content="Mendr maps AI dependency risk: provider, production usage, repository, configuration, and the migration decision, on one route your team stays in control of.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%23E7ECE8'/><circle cx='30' cy='26' r='6' fill='none' stroke='%230B1F1A' stroke-width='4'/><line x1='30' y1='32' x2='30' y2='68' stroke='%230B1F1A' stroke-width='4'/><circle cx='30' cy='74' r='6' fill='%23FF5C35'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --mineral:#E7ECE8; --forest:#0B1F1A; --coral:#FF5C35; --jade:#16856B;
+    --slate:#7E8A86; --sand:#D8CCB8; --data:#F8FAF8;
+    --ink-2:#3a4a45; --hair:#CFD6D0; --sand-line:#D8CCB8;
+    --sans:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"DM Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --maxw:1200px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+  body{margin:0;background:var(--mineral);color:var(--forest);font-family:var(--sans);font-size:18px;line-height:1.55;overflow-x:clip;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 clamp(22px,4.5vw,44px)}
+  a{color:inherit;text-decoration:none}
+  .mono{font-family:var(--mono)}
+  .co{color:var(--coral)}.jd{color:var(--jade)}.sl{color:var(--slate)}
+
+  /* NAV */
+  header{position:sticky;top:0;z-index:40;background:color-mix(in srgb,var(--mineral) 88%,transparent);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+  .nav{max-width:var(--maxw);margin:0 auto;padding:18px clamp(22px,4.5vw,44px);display:flex;align-items:center;gap:22px}
+  .brand{display:inline-flex;align-items:center;gap:10px;font-weight:600;font-size:1.08rem;letter-spacing:-.01em}
+  .brand .g{width:22px;height:22px;position:relative;flex:none}
+  .brand .g::before{content:"";position:absolute;left:10px;top:0;bottom:0;width:2px;background:var(--forest)}
+  .brand .g::after{content:"";position:absolute;left:6px;bottom:0;width:10px;height:10px;border-radius:50%;background:var(--coral)}
+  .nav .links{display:flex;gap:22px;margin-left:12px}
+  .nav .links a{font-size:.94rem;color:var(--ink-2)}.nav .links a:hover{color:var(--forest)}
+  .nav .run{margin-left:auto;color:var(--coral);font-weight:600;font-size:.96rem;display:inline-flex;align-items:center;gap:7px}
+  .nav .run:hover{gap:10px}
+  @media (max-width:760px){.nav .links{display:none}}
+
+  /* HERO */
+  .hero{min-height:720px;padding:72px 0 88px;display:flex;align-items:center}
+  .hero-grid{display:grid;grid-template-columns:0.92fr 1.08fr;gap:clamp(30px,5vw,64px);align-items:center;width:100%}
+  @media (max-width:920px){.hero{min-height:0;padding:40px 0 64px}.hero-grid{grid-template-columns:1fr;gap:48px}}
+  .eyebrow{font-size:.8rem;font-weight:600;letter-spacing:.1em;color:var(--coral);margin-bottom:22px}
+  h1{margin:0;font-weight:500;font-size:clamp(2.1rem,4.7vw,3.5rem);line-height:1.05;letter-spacing:-.02em;max-width:15ch}
+  .hero .sub{font-size:1.14rem;color:var(--ink-2);margin:22px 0 34px;max-width:42ch}
+  .actions{display:flex;align-items:center;gap:26px}
+  .run-btn{color:var(--coral);font-weight:600;font-size:1rem;display:inline-flex;align-items:center;gap:9px;padding-bottom:4px;border-bottom:2px solid var(--coral)}
+  .run-btn:hover{gap:12px}
+  .ghost{color:var(--ink-2);font-weight:500;display:inline-flex;align-items:center;gap:7px}
+  .ghost:hover{color:var(--forest)}
+
+  /* THE DEPENDENCY ATLAS (hero route) */
+  .atlas{position:relative;padding:26px 10px;background:
+    linear-gradient(var(--sand-line) 1px,transparent 1px) 0 0/100% 46px,
+    linear-gradient(90deg,var(--sand-line) 1px,transparent 1px) 0 0/46px 100%;
+    background-color:transparent;border-radius:2px}
+  .atlas::after{content:"";position:absolute;inset:0;background:radial-gradient(120% 90% at 60% 40%,transparent 40%,var(--mineral) 100%);pointer-events:none}
+  .atlas .amask{position:relative;z-index:1}
+  .trace{position:relative}
+  .tn{display:grid;grid-template-columns:clamp(84px,13vw,150px) 26px 1fr;align-items:center;gap:0 16px;position:relative;padding:17px 0}
+  .tn .gx{grid-column:1;text-align:right;font-family:var(--mono);font-size:.72rem;color:var(--slate);opacity:.92;line-height:1.35}
+  .tn .rc{grid-column:2;align-self:stretch;position:relative;display:flex;align-items:center;justify-content:center}
+  .tn .rc::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:2px;transform:translateX(-1px);background:var(--forest);opacity:.5}
+  .tn:first-child .rc::before{top:50%}
+  .tn:last-child .rc::before{bottom:50%}
+  .tn .mk{position:relative;z-index:2;width:14px;height:14px;border-radius:50%;background:var(--mineral);border:2px solid var(--slate)}
+  .tn .mk::after{content:"";position:absolute;inset:-5px;border-radius:50%;border:2px solid currentColor;color:var(--slate);opacity:0}
+  @media (prefers-reduced-motion:no-preference){
+    .tn .mk::after{animation:ping 3.4s ease-out infinite}
+    .tn:nth-child(1) .mk::after{animation-delay:0s}
+    .tn:nth-child(2) .mk::after{animation-delay:.45s}
+    .tn:nth-child(3) .mk::after{animation-delay:.9s}
+    .tn:nth-child(4) .mk::after{animation-delay:1.35s}
+    .tn:nth-child(5) .mk::after{animation-delay:1.8s}
+  }
+  @keyframes ping{0%{transform:scale(.6);opacity:.55}70%,100%{transform:scale(1.5);opacity:0}}
+  .tn.provider .mk{border-color:var(--forest)} .tn.provider .mk::after{color:var(--forest)}
+  .tn.model .mk{border-color:var(--forest);background:var(--forest)} .tn.model .mk::after{color:var(--forest)}
+  .tn.usage .mk{border-color:var(--jade);background:var(--jade)} .tn.usage .mk::after{color:var(--jade)}
+  .tn.config .mk{border-color:var(--slate)} .tn.config .mk::after{color:var(--slate)}
+  .tn.decision .mk{border-color:var(--coral);background:var(--coral)} .tn.decision .mk::after{color:var(--coral)}
+  .tn .body{grid-column:3;min-width:0}
+  .tn .tl{font-size:1.16rem;font-weight:500;color:var(--forest);letter-spacing:-.01em}
+  .tn.model .tl{font-size:1.5rem;font-weight:600}
+  .tn.decision .tl{color:var(--coral);font-weight:600;letter-spacing:.01em}
+  .tn .tl .n{color:var(--jade);font-weight:600}
+  .tn .tl .rt{font-family:var(--mono);font-size:.72rem;color:var(--coral);border:1px solid var(--coral);border-radius:2px;padding:2px 7px;margin-left:12px;vertical-align:middle;letter-spacing:.04em}
+
+  /* SECTION */
+  .section{padding:96px 0;border-top:1px solid var(--sand)}
+  .seclabel{font-family:var(--mono);font-size:.76rem;letter-spacing:.08em;color:var(--slate);margin:0 0 16px}
+  h2{margin:0;font-weight:600;font-size:clamp(1.5rem,2.7vw,2.05rem);line-height:1.15;letter-spacing:-.015em}
+  .lead{font-size:1.1rem;color:var(--ink-2);max-width:52ch;margin:14px 0 0}
+
+  /* EVIDENCE: table + narrow timeline + result */
+  .ev-top{display:grid;grid-template-columns:1.7fr 1fr;gap:clamp(30px,5vw,60px);margin-top:clamp(30px,4vw,46px)}
+  @media (max-width:840px){.ev-top{grid-template-columns:1fr;gap:40px}}
+  .etable{}
+  .ehead,.erow{display:grid;grid-template-columns:1.1fr 1.5fr 1fr .9fr;gap:18px;align-items:center}
+  .ehead{padding:0 0 12px 30px;border-bottom:1px solid var(--sand)}
+  .ehead span{font-family:var(--mono);font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--slate)}
+  .erow{padding:20px 0 20px 30px;border-bottom:1px solid var(--sand);position:relative}
+  .erow::before{content:"";position:absolute;left:5px;top:0;bottom:0;width:2px;background:var(--sand)}
+  .erow:first-of-type::before{top:50%}.erow:last-of-type::before{bottom:50%}
+  .erow .node{position:absolute;left:0;top:50%;transform:translateY(-50%);width:12px;height:12px;border-radius:50%;background:var(--mineral);border:2px solid var(--slate);z-index:1}
+  .erow.v .node{border-color:var(--jade)}.erow.o .node{border-color:var(--jade)}.erow.c .node{border-color:var(--slate)}.erow.w .node{border-color:var(--coral)}
+  .erow .sig{font-weight:500;font-size:1.06rem}
+  .erow .evi{font-family:var(--mono);font-size:.92rem;color:var(--forest)}
+  .erow .src{color:var(--slate);font-size:.94rem}
+  .erow .conf{font-family:var(--mono);font-size:.76rem;letter-spacing:.05em;text-transform:uppercase}
+  .erow.v .conf,.erow.o .conf{color:var(--jade)}.erow.c .conf{color:var(--slate)}.erow.w .conf{color:var(--coral)}
+  @media (max-width:520px){.ehead{display:none}.erow{grid-template-columns:1fr auto;gap:5px 14px}.erow .evi{grid-column:1;order:2}.erow .src{grid-column:1;order:3;font-size:.84rem}.erow .conf{order:1;justify-self:end}.erow .sig{order:0}}
+
+  /* retirement timeline (narrow, vertical route) */
+  .timeline{padding-left:6px}
+  .tl-label{font-family:var(--mono);font-size:.72rem;letter-spacing:.08em;color:var(--slate);margin-bottom:22px}
+  .tstep{position:relative;padding:0 0 26px 26px}
+  .tstep::before{content:"";position:absolute;left:5px;top:16px;bottom:-6px;width:2px;background:var(--sand)}
+  .tstep:last-child::before{display:none}
+  .tstep .m{position:absolute;left:0;top:5px;width:12px;height:12px;border-radius:50%;background:var(--mineral);border:2px solid var(--slate)}
+  .tstep.now .m{border-color:var(--forest);background:var(--forest)}
+  .tstep.deadline .m{border-color:var(--coral);background:var(--coral)}
+  .tstep .k{font-family:var(--mono);font-size:.78rem;letter-spacing:.06em;color:var(--forest)}
+  .tstep.deadline .k{color:var(--coral)}
+  .tstep .d{font-family:var(--mono);font-size:.82rem;color:var(--slate);margin-top:3px}
+  .tstep.now .d{color:var(--forest);font-weight:500}
+
+  /* RESULT */
+  .result{margin-top:clamp(34px,4vw,50px);max-width:56ch}
+  .result .rl{font-family:var(--mono);font-size:.74rem;letter-spacing:.1em;color:var(--slate);margin-bottom:10px}
+  .result p{margin:0;font-size:1.24rem;font-weight:500;line-height:1.4;color:var(--forest)}
+  .result p .un{color:var(--coral)}
+
+  /* SAFETY forest strip (merged, full-bleed) */
+  .strip{background:var(--forest);color:var(--data);margin-top:clamp(50px,7vw,84px)}
+  .strip-in{max-width:var(--maxw);margin:0 auto;padding:clamp(38px,5vw,58px) clamp(22px,4.5vw,44px);display:grid;grid-template-columns:auto 1fr;gap:clamp(28px,5vw,64px);align-items:center}
+  @media (max-width:760px){.strip-in{grid-template-columns:1fr;gap:26px}}
+  .strip .decision{font-family:var(--mono);white-space:nowrap}
+  .strip .decision .dw{font-size:1.6rem;font-weight:500;letter-spacing:.02em}
+  .strip .decision .dw .w{color:var(--coral)}
+  .strip .decision .dsig{margin-top:14px;display:flex;align-items:center;gap:0}
+  .strip .decision .dsig .s{height:2px;width:44px;background:var(--jade)}
+  .strip .decision .dsig .stop{width:12px;height:12px;border-radius:2px;background:var(--coral);margin-left:8px}
+  .strip .decision .dsig .aft{height:2px;flex:1;min-width:40px;margin-left:8px;background:repeating-linear-gradient(90deg,var(--slate) 0 4px,transparent 4px 9px);opacity:.7}
+  .strip .detail{display:grid;grid-template-columns:1fr 1fr;gap:18px 34px}
+  @media (max-width:520px){.strip .detail{grid-template-columns:1fr}}
+  .strip .dk{font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;color:#8fa39c;margin-bottom:5px}
+  .strip .dv{font-size:1.02rem;color:var(--data)}
+  .strip .dv.mono{font-family:var(--mono);font-size:.92rem}
+
+  footer{padding:30px 0 44px}
+  .foot{max-width:var(--maxw);margin:0 auto;padding:0 clamp(22px,4.5vw,44px);display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;font-family:var(--mono);font-size:.74rem;color:var(--slate)}
+
+  .rise{opacity:0;transform:translateY(14px);transition:opacity .7s ease,transform .7s ease}.rise.in{opacity:1;transform:none}
+  @media (prefers-reduced-motion:reduce){.rise{opacity:1;transform:none;transition:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="nav">
+    <a class="brand" href="#"><span class="g"></span> mendr</a>
+    <span class="links"><a href="#evidence">Product</a><a href="#evidence">Registry</a><a href="#safety">Security</a><a href="https://github.com/ajitheee/mendr#readme">Docs</a><a href="https://github.com/ajitheee/mendr">GitHub</a></span>
+    <a class="run" href="#">Run Watch <span aria-hidden="true">→</span></a>
+  </div>
+</header>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="wrap">
+    <div class="hero-grid">
+      <div>
+        <p class="eyebrow">AI DEPENDENCY RISK</p>
+        <h1>AI dependencies <span class="co">retire</span>.<br>See the route before it breaks.</h1>
+        <p class="sub">Mendr maps the path from a provider retirement to the configuration that controls it—and stops before it changes anything.</p>
+        <div class="actions">
+          <a class="run-btn" href="#">Run Watch <span aria-hidden="true">→</span></a>
+          <a class="ghost" href="#evidence">Explore example <span aria-hidden="true">→</span></a>
+        </div>
+      </div>
+
+      <figure class="atlas" style="margin:0" role="img" aria-label="Dependency route: OpenAI provides gpt-4, which is retiring; 48,210 organization requests; located at app.yaml line 3; decision is review required.">
+        <div class="amask">
+          <div class="trace">
+            <div class="tn provider"><span class="gx">source/provider/openai</span><span class="rc"><span class="mk"></span></span><span class="body"><span class="tl">OPENAI</span></span></div>
+            <div class="tn model"><span class="gx"></span><span class="rc"><span class="mk"></span></span><span class="body"><span class="tl">gpt-4 <span class="rt">RETIRING</span></span></span></div>
+            <div class="tn usage"><span class="gx">usage/organization</span><span class="rc"><span class="mk"></span></span><span class="body"><span class="tl"><span class="n">48,210</span> requests</span></span></div>
+            <div class="tn config"><span class="gx">repository/app · config/app.yaml:3</span><span class="rc"><span class="mk"></span></span><span class="body"><span class="tl">app.yaml:3</span></span></div>
+            <div class="tn decision"><span class="gx">decision/tier-b</span><span class="rc"><span class="mk"></span></span><span class="body"><span class="tl">REVIEW REQUIRED</span></span></div>
+          </div>
+        </div>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- EVIDENCE -->
+<section class="section" id="evidence">
+  <div class="wrap">
+    <p class="seclabel">02 / EVIDENCE</p>
+    <h2>One route, read as evidence.</h2>
+    <p class="lead">Each signal carries its evidence, its source, and how far it can be trusted. Nothing is asserted past what the data shows.</p>
+
+    <div class="ev-top">
+      <div class="etable rise">
+        <div class="ehead"><span>Signal</span><span>Evidence</span><span>Source</span><span>Confidence</span></div>
+        <div class="erow v"><span class="node"></span><span class="sig">Retirement</span><span class="evi">57 days</span><span class="src">Registry</span><span class="conf">Verified</span></div>
+        <div class="erow o"><span class="node"></span><span class="sig">Usage</span><span class="evi">48,210 requests</span><span class="src">Provider API</span><span class="conf">Observed</span></div>
+        <div class="erow c"><span class="node"></span><span class="sig">Location</span><span class="evi">app.yaml:3</span><span class="src">Config scan</span><span class="conf">Candidate</span></div>
+        <div class="erow w"><span class="node"></span><span class="sig">Decision</span><span class="evi">Human review</span><span class="src">Safety gate</span><span class="conf">Withheld</span></div>
+      </div>
+
+      <div class="timeline rise">
+        <div class="tl-label">RETIREMENT WINDOW</div>
+        <div class="tstep announced"><span class="m"></span><div class="k">ANNOUNCED</div><div class="d">2026-06-01</div></div>
+        <div class="tstep now"><span class="m"></span><div class="k">NOW · 57 DAYS LEFT</div><div class="d">2026-08-28</div></div>
+        <div class="tstep deadline"><span class="m"></span><div class="k">DEADLINE</div><div class="d">2026-10-24</div></div>
+      </div>
+    </div>
+
+    <div class="result rise">
+      <div class="rl">RESULT</div>
+      <p>Usage observed. Candidate selector located. <span class="un">Runtime reader connection remains unproven.</span></p>
+    </div>
+  </div>
+</section>
+
+<!-- SAFETY strip (merged) -->
+<div class="strip" id="safety">
+  <div class="strip-in">
+    <div class="decision">
+      <div class="dw">DECISION <span class="sl" style="color:#8fa39c">/</span> <span class="w">WITHHELD</span></div>
+      <div class="dsig"><span class="s"></span><span class="stop"></span><span class="aft"></span></div>
+    </div>
+    <div class="detail">
+      <div><div class="dk">CANDIDATE SELECTOR</div><div class="dv mono">app.yaml:3</div></div>
+      <div><div class="dk">EVIDENCE MISSING</div><div class="dv">Runtime reader tie-back</div></div>
+      <div><div class="dk">REQUIRED</div><div class="dv">Human confirmation</div></div>
+      <div><div class="dk">APPLIED</div><div class="dv">No code changed</div></div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div class="foot">
+    <span>mendr — a map of AI dependency risk</span>
+    <span>example audit data · not customer results</span>
+  </div>
+</footer>
+
+<script>
+  (function(){
+    var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var items=document.querySelectorAll('.rise');
+    if(reduce||!('IntersectionObserver'in window))items.forEach(function(el){el.classList.add('in');});
+    else{var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});},{rootMargin:'0px 0px -8% 0px',threshold:0.12});items.forEach(function(el){io.observe(el);});}
+  })();
+</script>
+</body>
+</html>

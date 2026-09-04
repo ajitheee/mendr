@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Added — trust package: "nothing is uploaded" enforced in code
+
+- `--offline` (or `MENDR_OFFLINE=1`) installs an in-process guard that makes
+  every outbound network primitive throw (`fetch`, `http`/`https`, `net`, `tls`,
+  `dns`). The default audit runs unchanged under it; the optional provider
+  usage read, `verify-registry` and GitHub-URL clones fail loudly and name the
+  blocked operation (`src/net/offlineGuard.ts`).
+- `scripts/no-network.cjs`: the same guard as a Node `--require` preload, so
+  anyone can prove the claim on any build without trusting the flag.
+- `src/audit/noNetwork.test.ts` runs the audit (`--json`, `--issue-body`,
+  `--install`) under the preload on every build and includes a control test
+  that the preload bites when a provider read is attempted.
+- JSON `snippet.lines` now pass through the same `redactSecrets` as the issue
+  body, before clipping, so a truncated key never survives as a partial secret.
+  Tested in `auditStdout.test.ts`.
+- `TRUST.md`: per-command table of what is read, written and sent; the audited
+  network surface; data-flow diagram; threat model (assets, boundaries, ten
+  threats with mitigations and residuals); redaction patterns; permissions for
+  the CLI, the scaffolded workflow, `mendr-action` and the planned GitHub App;
+  known gaps; release, provenance and dependency policy.
+- `SECURITY.md`: supported versions, scope, private reporting via GitHub
+  advisories, response targets, safe harbour.
+- README "what leaves your machine" section; site footer "Security" link.
+
 ### Added — investigation workspace prototype (`site/app/`)
 
 A static page that imports `mendr audit --json` output and shows a repository

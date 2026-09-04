@@ -156,7 +156,8 @@ import { fetchProviderUsage, loadFixtureUsage, providerCoverageNotes } from './r
 import type { Provider } from './recon/types.js';
 import { renderUsageReport } from './report/usageReport.js';
 import { buildInvestigations, concludeAudit, partitionFindings, type AuditCoverage } from './audit/investigation.js';
-import { EMPTY_STATE, parseAuditState, renderAuditIssue } from './audit/issueReport.js';
+import { EMPTY_STATE, parseAuditState, redactSecrets, renderAuditIssue } from './audit/issueReport.js';
+import { installOfflineGuard } from './net/offlineGuard.js';
 import { installAuditWorkflow } from './audit/installAuditWorkflow.js';
 import { unanalyzedCensus } from './audit/languages.js';
 import { shouldPrintProgress, shouldUsePlain, toPlainLines } from './report/plain.js';
@@ -173,7 +174,16 @@ const program = new Command();
 program
   .name('mendr')
   .description('Auto-fix third-party API breaking changes: deprecated LLM model ids + Stripe renames.')
-  .version('0.2.0-alpha');
+  .version('0.2.0-alpha')
+  // "Nothing is uploaded" enforced in code: with --offline (or MENDR_OFFLINE=1)
+  // every outbound network primitive throws. The default audit never needs
+  // the network, so it runs unchanged; the optional provider usage read,
+  // verify-registry and GitHub-URL clones fail loudly instead of silently.
+  // See TRUST.md and src/net/offlineGuard.ts.
+  .option('--offline', 'refuse all outbound network access in this process (the default audit never needs it)')
+  .hook('preAction', (thisCommand) => {
+    if (thisCommand.opts().offline || process.env.MENDR_OFFLINE === '1') installOfflineGuard();
+  });
 
 /** Is the target a remote git URL (GitHub link etc.) rather than a local path? */
 function isRemoteRepoUrl(target: string): boolean {
@@ -3095,7 +3105,9 @@ program
           const clip = (s: string): string => (s.length > SNIPPET_WIDTH ? `${s.slice(0, SNIPPET_WIDTH)}…` : s);
           return {
             ...l,
-            snippet: { startLine: start, lines: lines.slice(start - 1, end).map(clip) },
+            // Secrets are redacted BEFORE clipping so a truncated key never
+            // survives as a partial secret (same patterns as the issue body).
+            snippet: { startLine: start, lines: lines.slice(start - 1, end).map((s) => clip(redactSecrets(s))) },
             lineHash: createHash('sha256').update(lines[l.line - 1].trim()).digest('hex').slice(0, 16),
           };
         };

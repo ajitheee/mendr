@@ -84,6 +84,16 @@ See [standing watch](#standing-watch) for the details and [WATCH-SCHEMA.md](WATC
 
 Nothing, unless you pass `--write`. By default mendr loads your code in memory, works out the fix, and prints a diff. It does not commit, it does not open a PR, and it does not edit your files behind your back. That's the trust line and it stays that way.
 
+## what leaves your machine
+
+Nothing, by default. The audit reads the repository, the bundled registry and your local `git rev-parse`, and prints a report. That is enforced in code, not just written here: the test suite runs the audit under a preload that makes every network primitive throw, and the audit must still pass. You can enforce it yourself:
+
+```bash
+npx github:ajitheee/mendr#v0.2.4-alpha audit . --offline
+```
+
+The only optional network use is the provider usage read you ask for by name with your own read-only key, and a shallow `git clone` when you pass a GitHub URL instead of a path. [TRUST.md](TRUST.md) has the per-command table, the data-flow diagram, the threat model, the permissions each surface needs, and the known gaps. [SECURITY.md](SECURITY.md) is how to report a problem with any of it.
+
 ## commands
 
 - `mendr audit [path]` — **(preview)** the unified audit: scan TS/TSX/Python source + config, join the deprecation registry, and report every retiring AI dependency with its location, deadline, and migration evidence. **Needs only the repository.** See below.
@@ -187,7 +197,7 @@ failed surface is always visible.
   audio, batch, fine-tuning); Anthropic's usage API reports **no request counts**;
   **Google/Vertex is not supported**. All of this is disclosed in the coverage report.
 
-Everything runs locally. Nothing is uploaded; no key is ever sent to us.
+Everything runs locally. Nothing is uploaded; no key is ever sent to us. Enforced by `--offline` and by the offline test on every build; see [TRUST.md](TRUST.md).
 
 ## standing watch
 

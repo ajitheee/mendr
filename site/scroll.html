@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mendr</title>
+<meta name="description" content="Know which AI dependencies are retiring before they break production. Mendr measures deprecated-model exposure and locates the configuration that controls it.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%230a1120'/><text x='50' y='72' font-size='62' text-anchor='middle' fill='%236c9bff' font-family='monospace'>▚</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --sans:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --maxw:1180px;
+  }
+  /* per-section theming — separation by background, not borders */
+  .tone-light{--bg:#f6f7f9;--ink:#0c1424;--ink-2:#4c5768;--ink-3:#8b95a4;--blue:#2f6bff;--red:#d34438;--amber:#bd7410;--green:#1c9350;--panel:#0b1220;--panel-ink:#e9eef7;--panel-ink-2:#93a1b8;--panel-line:#20304d;--hair:#e6e9ee}
+  .tone-white{--bg:#ffffff;--ink:#0c1424;--ink-2:#4c5768;--ink-3:#8b95a4;--blue:#2f6bff;--red:#d34438;--amber:#bd7410;--green:#1c9350;--panel:#0b1220;--panel-ink:#e9eef7;--panel-ink-2:#93a1b8;--panel-line:#20304d;--hair:#eceef2}
+  .tone-cta{--bg:#eceff4;--ink:#0c1424;--ink-2:#4c5768;--ink-3:#8b95a4;--blue:#2f6bff;--red:#d34438;--amber:#bd7410;--green:#1c9350;--panel:#0b1220;--panel-ink:#e9eef7;--panel-ink-2:#93a1b8;--panel-line:#20304d;--hair:#e0e4ea}
+  .tone-dark{--bg:#0a1120;--ink:#eef2f8;--ink-2:#9aa7bd;--ink-3:#61708a;--blue:#6c9bff;--red:#ff6f63;--amber:#f0ad4e;--green:#4ade80;--panel:#111c33;--panel-ink:#eef2f8;--panel-ink-2:#9aa7bd;--panel-line:#243350;--hair:#1b2740}
+
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+  body{margin:0;background:#f6f7f9;color:#0c1424;font-family:var(--sans);font-size:17px;line-height:1.6;overflow-x:clip;-webkit-font-smoothing:antialiased}
+  section{background:var(--bg);color:var(--ink)}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 clamp(20px,4vw,40px)}
+  .mono{font-family:var(--mono)}
+  a{color:inherit;text-decoration:none}
+
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;font-weight:600;font-size:.98rem;line-height:1;padding:14px 22px;border-radius:10px;cursor:pointer;transition:transform .12s,background .12s,opacity .12s;white-space:nowrap;border:0}
+  .btn:active{transform:translateY(1px)}
+  .btn.pri{background:var(--blue);color:#fff}.btn.pri:hover{opacity:.92}
+  .btn.sec{background:transparent;color:var(--ink);box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--ink) 22%,transparent)}
+  .btn.sec:hover{box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--ink) 42%,transparent)}
+  .btn svg{width:17px;height:17px}
+
+  /* nav — minimal, no border */
+  header.nav{position:absolute;top:0;left:0;right:0;z-index:30}
+  .nav-in{max-width:var(--maxw);margin:0 auto;padding:22px clamp(20px,4vw,40px);display:flex;align-items:center;justify-content:space-between}
+  .brand{display:inline-flex;align-items:center;gap:9px;font-weight:700;font-size:1.1rem;letter-spacing:-.02em}
+  .brand .g{width:25px;height:25px;border-radius:7px;background:#0b1220;color:#6c9bff;display:grid;place-items:center;font-family:var(--mono);font-size:.82rem}
+  .nav-in .r{display:flex;gap:26px;align-items:center;font-size:.92rem;color:var(--ink-2)}
+  .nav-in .r a:hover{color:var(--ink)}
+  @media (max-width:720px){.nav-in .r .hide{display:none}}
+
+  section.screen{padding:clamp(110px,15vh,190px) 0 clamp(90px,12vh,150px)}
+  .kick{font-family:var(--mono);font-size:.8rem;letter-spacing:.05em;color:var(--blue);text-transform:uppercase;margin:0 0 20px}
+  h1{margin:0;font-weight:800;font-size:clamp(2.5rem,6vw,4.4rem);line-height:1.02;letter-spacing:-.035em}
+  h2{margin:0;font-weight:800;font-size:clamp(2.1rem,5vw,3.6rem);line-height:1.05;letter-spacing:-.035em;max-width:16ch}
+  .big-sub{font-size:clamp(1.1rem,1.9vw,1.4rem);color:var(--ink-2);max-width:42ch;line-height:1.5}
+
+  /* 1. HERO */
+  .hero-grid{display:grid;grid-template-columns:1.08fr .92fr;gap:clamp(30px,5vw,64px);align-items:center}
+  @media (max-width:900px){.hero-grid{grid-template-columns:1fr;gap:44px}}
+  .hero .big-sub{margin:26px 0 34px}
+  .hero .btns{display:flex;gap:14px;flex-wrap:wrap}
+
+  /* hero lifecycle line (the one allowed subtle dark panel) */
+  .lifeline{background:var(--panel);border-radius:18px;padding:30px 30px 26px;box-shadow:0 30px 70px -34px rgba(6,12,24,.55)}
+  .lifeline .cap{font-family:var(--mono);font-size:.72rem;color:var(--panel-ink-2);margin:0 0 20px;display:flex;align-items:center;gap:8px}
+  .lifeline .cap .b{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px rgba(74,222,128,.2)}
+  .llstep{display:grid;grid-template-columns:20px 1fr;gap:0 16px;opacity:.34;transition:opacity .45s ease}
+  .llstep.on{opacity:1}
+  .llstep .rail{display:flex;flex-direction:column;align-items:center}
+  .llstep .rd{width:13px;height:13px;border-radius:50%;border:2px solid currentColor;margin-top:4px;flex:none;position:relative}
+  .llstep .rd::after{content:"";position:absolute;inset:2px;border-radius:50%;background:currentColor;opacity:0;transition:opacity .3s}
+  .llstep.on .rd::after{opacity:1}
+  .llstep .ln{width:2px;flex:1;background:var(--panel-line);margin:5px 0 -3px;min-height:22px}
+  .llstep:last-child .ln{display:none}
+  .llstep .tx{padding-bottom:22px}
+  .llstep:last-child .tx{padding-bottom:2px}
+  .llstep .t1{font-size:1.15rem;font-weight:700;color:var(--panel-ink);line-height:1.2}
+  .llstep .t2{font-family:var(--mono);font-size:.86rem;color:var(--panel-ink-2);margin-top:4px}
+  .llstep.risk{color:var(--red)}.llstep.measure{color:var(--blue)}.llstep.locate{color:var(--blue)}.llstep.review{color:var(--amber)}
+  .llstep.on .t2 .hot{color:currentColor;font-weight:500}
+
+  /* 2. PROBLEM SEQUENCE (transform on scroll) */
+  .seqhead{margin-bottom:clamp(40px,6vw,70px)}
+  .seq{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px 6px}
+  .seqnode{position:relative;display:grid;min-width:0}
+  .seqnode>span{grid-area:1/1;font-weight:700;font-size:clamp(1.05rem,2.1vw,1.55rem);letter-spacing:-.02em;transition:opacity .6s ease,transform .6s ease;padding:10px 4px}
+  .seqnode .before{color:var(--red)}
+  .seqnode .after{color:var(--green);opacity:0;transform:translateY(8px)}
+  .morphed .seqnode .before{opacity:0;transform:translateY(-8px)}
+  .morphed .seqnode .after{opacity:1;transform:none}
+  .seqarrow{color:var(--ink-3);font-size:1.3rem;flex:none}
+  .seqcap{text-align:center;font-family:var(--mono);font-size:.82rem;color:var(--ink-3);margin-top:clamp(34px,5vw,56px)}
+  .seqcap b{color:var(--green)}
+  @media (max-width:720px){.seq{flex-direction:column}.seqarrow{transform:rotate(90deg)}}
+
+  /* 3. MEASURE / LOCATE */
+  .ml{position:relative;margin-top:clamp(36px,5vw,60px);display:grid;grid-template-columns:1fr 1fr;gap:0}
+  .ml .vline{position:absolute;left:50%;top:6%;bottom:6%;width:1px;background:var(--hair);transform:translateX(-.5px)}
+  .mlside{padding:6px clamp(20px,4vw,48px)}
+  .mlside.left{text-align:right}
+  .mltag{font-family:var(--mono);font-size:.8rem;letter-spacing:.16em;color:var(--blue);margin-bottom:22px}
+  .mline{display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:64px;padding:4px 0}
+  .mlside.left .mline{flex-direction:row-reverse}
+  .mline .k{font-size:.9rem;color:var(--ink-3)}
+  .mline .v{font-weight:700;font-size:clamp(1.15rem,2vw,1.6rem);letter-spacing:-.02em}
+  .mline .v.num{color:var(--blue)}.mline .v.warn{color:var(--amber)}.mline .v.risk{color:var(--red)}
+  .mline.model .v{color:var(--ink)}
+  .mline.model .chip{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:1rem;font-weight:500;color:var(--ink);background:color-mix(in srgb,var(--blue) 12%,transparent);padding:5px 12px;border-radius:8px}
+  .connector{position:absolute;height:2px;background:color-mix(in srgb,var(--blue) 35%,transparent);pointer-events:none}
+  .connector .dot{position:absolute;top:50%;left:0;width:9px;height:9px;border-radius:50%;background:var(--blue);transform:translate(-50%,-50%);box-shadow:0 0 0 4px color-mix(in srgb,var(--blue) 22%,transparent);animation:travel 2.6s ease-in-out infinite}
+  @keyframes travel{0%{left:0}50%{left:100%}100%{left:0}}
+  @media (max-width:760px){.ml{grid-template-columns:1fr;gap:8px}.ml .vline{display:none}.mlside.left{text-align:left}.mlside.left .mline{flex-direction:row}.connector{display:none}}
+  @media (prefers-reduced-motion:reduce){.connector .dot{animation:none;left:50%}}
+
+  /* 4. PRODUCT DEMO (one large demonstration) */
+  .demo-head{text-align:center;max-width:60ch;margin:0 auto clamp(40px,6vw,64px)}
+  .demo-head h2{margin:0 auto}
+  .stage{max-width:860px;margin:0 auto;font-family:var(--mono)}
+  .stagebar{display:flex;gap:8px;justify-content:center;margin-bottom:26px}
+  .stagebar i{height:4px;width:38px;border-radius:2px;background:var(--panel-line);transition:background .3s}
+  .stagebar i.on{background:var(--blue)}
+  .stagebar i.done{background:color-mix(in srgb,var(--blue) 45%,transparent)}
+  .dline{display:block;font-size:clamp(.86rem,1.7vw,1.05rem);line-height:2;color:var(--panel-ink);white-space:pre;opacity:0;transform:translateY(6px);transition:opacity .4s,transform .4s}
+  .dline.show{opacity:1;transform:none}
+  .dline .pr{color:var(--ink-3)}.dline .num{color:var(--blue)}.dline .money{color:var(--blue)}.dline .risk{color:var(--red)}.dline .del{color:var(--red);text-decoration:line-through}.dline .ok{color:var(--green)}.dline .warn{color:var(--amber)}.dline .dim{color:var(--ink-3)}
+  .demo-cap{text-align:center;font-family:var(--mono);font-size:.74rem;color:var(--ink-3);margin-top:30px}
+
+  /* 5. TRUST — one horizontal line */
+  .trusthead{text-align:center;margin-bottom:clamp(34px,5vw,52px)}
+  .trustline{display:flex;align-items:center;justify-content:center;gap:clamp(18px,3vw,40px);flex-wrap:wrap}
+  .titem{display:inline-flex;align-items:center;gap:10px;font-weight:600;font-size:clamp(.96rem,1.6vw,1.12rem)}
+  .titem svg{width:22px;height:22px;color:var(--blue);flex:none}
+  .tsep{color:var(--ink-3);opacity:.5}
+  @media (max-width:720px){.tsep{display:none}.trustline{flex-direction:column;gap:18px}}
+  .trustnote{text-align:center;max-width:64ch;margin:clamp(34px,5vw,48px) auto 0;color:var(--ink-2);font-size:1rem}
+  .trustnote b{color:var(--ink)}
+
+  /* 6. CTA */
+  .ctablk{text-align:center}
+  .ctablk h2{margin:0 auto 30px;max-width:20ch;font-size:clamp(2.2rem,5vw,3.6rem)}
+  .cmdpin{display:inline-flex;align-items:stretch;background:var(--panel);border-radius:12px;overflow:hidden;font-family:var(--mono);margin:0 auto 30px;max-width:100%}
+  .cmdpin code{padding:14px 18px;font-size:.9rem;color:var(--panel-ink);white-space:nowrap;overflow-x:auto}
+  .cmdpin code .pr{color:var(--panel-ink-2)}
+  .cmdpin button{border:0;background:rgba(255,255,255,.08);color:var(--panel-ink-2);font-family:var(--mono);font-size:.8rem;padding:0 16px;cursor:pointer}
+  .cmdpin button:hover{background:rgba(255,255,255,.16);color:#fff}
+  .ctablk .btns{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+
+  footer{padding:40px 0 54px}
+  .foot{max-width:var(--maxw);margin:0 auto;padding:0 clamp(20px,4vw,40px);display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;font-size:.86rem;color:var(--ink-3)}
+  .foot a{color:var(--ink-2)}.foot a:hover{color:var(--ink)}
+  .foot .r{display:flex;gap:22px}
+
+  .rise{opacity:0;transform:translateY(18px);transition:opacity .7s ease,transform .7s ease}
+  .rise.in{opacity:1;transform:none}
+  @media (prefers-reduced-motion:reduce){.rise{opacity:1;transform:none;transition:none}.llstep{opacity:1}.seqnode .after{opacity:1;transform:none}.seqnode .before{opacity:0}.dline{opacity:1;transform:none}}
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="nav-in">
+    <span class="brand"><span class="g">▚</span> mendr</span>
+    <span class="r">
+      <a class="hide" href="#problem">the problem</a>
+      <a class="hide" href="#measure">measure + locate</a>
+      <a class="hide" href="#demo">product</a>
+      <a href="https://github.com/ajitheee/mendr">GitHub</a>
+    </span>
+  </div>
+</header>
+
+<!-- 1. HERO -->
+<section class="screen tone-light hero">
+  <div class="wrap">
+    <div class="hero-grid">
+      <div>
+        <h1>Know which AI dependencies are retiring—before they break production.</h1>
+        <p class="big-sub">Mendr measures deprecated-model exposure from provider usage data, then locates the configuration that controls it.</p>
+        <div class="btns">
+          <a class="btn pri" href="#demo">Run Watch
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+          <a class="btn sec" href="#demo">Watch the demo</a>
+        </div>
+      </div>
+
+      <figure class="lifeline" id="lifeline" role="img" aria-label="Lifecycle for gpt-4: retiring in 57 days, 48,210 production requests, located in app.yaml line 3, migration requires review.">
+        <p class="cap"><span class="b"></span> live dependency · example audit data</p>
+        <div class="llstep risk"><span class="rail"><span class="rd"></span><span class="ln"></span></span><span class="tx"><span class="t1 mono">gpt-4</span><span class="t2"><span class="hot">Retiring in 57 days</span></span></span></div>
+        <div class="llstep measure"><span class="rail"><span class="rd"></span><span class="ln"></span></span><span class="tx"><span class="t1"><span class="hot">48,210</span> production requests</span><span class="t2">measured from provider usage</span></span></div>
+        <div class="llstep locate"><span class="rail"><span class="rd"></span><span class="ln"></span></span><span class="tx"><span class="t1">Located in <span class="mono hot">app.yaml:3</span></span><span class="t2">the config that selects it</span></span></div>
+        <div class="llstep review"><span class="rail"><span class="rd"></span></span><span class="tx"><span class="t1">Migration requires review</span><span class="t2">no change until you approve</span></span></div>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- 2. PROBLEM SEQUENCE -->
+<section class="screen tone-dark" id="problem">
+  <div class="wrap">
+    <div class="seqhead rise">
+      <p class="kick">The shift</p>
+      <h2>A firefight becomes a decision.</h2>
+    </div>
+    <div class="seq" id="seq">
+      <div class="seqnode"><span class="before">Provider announcement</span><span class="after">Early warning</span></div>
+      <span class="seqarrow">→</span>
+      <div class="seqnode"><span class="before">Unknown impact</span><span class="after">Measured exposure</span></div>
+      <span class="seqarrow">→</span>
+      <div class="seqnode"><span class="before">Emergency search</span><span class="after">Located configuration</span></div>
+      <span class="seqarrow">→</span>
+      <div class="seqnode"><span class="before">Risky replacement</span><span class="after">Controlled decision</span></div>
+    </div>
+    <p class="seqcap">Mendr turns the top row into the <b>bottom row</b>.</p>
+  </div>
+</section>
+
+<!-- 3. MEASURE / LOCATE -->
+<section class="screen tone-white" id="measure">
+  <div class="wrap">
+    <div class="seqhead rise" style="max-width:52ch">
+      <p class="kick">Two signals, one model</p>
+      <h2>What is live, and where it lives.</h2>
+    </div>
+    <div class="ml" id="ml">
+      <span class="vline"></span>
+      <div class="mlside left">
+        <div class="mltag">MEASURE</div>
+        <div class="mline"><span class="k">Requests</span><span class="v num">48,210</span></div>
+        <div class="mline"><span class="k">Cost</span><span class="v num">$1,284</span></div>
+        <div class="mline model"><span class="k">Model</span><span class="v"><span class="chip" id="modelA">gpt-4</span></span></div>
+        <div class="mline"><span class="k">Deadline</span><span class="v warn">57 days</span></div>
+      </div>
+      <div class="mlside">
+        <div class="mltag">LOCATE</div>
+        <div class="mline"><span class="k">Repository</span><span class="v mono" style="font-size:1.15rem">app</span></div>
+        <div class="mline"><span class="k">File</span><span class="v mono" style="font-size:1.15rem">app.yaml</span></div>
+        <div class="mline model"><span class="k">Line · model</span><span class="v"><span class="chip" id="modelB">:3 · gpt-4</span></span></div>
+        <div class="mline"><span class="k">Classification</span><span class="v warn">review</span></div>
+      </div>
+      <span class="connector" id="connector"><span class="dot"></span></span>
+    </div>
+    <p class="seqcap" style="color:var(--ink-3)">The same model, measured on the left and located on the right. · Example audit data</p>
+  </div>
+</section>
+
+<!-- 4. PRODUCT DEMO -->
+<section class="screen tone-dark" id="demo">
+  <div class="wrap">
+    <div class="demo-head rise">
+      <p class="kick" style="text-align:center">The product</p>
+      <h2>One run, start to decision.</h2>
+    </div>
+    <div class="stage" id="stage">
+      <div class="stagebar" id="stagebar"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="dlog" id="dlog"><span class="dline"><span class="pr">$</span> mendr usage-audit openai</span>
+<span class="dline"><span class="dim">exposure — last 30 days</span></span>
+<span class="dline"><span class="risk">4 deprecated</span> · <span class="num">284,910 requests</span> · <span class="money">$2,060 exposed</span></span>
+<span class="dline"> </span>
+<span class="dline"><span class="pr">$</span> mendr config-scan .</span>
+<span class="dline"><span class="ok">located</span> app.yaml:3 · <span class="risk">model: gpt-4</span></span>
+<span class="dline"><span class="del">gpt-4</span> → gpt-4o  <span class="warn">withheld — reader tie-back not proven</span></span>
+<span class="dline"> </span>
+<span class="dline"><span class="warn">decision:</span> human review required · nothing written</span></div>
+    </div>
+    <p class="demo-cap">A live loop of real command output. Example audit data — no dashboard, no auto-change.</p>
+  </div>
+</section>
+
+<!-- 5. TRUST -->
+<section class="screen tone-light">
+  <div class="wrap">
+    <div class="trusthead rise"><h2 style="margin:0 auto;text-align:center;max-width:18ch">Built so you stay in control.</h2></div>
+    <div class="trustline rise">
+      <span class="titem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 7v6c0 5 3.8 8.3 9 9 5.2-.7 9-4 9-9V7z"/><path d="m9 12 2 2 4-4"/></svg> Runs in your CI</span>
+      <span class="tsep">·</span>
+      <span class="titem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg> No auto-merge</span>
+      <span class="tsep">·</span>
+      <span class="titem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.4"/><circle cx="6" cy="18" r="2.4"/><path d="M6 8.5v7"/></svg> Default branch untouched</span>
+      <span class="tsep">·</span>
+      <span class="titem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="2.6"/></svg> Human review</span>
+    </div>
+    <p class="trustnote rise"><b>Metadata only.</b> Mendr reads dependency metadata — it never needs prompts, responses or customer records. The usage read uses a read-only key you set yourself; a provider Admin key is powerful, and Mendr never asks you to send it.</p>
+  </div>
+</section>
+
+<!-- 6. CTA -->
+<section class="screen tone-cta">
+  <div class="wrap">
+    <div class="ctablk rise">
+      <h2>Find the AI dependency you don't know is retiring.</h2>
+      <div class="cmdpin"><code><span class="pr">$</span> npx github:ajitheee/mendr#v0.1.0 watch .</code><button type="button" id="copyBtn" aria-label="Copy command">copy</button></div>
+      <div class="btns">
+        <a class="btn pri" href="https://github.com/ajitheee/mendr">Run Watch</a>
+        <a class="btn sec" href="https://github.com/ajitheee/mendr">Request an audit</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="tone-cta">
+  <div class="foot">
+    <span>mendr · MIT · built by a solo dev who got bitten in prod</span>
+    <span class="r"><a href="https://github.com/ajitheee/mendr">GitHub</a><a href="https://github.com/ajitheee/mendr#readme">Docs</a></span>
+  </div>
+</footer>
+
+<script>
+  (function(){
+    var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    // copy
+    var btn=document.getElementById('copyBtn');
+    if(btn)btn.addEventListener('click',function(){var t='npx github:ajitheee/mendr#v0.1.0 watch .';var d=function(){btn.textContent='copied';setTimeout(function(){btn.textContent='copy';},1600);};if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).then(d,d);else d();});
+
+    // rise-on-scroll
+    var rises=document.querySelectorAll('.rise');
+    if(reduce||!('IntersectionObserver'in window))rises.forEach(function(el){el.classList.add('in');});
+    else{var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});},{rootMargin:'0px 0px -10% 0px',threshold:0.12});rises.forEach(function(el){io.observe(el);});}
+
+    // 1. hero lifecycle: reveal steps in sequence, loop
+    var ll=Array.prototype.slice.call(document.querySelectorAll('#lifeline .llstep'));
+    if(ll.length){
+      if(reduce)ll.forEach(function(s){s.classList.add('on');});
+      else{
+        var i=0,hold=0;
+        ll[0].classList.add('on');i=1;
+        setInterval(function(){
+          if(hold>0){hold--;if(hold===0){ll.forEach(function(s){s.classList.remove('on');});i=0;}return;}
+          if(i<ll.length){ll[i].classList.add('on');i++;if(i===ll.length)hold=3;}
+        },1500);
+      }
+    }
+
+    // 2. problem morph: on scroll into view
+    var seq=document.getElementById('seq');
+    if(seq){
+      if(reduce)seq.classList.add('morphed');
+      else{
+        var mio=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){setTimeout(function(){seq.classList.add('morphed');},450);mio.disconnect();}});},{threshold:0.55});
+        mio.observe(seq);
+      }
+    }
+
+    // 3. measure/locate connector: position between the two model chips
+    var conn=document.getElementById('connector'), a=document.getElementById('modelA'), b=document.getElementById('modelB'), ml=document.getElementById('ml');
+    function place(){
+      if(!conn||!a||!b||!ml)return;
+      if(window.matchMedia('(max-width:760px)').matches){conn.style.display='none';return;}
+      conn.style.display='block';
+      var mr=ml.getBoundingClientRect(), ra=a.getBoundingClientRect(), rb=b.getBoundingClientRect();
+      var left=ra.right-mr.left, right=rb.left-mr.left;
+      var top=((ra.top+ra.bottom)/2+(rb.top+rb.bottom)/2)/2-mr.top;
+      conn.style.left=left+'px';
+      conn.style.width=Math.max(0,right-left)+'px';
+      conn.style.top=top+'px';
+    }
+    if(conn){place();window.addEventListener('resize',place,{passive:true});setTimeout(place,300);setTimeout(place,900);}
+
+    // 4. product demo: reveal lines in sequence + stage bar, loop
+    var dlines=Array.prototype.slice.call(document.querySelectorAll('#dlog .dline'));
+    var bars=Array.prototype.slice.call(document.querySelectorAll('#stagebar i'));
+    // map each meaningful line to a stage (0..5)
+    var stageOf=[0,1,1,1,2,3,4,4,5];
+    if(dlines.length){
+      if(reduce){dlines.forEach(function(l){l.classList.add('show');});bars.forEach(function(x){x.classList.add('done');});}
+      else{
+        var li=0,pause=0;
+        var run=function(){
+          if(pause>0){pause--;if(pause===0){dlines.forEach(function(l){l.classList.remove('show');});bars.forEach(function(x){x.classList.remove('on','done');});li=0;}return;}
+          if(li<dlines.length){
+            dlines[li].classList.add('show');
+            var st=stageOf[li];
+            bars.forEach(function(x,idx){x.classList.remove('on');if(idx<st)x.classList.add('done');else if(idx===st)x.classList.add('on');});
+            li++;
+            if(li===dlines.length)pause=4;
+          }
+        };
+        setInterval(run,900);
+      }
+    }
+  })();
+</script>
+</body>
+</html>

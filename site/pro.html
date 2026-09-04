@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mendr</title>
+<meta name="description" content="mendr auto-fixes retired LLM model ids in your codebase and hands you the exact diff, verified before it touches your code. Plus a read-only audit of what a dead model still costs you.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🩹</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-soft: #f4f8f7;
+    --surface: #ffffff;
+    --ink: #0a0f0e;
+    --ink-2: #47554f;
+    --ink-3: #7b8a85;
+    --border: #e7edeb;
+    --border-2: #d8e1de;
+    --brand: #0d9488;
+    --brand-2: #0f766e;
+    --brand-ink: #ffffff;
+    --brand-wash: #e3f4f1;
+    --glow: rgba(13,148,136,.20);
+    --del: #d64550; --del-bg: #fcebec;
+    --add: #178a45; --add-bg: #e7f7ec;
+    --amber: #b06d16;
+    --shadow-sm: 0 1px 2px rgba(10,15,14,.05), 0 1px 3px rgba(10,15,14,.05);
+    --shadow: 0 2px 6px rgba(10,15,14,.05), 0 16px 40px -18px rgba(10,15,14,.22);
+    --shadow-lg: 0 8px 20px rgba(10,15,14,.08), 0 40px 90px -30px rgba(10,15,14,.34);
+    --disp: "Sora", system-ui, sans-serif;
+    --sans: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --maxw: 1120px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #080b0a;
+      --bg-soft: #0c1210;
+      --surface: #101815;
+      --ink: #eef3f1;
+      --ink-2: #a2b0ab;
+      --ink-3: #6d7c77;
+      --border: #1b2521;
+      --border-2: #26332e;
+      --brand: #2dd4bf;
+      --brand-2: #5eead4;
+      --brand-ink: #04211c;
+      --brand-wash: #0c211c;
+      --glow: rgba(45,212,191,.16);
+      --del: #ff7b81; --del-bg: rgba(255,107,112,.12);
+      --add: #57d98a; --add-bg: rgba(74,222,128,.11);
+      --amber: #e0b06a;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
+      --shadow: 0 2px 8px rgba(0,0,0,.4), 0 20px 44px -20px rgba(0,0,0,.7);
+      --shadow-lg: 0 10px 30px rgba(0,0,0,.5), 0 50px 100px -30px rgba(0,0,0,.8);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #080b0a; --bg-soft: #0c1210; --surface: #101815;
+    --ink: #eef3f1; --ink-2: #a2b0ab; --ink-3: #6d7c77;
+    --border: #1b2521; --border-2: #26332e;
+    --brand: #2dd4bf; --brand-2: #5eead4; --brand-ink: #04211c; --brand-wash: #0c211c;
+    --glow: rgba(45,212,191,.16);
+    --del: #ff7b81; --del-bg: rgba(255,107,112,.12);
+    --add: #57d98a; --add-bg: rgba(74,222,128,.11);
+    --amber: #e0b06a;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
+    --shadow: 0 2px 8px rgba(0,0,0,.4), 0 20px 44px -20px rgba(0,0,0,.7);
+    --shadow-lg: 0 10px 30px rgba(0,0,0,.5), 0 50px 100px -30px rgba(0,0,0,.8);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.6;
+    overflow-x: clip; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+  a { color: var(--brand-2); text-decoration: none; }
+  h1,h2,h3 { font-family: var(--disp); }
+
+  /* buttons */
+  .btn { display: inline-flex; align-items: center; gap: 8px; font-family: var(--sans); font-weight: 600; font-size: .95rem; padding: 11px 20px; border-radius: 11px; border: 1px solid transparent; cursor: pointer; transition: transform .14s ease, box-shadow .14s ease, background .14s ease; text-decoration: none; }
+  .btn.primary { background: var(--brand); color: var(--brand-ink); box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 8px 20px -8px var(--glow); }
+  .btn.primary:hover { transform: translateY(-1px); box-shadow: 0 2px 4px rgba(0,0,0,.1), 0 14px 28px -10px var(--glow); }
+  .btn.ghost { background: var(--surface); color: var(--ink); border-color: var(--border-2); }
+  .btn.ghost:hover { border-color: var(--brand); color: var(--brand-2); }
+  .btn svg { width: 17px; height: 17px; }
+
+  /* nav */
+  header.nav { position: sticky; top: 0; z-index: 40; background: color-mix(in srgb, var(--bg) 80%, transparent); backdrop-filter: saturate(1.6) blur(12px); -webkit-backdrop-filter: saturate(1.6) blur(12px); border-bottom: 1px solid transparent; transition: border-color .2s; }
+  header.nav.stuck { border-bottom-color: var(--border); }
+  .nav-in { max-width: var(--maxw); margin: 0 auto; padding: 13px 24px; display: flex; align-items: center; justify-content: space-between; }
+  .logo { display: inline-flex; align-items: center; gap: 9px; font-family: var(--disp); font-weight: 700; font-size: 1.14rem; letter-spacing: -.02em; color: var(--ink); }
+  .logo .glyph { width: 26px; height: 26px; border-radius: 8px; background: var(--brand); color: var(--brand-ink); display: grid; place-items: center; font-size: .9rem; box-shadow: 0 4px 12px -4px var(--glow); }
+  .nav-links { display: flex; align-items: center; gap: 26px; }
+  .nav-links a.l { color: var(--ink-2); font-weight: 500; font-size: .92rem; }
+  .nav-links a.l:hover { color: var(--ink); }
+  @media (max-width: 760px) { .nav-links .hide { display: none; } }
+
+  /* hero */
+  .hero { position: relative; text-align: center; padding: 64px 0 20px; overflow: hidden; }
+  .hero::before { content: ""; position: absolute; left: 50%; top: -140px; width: 900px; height: 560px; transform: translateX(-50%); background: radial-gradient(50% 60% at 50% 40%, var(--glow) 0, transparent 70%); z-index: -1; pointer-events: none; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; font-size: .8rem; font-weight: 600; color: var(--brand-2); background: var(--brand-wash); border: 1px solid color-mix(in srgb, var(--brand) 24%, transparent); padding: 6px 14px; border-radius: 999px; margin-bottom: 24px; }
+  .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 22%, transparent); }
+  h1 { font-weight: 800; font-size: clamp(2.3rem, 5.6vw, 4rem); line-height: 1.05; letter-spacing: -.035em; margin: 0 auto 22px; max-width: 15ch; text-wrap: balance; }
+  h1 .hl { color: var(--brand); }
+  .sub { font-size: clamp(1.08rem, 1.9vw, 1.3rem); color: var(--ink-2); max-width: 40rem; margin: 0 auto 32px; line-height: 1.5; }
+  .cta-row { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin-bottom: 14px; }
+  .runline { font-family: var(--mono); font-size: .85rem; color: var(--ink-3); }
+  .runline code { color: var(--ink-2); }
+
+  /* hero product card (diff viewer) */
+  .showcase { margin: 44px auto 0; max-width: 760px; position: relative; }
+  .app { background: var(--surface); border: 1px solid var(--border-2); border-radius: 16px; box-shadow: var(--shadow-lg); overflow: hidden; text-align: left; }
+  .app .head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: var(--bg-soft); border-bottom: 1px solid var(--border); }
+  .app .traf { display: flex; gap: 7px; }
+  .app .traf i { width: 11px; height: 11px; border-radius: 50%; display: block; }
+  .app .traf i:nth-child(1){ background:#e06c62; } .app .traf i:nth-child(2){ background:#e0b45c; } .app .traf i:nth-child(3){ background:#54b46e; }
+  .app .file { font-family: var(--mono); font-size: .8rem; color: var(--ink-3); }
+  .app .file b { color: var(--ink-2); font-weight: 500; }
+  .app .tagd { margin-left: auto; font-family: var(--mono); font-size: .72rem; color: var(--ink-3); }
+  .app .code { font-family: var(--mono); font-size: .84rem; line-height: 1.85; padding: 16px 8px 16px 0; overflow-x: auto; }
+  .app .code .cl { display: grid; grid-template-columns: 44px 1fr; white-space: pre; }
+  .app .code .ln { color: var(--ink-3); text-align: right; padding-right: 16px; user-select: none; }
+  .app .code .cl.del { background: var(--del-bg); color: var(--del); }
+  .app .code .cl.add { background: var(--add-bg); color: var(--add); }
+  .app .code .cl .t { color: var(--ink-2); }
+  .app .foot { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 13px 18px; border-top: 1px solid var(--border); background: var(--bg-soft); font-size: .82rem; color: var(--ink-2); }
+  .app .foot .ok { display: inline-flex; align-items: center; gap: 6px; }
+  .app .foot .ok svg { width: 15px; height: 15px; color: var(--add); }
+  .verified { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: .74rem; font-weight: 500; color: var(--brand-2); background: var(--brand-wash); border: 1px solid color-mix(in srgb, var(--brand) 30%, transparent); padding: 4px 11px; border-radius: 999px; }
+  .verified .d { width: 6px; height: 6px; border-radius: 50%; background: var(--brand); }
+
+  /* stats band */
+  .stats { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--bg-soft); }
+  .stats-in { max-width: var(--maxw); margin: 0 auto; padding: 34px 24px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+  .stat .n { font-family: var(--disp); font-weight: 700; font-size: clamp(1.7rem, 3.4vw, 2.5rem); letter-spacing: -.03em; color: var(--ink); line-height: 1; }
+  .stat .n .u { color: var(--brand); }
+  .stat .l { color: var(--ink-2); font-size: .88rem; margin-top: 8px; }
+  @media (max-width: 680px) { .stats-in { grid-template-columns: 1fr 1fr; gap: 26px 20px; } }
+
+  /* generic section */
+  section.blk { padding: clamp(56px, 8vw, 96px) 0; }
+  .kick { font-family: var(--mono); font-size: .78rem; font-weight: 500; letter-spacing: .06em; color: var(--brand-2); text-transform: uppercase; margin: 0 0 14px; }
+  h2 { font-weight: 700; font-size: clamp(1.7rem, 3.4vw, 2.4rem); letter-spacing: -.03em; line-height: 1.12; margin: 0 0 16px; max-width: 20ch; text-wrap: balance; }
+  .lead2 { font-size: 1.1rem; color: var(--ink-2); max-width: 44rem; margin: 0 0 8px; }
+  .sec-head { text-align: center; margin: 0 auto 44px; max-width: 46rem; }
+  .sec-head h2 { margin-left: auto; margin-right: auto; }
+  .sec-head .lead2 { margin-left: auto; margin-right: auto; }
+  code.k { font-family: var(--mono); font-size: .86em; background: var(--bg-soft); border: 1px solid var(--border); border-radius: 6px; padding: .1em .4em; color: var(--ink); }
+
+  .callout { display: flex; gap: 14px; align-items: flex-start; background: color-mix(in srgb, var(--amber) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--amber) 30%, transparent); border-radius: 14px; padding: 18px 20px; margin-top: 26px; max-width: 46rem; }
+  .callout svg { width: 22px; height: 22px; color: var(--amber); flex: none; margin-top: 1px; }
+  .callout p { margin: 0; color: var(--ink-2); font-size: .98rem; }
+  .callout strong { color: var(--ink); }
+
+  /* feature grid */
+  .fgrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+  @media (max-width: 720px) { .fgrid { grid-template-columns: 1fr; } }
+  .feat { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 26px; box-shadow: var(--shadow-sm); transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
+  .feat:hover { transform: translateY(-3px); box-shadow: var(--shadow); border-color: var(--border-2); }
+  .feat .ic { width: 44px; height: 44px; border-radius: 12px; background: var(--brand-wash); color: var(--brand-2); display: grid; place-items: center; margin-bottom: 18px; }
+  .feat .ic svg { width: 22px; height: 22px; }
+  .feat h3 { font-size: 1.16rem; font-weight: 600; letter-spacing: -.01em; margin: 0 0 8px; color: var(--ink); }
+  .feat p { margin: 0; color: var(--ink-2); font-size: .96rem; }
+
+  /* audit */
+  .audit-wrap { display: grid; grid-template-columns: 1.05fr .95fr; gap: 40px; align-items: center; }
+  @media (max-width: 860px) { .audit-wrap { grid-template-columns: 1fr; gap: 28px; } }
+  .panel { background: var(--surface); border: 1px solid var(--border-2); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }
+  .panel .ph { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--border); background: var(--bg-soft); font-family: var(--mono); font-size: .8rem; color: var(--ink-3); }
+  .panel .ph .lit { width: 8px; height: 8px; border-radius: 50%; background: var(--add); box-shadow: 0 0 0 3px color-mix(in srgb, var(--add) 25%, transparent); }
+  .panel .pb { padding: 20px 18px; }
+  .panel .big { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
+  .panel .big .$ { font-family: var(--disp); font-weight: 700; font-size: 2.5rem; letter-spacing: -.03em; color: var(--ink); }
+  .panel .big .cap { font-size: .82rem; color: var(--ink-2); }
+  .panel .sub2 { font-size: .84rem; color: var(--ink-2); margin-bottom: 16px; }
+  .panel .row { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; align-items: center; font-family: var(--mono); font-size: .82rem; padding: 10px 0; border-top: 1px solid var(--border); }
+  .panel .row .m { color: var(--del); text-decoration: line-through; }
+  .panel .row .meta { color: var(--ink-3); font-size: .76rem; }
+  .panel .row .to { color: var(--add); }
+  .lanecards { display: grid; gap: 16px; }
+  .lc { border: 1px solid var(--border); border-radius: 14px; padding: 20px 22px; background: var(--surface); }
+  .lc .tag { display: inline-block; font-family: var(--mono); font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; color: var(--brand-2); background: var(--brand-wash); padding: 3px 9px; border-radius: 6px; margin-bottom: 10px; }
+  .lc h3 { font-family: var(--mono); font-weight: 500; font-size: 1rem; margin: 0 0 6px; color: var(--ink); }
+  .lc p { margin: 0; color: var(--ink-2); font-size: .93rem; }
+
+  /* code card (CI) */
+  .codecard { background: var(--surface); border: 1px solid var(--border-2); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; margin-top: 8px; }
+  .codecard .ch { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--bg-soft); font-family: var(--mono); font-size: .78rem; color: var(--ink-3); }
+  .codecard .cbody { padding: 18px 20px; overflow-x: auto; }
+  .codecard pre { margin: 0; font-family: var(--mono); font-size: .82rem; line-height: 1.75; color: var(--ink); }
+  .codecard .kk { color: var(--brand-2); }
+  .codecard .vv { color: var(--ink-2); }
+
+  /* two-col: why + card */
+  .split2 { display: grid; grid-template-columns: 1fr 1fr; gap: 44px; align-items: center; }
+  @media (max-width: 860px) { .split2 { grid-template-columns: 1fr; gap: 26px; } }
+
+  /* quote / proof */
+  .quote { background: linear-gradient(180deg, var(--bg-soft), var(--surface)); border: 1px solid var(--border); border-radius: 20px; padding: clamp(28px, 4vw, 44px); box-shadow: var(--shadow-sm); max-width: 760px; margin: 0 auto; }
+  .quote .mark { font-family: var(--disp); font-weight: 800; font-size: 3rem; line-height: .6; color: var(--brand); opacity: .5; }
+  .quote p { font-size: clamp(1.1rem, 1.9vw, 1.32rem); color: var(--ink); line-height: 1.5; margin: 10px 0 18px; font-weight: 500; }
+  .quote .by { display: flex; align-items: center; gap: 12px; }
+  .quote .av { width: 40px; height: 40px; border-radius: 50%; background: var(--brand); color: var(--brand-ink); display: grid; place-items: center; font-family: var(--disp); font-weight: 700; }
+  .quote .by .who { font-size: .9rem; color: var(--ink-2); }
+  .quote .by .who b { color: var(--ink); font-weight: 600; display: block; }
+
+  /* honest */
+  .hongrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 40px; margin-top: 8px; }
+  @media (max-width: 720px) { .hongrid { grid-template-columns: 1fr; } }
+  .hongrid .h { display: flex; gap: 12px; padding: 12px 0; border-top: 1px solid var(--border); color: var(--ink-2); font-size: .96rem; }
+  .hongrid .h svg { width: 18px; height: 18px; color: var(--brand); flex: none; margin-top: 3px; }
+  .hongrid .h strong { color: var(--ink); font-weight: 600; }
+
+  /* CTA band */
+  .ctaband { position: relative; overflow: hidden; background: linear-gradient(135deg, #0b6b62 0%, #0d9488 55%, #12b3a3 100%); color: #fff; border-radius: 26px; padding: clamp(40px, 6vw, 72px) 24px; text-align: center; box-shadow: var(--shadow-lg); }
+  .ctaband::before { content: ""; position: absolute; inset: 0; background: radial-gradient(40% 80% at 80% 10%, rgba(255,255,255,.18), transparent 60%), radial-gradient(50% 90% at 10% 100%, rgba(0,0,0,.16), transparent 60%); pointer-events: none; }
+  .ctaband > * { position: relative; }
+  .ctaband h2 { color: #fff; max-width: 20ch; margin: 0 auto 14px; }
+  .ctaband p { color: rgba(255,255,255,.86); max-width: 40rem; margin: 0 auto 26px; font-size: 1.05rem; }
+  .ctaband .install { display: inline-flex; align-items: stretch; background: rgba(0,0,0,.22); border: 1px solid rgba(255,255,255,.22); border-radius: 12px; overflow: hidden; font-family: var(--mono); margin-bottom: 22px; max-width: 100%; }
+  .ctaband .install code { padding: 12px 16px; font-size: .86rem; color: #fff; white-space: nowrap; overflow-x: auto; }
+  .ctaband .install button { border: 0; border-left: 1px solid rgba(255,255,255,.22); background: rgba(255,255,255,.1); color: #fff; font-family: var(--mono); font-size: .78rem; padding: 0 16px; cursor: pointer; }
+  .ctaband .install button:hover { background: rgba(255,255,255,.2); }
+  .ctaband .btn.primary { background: #fff; color: #0b6b62; }
+  .ctaband .btn.ghost { background: transparent; color: #fff; border-color: rgba(255,255,255,.4); }
+  .ctaband .brow { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+
+  footer { border-top: 1px solid var(--border); margin-top: clamp(56px, 8vw, 96px); }
+  .foot { max-width: var(--maxw); margin: 0 auto; padding: 40px 24px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 24px; }
+  .foot .brandcol { max-width: 300px; }
+  .foot .brandcol .logo { margin-bottom: 10px; }
+  .foot .brandcol p { font-size: .88rem; color: var(--ink-3); margin: 0; }
+  .foot .cols { display: flex; gap: 56px; flex-wrap: wrap; }
+  .foot .col h4 { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); margin: 0 0 12px; font-family: var(--sans); font-weight: 600; }
+  .foot .col a { display: block; color: var(--ink-2); font-size: .9rem; margin-bottom: 9px; }
+  .foot .col a:hover { color: var(--brand-2); }
+  .footbar { border-top: 1px solid var(--border); }
+  .footbar-in { max-width: var(--maxw); margin: 0 auto; padding: 16px 24px; font-size: .82rem; color: var(--ink-3); font-family: var(--mono); }
+
+  .reveal { opacity: 0; transform: translateY(16px); transition: opacity .6s ease, transform .6s ease; }
+  .reveal.in { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) { .reveal { opacity: 1; transform: none; transition: none; } }
+</style>
+</head>
+<body>
+
+<header class="nav" id="nav">
+  <div class="nav-in">
+    <a class="logo" href="#top"><span class="glyph">▚</span> mendr</a>
+    <div class="nav-links">
+      <a class="l hide" href="#features">how it works</a>
+      <a class="l hide" href="#audit">the audit</a>
+      <a class="l hide" href="#commands">commands</a>
+      <a class="btn ghost" href="https://github.com/ajitheee/mendr">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.2.8-.5v-1.7c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.6.8.5 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5Z"/></svg>
+        github
+      </a>
+    </div>
+  </div>
+</header>
+
+<div id="top"></div>
+<section class="hero">
+  <div class="wrap">
+    <span class="pill"><span class="dot"></span> v0.2.0-alpha · now with read-only dependency audits</span>
+    <h1>your provider retired a model id. mendr writes the <span class="hl">fix</span>.</h1>
+    <p class="sub">a cli that finds deprecated llm model ids and the params that die with them, then hands you the exact diff — verified before it touches your code. you read the patch, you decide.</p>
+    <div class="cta-row">
+      <a class="btn primary" href="https://github.com/ajitheee/mendr">get started
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+      <a class="btn ghost" href="#features">see how it decides</a>
+    </div>
+    <p class="runline"><code>$ npx github:ajitheee/mendr fix-llm .</code></p>
+
+    <div class="showcase reveal">
+      <div class="app" role="img" aria-label="A diff viewer showing mendr swapping the retired model id gemini-2.0-flash for gemini-flash-latest, with type-check and tests passing and a Tier A verified badge.">
+        <div class="head">
+          <span class="traf"><i></i><i></i><i></i></span>
+          <span class="file"><b>services/geminiService.ts</b></span>
+          <span class="tagd">unified diff</span>
+        </div>
+        <div class="code">
+          <div class="cl"><span class="ln">18</span><span class="t">  const MODEL_NAME =</span></div>
+          <div class="cl del"><span class="ln">19</span>-  "gemini-2.0-flash"</div>
+          <div class="cl add"><span class="ln">19</span>+  "gemini-flash-latest"</div>
+          <div class="cl"><span class="ln">20</span><span class="t">  const client = new GoogleGenAI()</span></div>
+        </div>
+        <div class="foot">
+          <span class="ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> type-check</span>
+          <span class="ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> tests</span>
+          <span class="verified"><span class="d"></span> Tier A — verified</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="stats">
+  <div class="stats-in">
+    <div class="stat"><div class="n">664</div><div class="l">passing tests</div></div>
+    <div class="stat"><div class="n">26<span class="u"> · 0</span></div><div class="l">real repos · wrong edits</div></div>
+    <div class="stat"><div class="n">Oct 23</div><div class="l">next openai retirement wave</div></div>
+    <div class="stat"><div class="n">3</div><div class="l">providers covered</div></div>
+  </div>
+</div>
+
+<section class="blk" id="problem">
+  <div class="wrap">
+    <p class="kick">the problem</p>
+    <h2>your code keeps compiling until it doesn't</h2>
+    <p class="lead2">a provider retires a model id, or flips a param like <code class="k">max_tokens</code> to <code class="k">max_completion_tokens</code> on the newer models. nothing errors at build time. you find out when it 404s or 400s in production. mendr finds those spots and hands you the exact change.</p>
+    <div class="callout">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+      <p>the next wave is dated: openai retires <strong>gpt-4</strong> and <strong>gpt-3.5-turbo</strong> on <strong>october 23, 2026</strong>. if either is still wired in anywhere, those calls start failing that day.</p>
+    </div>
+  </div>
+</section>
+
+<section class="blk" id="features" style="background:var(--bg-soft); border-top:1px solid var(--border); border-bottom:1px solid var(--border);">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="kick">how it decides</p>
+      <h2>it fixes the call, not every string that looks like one</h2>
+      <p class="lead2">accuracy over recall, everywhere. mendr only touches a model id it can prove is a live call, and only ships a fix that passes your own gates.</p>
+    </div>
+    <div class="fgrid">
+      <div class="feat reveal">
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4"/></svg></span>
+        <h3>call-site aware</h3>
+        <p>it swaps a model id only when that string is actually an argument to a recognized llm call. an id sitting in a pricing table, a model-picker array, or a lookup map is left alone.</p>
+      </div>
+      <div class="feat reveal">
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12h6"/><path d="M8.5 7H7a5 5 0 0 0 0 10h1.5M15.5 7H17a5 5 0 0 1 0 10h-1.5"/></svg></span>
+        <h3>model-coupled params</h3>
+        <p>for a param fix it traces the model at each call site and only removes or renames the param when that model needs it. a claude-opus call can lose temperature while a sibling haiku call keeps it.</p>
+      </div>
+      <div class="feat reveal">
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></span>
+        <h3>verified, not guessed</h3>
+        <p>replacements carry a per-entry verdict checked against the live public model catalogs. only a verified entry is ever auto-applied — if it isn't verified, mendr locates the spot and refuses rather than risk a bad patch.</p>
+      </div>
+      <div class="feat reveal">
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>
+        <h3>gated before it's trusted</h3>
+        <p>a fix earns Tier A only after the patched code type-checks and your tests pass. anything that fails the gate is shown for review, never quietly applied.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="blk" id="audit">
+  <div class="wrap">
+    <div class="audit-wrap">
+      <div>
+        <p class="kick">new · the dependency audit</p>
+        <h2>see what a retired model still costs you</h2>
+        <p class="lead2">not every model id lives at a call site — some live in config, a database, a feature flag, or only in the runtime request. two read-only commands close that gap. everything runs in your own environment; no source and no keys ever leave it.</p>
+        <div class="lanecards" style="margin-top:22px">
+          <div class="lc">
+            <span class="tag">measure</span>
+            <h3>usage-audit</h3>
+            <p>reads your provider's own usage api with a read-only key you set in your own shell, and reports which deprecated models are actually taking traffic and dollars, with deadlines. it measures exposure; it doesn't read a single prompt.</p>
+          </div>
+          <div class="lc">
+            <span class="tag">locate</span>
+            <h3>config-scan</h3>
+            <p>finds deprecated ids across config and iac (yaml, json, .env, helm) and tells a live selector like <code class="k">model: gpt-4</code> from a catalog definition. on dify's 3,845 config files it cut false "change this" hits from 148 to 0.</p>
+          </div>
+        </div>
+      </div>
+      <div class="panel reveal" role="img" aria-label="usage-audit report: two deprecated OpenAI models, 263,810 live requests, 1,732 dollars of spend, 57 days to the deadline, each with a verified replacement.">
+        <div class="ph"><span class="lit"></span> mendr usage-audit openai — last 30 days</div>
+        <div class="pb">
+          <div class="big"><span class="$">$1,732</span><span class="cap">still spent on retired models</span></div>
+          <div class="sub2">2 deprecated models · 263,810 live requests · 57 days to deadline</div>
+          <div class="row"><span class="m">gpt-4</span><span class="to">→ gpt-4o</span><span class="meta">48,210 req · $1,284</span><span class="meta" style="text-align:right">verified</span></div>
+          <div class="row"><span class="m">gpt-3.5-turbo</span><span class="to">→ gpt-4o-mini</span><span class="meta">215,600 req · $448</span><span class="meta" style="text-align:right">verified</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="blk" id="why" style="background:var(--bg-soft); border-top:1px solid var(--border); border-bottom:1px solid var(--border);">
+  <div class="wrap">
+    <div class="split2">
+      <div>
+        <p class="kick">why a diff, not a pull request</p>
+        <h2>small enough to read in a few seconds</h2>
+        <p class="lead2">i don't trust a tool that rewrites my code without showing me first, and you shouldn't either. mendr prints a patch to stdout. read it, and if it's right apply it with <code class="k">--write</code> or pipe it straight into <code class="k">git apply</code>. there's also a github action if you want it to open the reviewed pull request for you in CI.</p>
+      </div>
+      <div class="codecard reveal">
+        <div class="ch">▚ .github/workflows/mendr.yml</div>
+        <div class="cbody"><pre><span class="kk">name:</span> <span class="vv">mendr</span>
+<span class="kk">on:</span>
+  <span class="kk">schedule:</span> <span class="vv">[{ cron: "0 8 * * 1" }]</span>
+<span class="kk">jobs:</span>
+  <span class="kk">llm-deprecations:</span>
+    <span class="kk">runs-on:</span> <span class="vv">ubuntu-latest</span>
+    <span class="kk">permissions:</span> <span class="vv">{ contents: write, pull-requests: write }</span>
+    <span class="kk">steps:</span>
+      <span class="vv">- uses: actions/checkout@v4</span>
+      <span class="vv">- uses: ajitheee/mendr/mendr-action@v1</span></pre></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="blk" id="story">
+  <div class="wrap">
+    <div class="quote reveal">
+      <div class="mark">"</div>
+      <p>i run chefcode, an invoice tool for restaurants, and one day it just stopped reading invoices. google had retired gemini-2.0-flash and my calls pointed at a dead id. later i pointed mendr at that same repo before my fix, and it produced the exact change i'd already made by hand. that was the whole reason to keep building it.</p>
+      <div class="by">
+        <div class="av">A</div>
+        <div class="who"><b>ajith</b>solo founder · the actual production breakage that started mendr</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="blk" id="commands" style="background:var(--bg-soft); border-top:1px solid var(--border); border-bottom:1px solid var(--border);">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="kick">the commands</p>
+      <h2>a handful, and you'll mostly use one</h2>
+    </div>
+    <div class="fgrid">
+      <div class="feat"><h3 style="font-family:var(--mono);font-size:1rem;font-weight:500">mendr fix-llm &lt;path&gt;</h3><p>scan a repo for retired model ids and coupled params, print the gated diff. the one you'll use.</p></div>
+      <div class="feat"><h3 style="font-family:var(--mono);font-size:1rem;font-weight:500">mendr watch [path]</h3><p>track the deprecated ids a repo touches; <code class="k">--install</code> scaffolds a github action that keeps one self-updating issue current.</p></div>
+      <div class="feat"><h3 style="font-family:var(--mono);font-size:1rem;font-weight:500">mendr usage-audit [provider] <span style="color:var(--amber)">· alpha</span></h3><p>read-only: which deprecated models actually consume requests and money, with deadlines.</p></div>
+      <div class="feat"><h3 style="font-family:var(--mono);font-size:1rem;font-weight:500">mendr config-scan [path] <span style="color:var(--amber)">· alpha</span></h3><p>locate deprecated ids in config and iac, separating live selectors from catalog data.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="blk" id="honest">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="kick">where it's at, honestly</p>
+      <h2>early, and not pretending otherwise</h2>
+    </div>
+    <div class="hongrid">
+      <div class="h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>it's new and doesn't have paying users yet. it's me, and the one production breakage that made me build it.</span></div>
+      <div class="h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>the suite is at <strong>664 passing tests</strong>, run across <strong>26 real public repos with 0 wrong edits</strong> — the gate blocks anything it can't verify.</span></div>
+      <div class="h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>the config scan was hardened on <strong>dify's 3,845 config files</strong>: false "change this" selectors went from <strong>148 to 0</strong>.</span></div>
+      <div class="h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span><strong>typescript, tsx, and python.</strong> a pure-js repo gets told nothing analyzable was found, not a false all-clear.</span></div>
+      <div class="h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>it reads inline model strings and one-hop consts. an id built from an env var or string concat is skipped on purpose.</span></div>
+      <div class="h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>coverage today is openai, anthropic and google, plus config files and stripe renames. if you run it and it does something dumb, that's the feedback worth sending.</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="blk">
+  <div class="wrap">
+    <div class="ctaband reveal">
+      <h2>run it on one repo and see the diff</h2>
+      <p>see if the change is one you'd have written by hand. no signup, no key, nothing written to your tree — it prints the patch and stops.</p>
+      <div class="install">
+        <code>$ npx github:ajitheee/mendr fix-llm .</code>
+        <button type="button" id="copyBtn" aria-label="Copy install command">copy</button>
+      </div>
+      <div class="brow">
+        <a class="btn primary" href="https://github.com/ajitheee/mendr">get it on github</a>
+        <a class="btn ghost" href="#features">how it decides</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="foot">
+    <div class="brandcol">
+      <a class="logo" href="#top"><span class="glyph">▚</span> mendr</a>
+      <p>auto-fixes retired llm model ids in your codebase, verified before it touches your code. MIT, built by a solo dev who got bitten in prod.</p>
+    </div>
+    <div class="cols">
+      <div class="col">
+        <h4>product</h4>
+        <a href="#features">how it decides</a>
+        <a href="#audit">the audit</a>
+        <a href="#commands">commands</a>
+        <a href="/deprecation-tracker.html">deprecation tracker</a>
+      </div>
+      <div class="col">
+        <h4>project</h4>
+        <a href="https://github.com/ajitheee/mendr">github</a>
+        <a href="https://github.com/ajitheee/mendr#readme">readme</a>
+        <a href="https://github.com/ajitheee/mendr/releases">releases</a>
+      </div>
+    </div>
+  </div>
+  <div class="footbar"><div class="footbar-in">mendr · MIT · npx github:ajitheee/mendr fix-llm .</div></div>
+</footer>
+
+<script>
+  (function () {
+    var btn = document.getElementById('copyBtn');
+    if (btn) btn.addEventListener('click', function () {
+      var t = 'npx github:ajitheee/mendr fix-llm .';
+      var done = function () { btn.textContent = 'copied'; setTimeout(function(){ btn.textContent='copy'; }, 1600); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done, done); else done();
+    });
+    var nav = document.getElementById('nav');
+    if (nav) { var f = function(){ nav.classList.toggle('stuck', window.scrollY > 6); }; f(); window.addEventListener('scroll', f, { passive:true }); }
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var items = document.querySelectorAll('.reveal');
+    if (reduce || !('IntersectionObserver' in window)) items.forEach(function(el){ el.classList.add('in'); });
+    else { var io = new IntersectionObserver(function(es){ es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); } }); }, { rootMargin:'0px 0px -8% 0px', threshold:0.08 }); items.forEach(function(el){ io.observe(el); }); }
+  })();
+</script>
+</body>
+</html>
