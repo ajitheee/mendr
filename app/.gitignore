@@ -1,0 +1,5 @@
+node_modules
+dist
+.env
+# local OIDC dev key (scripts/dev-oidc.mjs); never a real credential
+.dev/

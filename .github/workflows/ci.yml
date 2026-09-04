@@ -23,3 +23,21 @@ jobs:
       # 2-core runner parallel files starve the event loop, delaying a kill-timer
       # past the per-test timeout. Slower, but stable.
       - run: npm test -- --no-file-parallelism
+
+  # The GitHub App (app/) is its own package: no network in its tests either.
+  app:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

@@ -1,0 +1,31 @@
+{
+  "name": "mendr-app",
+  "version": "0.1.0-alpha",
+  "private": true,
+  "description": "Mendr GitHub App: receives audit evidence from your own CI run, writes a check run, serves the investigation workspace. Never clones or stores code.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/server.js",
+    "dev": "tsx src/server.ts",
+    "test": "vitest run",
+    "dev:token": "node scripts/dev-oidc.mjs"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.14.0",
+    "hono": "^4.6.0",
+    "jose": "^6.0.0",
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}

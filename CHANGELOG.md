@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Added — the Mendr GitHub App (`app/`)
+
+A small hosted service, kept out of the code path on purpose. Your CI still
+runs `mendr audit`; the workflow posts the resulting JSON to the App,
+authenticated by the run's GitHub Actions OIDC token (no shared secret). The
+App re-redacts every string and re-caps every snippet before storing the
+evidence, writes one **Mendr audit** check run on the commit (`action_required`
+for PATCH ELIGIBLE, `neutral` for review-only or inconclusive, `success`
+otherwise, with file:line annotations), and shows the evidence only to users
+GitHub confirms can access the repository. Manifest permissions: `checks:
+write` + `metadata: read`, nothing else; the App holds no `contents` access and
+cannot clone. One-click creation from `/setup`, Postgres or in-memory store,
+Dockerfile, tests against a GitHub-shaped fake, its own CI job. TRUST.md
+sections 1, 2, 4, 5, 7, 8 and 9 updated to describe it.
+
 ### Added — trust package: "nothing is uploaded" enforced in code
 
 - `--offline` (or `MENDR_OFFLINE=1`) installs an in-process guard that makes

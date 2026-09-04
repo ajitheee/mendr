@@ -20,6 +20,7 @@ exist yet and is listed so the boundary is stated before it is built.
 | The default `mendr audit` makes zero outbound network calls. | The test suite runs the audit under a Node preload that makes every network primitive throw (`scripts/no-network.cjs`, `src/audit/noNetwork.test.ts`). The audit must still exit 0 with a valid report on every build. A control test proves the preload bites. |
 | You can enforce it yourself. | `mendr audit . --offline` or `MENDR_OFFLINE=1` installs the same guard inside the process. Any attempt to open a socket, resolve a name or call `fetch` fails loudly and names the operation. |
 | Mendr has no backend, no account, no telemetry. | There is nothing to send to. The only outbound call in the source is the optional provider usage read (section 3), which goes to the provider you name, with a key you supply, from your machine. |
+| The GitHub App cannot read your code. | Its manifest requests `checks: write` and `metadata: read` only. It accepts one document (`mendr audit --json`), re-redacts every string and re-caps every snippet server-side, and stores nothing else. Tested against a GitHub-shaped fake in `app/src/app.test.ts`. |
 | Nothing edits your files unless you ask. | `fix-llm` prints a diff by default; `--write` is an explicit flag. `audit` never writes source. `--install` writes one workflow file you can read before committing. |
 | Secrets do not leak through Mendr's own output. | Everything that could be published (the GitHub issue body, JSON snippets) passes through the same redaction (section 6). This is best-effort pattern matching and section 8 says what it does not cover. |
 
@@ -40,6 +41,7 @@ exist yet and is listed so the boundary is stated before it is built.
 | `mendr verify-registry`, `registry-discover` (maintainer commands) | The registry files in this repository. | Registry files, a PR in this repository. | Provider documentation pages and model-list endpoints. These run in Mendr's own CI against Mendr's own repository, never against yours. |
 | Scaffolded audit workflow (`--install`) | Your repository at the checked-out SHA, inside your GitHub Actions runner. | One tracking issue in your repository (created, updated, closed), nothing else. | The Node download from `npm`/GitHub to install Mendr, and the GitHub API calls the workflow makes to your own repository with `GITHUB_TOKEN`. The scan itself makes none. |
 | `mendr-action` (fix PRs) | Same. | A branch and a pull request in your repository containing the gated diff. | Same as above. |
+| Mendr GitHub App (`app/`, hosted by Mendr) | The JSON your workflow posts and the claims of the run's OIDC token. Installation webhooks from GitHub. | Installations, repository ids and names, and the sanitized evidence per run in its Postgres. One check run on the commit. | Inbound from GitHub (webhooks) and from your CI (the POST). Outbound only to the GitHub API: an installation token limited to that repository and `checks: write`, the check run, and the signed-in user's repository access for the read side. |
 
 The audit **never** sends: file contents, file names, model ids, findings,
 paths, hashes, the repository URL, your git identity, environment variables,
@@ -92,9 +94,12 @@ flowchart LR
   provider["Provider usage API<br/>(OpenAI, Anthropic, …)"]
   gh["GitHub API<br/>(your repository)"]
   ui["Investigation workspace<br/>(static page, runs in your browser)"]
+  appnode["Mendr GitHub App<br/>(evidence only: findings, paths,<br/>classifications, redacted snippets, hashes)"]
   cli -. "optional: GET usage,<br/>your read-only key" .-> provider
   report -. "scaffolded workflow:<br/>one tracking issue, GITHUB_TOKEN" .-> gh
   report -. "you paste or open the JSON" .-> ui
+  report -. "your workflow POSTs the JSON,<br/>proven by the run's OIDC token" .-> appnode
+  appnode -. "one check run<br/>(checks: write, this repo only)" .-> gh
 ```
 
 Solid arrows are the default audit. Dotted arrows only happen when you ask for
@@ -108,13 +113,18 @@ the trimmed reported line. The snippet is redacted (section 6). The hash lets a
 UI tell "same line, unchanged" from "line changed" without holding the line.
 The JSON contains no other file content.
 
-**Planned: Action to UI.** When the hosted investigation workspace exists, the
-scanner will still run inside your GitHub Actions and will send **only the JSON
-described above** (findings, hashes, paths, classifications, redacted snippets).
-It will not clone your repository into a Mendr backend. A GitHub App with
-read-only access is not the same thing: read-only means we cannot modify your
-repository, not that we cannot read or store your code. Mendr's boundary is
-that the code is read only where it already lives, by a process you run.
+**The GitHub App (built, `app/`).** The scanner still runs inside your GitHub
+Actions. Your workflow posts **only the JSON described above** to the App,
+authenticated by the run's GitHub OIDC token, so nothing in your repository
+holds a secret and the App knows exactly which repository, commit and run the
+evidence came from. The App re-redacts and re-caps the document before storing
+it, writes one check run on the commit, and shows the evidence only to users
+GitHub confirms can access that repository. It does not clone your repository
+into a Mendr backend and cannot: it holds no `contents` permission. A GitHub App
+with read-only access would not be the same thing: read-only means we cannot
+modify your repository, not that we cannot read or store your code. Mendr's
+boundary is that the code is read only where it already lives, by a process
+you run.
 
 ---
 
@@ -149,7 +159,7 @@ that the code is read only where it already lives, by a process you run.
 
 | # | Threat | Mitigation | Residual |
 |---|---|---|---|
-| T1 | Repository contents exfiltrated by the scanner. | No backend, no telemetry, no `fetch` in the audit path; enforced by the offline test on every build and by `--offline` at run time. | A future hosted UI receives the JSON in section 4. That boundary is documented before it is built. |
+| T1 | Repository contents exfiltrated by the scanner. | No backend, no telemetry, no `fetch` in the audit path; enforced by the offline test on every build and by `--offline` at run time. | The GitHub App receives only the JSON in section 4 and is tested to re-redact and re-cap it. It holds no `contents` permission, so it could not fetch code even if asked. |
 | T2 | A committed secret published through the audit's own output (issue body, JSON snippet). | `redactSecrets` runs over the whole issue body and every snippet line before clipping. Snippets are ±3 lines and 160 chars, never whole files. | Pattern-based. An unusual secret format adjacent to a model line could survive. See section 8. |
 | T3 | Your provider key leaked by the usage read. | Key read from env or flag, held in memory, sent only to the provider named, over HTTPS, 30-second timeout. Provider error bodies are redacted before printing. Never written to disk. | You choose the key's scope. Use a read-only or usage-only key. |
 | T4 | Mendr modifies your default branch. | The scaffolded workflow runs with `contents: read` and `persist-credentials: false`. `fix-llm` never writes without `--write`; `mendr-action` writes to a branch and opens a PR, never pushes to the default branch. | `mendr-action` needs `contents: write` to push its branch. Branch protection on your side is the control. |
@@ -223,12 +233,23 @@ permissions:
 It opens a PR; it does not merge one. Branch protection and required reviews
 stay yours. Use the read-only workflow first if you do not want this.
 
-### GitHub App and hosted workspace (planned, not built)
+### Mendr GitHub App (`app/`)
 
-The commitment before it exists: the App will request the minimum scopes for
-receiving results from your Actions run and for commenting on PRs, and it will
-not request `contents` access for the purpose of cloning. If a scope is added,
-this section and the changelog will say which and why.
+```yaml
+default_permissions:
+  checks: write     # write the audit result on the commit
+  metadata: read    # mandatory for every GitHub App
+default_events: []  # only the installation webhooks GitHub always sends
+```
+
+No `contents`, no `pull_requests`, no `issues`. Each check run is written with
+an installation token limited to that one repository and `checks: write`. The
+evidence endpoint accepts only the run's GitHub OIDC token (your workflow adds
+`id-token: write`); there is no shared secret to store. Sign-in uses the App's
+OAuth flow and your token stays in an encrypted cookie, never in the database.
+You can see a repository's evidence only if the App is installed on it and
+GitHub confirms you can access it. If a scope is ever added, this section and
+the changelog will say which and why.
 
 ---
 
@@ -243,9 +264,11 @@ this section and the changelog will say which and why.
   guard.
 - **Releases are unsigned.** Tags are annotated and immutable by policy, not
   by cryptography. See section 9.
-- **The hosted workspace does not exist yet.** The static prototype at
-  `site/app/` runs entirely in your browser from JSON you paste; nothing is
-  uploaded. When a hosted version ships, section 4 is the contract for it.
+- **The hosted workspace is partial.** The GitHub App stores evidence and
+  shows a run page and the evidence JSON; the three-panel investigation view is
+  still the static page at `site/app/`, which runs in your browser from JSON you
+  paste. Wiring the two together is the next step and adds no new data flow:
+  section 4 is the contract.
 - **Coverage is by language.** Model references in files Mendr cannot parse are
   counted as unanalyzed and reported as such. They are not silently clean.
 
@@ -264,8 +287,9 @@ this section and the changelog will say which and why.
   tags, then npm publication with provenance attestation, then a SLSA-style
   build statement from CI. Until then, verify a tag's commit SHA against the
   release notes.
-- **Dependencies.** Six runtime dependencies (section 3), all pinned in the
-  lockfile. CI installs with `npm ci`. Policy: a dependency that adds network
+- **Dependencies.** Six runtime dependencies for the CLI (section 3) and four
+  for the App (`hono`, `@hono/node-server`, `jose`, `pg`), all pinned in
+  lockfiles. CI installs with `npm ci`. Policy: a dependency that adds network
   behavior fails the offline test and is not merged; security advisories
   against a runtime dependency are addressed in the next tag, and the changelog
   names the advisory.

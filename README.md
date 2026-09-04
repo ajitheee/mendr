@@ -92,7 +92,7 @@ Nothing, by default. The audit reads the repository, the bundled registry and yo
 npx github:ajitheee/mendr#v0.2.4-alpha audit . --offline
 ```
 
-The only optional network use is the provider usage read you ask for by name with your own read-only key, and a shallow `git clone` when you pass a GitHub URL instead of a path. [TRUST.md](TRUST.md) has the per-command table, the data-flow diagram, the threat model, the permissions each surface needs, and the known gaps. [SECURITY.md](SECURITY.md) is how to report a problem with any of it.
+The only optional network use is the provider usage read you ask for by name with your own read-only key, and a shallow `git clone` when you pass a GitHub URL instead of a path. The [Mendr GitHub App](app/README.md) is the one hosted piece: your workflow posts the audit JSON to it, proven by the run's OIDC token, and it writes a check run back; it has no `contents` permission and cannot read code. [TRUST.md](TRUST.md) has the per-command table, the data-flow diagram, the threat model, the permissions each surface needs, and the known gaps. [SECURITY.md](SECURITY.md) is how to report a problem with any of it.
 
 ## commands
 
