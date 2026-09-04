@@ -137,7 +137,7 @@ export function runPage(repo: Repo, run: RunRecord, login: string): string {
     .join('');
   const body = `<h2><a href="/r/${esc(repo.fullName)}">${esc(repo.fullName)}</a> <span class="muted">· ${esc(run.ref.replace(/^refs\/heads\//, ''))} @ ${esc(run.sha.slice(0, 7))}</span></h2>
 <p>${pill(run.counts)} <span class="muted">· conclusion <code>${esc(run.conclusion)}</code> · received ${esc(run.receivedAt.slice(0, 19).replace('T', ' '))}${run.actor ? ` · by ${esc(run.actor)}` : ''}</span></p>
-<p>${run.checkRunUrl ? `<a href="${esc(run.checkRunUrl)}">Check run on GitHub</a> · ` : ''}<a href="/api/runs/${run.id}">Evidence JSON</a> · <a href="/app">Open the investigation workspace</a> <span class="muted">(paste the JSON there for the three-panel view)</span></p>
+<p>${run.checkRunUrl ? `<a href="${esc(run.checkRunUrl)}">Check run on GitHub</a> · ` : ''}<a href="/api/runs/${run.id}">Evidence JSON</a> · <a href="/app/?run=${run.id}">Open in the investigation workspace</a> <span class="muted">(loads this run directly)</span></p>
 <table><thead><tr><th>Decision</th><th>Model</th><th>Locations</th><th>Next action</th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="muted">No investigations in this run.</td></tr>'}</tbody></table>`;
   return layout(`${repo.fullName} run ${run.id}`, body, { login });
 }

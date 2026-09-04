@@ -245,7 +245,10 @@ default_events: []  # only the installation webhooks GitHub always sends
 No `contents`, no `pull_requests`, no `issues`. Each check run is written with
 an installation token limited to that one repository and `checks: write`. The
 evidence endpoint accepts only the run's GitHub OIDC token (your workflow adds
-`id-token: write`); there is no shared secret to store. Sign-in uses the App's
+`id-token: write`); there is no shared secret to store. In the scaffolded audit
+workflow the upload step is commented out and `id-token: write` is not granted,
+so a plain install sends nothing; enabling the App is a deliberate opt-in you
+make in your own workflow, and only then does the job carry `id-token: write`. Sign-in uses the App's
 OAuth flow and your token stays in an encrypted cookie, never in the database.
 You can see a repository's evidence only if the App is installed on it and
 GitHub confirms you can access it. If a scope is ever added, this section and

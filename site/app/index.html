@@ -101,6 +101,9 @@
   .state.new{background:var(--cobalt-soft);color:var(--cobalt)} .state.continuing{background:var(--ivory-2);color:var(--ink-2)} .state.carried{background:var(--amber-soft);color:#9a5f08}
   .state.resolved{background:var(--jade-soft);color:var(--jade)} .state.reopened{background:var(--red-soft);color:var(--red)} .state.dismissed{background:#eee;color:var(--grey);text-decoration:line-through}
   /* --- loader --- */
+  .appbox{background:var(--cobalt-soft);border:1px solid #cdd9ff;border-radius:8px;padding:12px 14px;margin-bottom:16px;line-height:2.1}
+  .appbox b{margin-right:6px}
+  .appbox select{margin:0 2px}
   .drop{border:2px dashed var(--hair);border-radius:10px;padding:26px;text-align:center;color:var(--grey);background:var(--paper);margin-bottom:14px}
   .drop.over{border-color:var(--cobalt);color:var(--carbon)}
   textarea{width:100%;min-height:120px;font-family:var(--mono);font-size:12px;border:1px solid var(--hair);border-radius:6px;padding:8px;background:#fff}
@@ -131,6 +134,7 @@
 <section class="view on" id="view-load">
   <div class="wrap">
     <h1>Import a mendr audit</h1>
+    <div id="appConnect" hidden></div>
     <p class="sub">Run <span class="mono">npx github:ajitheee/mendr#v0.2.4-alpha audit . --json &gt; audit.json</span> in a repository, then bring the JSON here. Load several runs of the same repository to see history.</p>
     <div class="drop" id="drop">Drop one or more <span class="mono">audit.json</span> files here, or
       <label class="btn" for="file" style="display:inline-block;margin-left:6px">Choose files</label>
@@ -234,6 +238,9 @@
     let added = 0;
     for (const o of objs) {
       if (!o || o.generatedBy !== 'mendr' || !Array.isArray(o.investigations)) { toast('Not a mendr audit JSON'); continue; }
+      // Skip a run already loaded (same repo + timestamp + commit): clicking
+      // "Load run" then "Load all" must not double it.
+      if (o.generatedAt && o.sha && S.runs.some((r) => r.generatedAt === o.generatedAt && r.sha === o.sha && r.repo === o.repo)) continue;
       o._loadedAt = Date.now() + added;
       o._label = (o.repo ? o.repo + ' · ' : '') + (o.generatedAt ? o.generatedAt.replace('T', ' ').slice(0, 16) : 'run ' + (S.runs.length + 1)) + (o.sha ? ' · ' + String(o.sha).slice(0, 7) : '');
       S.runs.push(o); added++;
@@ -475,7 +482,62 @@
     ];
   }
 
+  // ---------- optional: read runs from a Mendr App that serves this page ----------
+  // When the workspace is served BY the Mendr GitHub App, it can load runs from
+  // the App's API instead of pasted JSON — the same sanitized evidence, still
+  // behind the App's per-repo access checks, nothing uploaded from here. When
+  // the page is opened as a static file or from a plain host, /api is absent and
+  // this stays dormant, so the paste/drop path below is unaffected.
+  const api = (p) => fetch(p, { credentials: 'same-origin', headers: { accept: 'application/json' } });
+  async function appJson(p) { try { const r = await api(p); if (!r.ok) return { status: r.status }; const ct = r.headers.get('content-type') || ''; if (!ct.includes('application/json')) return { status: 0 }; return { status: 200, body: await r.json() }; } catch { return { status: 0 }; } }
+  function appBox() { const e = $('appConnect'); e.hidden = false; return e; }
+  async function loadAppRun(id) {
+    const r = await appJson('/api/runs/' + encodeURIComponent(id));
+    if (r.status !== 200 || !r.body || !r.body.run || !r.body.run.report) { toast('Could not load that run'); return null; }
+    return r.body.run.report;
+  }
+  async function initApp() {
+    const me = await appJson('/api/me');
+    if (me.status === 401) {
+      appBox().innerHTML = '<b>Connected to your Mendr App.</b> <a class="btn primary" style="text-decoration:none" href="/auth/login?next=' + encodeURIComponent(location.pathname + location.search) + '">Sign in with GitHub</a> to load runs from repositories you can access — or import a file below.';
+      return;
+    }
+    if (me.status !== 200 || !me.body || typeof me.body.login !== 'string') return; // not served by the App: static mode
+    const login = me.body.login;
+    const reposRes = await appJson('/api/repos');
+    const repos = reposRes.status === 200 && reposRes.body ? (reposRes.body.repos || []) : [];
+    const box = appBox();
+    if (!repos.length) {
+      box.innerHTML = '<b>Signed in as ' + esc(login) + '.</b> No installed repository is visible to you yet. Install the Mendr App on a repository and let its audit workflow send a run — or import a file below.';
+      return;
+    }
+    box.innerHTML = '<b>Signed in as ' + esc(login) + '.</b> Load runs from your Mendr App: '
+      + '<select id="appRepo" aria-label="Repository">' + repos.map((r) => '<option value="' + esc(r.fullName) + '">' + esc(r.fullName) + '</option>').join('') + '</select> '
+      + '<select id="appRun" aria-label="Run"></select> '
+      + '<button class="btn" id="appLoad">Load run</button> '
+      + '<button class="btn" id="appLoadAll">Load all</button> '
+      + '<span class="note" id="appStatus"></span>';
+    const fillRuns = async () => {
+      const [owner, name] = $('appRepo').value.split('/');
+      $('appStatus').textContent = 'loading…';
+      const r = await appJson('/api/repos/' + encodeURIComponent(owner) + '/' + encodeURIComponent(name) + '/runs');
+      const runs = r.status === 200 && r.body ? (r.body.runs || []) : [];
+      const sel = $('appRun');
+      sel.innerHTML = runs.map((rn) => '<option value="' + rn.id + '">' + esc((rn.receivedAt || '').slice(0, 16).replace('T', ' ')) + ' · ' + esc(String(rn.ref || '').replace('refs/heads/', '')) + ' @ ' + esc(String(rn.sha || '').slice(0, 7)) + ' · ' + rn.counts.patch + 'P/' + rn.counts.review + 'R/' + rn.counts.informational + 'I</option>').join('');
+      sel._runs = runs;
+      $('appStatus').textContent = runs.length ? runs.length + ' run(s)' : 'no runs received yet';
+    };
+    $('appRepo').addEventListener('change', fillRuns);
+    $('appLoad').addEventListener('click', async () => { const id = $('appRun').value; if (id) { const rep = await loadAppRun(id); if (rep) addRuns([rep]); } });
+    $('appLoadAll').addEventListener('click', async () => { const runs = $('appRun')._runs || []; const reps = []; for (const rn of runs) { const rep = await loadAppRun(rn.id); if (rep) reps.push(rep); } if (reps.length) addRuns(reps); });
+    await fillRuns();
+    // A run-specific deep link from the App's run page (/app/?run=<id>).
+    const wanted = new URLSearchParams(location.search).get('run');
+    if (wanted) { const rep = await loadAppRun(wanted); if (rep) addRuns([rep]); }
+  }
+
   renderRunSelect();
+  initApp();
 })();
 </script>
 </body>

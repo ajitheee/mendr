@@ -285,12 +285,30 @@ describe('audit action — adversarial-review regressions', () => {
 });
 
 describe('audit workflow — least privilege and safety', () => {
-  it('requests only contents:read and issues:write', () => {
+  it('requests only contents:read and issues:write by default', () => {
     expect(AUDIT_WORKFLOW_YAML).toContain('contents: read');
     expect(AUDIT_WORKFLOW_YAML).toContain('issues: write');
     expect(AUDIT_WORKFLOW_YAML).not.toMatch(/^\s+contents: write/m);
     // pull-requests:write must NOT be granted by default — only when PR generation is enabled.
     expect(AUDIT_WORKFLOW_YAML).not.toMatch(/^\s+pull-requests: write/m);
+    // id-token:write must NOT be an ACTIVE permission: the App upload is opt-in,
+    // so id-token appears only inside comments, never as a live grant.
+    expect(AUDIT_WORKFLOW_YAML).not.toMatch(/^\s+id-token: write/m);
+  });
+
+  it('offers the Mendr App upload as an opt-in that sends only findings via OIDC', () => {
+    // The block exists and points at the ingest endpoint with the mendr audience.
+    expect(AUDIT_WORKFLOW_YAML).toContain('/api/ingest');
+    expect(AUDIT_WORKFLOW_YAML).toContain('audience=mendr');
+    expect(AUDIT_WORKFLOW_YAML).toContain('vars.MENDR_APP_URL');
+    // Every line of the App send step is commented out (off by default).
+    for (const line of AUDIT_WORKFLOW_YAML.split('\n')) {
+      if (line.includes('/api/ingest') || line.includes('ACTIONS_ID_TOKEN_REQUEST')) {
+        expect(line.trimStart().startsWith('#')).toBe(true);
+      }
+    }
+    // It is honest that enabling it grants id-token:write in this job.
+    expect(AUDIT_WORKFLOW_YAML).toContain('id-token: write');
   });
 
   it('serializes runs so two cannot race to open two issues', () => {

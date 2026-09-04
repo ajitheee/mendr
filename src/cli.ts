@@ -2874,6 +2874,8 @@ program
         console.log(`Wrote ${res.path}`);
         console.log('It runs in YOUR CI, needs no provider key, and asks only for contents:read + issues:write.');
         console.log('Commit it, and the first run opens one audit issue that later runs update in place.');
+        console.log('To also get a commit check run and the investigation workspace, enable the optional');
+        console.log('Mendr App block at the bottom of the file (adds id-token:write; sends only findings).');
         return;
       }
       if (/^(https?:\/\/|git@)/i.test(repoPath)) {

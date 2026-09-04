@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Added — the Action sends evidence to the App, and the workspace reads it back
+
+- `mendr audit --install` now scaffolds an optional, commented "Send audit
+  evidence to your Mendr App" step: it POSTs the run's `mendr audit --json` to
+  `MENDR_APP_URL/api/ingest`, authenticated by the run's GitHub OIDC token
+  (audience `mendr`), with no shared secret. It is OFF by default and turning
+  it on is a deliberate three-line change, because it grants `id-token: write`
+  to the job; the scaffold says so and points to TRUST.md. The default install
+  still asks for `contents: read` + `issues: write` only.
+- The investigation workspace (`site/app/`) loads runs straight from the App
+  when it is served by it: it probes `/api/me`, offers sign-in when signed out,
+  and otherwise shows a repository and run picker backed by `/api/repos` and
+  `/api/runs/:id`. The App's run page links to `/app/?run=<id>` to open a run
+  directly. Served as a static file or from a plain host, `/api` is absent and
+  the paste/drop path is unchanged — nothing is uploaded from the page.
+
 ### Added — the Mendr GitHub App (`app/`)
 
 A small hosted service, kept out of the code path on purpose. Your CI still

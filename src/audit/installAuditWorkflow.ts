@@ -48,6 +48,8 @@ on:
 # issues:write maintains the single audit issue. pull-requests:write is NOT
 # granted here — this workflow opens no PR and merges nothing. Add it only if you
 # enable verified migration PRs, which are a separate, gated workflow.
+# id-token:write is NOT granted either — add it only to turn on the OPTIONAL
+# Mendr App upload described at the bottom of this file.
 permissions:
   contents: read
   issues: write
@@ -252,6 +254,36 @@ jobs:
               } catch (e) { core.info('Could not re-add label: ' + e.message); }
             }
 
+# ---------------------------------------------------------------------------
+# OPTIONAL: send this run's findings to your Mendr App. The App writes a "Mendr
+# audit" check run on the commit and shows the findings in the investigation
+# workspace. The scan still happens HERE, in your CI; only the sanitized JSON
+# leaves — no repository contents, no key. It is authenticated by THIS run's
+# GitHub OIDC token, so there is NO shared secret to store anywhere.
+#
+# OFF by default because it needs \`id-token: write\`, which lets a step mint an
+# identity token for this repository. Turn it on deliberately:
+#   1. add \`id-token: write\` to the permissions block near the top,
+#   2. set the MENDR_APP_URL repository variable to your App's URL,
+#   3. uncomment the step below.
+# Because id-token:write is then granted to the same job that runs npm code,
+# pin MENDR_SPEC to a full commit SHA (see the note at the top) for the
+# strictest posture. See TRUST.md for the exact data that is sent.
+#
+#      - name: Send audit evidence to your Mendr App
+#        if: \${{ vars.MENDR_APP_URL != '' }}
+#        env:
+#          MENDR_APP_URL: \${{ vars.MENDR_APP_URL }}
+#        run: |
+#          TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \\
+#            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=mendr" | jq -r .value)
+#          curl -sS --fail-with-body -X POST "$MENDR_APP_URL/api/ingest" \\
+#            -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \\
+#            --data-binary @"$RUNNER_TEMP/mendr-audit.json"
+#
+# For a check that lands on PULL REQUESTS, add \`pull_request\` to \`on:\` above and
+# pass the head commit to the audit so the check attaches to the PR head:
+#   --sha "\${{ github.event.pull_request.head.sha || github.sha }}"
 # ---------------------------------------------------------------------------
 # OPTIONAL: prove which models are actually live. No Admin key is required for
 # options 1, 2 and 4 — the customer produces a sanitized file themselves.
