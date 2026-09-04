@@ -1,14 +1,27 @@
 # Changelog
 
-## Unreleased — hardening from external validation (2026-09-03)
+## v0.2.3-alpha — 2026-09-03
 
-`mendr audit` v0.2.2-alpha was run against 12 real third-party repositories
-and every Tier-A location was checked by reading the code, with independent
-skeptics refuting each claim (see `VALIDATION-2026-09-03.md`). The verdict on
-"zero incorrect PATCH ELIGIBLE findings" was **not met**: 60 of the 62 Tier-A
-locations checked were wrong. Every confirmed root cause is fixed below. This
-is a classification change: expect FEWER Tier-A findings and MORE Tier-B
-review candidates than before, on purpose.
+**Hardening release.** `mendr audit` v0.2.2-alpha was run against a validation
+corpus of 12 real third-party repositories (chatbot-ui, LibreChat, NextChat,
+anything-llm, vercel/ai, lobe-chat, open-webui, ragflow, langflow, langchain,
+continue, dify-official-plugins; 37,685 source files). Every Tier-A location
+was checked by reading the code, with independent skeptics refuting each claim
+(see `VALIDATION-2026-09-03.md`). The verdict on "zero incorrect PATCH ELIGIBLE
+findings" was **not met**: 60 of the 62 Tier-A locations checked were wrong.
+Every confirmed root cause is fixed below and the corpus was re-run.
+
+**Result: zero incorrect PATCH ELIGIBLE findings across the current validation
+corpus.** All 12 previously identified incorrect PATCH ELIGIBLE locations are
+eliminated; exactly one Tier-A location remains in the corpus and was manually
+confirmed correct. This is a statement about that corpus and that decision
+class, not a universal claim of zero false positives. Expect FEWER Tier-A
+findings and MORE Tier-B review candidates than before, on purpose.
+
+Still true in this release: JavaScript/JSX is not analyzed (disclosed on every
+run); report comprehension has not been validated with external partners; live
+provider reconciliation is incomplete and the runtime connectors remain
+optional preview. See `RELEASE-v0.2.3-alpha.md`.
 
 ### Fixed — the TypeScript scanner gets the Python guards (critical)
 

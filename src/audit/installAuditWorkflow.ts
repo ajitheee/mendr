@@ -17,7 +17,7 @@ import { dirname, join } from 'node:path';
 export const AUDIT_WORKFLOW_PATH = '.github/workflows/mendr-audit.yml';
 
 /** The immutable Mendr release the generated workflow pins to by default. */
-export const AUDIT_MENDR_RELEASE = 'v0.2.2-alpha';
+export const AUDIT_MENDR_RELEASE = 'v0.2.3-alpha';
 
 export const AUDIT_WORKFLOW_YAML = `# Maintained by Mendr — the AI dependency audit.
 # ONE issue per repository lists every retiring AI dependency, grouped into new,
