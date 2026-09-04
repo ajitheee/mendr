@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { Language, Parser, type Node as PyNode, type Tree } from 'web-tree-sitter';
 import type { LlmModelIdDeprecation, LlmRegistry, SourceLocation } from '../types.js';
 import { effectiveVerificationState, isVerified, modelIdEntries } from '../usage/llmRegistry.js';
+import { isExamplePath, splitProviderPrefix } from '../usage/sharedRules.js';
 import {
   detectPySurface,
   dottedCallee,
@@ -219,6 +220,11 @@ export function isPyTestPath(file: string): boolean {
  * (mirroring the TS count, which also includes test files); the literal scan
  * skips them separately via `isPyTestPath`.
  */
+/** How many of the collected files the literal scan will SKIP as test support (disclosed in coverage). */
+export function countPyTestFiles(files: readonly string[]): number {
+  return files.filter((f) => isPyTestPath(f)).length;
+}
+
 export function collectPythonFiles(repoPath: string): string[] {
   const abs = resolve(repoPath);
   const out: string[] = [];
@@ -513,6 +519,64 @@ export const PY_UNRESOLVED_RECEIVER_REASON =
 export const PY_FAMILY_MISMATCH_REASON =
   'the resolved client belongs to a different provider family than this endpoint';
 export const PY_CATALOG_REASON = 'catalog / stored-metadata construction, not a provider request';
+export const PY_FIELD_DEFAULT_REASON =
+  'default value of a model-named field or parameter; a real selector whose use is not traced, review before changing';
+export const PY_RETURN_DEFAULT_REASON =
+  'returned as the fallback from a model-named function; a real selector whose consumer is not traced, review before changing';
+export const PY_WRAPPER_FACTORY_REASON =
+  'framework wrapper factory (LangChain), not a direct provider SDK request; the swap is not verified for this surface';
+export const PY_EXAMPLE_REASON =
+  'example / sample / demo / docs tree: informational, not a dependency of the shipped product';
+export const PY_PREFIXED_REASON =
+  'provider-prefixed selector (gateway / provider registry); the successor may need a different prefix, capped at review';
+
+/** Wrapper factories: real selection points that are NOT the provider SDK. */
+const LANGCHAIN_FACTORIES: ReadonlySet<string> = new Set([
+  'ChatOpenAI',
+  'ChatAnthropic',
+  'ChatGoogleGenerativeAI',
+  'init_chat_model',
+]);
+
+/**
+ * C5 (external validation): factory literals bypassed every surface guard —
+ * `ChatOpenAI(model="gpt-4", base_url="http://localhost:11434/v1")` reached Tier A.
+ * A LangChain factory is a wrapper, capped at review outright; a first-party
+ * factory (`genai.GenerativeModel`) still needs a direct surface and no proxy
+ * override. Returns the cap, or null when the factory may keep its position.
+ */
+function capFactory(
+  call: PyNode,
+  dotted: string | null,
+  ctx?: PyGuardContext,
+): { position: LiteralPosition; reason: string } | null {
+  const last = (dotted ?? '').split('.').pop() ?? '';
+  if (LANGCHAIN_FACTORIES.has(last)) return { position: 'surface_capped', reason: PY_WRAPPER_FACTORY_REASON };
+  const args = call.childForFieldName('arguments')?.text ?? '';
+  if (/\b(base_url|api_base|endpoint|endpoint_url|client_options|transport|http_client)\s*=/.test(args)) {
+    return { position: 'surface_capped', reason: `${PY_SURFACE_REASON} (proxy)` };
+  }
+  const surface = ctx?.surface ?? 'unknown_wrapper';
+  if (SURFACE_MAX_TIER[surface] !== 'A') {
+    return { position: 'surface_capped', reason: `${PY_SURFACE_REASON} (${surface})` };
+  }
+  return null;
+}
+
+/**
+ * M2: is this `default=` / `value=` keyword the default of a model-named
+ * assignment target — `model_name: str = Field(default="…")`,
+ * `model = Column(default="…")`? Then the literal is a real selector.
+ */
+function modelNamedAssignmentTarget(kwarg: PyNode): boolean {
+  const call = kwarg.parent?.parent; // keyword_argument → argument_list → call
+  if (!call || call.type !== 'call') return false;
+  const assign = call.parent;
+  if (!assign || assign.type !== 'assignment') return false;
+  const left = assign.childForFieldName('left');
+  const name = left ? traceableName(left) : undefined;
+  return !!name && isModelLikeName(name);
+}
 
 /**
  * G1–G5. Returns a classification when a guard DECIDES the outcome, else null so
@@ -581,6 +645,12 @@ export function applyPyGuards(
       return { position: 'usage_unverified', reason: USAGE_UNVERIFIED_REASON };
     }
     return { position: 'surface_capped', reason: PY_UNRECOGNIZED_SINK_REASON };
+  }
+  // C5: a factory is a real selection point but earns Tier A only on a direct
+  // surface with no proxy override; a LangChain wrapper never does.
+  if (call && !sink && isProviderModelFactory(dotted)) {
+    const cap = capFactory(call, dotted, ctx);
+    if (cap) return cap;
   }
 
   if (sink) {
@@ -663,11 +733,8 @@ function judgeSinkCall(
   const sink = matchSdkSink(dotted);
   if (!sink) {
     if (isProviderModelFactory(dotted)) {
-      // A factory is a real selection point, but still surface-capped.
-      const surface = ctx?.surface ?? 'unknown_wrapper';
-      return SURFACE_MAX_TIER[surface] === 'A'
-        ? null
-        : { position: 'surface_capped', reason: `${PY_SURFACE_REASON} (${surface})` };
+      // A factory is a real selection point, but still surface-capped (C5).
+      return capFactory(call, dotted, ctx);
     }
     return { position: 'surface_capped', reason: PY_UNRECOGNIZED_SINK_REASON };
   }
@@ -822,6 +889,24 @@ export function classifyPyPosition(
         return { position: 'azure_deployment', reason: AZURE_DEPLOYMENT_REASON };
       }
       if (isModelLikeName(name.text)) return { position: 'model_arg' };
+      // M2 (external validation): `model_name: str = Field(default="gpt-3.5-turbo")`
+      // is the runtime default of every ChatOpenAI() built without a model — it was
+      // filed as Tier C "no selector" while a parser label next to it was Tier A.
+      if (/^(default|value)$/.test(name.text) && modelNamedAssignmentTarget(parent)) {
+        return { position: 'usage_unverified', reason: PY_FIELD_DEFAULT_REASON };
+      }
+    }
+    return { position: 'data', purpose: 'generic' };
+  }
+
+  // M2: `return cfg.MODEL if cfg.MODEL else 'dall-e-2'` inside `get_image_model()` —
+  // the fallback returned from a model-named function is the selector every
+  // caller receives. Not data; a review candidate.
+  if (parent.type === 'return_statement') {
+    const fn = enclosingFunction(node);
+    const fname = fn?.childForFieldName('name')?.text;
+    if (fname && isModelLikeName(fname)) {
+      return { position: 'usage_unverified', reason: PY_RETURN_DEFAULT_REASON };
     }
     return { position: 'data', purpose: 'generic' };
   }
@@ -962,15 +1047,32 @@ export async function findPyModelIdLiterals(
       const sinkTargets = collectPySinkTargets(tree);
       // G4: the provider surface, resolved once per file, caps every tier below.
       const surface = detectPySurface(source.path, source.text);
+      // An examples/samples/demos/docs tree is informational by rule (C3).
+      const example = isExamplePath(source.path);
       for (const node of tree.rootNode.descendantsOfType('string')) {
         const content = plainStringContent(node);
         if (!content) continue; // f-string / prefixed / concatenation fragment
-        const deprecations = byValue.get(content.value);
-        if (!deprecations) continue; // exact-value guard: no substring matching
+        let deprecations = byValue.get(content.value);
+        let prefixed = false;
+        if (!deprecations) {
+          // `openai/gpt-5-nano` / `openai:gpt-5-mini`: a gateway or registry
+          // selector carrying a registry id — real, never swap-eligible.
+          const split = splitProviderPrefix(content.value);
+          deprecations = split ? byValue.get(split.id) : undefined;
+          if (!deprecations) continue; // exact-value guard: no substring matching
+          prefixed = true;
+        }
 
         // Position/purpose belong to the CST node, not the registry entry, so
         // classify once and emit one match per matching record (multimap).
-        const classification = classifyPyLiteral(node, sinkNames, { surface, sinkTargets });
+        let classification: { position: LiteralPosition; purpose?: DataPurpose; reason?: string } = example
+          ? { position: 'data', purpose: 'example', reason: PY_EXAMPLE_REASON }
+          : classifyPyLiteral(node, sinkNames, { surface, sinkTargets });
+        // A prefixed id is a gateway SELECTOR only where a plain id would have
+        // been one; in a list or a catalog dict it is data like any other.
+        if (prefixed && !example && classification.position !== 'data') {
+          classification = { position: 'surface_capped', reason: PY_PREFIXED_REASON };
+        }
         const line = node.startPosition.row + 1;
         const column = node.startPosition.column + 1;
         for (const deprecation of deprecations) {

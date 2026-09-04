@@ -27,7 +27,9 @@ import { applyModelIdFixesToProject } from './modelId.js';
 // shipped records end to end).
 
 /** A live model argument: the ONLY position a swap can legally happen in. */
-const SOURCE = `export async function ask(client: any) {
+const SOURCE = `import OpenAI from "openai";
+const client = new OpenAI();
+export async function ask() {
   return client.chat.completions.create({ model: "victim-model", messages: [] });
 }
 `;

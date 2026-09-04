@@ -55,7 +55,9 @@ function makeReadOnlyRepo(): { dir: string; file: string } {
   writeFileSync(
     file,
     [
-      'export async function chat(client: any) {',
+      'import OpenAI from "openai";',
+      'const client = new OpenAI();',
+      'export async function chat() {',
       "  return client.chat.completions.create({ model: 'gpt-4-0613', messages: [] });",
       '}',
       '',

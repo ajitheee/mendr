@@ -108,6 +108,39 @@ const SCAN_EXCLUDED_DIRS: ReadonlySet<string> = new Set([
  * `findUncoveredSourceFiles` — a single source of truth so the printed counts
  * can never disagree with what was actually visited.
  */
+/**
+ * How many {ts,tsx,mts,cts} files under `repoPath` the scan SKIPS as test
+ * support. Disclosed in coverage: external validation found the skipped count
+ * (LibreChat 1,219 of 3,568) was invisible, so "N files scanned" overstated reach.
+ */
+export function countTsTestFiles(repoPath: string): number {
+  const abs = resolve(repoPath);
+  let count = 0;
+  const walk = (dir: string): void => {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!SCAN_EXCLUDED_DIRS.has(entry.name)) walk(full);
+      } else if (
+        entry.isFile() &&
+        /\.(ts|tsx|mts|cts)$/.test(entry.name) &&
+        !entry.name.endsWith('.d.ts') &&
+        isTestPath(full)
+      ) {
+        count++;
+      }
+    }
+  };
+  walk(abs);
+  return count;
+}
+
 export function collectTsSourceFiles(repoPath: string): string[] {
   const abs = resolve(repoPath);
   const out: string[] = [];

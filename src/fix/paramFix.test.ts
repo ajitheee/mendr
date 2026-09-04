@@ -47,9 +47,11 @@ describe('param_removal (temperature)', () => {
   // Both calls live in the SAME file: one on a rejecting model, one on an
   // accepting model that is NOT in on_models (and not a model_id retirement).
   const SOURCE = `
-export async function run(client: any, messages: any) {
-  const rejecting = await client.messages.create({ model: "claude-opus-5", temperature: 0, max_tokens: 1024, messages });
-  const accepting = await client.messages.create({ model: "claude-3-haiku-20240307", temperature: 0, max_tokens: 1024, messages });
+import Anthropic from "@anthropic-ai/sdk";
+const client = new Anthropic();
+export async function run(messages: any) {
+  const rejecting = await anthropic.messages.create({ model: "claude-opus-5", temperature: 0, max_tokens: 1024, messages });
+  const accepting = await anthropic.messages.create({ model: "claude-3-haiku-20240307", temperature: 0, max_tokens: 1024, messages });
   return { rejecting, accepting };
 }
 `.trimStart();
@@ -93,7 +95,9 @@ export async function run(client: any, messages: any) {
 
 describe('param_rename (max_tokens -> max_completion_tokens)', () => {
   const SOURCE = `
-export async function run(client: any) {
+import OpenAI from "openai";
+const client = new OpenAI();
+export async function run() {
   const reasoning = await client.chat.completions.create({ model: "o1-mini", max_tokens: 100 });
   const classic = await client.chat.completions.create({ model: "gpt-4o", max_tokens: 100 });
   return { reasoning, classic };
@@ -124,9 +128,11 @@ export async function run(client: any) {
 describe('model resolution', () => {
   it('resolves the model through a same-file const (best effort)', () => {
     const source = `
-export async function run(client: any, messages: any) {
+import Anthropic from "@anthropic-ai/sdk";
+const client = new Anthropic();
+export async function run(messages: any) {
   const m = "claude-opus-5";
-  return client.messages.create({ model: m, temperature: 0, messages });
+  return anthropic.messages.create({ model: m, temperature: 0, messages });
 }
 `.trimStart();
     const project = inMemoryProject('src/const-model.ts', source);
@@ -144,8 +150,10 @@ export async function run(client: any, messages: any) {
   it('SKIPS a site whose model cannot be resolved to a concrete string', () => {
     // Model comes from an env var: unresolvable -> never guessed, never edited.
     const source = `
-export async function run(client: any, messages: any) {
-  return client.messages.create({ model: process.env.MODEL as string, temperature: 0, messages });
+import Anthropic from "@anthropic-ai/sdk";
+const client = new Anthropic();
+export async function run(messages: any) {
+  return anthropic.messages.create({ model: process.env.MODEL as string, temperature: 0, messages });
 }
 `.trimStart();
     const project = inMemoryProject('src/env-model.ts', source);
@@ -174,8 +182,12 @@ export const opts = { temperature: 0, max_tokens: 100 };
 describe('applyParamFixesToProject (diff)', () => {
   it('produces a unified diff with per-kind counts, touching only changed files', () => {
     const source = `
-export async function run(client: any, messages: any) {
-  await client.messages.create({ model: "claude-opus-5", temperature: 0, messages });
+import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
+const client = new OpenAI();
+const anthropic = new Anthropic();
+export async function run(messages: any) {
+  await anthropic.messages.create({ model: "claude-opus-5", temperature: 0, messages });
   await client.chat.completions.create({ model: "o1", max_tokens: 100 });
 }
 `.trimStart();

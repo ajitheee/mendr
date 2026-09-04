@@ -45,7 +45,14 @@ async function runWatch(args: string[]): Promise<{ exitCode: number; stdout: str
   return { exitCode: result.exitCode ?? 0, stdout: result.stdout ?? '' };
 }
 
-const LIVE = 'export const c = create({ model: "gpt-4-0613" });\n';
+// Tier A needs a resolved first-party client inside a function; a bare
+// `create({ model })` on an unknown callee is capped at review by rule.
+const LIVE =
+  'import OpenAI from "openai";\n' +
+  'const client = new OpenAI();\n' +
+  'export async function ask() {\n' +
+  '  return client.chat.completions.create({ model: "gpt-4-0613", messages: [] });\n' +
+  '}\n';
 
 describe('watch terminal + json output', () => {
   it(

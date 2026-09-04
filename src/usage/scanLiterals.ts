@@ -2,6 +2,19 @@ import { Node, SyntaxKind } from 'ts-morph';
 import type { CallExpression, NoSubstitutionTemplateLiteral, Project, StringLiteral } from 'ts-morph';
 import type { LlmModelIdDeprecation, LlmRegistry, SourceLocation } from '../types.js';
 import {
+  classifyCallSurface,
+  collectTsSinks,
+  enclosingCallOfObject,
+  isCliModelOptionDefault,
+  judgeDeclarationSinks,
+  TS_CLI_DEFAULT_REASON,
+  TS_EXAMPLE_REASON,
+  TS_MODEL_FACTORIES,
+  TS_PREFIXED_REASON,
+  type TsSinkMap,
+} from './tsSurface.js';
+import { isExamplePath, isModelLikeName, splitProviderPrefix } from './sharedRules.js';
+import {
   effectiveVerificationState,
   isVerified,
   modelIdEntries,
@@ -74,6 +87,7 @@ export type DataPurpose =
   | 'lookup_key' // object/dict key (pricing table, normalization map)
   | 'list_entry' // array element (model-picker list)
   | 'catalog_entry' // value in a standalone object (config/catalog shape)
+  | 'example' // examples/samples/demos/docs tree — informational by rule, never a dependency
   | 'generic'; // data, but no cheap structural story
 
 /** A literal node whose value matches a registry `model_id` deprecation. */
@@ -92,6 +106,8 @@ export interface LiteralMatch {
   purpose?: DataPurpose;
   /** A per-match override of the generic review advice (e.g. the cast guard). */
   reason?: string;
+  /** True when the literal is `provider/id` or `provider:id` — a gateway/registry selector, never swapped. */
+  prefixed?: boolean;
 }
 
 /** A matched-but-rejected literal (used as data), for Tier C locate-only reporting. */
@@ -298,18 +314,7 @@ export const TYPE_CAST_REASON =
  * bare string argument (e.g. `google("gemini-2.0-flash")`). Deliberately small
  * and curated — recall traded for precision, as everywhere else in this module.
  */
-const MODEL_FACTORIES: ReadonlySet<string> = new Set([
-  'google',
-  'openai',
-  'anthropic',
-  'createOpenAI',
-  'createAnthropic',
-  'createGoogleGenerativeAI',
-  'getGenerativeModel',
-  'generativeModel',
-  'languageModel',
-  'chat',
-]);
+const MODEL_FACTORIES: ReadonlySet<string> = TS_MODEL_FACTORIES;
 
 /**
  * Is a property-key / declaration name a model-argument name? Exported so the
@@ -318,9 +323,7 @@ const MODEL_FACTORIES: ReadonlySet<string> = new Set([
  * deployment keys are deliberately NOT model-like: they route to their own
  * locate surface via {@link isAzureDeploymentName}.
  */
-export function isModelLikeName(name: string): boolean {
-  return /model/i.test(name);
-}
+export { isModelLikeName } from './sharedRules.js';
 
 /**
  * Is a property-key / declaration name an Azure deployment alias? Exported so
@@ -376,7 +379,7 @@ function calleeLastIdentifier(call: CallExpression): string | undefined {
  * failure, where `modelId` changed but the sibling `hostedId` and the
  * `modelName: "Claude 3 Opus"` label did not, leaving an incoherent entry.
  */
-function isEnclosingObjectACallArgument(prop: Node): boolean {
+export function isEnclosingObjectACallArgument(prop: Node): boolean {
   const obj = prop.getParent();
   if (!obj || !Node.isObjectLiteralExpression(obj)) return false;
   let node: Node = obj;
@@ -436,6 +439,7 @@ function isEqualityOperator(kind: SyntaxKind): boolean {
  */
 export function classifyLiteral(
   literal: StringLiteral | NoSubstitutionTemplateLiteral,
+  sinks?: TsSinkMap,
 ): LiteralClassification {
   // Climb through value-transparent wrappers so a literal inside a fallback /
   // parenthesis / cast / ternary is judged by its real enclosing position —
@@ -452,7 +456,7 @@ export function classifyLiteral(
     parent = node.getParent();
   }
 
-  const base = classifyByEnclosure(node, parent);
+  const base = classifyByEnclosure(node, parent, sinks);
   if (base.position === 'model_arg' && maskingCast) {
     return { position: 'data', purpose: 'generic', reason: TYPE_CAST_REASON };
   }
@@ -460,7 +464,7 @@ export function classifyLiteral(
 }
 
 /** The position/purpose earned by the (climbed-to) enclosing construct alone. */
-function classifyByEnclosure(node: Node, parent: Node | undefined): LiteralClassification {
+function classifyByEnclosure(node: Node, parent: Node | undefined, sinks?: TsSinkMap): LiteralClassification {
   if (!parent) return { position: 'data', purpose: 'generic' };
 
   // (a) value side of a model-like property — but ONLY when the enclosing object
@@ -475,12 +479,22 @@ function classifyByEnclosure(node: Node, parent: Node | undefined): LiteralClass
     }
     if (parent.getInitializer() === node) {
       const keyName = propertyKeyName(parent.getNameNode());
+      const obj = parent.getParent();
+      const call = obj ? enclosingCallOfObject(obj) : undefined;
       if (isAzureDeploymentName(keyName)) {
-        return { position: 'azure_deployment', reason: AZURE_DEPLOYMENT_REASON };
+        // A deployment alias is only LIVE when the object is passed to a call. In
+        // a standalone catalog row (`config: { deploymentName: 'gpt-5' }` inside a
+        // model-card list) it is data — lobe-chat reported 11 such rows as exposure.
+        return call
+          ? { position: 'azure_deployment', reason: AZURE_DEPLOYMENT_REASON }
+          : { position: 'data', purpose: 'catalog_entry' };
       }
-      if (isModelLikeName(keyName) && isEnclosingObjectACallArgument(parent)) {
-        return { position: 'model_arg' };
-      }
+      // G1 + G2 + G4 (ported from Python): the object must be an argument of a call
+      // whose receiver resolves, in this file, to a first-party provider SDK client
+      // with no proxy/Azure override, inside a function. A React Query mutation,
+      // `JSON.stringify` of a mocked response, or an internal wrapper is REAL but
+      // never an unattended swap.
+      if (isModelLikeName(keyName) && call) return classifyCallSurface(call);
       // A property VALUE that is not a proven live model argument sits in a
       // standalone / catalog-shaped object (the chatbot-ui failure mode).
       return { position: 'data', purpose: 'catalog_entry' };
@@ -494,7 +508,7 @@ function classifyByEnclosure(node: Node, parent: Node | undefined): LiteralClass
       if (isAzureDeploymentName(parent.getName())) {
         return { position: 'azure_deployment', reason: AZURE_DEPLOYMENT_REASON };
       }
-      if (isModelLikeName(parent.getName())) return { position: 'model_arg' };
+      if (isModelLikeName(parent.getName())) return judgeDeclarationSinks(parent, parent.getName(), sinks);
     }
     return { position: 'data', purpose: 'generic' };
   }
@@ -505,7 +519,7 @@ function classifyByEnclosure(node: Node, parent: Node | undefined): LiteralClass
       if (isAzureDeploymentName(parent.getName())) {
         return { position: 'azure_deployment', reason: AZURE_DEPLOYMENT_REASON };
       }
-      if (isModelLikeName(parent.getName())) return { position: 'model_arg' };
+      if (isModelLikeName(parent.getName())) return judgeDeclarationSinks(parent, parent.getName(), sinks);
     }
     return { position: 'data', purpose: 'generic' };
   }
@@ -514,7 +528,12 @@ function classifyByEnclosure(node: Node, parent: Node | undefined): LiteralClass
   if (Node.isCallExpression(parent)) {
     if (parent.getArguments().includes(node)) {
       const factory = calleeLastIdentifier(parent);
-      if (factory && MODEL_FACTORIES.has(factory)) return { position: 'model_arg' };
+      if (factory && MODEL_FACTORIES.has(factory)) return classifyCallSurface(parent);
+      // `program.option('-m, --model <model>', 'Model ID', 'dall-e-3')`: the default of a
+      // --model flag is a real selector whose consumer is not traced.
+      if (isCliModelOptionDefault(parent, node)) {
+        return { position: 'usage_unverified', reason: TS_CLI_DEFAULT_REASON };
+      }
     }
     return { position: 'data', purpose: 'generic' };
   }
@@ -549,8 +568,8 @@ export function classifyLiteralPosition(
 export function isTestPath(file: string): boolean {
   const f = file.replace(/\\/g, '/');
   return (
-    /\.(test|spec|vitest|e2e)\.[mc]?[jt]sx?$/.test(f) ||
-    /(^|\/)(__tests__|__mocks__|__fixtures__|tests?|test-helpers?|test-utils|testing|mocks?|fixtures?|e2e)\//.test(f) ||
+    /\.(test|spec|vitest|e2e|test-d|spec-d)\.[mc]?[jt]sx?$/.test(f) ||
+    /(^|\/)(__tests__|__mocks__|__fixtures__|__snapshots__|tests?|test-helpers?|test-utils|testing|mocks?|fixtures?|e2e|smoke-api|smoke-tests?)\//.test(f) ||
     /(^|\/)mock[-.][^/]*$|[-.]mocks?\.[mc]?[jt]sx?$/.test(f)
   );
 }
@@ -594,6 +613,12 @@ export function findModelIdLiterals(project: Project, registry: LlmRegistry): Li
     // skipped outright. Both are surfaced via scanProjectAnnotations instead.
     if (fileAnnotation(sf.getFullText()) !== undefined) continue;
 
+    // An examples/samples/demos/docs tree is informational by rule (C3): a
+    // runnable sample is not a dependency of the shipped product.
+    const example = isExamplePath(file);
+    // The sink rule's evidence, once per file: which names reach a model position.
+    const sinks = example ? undefined : collectTsSinks(sf);
+
     const literals = [
       ...sf.getDescendantsOfKind(SyntaxKind.StringLiteral),
       ...sf.getDescendantsOfKind(SyntaxKind.NoSubstitutionTemplateLiteral),
@@ -601,14 +626,32 @@ export function findModelIdLiterals(project: Project, registry: LlmRegistry): Li
 
     for (const node of literals) {
       const value = node.getLiteralValue();
-      const deprecations = byValue.get(value);
-      if (!deprecations) continue; // exact-value guard: no substring matching
+      let deprecations = byValue.get(value);
+      let prefixed = false;
+      if (!deprecations) {
+        // `openai/gpt-5-nano` / `openai:gpt-5-mini`: a gateway or provider-registry
+        // selector carrying a registry id. Real, never swap-eligible (the successor
+        // may need a different prefix). Anything else stays exact-value only.
+        const split = splitProviderPrefix(value);
+        deprecations = split ? byValue.get(split.id) : undefined;
+        if (!deprecations) continue; // exact-value guard: no substring matching
+        prefixed = true;
+      }
 
       // Position/purpose are properties of the AST NODE, not of the registry
       // entry, so classify ONCE and share the verdict across every matching
       // record — then emit one match per record so each entryId flows through.
       const { line, column } = sf.getLineAndColumnAtPos(node.getStart());
-      const classification = classifyLiteral(node);
+      let classification: LiteralClassification = example
+        ? { position: 'data', purpose: 'example', reason: TS_EXAMPLE_REASON }
+        : classifyLiteral(node, sinks);
+      // A prefixed id is a gateway SELECTOR only where a plain id would have been
+      // one. In a type union or a catalog row (`id: 'openai/gpt-4'` in a model
+      // card list) it is data like any other — vercel/ai's gateway settings and
+      // lobe-chat's model bank produced 50 false review candidates otherwise.
+      if (prefixed && !example && classification.position !== 'data') {
+        classification = { position: 'surface_capped', reason: TS_PREFIXED_REASON };
+      }
       for (const deprecation of deprecations) {
         out.push({
           node,
@@ -618,6 +661,7 @@ export function findModelIdLiterals(project: Project, registry: LlmRegistry): Li
           position: classification.position,
           purpose: classification.purpose,
           reason: classification.reason,
+          prefixed,
         });
       }
     }

@@ -1,0 +1,141 @@
+import { describe, expect, it, beforeAll } from 'vitest';
+import type { LlmRegistry } from '../types.js';
+import { autoApplyVerification } from '../usage/llmRegistry.js';
+import {
+  findPyModelIdLiterals,
+  PY_EXAMPLE_REASON,
+  PY_FIELD_DEFAULT_REASON,
+  PY_PREFIXED_REASON,
+  PY_RETURN_DEFAULT_REASON,
+  PY_WRAPPER_FACTORY_REASON,
+} from './scanPy.js';
+import { classifyOccurrenceTier } from '../report/classifyOccurrence.js';
+
+// Python hardening — regression suite for the external-validation defects
+// (VALIDATION-2026-09-03.md): C5 wrapper factories bypassed the surface guard;
+// M2 real defaults were filed as Tier C "no selector"; C3 examples were
+// dependencies; M9 provider-prefixed selectors were invisible.
+
+const REG: LlmRegistry = [
+  { provider: 'openai', kind: 'model_id', deprecated: 'gpt-4', replacement: 'gpt-5.6-sol', status: 'deprecated', shutdownDate: '2026-10-23', verification: autoApplyVerification() },
+  { provider: 'openai', kind: 'model_id', deprecated: 'gpt-3.5-turbo', replacement: 'gpt-5.6-terra', status: 'deprecated', shutdownDate: '2026-10-23', verification: autoApplyVerification() },
+  { provider: 'openai', kind: 'model_id', deprecated: 'dall-e-2', replacement: 'gpt-image-1', status: 'deprecated', shutdownDate: '2026-05-12', verification: autoApplyVerification() },
+];
+
+async function tiers(path: string, text: string) {
+  const matches = await findPyModelIdLiterals([{ path, text }], REG);
+  return matches.map((m) => ({
+    value: m.value,
+    line: m.location.line,
+    position: m.position,
+    reason: m.reason,
+    purpose: m.purpose,
+    tier: classifyOccurrenceTier({ position: m.position, deprecation: m.deprecation, reason: m.reason }).tier,
+  }));
+}
+
+beforeAll(async () => {
+  await findPyModelIdLiterals([{ path: 'warm.py', text: 'x = 1\n' }], REG);
+}, 60_000);
+
+describe('C5 — wrapper factories never earn Tier A', () => {
+  it('ChatOpenAI(model="gpt-4") inside a function is a review candidate (langchain shape)', async () => {
+    const t = await tiers('app/eval.py', `
+from langchain_openai import ChatOpenAI
+
+def load(llm=None):
+    return llm or ChatOpenAI(model="gpt-4", seed=42)
+`);
+    const hit = t.find((x) => x.value === 'gpt-4');
+    expect(hit?.tier).toBe('B');
+    expect(hit?.reason).toBe(PY_WRAPPER_FACTORY_REASON);
+  }, 60_000);
+
+  it('ChatOpenAI behind a base_url override is capped too', async () => {
+    const t = await tiers('app/local.py', `
+from langchain_openai import ChatOpenAI
+
+def build():
+    return ChatOpenAI(model="gpt-4", base_url="http://localhost:11434/v1")
+`);
+    expect(t.find((x) => x.value === 'gpt-4')?.tier).toBe('B');
+  }, 60_000);
+
+  it('a first-party factory with a client_options override is capped', async () => {
+    const t = await tiers('app/g.py', `
+import google.generativeai as genai
+
+def build():
+    return genai.GenerativeModel("gpt-4", client_options={"api_endpoint": "proxy.internal"})
+`);
+    expect(t.find((x) => x.value === 'gpt-4')?.tier).toBe('B');
+  }, 60_000);
+});
+
+describe('M2 — real defaults are review candidates, never "no selector"', () => {
+  it('a Pydantic class-field default on a model-named field is Tier B (langchain ChatOpenAI shape)', async () => {
+    const t = await tiers('langchain_openai/chat_models/base.py', `
+from pydantic import BaseModel, Field
+
+class ChatOpenAI(BaseModel):
+    model_name: str = Field(default="gpt-3.5-turbo", alias="model")
+    temperature: float = 0.7
+`);
+    const hit = t.find((x) => x.value === 'gpt-3.5-turbo');
+    expect(hit?.tier).toBe('B');
+    expect(hit?.position).toBe('usage_unverified');
+    expect(hit?.reason).toBe(PY_FIELD_DEFAULT_REASON);
+  }, 60_000);
+
+  it('a fallback returned from a model-named function is Tier B (open-webui images shape)', async () => {
+    const t = await tiers('backend/routers/images.py', `
+def get_image_model():
+    return image_config.IMAGE_GENERATION_MODEL if image_config.IMAGE_GENERATION_MODEL else "dall-e-2"
+`);
+    const hit = t.find((x) => x.value === 'dall-e-2');
+    expect(hit?.tier).toBe('B');
+    expect(hit?.reason).toBe(PY_RETURN_DEFAULT_REASON);
+  }, 60_000);
+
+  it('a fallback returned from an unrelated function stays data', async () => {
+    const t = await tiers('backend/labels.py', `
+def get_label():
+    return cfg.LABEL if cfg.LABEL else "dall-e-2"
+`);
+    expect(t.find((x) => x.value === 'dall-e-2')?.tier).toBe('C');
+  }, 60_000);
+});
+
+describe('C3 — examples are informational', () => {
+  it('a direct SDK call under examples/ is Tier C with the example purpose', async () => {
+    const t = await tiers('examples/quickstart.py', `
+from openai import OpenAI
+client = OpenAI()
+
+def ask():
+    return client.chat.completions.create(model="gpt-4", messages=[])
+`);
+    const hit = t.find((x) => x.value === 'gpt-4');
+    expect(hit?.tier).toBe('C');
+    expect(hit?.purpose).toBe('example');
+    expect(hit?.reason).toBe(PY_EXAMPLE_REASON);
+  }, 60_000);
+});
+
+describe('M9 — provider-prefixed selectors are found and capped', () => {
+  it('model="openai/gpt-4" is reported as a gateway selector at Tier B', async () => {
+    const t = await tiers('app/gateway.py', `
+def ask(router):
+    return router.chat(model="openai/gpt-4", messages=[])
+`);
+    const hit = t.find((x) => x.value === 'openai/gpt-4');
+    expect(hit?.tier).toBe('B');
+    expect(hit?.position).toBe('surface_capped');
+    expect(hit?.reason).toBe(PY_PREFIXED_REASON);
+  }, 60_000);
+
+  it('a prefixed id in a list is data, not a selector', async () => {
+    const t = await tiers('app/catalog.py', 'SUPPORTED = ["openai/gpt-4", "openai/gpt-4o"]\n');
+    expect(t.find((x) => x.value === 'openai/gpt-4')?.tier).toBe('C');
+  }, 60_000);
+});

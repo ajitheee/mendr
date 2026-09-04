@@ -59,10 +59,12 @@ function makeRepo(): string {
   writeFileSync(
     join(dir, 'src', 'live.ts'),
     [
-      'export async function a(client: any) {',
+      'import OpenAI from "openai";',
+      'const client = new OpenAI();',
+      'export async function a() {',
       "  return client.chat.completions.create({ model: 'gpt-4-0613', messages: [] });",
       '}',
-      'export async function b(client: any) {',
+      'export async function b() {',
       "  return client.chat.completions.create({ model: 'gpt-4-0314', messages: [] });",
       '}',
       '',
@@ -74,7 +76,9 @@ function makeRepo(): string {
     [
       'type LLMID = string & { readonly __llmid: unique symbol };',
       "export const cfg = { deployment: 'gpt-4-0613' };",
-      'export async function c(client: any) {',
+      'import OpenAI from "openai";',
+      'const client = new OpenAI();',
+      'export async function c() {',
       "  return client.chat.completions.create({ model: ('gpt-4-0613' as LLMID), messages: [] });",
       '}',
       '',

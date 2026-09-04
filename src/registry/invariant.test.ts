@@ -76,8 +76,8 @@ describe('a queued candidate is INERT to the fix engine', () => {
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(
       'app.ts',
-      `const client = {} as any;\n` +
-        `await client.chat.completions.create({ model: "${PROBE_ID}", messages: [] });\n`,
+      `import OpenAI from "openai";\nconst client = new OpenAI();\n` +
+        `export async function probe() { return client.chat.completions.create({ model: "${PROBE_ID}", messages: [] }); }\n`,
     );
     expect(findModelIdLiterals(project, loadLlmRegistry())).toHaveLength(0);
   });

@@ -64,7 +64,7 @@ describe('mendr watch survives a filesystem write failure', () => {
       const dir = tempRepo('mendr-watch-wfail-');
       writeFileSync(
         join(dir, 'app.ts'),
-        'export const c = create({ model: "gpt-4-0613", messages: [] });\n',
+        'import OpenAI from "openai";\nconst client = new OpenAI();\nexport async function ask() {\n  return client.chat.completions.create({ model: "gpt-4-0613", messages: [] });\n}\n',
       );
       // A FILE where the `.mendr` directory must go: mkdir will fail.
       writeFileSync(join(dir, '.mendr'), 'not a directory');

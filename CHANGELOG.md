@@ -1,5 +1,89 @@
 # Changelog
 
+## Unreleased — hardening from external validation (2026-09-03)
+
+`mendr audit` v0.2.2-alpha was run against 12 real third-party repositories
+and every Tier-A location was checked by reading the code, with independent
+skeptics refuting each claim (see `VALIDATION-2026-09-03.md`). The verdict on
+"zero incorrect PATCH ELIGIBLE findings" was **not met**: 60 of the 62 Tier-A
+locations checked were wrong. Every confirmed root cause is fixed below. This
+is a classification change: expect FEWER Tier-A findings and MORE Tier-B
+review candidates than before, on purpose.
+
+### Fixed — the TypeScript scanner gets the Python guards (critical)
+
+- A `model:` property in an object passed to **any** call was a Tier-A model
+  argument — a React Query mutation, `JSON.stringify` of a mocked response, an
+  internal wrapper method. Now the call's receiver must resolve, **in the same
+  file**, to a first-party provider SDK client or factory (`openai`,
+  `@anthropic-ai/sdk`, `@google/generative-ai`, `@google/genai`, `@ai-sdk/*`)
+  with no `baseURL`/`fetch`/Azure override, and the endpoint family must match
+  the client family. Everything else is capped at review.
+- Any variable or class property whose name contained "model" was Tier A on
+  its name alone (an exported constant, an env fallback in a smoke-test helper,
+  a parser label). Declarations are now judged by where they are **used**: a
+  request on a resolved first-party client inside a function, or review.
+- Module-level execution (a top-level `await`, an agent constructed at import)
+  is real but capped at review, as in Python.
+- `examples/`, `samples/`, `demos/`, `docs/` trees are informational, never a
+  dependency of the shipped product (vercel/ai: 183 of 186 Tier-A locations
+  were sample apps). `.test-d.ts`, `smoke-api/` and `__snapshots__/` are test
+  support.
+- `deploymentName` in a standalone catalog row is data, not a live Azure alias.
+- Provider sub-factories (`openai.responses`, `openai.image`, `azure`,
+  `google.embeddingModel`, `anthropic.messages`, …) are recognized — and
+  resolved like any other receiver.
+
+### Fixed — Python
+
+- LangChain factories (`ChatOpenAI`, `ChatAnthropic`, `ChatGoogleGenerativeAI`,
+  `init_chat_model`) bypassed the surface guard and reached Tier A even behind a
+  `base_url` override. They are wrapper surfaces: review, never an unattended
+  swap. First-party factories honor `client_options`/`base_url` overrides.
+- A Pydantic class-field default on a model-named field
+  (`model_name: str = Field(default="gpt-3.5-turbo")`) and a fallback returned
+  from a model-named function (`return cfg.MODEL or "dall-e-2"`) were "no
+  selector" Tier C. They are the runtime default; now review candidates.
+
+### Fixed — findings that were invisible or mislabeled
+
+- Provider-prefixed selectors — `openai/gpt-5-nano`, `google/gemini-2.0-flash`,
+  `openai:gpt-5-mini` (AI SDK gateway, provider registries) — were invisible.
+  They are found and reported as gateway selectors at Tier B.
+- A CLI `--model` option default is a review candidate, not data.
+- Config: `test-fixtures/`, `*-test-config.yaml` and JSON Schema files are
+  fixtures/documentation, not live selectors.
+
+### Fixed — honesty of the report
+
+- "Verified direct provider call site" was said of any code call site,
+  including Tier B (9 of 12 repositories). "Verified" is now keyed on the tier
+  and nothing else; Tier-B lines read "code default or call not traced to a
+  provider request — review before changing". Plural grammar fixed.
+- `patchEligible` is per **location** in the JSON, and the patch reason names
+  the exact lines fix-llm would rewrite and says any other listed line will
+  NOT be rewritten. The next action names the command.
+- A repository whose analyzed TypeScript/Python is under a quarter of its source
+  files concludes **inconclusive**, not "no exposure" (anything-llm: 22 of
+  1,242 files analyzed had read as clean).
+- Coverage now discloses skipped test files ("N skipped by rule — ids inside
+  were not examined"), the count of files in unanalyzed languages, and names
+  SQL, Svelte, Vue, Jupyter, Shell and Markdown as unanalyzed. "files scanned"
+  counts only files whose model ids were actually examined.
+- An already-retired model says "Migrate now — retired on DATE", never "track
+  until the retirement date". Reader tie-back is defined once and printed only
+  where a config location is involved. Code locations are listed before
+  catalog rows so a catalog block cannot hide the one code reference.
+
+### Not changed
+
+- The registry. Three ids reported missing by validation
+  (`gemini-1.0-pro-vision-latest`, `text-embedding-ada-002`,
+  `text-embedding-004`) are left for the registry process: an LLM never edits
+  authoritative registry facts silently.
+- JavaScript/JSX is still not analyzed. It is now the single largest disclosed
+  gap (2,947 files across 11 of 12 validation repositories).
+
 ## v0.2.2-alpha — 2026-08-30
 
 ### Fixed — recursive self-detection (release blocker found in v0.2.1-alpha smoke test)

@@ -48,21 +48,37 @@ function makeRepo(): string {
   writeFileSync(
     join(dir, 'src', 'live.ts'),
     [
-      'export async function verifiedCall(client: any) {',
+      'import OpenAI from "openai";',
+      'const client = new OpenAI();',
+      'export async function verifiedCall() {',
       "  return client.chat.completions.create({ model: 'gpt-4-0613', messages: [] });",
       '}',
-      'export async function unverifiedCall(client: any) {',
+      'export async function unverifiedCall() {',
       "  return client.chat.completions.create({ model: 'gpt-4-0314', messages: [] });",
       '}',
       '',
     ].join('\n'),
   );
-  writeFileSync(join(dir, 'src', 'azure.ts'), "export const cfg = { deployment: 'gpt-4-0613' };\n");
+  // A deployment alias is only LIVE when the object is passed to a call; a
+  // standalone `{ deployment: … }` object is a catalog row (Tier C) by rule.
+  writeFileSync(
+    join(dir, 'src', 'azure.ts'),
+    [
+      'import OpenAI from "openai";',
+      'const client = new OpenAI();',
+      'export async function azureCall() {',
+      "  return client.getChatCompletions({ deployment: 'gpt-4-0613', messages: [] });",
+      '}',
+      '',
+    ].join('\n'),
+  );
   writeFileSync(
     join(dir, 'src', 'cast.ts'),
     [
       'type LLMID = string & { readonly __llmid: unique symbol };',
-      'export async function castCall(client: any) {',
+      'import OpenAI from "openai";',
+      'const client = new OpenAI();',
+      'export async function castCall() {',
       "  return client.chat.completions.create({ model: ('gpt-4-0613' as LLMID), messages: [] });",
       '}',
       '',
@@ -99,7 +115,9 @@ function makeContradictionRepo(): string {
   writeFileSync(
     join(dir, 'src', 'gemini.ts'),
     [
-      'export async function ask(client: any) {',
+      'import OpenAI from "openai";',
+      'const client = new OpenAI();',
+      'export async function ask() {',
       "  return client.chat.completions.create({ model: 'gemini-2.0-flash', messages: [] });",
       '}',
       '',
@@ -347,8 +365,8 @@ describe('fix-llm three-tier report', () => {
       .find((l) => l.startsWith('note: "gpt-4-0613" appears in more than one tier'));
     expect(note, 'the multi-tier note must be printed').toBeTruthy();
     expect(note).toContain('these are different occurrences');
-    expect(note).toContain('tier A: src/live.ts:2');
-    expect(note).toContain('tier B: src/azure.ts:1');
+    expect(note).toContain('tier A: src/live.ts:4');
+    expect(note).toContain('tier B: src/azure.ts:4');
     expect(note).toContain('tier C: src/prices.ts:2');
 
     // (2) the collapsed Tier C line carries the LINE of every id it names, so
@@ -454,7 +472,9 @@ describe('fix-llm three-tier report', () => {
       writeFileSync(
         join(dir, 'src', 'call.ts'),
         [
-          'export async function ask(client: any) {',
+          'import OpenAI from "openai";',
+          'const client = new OpenAI();',
+          'export async function ask() {',
           `  return client.chat.completions.create({ model: '${modelId}', messages: [] });`,
           '}',
           '',
@@ -494,7 +514,9 @@ describe('a Tier A candidate that fails its gates', () => {
     writeFileSync(
       join(dir, 'src', 'chat.ts'),
       [
-        'export async function chat(client: any) {',
+        'import OpenAI from "openai";',
+        'const client = new OpenAI();',
+        'export async function chat() {',
         "  return client.chat.completions.create({ model: 'gpt-4-0613', messages: [] });",
         '}',
         '',

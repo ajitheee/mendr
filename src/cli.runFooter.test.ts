@@ -52,7 +52,9 @@ function makeTierARepo(): { dir: string; file: string } {
   writeFileSync(
     file,
     [
-      'export async function chat(client: any) {',
+      'import OpenAI from "openai";',
+      'const client = new OpenAI();',
+      'export async function chat() {',
       "  return client.chat.completions.create({ model: 'gpt-4-0613', messages: [] });",
       '}',
       '',
@@ -72,15 +74,19 @@ function makeMixedRepo(): string {
   writeFileSync(
     join(dir, 'src', 'chat.ts'),
     [
-      'export async function chat(client: any) {',
+      'import OpenAI from "openai";',
+      'const client = new OpenAI();',
+      'export async function chat() {',
       "  return client.chat.completions.create({ model: 'gpt-4-0613', messages: [] });",
       '}',
-      'export async function reason(client: any) {',
+      'export async function reason() {',
       "  return client.chat.completions.create({ model: 'o3', max_tokens: 10 });",
       '}',
-      // Tier B (a deployment key) and Tier C (a data literal), so all three
-      // tiers and the param sites are in one count.
-      "export const cfg = { deployment: 'gpt-4-32k' };",
+      // Tier B (a deployment key IN A CALL) and Tier C (a data literal), so all
+      // three tiers and the param sites are in one count.
+      'export async function azure() {',
+      "  return client.getChatCompletions({ deployment: 'gpt-4-32k', messages: [] });",
+      '}',
       'export const table = { legacy: "gpt-4-0314" };',
       '',
     ].join('\n'),
@@ -327,10 +333,14 @@ describe('the run footer', () => {
       writeFileSync(
         join(dir, 'src', 'chat.ts'),
         [
-          'export async function call(client: any) {',
+          'import OpenAI from "openai";',
+          'const client = new OpenAI();',
+          'export async function call() {',
           "  return client.chat.completions.create({ model: 'gpt-4-32k', messages: [] });",
           '}',
-          "export const cfg = { deployment: 'gpt-4-32k' };",
+          'export async function azure() {',
+          "  return client.getChatCompletions({ deployment: 'gpt-4-32k', messages: [] });",
+          '}',
           '',
         ].join('\n'),
       );

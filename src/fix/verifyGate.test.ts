@@ -84,12 +84,14 @@ const REGISTRY: LlmRegistry = [
 
 /** Every deprecated id sits in a genuine `model:` argument OF A CALL. */
 const SOURCE = `
-export const a = create({ model: "claude-3-opus-20240229" });  // verified     -> SWAP
-export const b = create({ model: "text-davinci-003" });         // unverified   -> BLOCK
-export const c = create({ model: "text-moderation-latest" });   // unverifiable -> BLOCK
-export const d = create({ model: "gemini-2.0-flash" });         // unstamped    -> BLOCK
-export const e = create({ model: "gpt-4-0314" });               // quarantined  -> BLOCK
-export const f = create({ model: "gpt-4-32k" });                // switch off   -> BLOCK
+import OpenAI from "openai";
+const client = new OpenAI();
+export const a = () => client.chat.completions.create({ model: "claude-3-opus-20240229" });  // verified     -> SWAP
+export const b = () => client.chat.completions.create({ model: "text-davinci-003" });         // unverified   -> BLOCK
+export const c = () => client.chat.completions.create({ model: "text-moderation-latest" });   // unverifiable -> BLOCK
+export const d = () => client.chat.completions.create({ model: "gemini-2.0-flash" });         // unstamped    -> BLOCK
+export const e = () => client.chat.completions.create({ model: "gpt-4-0314" });               // quarantined  -> BLOCK
+export const f = () => client.chat.completions.create({ model: "gpt-4-32k" });                // switch off   -> BLOCK
 `.trimStart();
 
 function inMemoryProject(fileName: string, source: string): Project {
@@ -158,7 +160,9 @@ describe('engine gate: auto-apply only verified entries', () => {
     // Same unverified id, but as an object KEY (data) — belongs to the data
     // surface, not the blocked-model-arg surface.
     const src = `
-export const use = create({ model: "text-davinci-003" });  // model_arg + unverified -> blocked
+import OpenAI from "openai";
+const client = new OpenAI();
+export const use = () => client.chat.completions.create({ model: "text-davinci-003" });  // model_arg + unverified -> blocked
 export const PRICES = { "text-davinci-003": 1 };    // data key -> NOT a blocked model-arg
 `.trimStart();
     const project = inMemoryProject('src/mixed.ts', src);
@@ -166,6 +170,6 @@ export const PRICES = { "text-davinci-003": 1 };    // data key -> NOT a blocked
 
     expect(blocked).toHaveLength(1);
     expect(blocked[0].value).toBe('text-davinci-003');
-    expect(blocked[0].location.line).toBe(1);
+    expect(blocked[0].location.line).toBe(3);
   });
 });

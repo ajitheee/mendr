@@ -37,7 +37,18 @@ afterEach(() => {
 function sampleRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'mendr-audit-cli-'));
   created.push(dir);
-  writeFileSync(join(dir, 'client.ts'), 'export const r = await openai.chat.completions.create({ model: "gpt-4" });\n');
+  // The canonical Tier-A shape: a first-party SDK client resolved IN THIS FILE,
+  // called inside a function. (A bare `openai.…create()` at module level with an
+  // undeclared receiver is exactly what external validation found being promoted
+  // to PATCH ELIGIBLE, and is now capped at review.)
+  writeFileSync(
+    join(dir, 'client.ts'),
+    'import OpenAI from "openai";\n' +
+      'const client = new OpenAI();\n' +
+      'export async function ask() {\n' +
+      '  return client.chat.completions.create({ model: "gpt-4", messages: [] });\n' +
+      '}\n',
+  );
   mkdirSync(join(dir, 'svc'), { recursive: true });
   for (let i = 0; i < 4; i++) {
     writeFileSync(join(dir, 'svc', `handler${i}.go`), 'package svc\n');
@@ -107,7 +118,10 @@ describe('audit CLI — claim discipline (release-copy corrections)', () => {
     const { stdout } = await runAudit([dir]);
     expect(stdout).toContain('Decision: PATCH ELIGIBLE');
     expect(stdout).toContain('Status: No change applied');
-    expect(stdout).toContain('Next action: Review the proposed migration');
+    // The next action names the command and the exact line it would rewrite,
+    // and never implies a proposal already exists.
+    expect(stdout).toContain('Next action: run `mendr fix-llm <path>` to print the verified diff for client.ts:4');
+    expect(stdout).toContain('Only Tier-A lines are rewritten.');
     // The bare lowercase form would read as "mendr patched it".
     expect(stdout).not.toMatch(/^Decision: patch$/m);
   }, 120_000);

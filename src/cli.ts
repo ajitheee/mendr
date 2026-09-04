@@ -11,6 +11,7 @@ import { formatChangeSet } from './detect/changeModel.js';
 import {
   buildRegistryPrefilter,
   collectTsSourceFiles,
+  countTsTestFiles,
   loadPrefilteredProject,
   loadProject,
 } from './usage/scanRepo.js';
@@ -107,7 +108,7 @@ import {
 import { findParamSites } from './fix/paramFix.js';
 import { dedupeSwapsByNode } from './fix/modelId.js';
 import { applyLlmFixesToProject, type LlmFixResult } from './fix/llmFix.js';
-import { collectPythonFiles, readPythonSources, scanPyAnnotations } from './python/scanPy.js';
+import { collectPythonFiles, countPyTestFiles, readPythonSources, scanPyAnnotations } from './python/scanPy.js';
 import { applyPyModelIdFixesToSources } from './python/fixPy.js';
 import type { TestGateResult } from './gates/runTests.js';
 import { classifyEntry, mergeReasons, verificationSwitches } from './registry/verify.js';
@@ -157,7 +158,7 @@ import { renderUsageReport } from './report/usageReport.js';
 import { buildInvestigations, concludeAudit, partitionFindings, type AuditCoverage } from './audit/investigation.js';
 import { EMPTY_STATE, parseAuditState, renderAuditIssue } from './audit/issueReport.js';
 import { installAuditWorkflow } from './audit/installAuditWorkflow.js';
-import { unanalyzedLanguages } from './audit/languages.js';
+import { unanalyzedCensus } from './audit/languages.js';
 import {
   loadRuntimeEvidenceFile,
   runtimeEvidenceFromUsage,
@@ -2899,16 +2900,28 @@ program
       let sourceAnalyzed = false;
       let sourceFailed = false;
       let otherLanguages: string[] = [];
+      let unanalyzedFiles = 0;
+      let docsFiles = 0;
+      let testFilesSkipped = 0;
       try {
-        otherLanguages = unanalyzedLanguages(resolved);
+        const census = unanalyzedCensus(resolved);
+        otherLanguages = census.languages;
+        unanalyzedFiles = census.files;
+        docsFiles = census.docs;
       } catch {
         // A language census failure must not fail the audit; it only enriches coverage.
       }
       if (!opts.skipSource) {
         try {
+          // "files scanned" = files whose model ids were actually examined. Test-support
+          // files are present and counted separately: their ids are skipped by rule,
+          // and silently counting them as scanned overstated coverage (M10).
           tsFiles = collectTsSourceFiles(resolved).length;
-          pyFiles = collectPythonFiles(resolved).length;
-          if (!json) console.error(`Scanning source (${tsFiles} TS/TSX, ${pyFiles} Python file(s))...`);
+          const pyAll = collectPythonFiles(resolved);
+          const pyTests = countPyTestFiles(pyAll);
+          pyFiles = pyAll.length - pyTests;
+          testFilesSkipped = countTsTestFiles(resolved) + pyTests;
+          if (!json) console.error(`Scanning source (${tsFiles} TS/TSX, ${pyFiles} Python file(s); ${testFilesSkipped} test file(s) skipped by rule)...`);
           const scan = await scanForExposure(resolved, registry);
           source = foldExposure(scan.matches);
           sourceAnalyzed = true;
@@ -2996,6 +3009,9 @@ program
           tsFiles,
           pyFiles,
           unanalyzedLanguages: otherLanguages,
+          unanalyzedFiles,
+          docsFiles,
+          testFilesSkipped,
           note: opts.skipSource ? 'skipped (--skip-source)' : undefined,
         },
         config: { analyzed: !configFailed, failed: configFailed, filesScanned, filesRead, generatedSkipped, excludedDirs },

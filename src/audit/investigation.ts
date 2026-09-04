@@ -59,6 +59,12 @@ export interface LocationRef {
   surface: LocationSurface;
   tier: Tier;
   providerSurface: string | null;
+  /**
+   * Per LOCATION, not per investigation: true only for a Tier-A code line, the
+   * only thing fix-llm will rewrite. A Tier-B line under a patch-eligible model
+   * must never read as "will be fixed" (external validation, chatbot-ui).
+   */
+  patchEligible: boolean;
 }
 
 /** The retirement facts, straight from the deprecation registry. */
@@ -136,6 +142,12 @@ export interface SourceCoverage extends SurfaceCoverage {
    * is 1% TypeScript and 99% Go must not read as fully covered.
    */
   unanalyzedLanguages?: string[];
+  /** Unanalyzed CODE files in total (JavaScript, Go, SQL, Svelte…) — the denominator honesty needs. */
+  unanalyzedFiles?: number;
+  /** Documentation files (Markdown etc.) not read. */
+  docsFiles?: number;
+  /** Test-support source files: present, counted, but their model ids are skipped by rule. */
+  testFilesSkipped?: number;
 }
 
 /** Every surface the audit can cover, and whether it actually ran this time. */
@@ -213,8 +225,19 @@ export function partitionFindings(investigations: readonly ModelInvestigation[])
 export function concludeAudit(coverage: AuditCoverage, exposureCount: number): AuditConclusion {
   if (exposureCount > 0) return 'exposure_detected';
   if (anySurfaceFailed(coverage)) return 'audit_failed';
-  const sourceComplete = coverage.source.analyzed && coverage.source.tsFiles + coverage.source.pyFiles > 0;
-  return sourceComplete ? 'no_exposure_in_completed_surfaces' : 'inconclusive';
+  const analyzed = coverage.source.tsFiles + coverage.source.pyFiles;
+  const sourceComplete = coverage.source.analyzed && analyzed > 0;
+  // M8 (external validation): anything-llm — 22 of 1,242 source files analyzed —
+  // read "no retiring AI dependencies in use". When the analyzed share is a small
+  // minority of the repository's source, silence proves nothing; say so.
+  return sourceComplete && !analyzedIsMinority(coverage) ? 'no_exposure_in_completed_surfaces' : 'inconclusive';
+}
+
+/** Fewer than a quarter of the repo's source files were in a language mendr reads. */
+export function analyzedIsMinority(coverage: AuditCoverage): boolean {
+  const analyzed = coverage.source.tsFiles + coverage.source.pyFiles;
+  const other = coverage.source.unanalyzedFiles ?? 0;
+  return analyzed > 0 && other > 0 && analyzed * 3 < other;
 }
 
 /** The limits on this run — what a zero-finding result does NOT prove. */
@@ -229,7 +252,16 @@ export function coverageGaps(coverage: AuditCoverage): string[] {
   // were scanned: a repo that is 1% TypeScript is not a covered repo.
   const other = coverage.source.unanalyzedLanguages ?? [];
   if (other.length > 0) {
-    gaps.push(`these languages are present but NOT analyzed: ${other.join(', ')}`);
+    const analyzed = coverage.source.tsFiles + coverage.source.pyFiles;
+    const share = analyzedIsMinority(coverage)
+      ? ` — only ${analyzed} of ${analyzed + (coverage.source.unanalyzedFiles ?? 0)} source files were in a language mendr reads; this result says nothing about the rest`
+      : '';
+    gaps.push(`these languages are present but NOT analyzed: ${other.join(', ')}${share}`);
+  }
+  if ((coverage.source.testFilesSkipped ?? 0) > 0) {
+    gaps.push(
+      `${coverage.source.testFilesSkipped} test/spec/fixture source files were counted but their model ids were not examined (test data is not a dependency)`,
+    );
   }
   if (coverage.config.failed) gaps.push('config scan FAILED');
   else if (coverage.config.filesScanned > 0 && (coverage.config.filesRead ?? 0) === 0) {
@@ -257,15 +289,18 @@ function toConfigLocation(m: ConfigMatch): LocationRef {
           : 'catalog_reference';
   return {
     file: m.file, line: m.line, column: m.column, key: m.key, value: m.value,
-    role, surface: 'config', tier: m.tier, providerSurface: m.providerSurface,
+    role, surface: 'config', tier: m.tier, providerSurface: m.providerSurface, patchEligible: false,
   };
 }
 
-/** A tier-B code occurrence is a PROVEN call site unless its reason says otherwise. */
+/**
+ * Only a Tier-A occurrence is a VERIFIED call site. A Tier-B occurrence is real
+ * but unverified — an unknown wrapper, a capped surface, an untraced default —
+ * and calling it "verified" was the single most repeated overclaim in external
+ * validation (9 of 12 repositories). The role is keyed on the tier, nothing else.
+ */
 function isProvenCallSite(o: ExposureOccurrence): boolean {
-  if (o.tier === 'A') return true;
-  if (o.tier !== 'B') return false;
-  return o.reason !== 'usage_unverified' && o.reason !== 'dynamic_model_value';
+  return o.tier === 'A';
 }
 
 function toSourceLocation(o: ExposureOccurrence, model: string): LocationRef {
@@ -273,7 +308,7 @@ function toSourceLocation(o: ExposureOccurrence, model: string): LocationRef {
     o.tier === 'C' ? 'code_reference' : isProvenCallSite(o) ? 'code_call_site' : 'code_candidate';
   return {
     file: o.file, line: o.line, column: o.column, key: null, value: model,
-    role, surface: 'code', tier: o.tier, providerSurface: null,
+    role, surface: 'code', tier: o.tier, providerSurface: null, patchEligible: o.tier === 'A',
   };
 }
 
@@ -331,18 +366,24 @@ function decide(inv: ModelInvestigation): { decision: AuditDecision; reason: str
 
   if (patchable) {
     const configNote = hasConfig ? ' Config occurrences remain review-only (reader tie-back not proven).' : '';
+    // M6 (external validation): name the exact lines fix-llm would rewrite, and
+    // say out loud that any other listed line is NOT part of the auto-fix. A
+    // Tier-B line under a patch-eligible model was being read as "will be fixed".
+    const eligible = sel.filter((s) => s.patchEligible).map((s) => `${s.file}:${s.line}`);
+    const others = sel.filter((s) => !s.patchEligible).length;
+    const othersNote = others > 0 ? ` ${others} other listed location(s) are not Tier A and will NOT be rewritten.` : '';
     return {
       decision: 'patch',
       reason:
-        `A verified auto-fix exists for the code call site(s) — fix-llm can migrate to ` +
-        `${inv.retirementEvidence.replacement} in place. It is proposed as a reviewed PR, never auto-merged.` +
+        `A verified auto-fix exists for ${eligible.join(', ')} — fix-llm can rewrite ${eligible.length === 1 ? 'it' : 'them'} to ` +
+        `${inv.retirementEvidence.replacement}.${othersNote} Nothing is applied by the audit; a change is proposed as a reviewed PR, never auto-merged.` +
         `${runtimeClause}${configNote}`,
     };
   }
   if (hasSelector) {
     const parts: string[] = [];
-    if (hasCall) parts.push('a code call site (the model id is a call argument)');
-    if (hasCodeCandidate) parts.push('a code model literal (its use as a live call is not proven)');
+    if (hasCall) parts.push('a verified provider SDK call site');
+    if (hasCodeCandidate) parts.push('a code default or call not traced to a provider request (its use as a live call is not proven)');
     if (hasConfig) parts.push('a config selector candidate (reader tie-back not proven)');
     return {
       decision: 'review',

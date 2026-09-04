@@ -36,7 +36,9 @@ function inMemoryProject(fileName: string, source: string): Project {
 describe('applyLlmFixesToProject', () => {
   it('swaps the model id AND then removes temperature the new model rejects', () => {
     const source = `
-export async function run(client: any, messages: any) {
+import Anthropic from "@anthropic-ai/sdk";
+const client = new Anthropic();
+export async function run(messages: any) {
   const migrated = await client.messages.create({ model: "claude-3-opus-20240229", temperature: 0, messages });
   const untouched = await client.messages.create({ model: "claude-3-haiku-20240307", temperature: 0, messages });
   return { migrated, untouched };

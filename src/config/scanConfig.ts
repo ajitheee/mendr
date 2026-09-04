@@ -188,10 +188,15 @@ export function isTestFixturePath(file: string): boolean {
   if (/(^|\/)(test-results?|test-output|playwright-report|allure-results|coverage|reports?|artifacts|\.mendr)(\/)/.test(p)) return true;
   if (/(^|\/)(examples?|samples?|demos?|docs?)(\/)/.test(p)) return true;
   // A test/fixture/mock DIRECTORY anywhere in the path.
-  if (/(^|\/)(__data__|__fixtures?__|__mocks?__|fixtures?|testdata|test-data|mocks?|snapshots?)(\/)/.test(p)) return true;
+  if (/(^|\/)(__data__|__fixtures?__|__mocks?__|fixtures?|test-fixtures?|testdata|test-data|mocks?|snapshots?|__snapshots__)(\/)/.test(p)) return true;
   if (/(^|\/)(tests?|e2e|specs?|__tests__)(\/)/.test(p)) return true;
   // A `*.test.*` / `*.spec.*` / `*.fixture.*` / `*.mock.*` FILE.
   if (/(^|\/)[^/]*\.(test|spec|fixture|mock)\.[^/]+$/.test(p)) return true;
+  // `model-switch-test-config.yaml`, `foo-test-settings.json`: a config file that names itself as test data.
+  if (/(^|\/)[^/]*-test-(config|settings?|env)\.[^/]+$/.test(p)) return true;
+  // A JSON Schema (`config_schema.json`, `*.schema.json`) DESCRIBES config; its
+  // `default`/`examples` values are documentation, not a live selector.
+  if (/(^|\/)[^/]*schema[^/]*\.json$/.test(p)) return true;
   return false;
 }
 

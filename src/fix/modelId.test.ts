@@ -56,11 +56,17 @@ const REGISTRY: LlmRegistry = [
  * call-site-aware swap only rewrites `model_arg` positions, never bare data.
  */
 const SOURCE = `
+import OpenAI from "openai";
+const client = new OpenAI();
 export function makeConfig() {
   const model = "gemini-2.0-flash";           // TARGET: model-named const
   const modelSnapshot = \`gpt-4-0314\`;          // TARGET: model-named const, template literal
   const notes = "gemini-2.0-flash-notes";     // DECOY: longer value, no match
   // gemini-2.0-flash appears here as a comment and MUST stay untouched
+  // Both targets are CONSUMED by a resolved first-party request (the sink rule);
+  // a model-named const nothing feeds to a request is a review candidate.
+  void client.chat.completions.create({ model });
+  void client.chat.completions.create({ model: modelSnapshot });
   return { model, modelSnapshot, notes, max_tokens: 256 };
 }
 `.trimStart();
@@ -196,15 +202,25 @@ const CALL_SITE_SOURCE = `
 import { google } from "@ai-sdk/google";
 
 // MUST SWAP (a): value of a model-like property key.
-export async function vision(client: any) {
+import OpenAI from "openai";
+const client = new OpenAI();
+export async function vision() {
   return client.chat.completions.create({ model: "gpt-4-vision-preview" });
 }
 
-// MUST SWAP (b): initializer of a model-named const.
+// MUST SWAP (b): initializer of a model-named const — because it is CONSUMED by
+// a resolved first-party factory inside a function (the sink rule). A model-named
+// const that nothing feeds to a request is a review candidate, never a swap.
 export const MODEL_NAME = "gemini-2.0-flash";
+export function named() {
+  return google(MODEL_NAME);
+}
 
-// MUST SWAP (c): direct string argument to a model factory.
-export const gModel = google("gemini-2.0-flash");
+// MUST SWAP (c): direct string argument to a model factory, inside a function
+// (module-level execution is capped at review).
+export function gModel() {
+  return google("gemini-2.0-flash");
+}
 
 // MUST NOT SWAP: a model id in a STANDALONE returned object (not passed to a
 // call). Same shape as a catalog entry, so the conservative call-flow rule
@@ -341,7 +357,9 @@ describe('catalog + test-file hardening (real-repo regressions)', () => {
 
   it('DOES swap the same id when the object is actually passed to a call', () => {
     const src =
-      'export async function run(client: any) {\n' +
+      'import OpenAI from "openai";\n' +
+      'const client = new OpenAI();\n' +
+      'export async function run() {\n' +
       '  return client.chat.completions.create({ model: "gpt-4-vision-preview" });\n' +
       '}\n';
     const project = inMemoryProject('src/route.ts', src);
@@ -355,7 +373,9 @@ describe('catalog + test-file hardening (real-repo regressions)', () => {
   it('skips test files entirely (Continue pattern: ids in *.test.ts / mocks)', () => {
     const src =
       'class MockLLM { model = "gpt-4-vision-preview"; }\n' +
-      'export async function t(client: any) {\n' +
+      'import OpenAI from "openai";\n' +
+      'const client = new OpenAI();\n' +
+      'export async function t() {\n' +
       '  return client.chat.completions.create({ model: "gemini-2.0-flash" });\n' +
       '}\n';
     const project = inMemoryProject('src/streamLazyApply.test.ts', src);
@@ -387,7 +407,9 @@ describe('cast blindness: `as SomeUnion` demotes a would-be swap to data', () =>
     // itself would be a second (data) match and muddy the assertion.
     const src =
       'type LLMID = "gpt-4o" | "gpt-4o-mini";\n' +
-      'export async function run(client: any) {\n' +
+      'import OpenAI from "openai";\n' +
+      'const client = new OpenAI();\n' +
+      'export async function run() {\n' +
       '  return client.chat.completions.create({ model: ("gpt-4-vision-preview" as LLMID) });\n' +
       '}\n';
     const project = inMemoryProject('src/cast.ts', src);
@@ -403,10 +425,16 @@ describe('cast blindness: `as SomeUnion` demotes a would-be swap to data', () =>
 
   it('still swaps through `as string` and `as const` (nothing is masked)', () => {
     const src =
-      'export async function run(client: any) {\n' +
+      'import OpenAI from "openai";\n' +
+      'const client = new OpenAI();\n' +
+      'export async function run() {\n' +
       '  return client.chat.completions.create({ model: ("gpt-4-vision-preview" as string) });\n' +
       '}\n' +
-      'export const MODEL_NAME = "gemini-2.0-flash" as const;\n';
+      'import { google } from "@ai-sdk/google";\n' +
+      'export const MODEL_NAME = "gemini-2.0-flash" as const;\n' +
+      'export function g() {\n' +
+      '  return google(MODEL_NAME);\n' +
+      '}\n';
     const project = inMemoryProject('src/stringcast.ts', src);
     const result = applyModelIdFixesToProject(project, CALL_SITE_REGISTRY);
     const text = project.getSourceFileOrThrow('src/stringcast.ts').getFullText();
@@ -525,12 +553,16 @@ describe('duplicate registry records for one value (multimap)', () => {
   });
 
   it('collapses agreeing records to a SINGLE edit (no double-swap corruption)', () => {
-    const project = inMemoryProject('src/dup.ts', 'export const MODEL_NAME = "gpt-4-0314";\n');
+    // The const is CONSUMED by a resolved first-party request (the sink rule);
+    // a model-named const nothing feeds to a request is a review candidate.
+    const header = 'import OpenAI from "openai";\nconst client = new OpenAI();\n';
+    const use = 'export function ask() {\n  return client.chat.completions.create({ model: MODEL_NAME });\n}\n';
+    const project = inMemoryProject('src/dup.ts', `${header}export const MODEL_NAME = "gpt-4-0314";\n${use}`);
     const edited = applyModelIdFixes(project, DUP_AGREE);
 
     expect(edited).toHaveLength(1);
     expect(project.getSourceFileOrThrow('src/dup.ts').getFullText()).toBe(
-      'export const MODEL_NAME = "gpt-4o";\n',
+      `${header}export const MODEL_NAME = "gpt-4o";\n${use}`,
     );
   });
 
@@ -566,7 +598,9 @@ describe('duplicate registry records for one value (multimap)', () => {
 describe('azure deployment keys: a dedicated locate surface, never a swap', () => {
   it('does NOT swap `deployment: "gpt-4-vision-preview"` even in a call argument', () => {
     const src =
-      'export async function run(client: any) {\n' +
+      'import OpenAI from "openai";\n' +
+      'const client = new OpenAI();\n' +
+      'export async function run() {\n' +
       '  return client.getChatCompletions({ deployment: "gpt-4-vision-preview" });\n' +
       '}\n' +
       'const opts = { deploymentName: "gemini-2.0-flash" };\n';
@@ -579,13 +613,14 @@ describe('azure deployment keys: a dedicated locate surface, never a swap', () =
     expect(text).toContain('deploymentName: "gemini-2.0-flash"');
     expect(result.siteCount).toBe(0);
 
-    // They land on the azure surface — not data, not blocked.
-    expect(result.azureMatches).toHaveLength(2);
-    expect(result.azureMatches.map((a) => a.value).sort()).toEqual([
-      'gemini-2.0-flash',
-      'gpt-4-vision-preview',
-    ]);
-    expect(result.dataMatches).toHaveLength(0);
+    // The alias IN A CALL lands on the azure surface — not data, not blocked.
+    // The alias in a STANDALONE object is a catalog row (external validation:
+    // lobe-chat reported 11 `config: { deploymentName }` catalog rows as exposure),
+    // so it is Tier C data, still never swapped.
+    expect(result.azureMatches).toHaveLength(1);
+    expect(result.azureMatches.map((a) => a.value)).toEqual(['gpt-4-vision-preview']);
+    expect(result.dataMatches).toHaveLength(1);
+    expect(result.dataMatches[0].value).toBe('gemini-2.0-flash');
     expect(result.blockedMatches).toHaveLength(0);
   });
 });

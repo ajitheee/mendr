@@ -17,6 +17,7 @@ import {
   type AuditCoverage,
   type LocationRef,
   type ModelInvestigation,
+  analyzedIsMinority,
 } from '../audit/investigation.js';
 import { RUNTIME_SOURCE_LABEL } from '../runtime/evidence.js';
 
@@ -32,7 +33,7 @@ const usd = (n: number): string =>
   `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 function deadline(status: string | null, days: number | null, shutdownDate: string | null): string {
-  const life = status ?? 'listed';
+  const life = status ?? 'listed in registry (no provider notice on file)';
   let when: string;
   if (days === null) when = shutdownDate ? `shuts ${shutdownDate}` : 'no dated deadline';
   else if (days < 0) when = `${-days}d OVERDUE`;
@@ -45,8 +46,8 @@ const roleLabel = (r: LocationRef['role']): string =>
   r === 'runtime_selector_candidate' ? 'config runtime selector candidate'
     : r === 'catalog_definition' ? 'config catalog definition'
       : r === 'test_fixture' ? 'test/data fixture (not a selector)'
-        : r === 'code_call_site' ? 'code call site (model argument)'
-          : r === 'code_candidate' ? 'code model literal (use not proven)'
+        : r === 'code_call_site' ? 'verified provider SDK call site (model argument)'
+          : r === 'code_candidate' ? 'code default or call not traced to a provider request (review)'
             : r === 'code_reference' ? 'code data reference'
               : 'config catalog reference';
 
@@ -75,21 +76,25 @@ function productionUsageLine(inv: ModelInvestigation): string {
  */
 export function decisionLines(inv: ModelInvestigation): string[] {
   if (inv.decision === 'patch') {
+    const eligible = inv.locations.selectors.filter((l) => l.patchEligible).map((l) => `${l.file}:${l.line}`);
     return [
       'Decision: PATCH ELIGIBLE',
       'Status: No change applied',
-      'Next action: Review the proposed migration',
+      `Next action: run \`mendr fix-llm <path>\` to print the verified diff for ${eligible.join(', ') || 'the Tier-A line(s)'}; review it before applying. Only Tier-A lines are rewritten.`,
     ];
   }
   if (inv.decision === 'review') {
     return ['Decision: REVIEW REQUIRED', 'Status: No change applied', 'Next action: Human review before any change'];
   }
-  // "Track until the retirement date" is nonsense when there is no date. Say what
-  // the reader can actually do instead.
+  // "Track until the retirement date" is nonsense when there is no date, and
+  // worse when the date is already past. Say what the reader can actually do.
+  const r = inv.retirementEvidence;
   const next =
-    inv.retirementEvidence.shutdownDate === null
+    r.shutdownDate === null
       ? 'Monitor provider status'
-      : 'Track until the retirement date';
+      : r.daysUntil !== null && r.daysUntil < 0
+        ? `Migrate now — retired on ${r.shutdownDate} (${-r.daysUntil} days ago); requests using this id fail today`
+        : 'Track until the retirement date';
   return ['Decision: MONITOR', 'Status: No change applied', `Next action: ${next}`];
 }
 
@@ -110,8 +115,16 @@ export function coverageReport(meta: AuditMeta): string[] {
       ? row('✗', 'Source code', `scan FAILED${src.note ? ` — ${src.note}` : ''}`)
       : !src.analyzed
         ? row('○', 'Source code', `not scanned${src.note ? ` — ${src.note}` : ''}`)
-        : row('✓', 'Source code', `${int(src.tsFiles + src.pyFiles)} files scanned (${int(src.tsFiles)} TS/TSX, ${int(src.pyFiles)} Python)`),
+        : row(
+            '✓',
+            'Source code',
+            `${int(src.tsFiles + src.pyFiles)} files scanned (${int(src.tsFiles)} TS/TSX, ${int(src.pyFiles)} Python)` +
+              ((src.unanalyzedFiles ?? 0) > 0 ? `; ${int(src.unanalyzedFiles ?? 0)} files in languages not analyzed` : ''),
+          ),
   );
+  if ((src.testFilesSkipped ?? 0) > 0) {
+    lines.push(row('○', 'Test files', `${int(src.testFilesSkipped ?? 0)} skipped by rule — test data is not a dependency; ids inside were not examined`));
+  }
   // `✓` is reserved for a surface that actually scanned something. No supported
   // config files at all is NOT APPLICABLE; files present but unreadable is a real
   // gap. Neither may wear a tick.
@@ -144,9 +157,9 @@ export function coverageReport(meta: AuditMeta): string[] {
     const bits: string[] = [];
     if (skipped > 0) bits.push(`${int(skipped)} mendr-generated file(s)`);
     if (exDirs.length > 0) bits.push(`dirs: ${exDirs.join(', ')}`);
-    lines.push(row('○', 'Generated output', `excluded — ${bits.join('; ')}`));
+    lines.push(row('○', 'Excluded', bits.join('; ')));
   }
-  lines.push(row('○', 'Reader tie-back', 'not proven'));
+  lines.push(row('○', 'Reader tie-back', 'not proven — a config location is a candidate; mendr has not shown that runtime reads it'));
 
   for (const note of rt.notes ?? []) lines.push(`    · ${note}`);
   return lines;
@@ -175,8 +188,17 @@ export function plainSummary(investigations: readonly ModelInvestigation[], cove
   // informational references get their own, clearly-labelled line.
   if (n === 0) {
     if (investigations.length === 0) return [];
+    const analyzed = coverage.source.tsFiles + coverage.source.pyFiles;
+    const other = coverage.source.unanalyzedFiles ?? 0;
+    // M8: a repo mendr mostly could not read must not get a clean-sounding headline.
+    const headline = analyzedIsMinority(coverage)
+      ? [
+          `No retiring model ids in the ${analyzed} TypeScript/Python files analyzed.`,
+          `${other} source files in languages mendr does not read (${Math.round((other / (analyzed + other)) * 100)}% of this repository's source) were NOT analyzed — this result says nothing about them.`,
+        ]
+      : ['We found no retiring AI dependencies in use.'];
     return [
-      'We found no retiring AI dependencies in use.',
+      ...headline,
       '',
       `${word(informational.length).replace(/^\w/, (c) => c.toUpperCase())} deprecated model ${informational.length === 1 ? 'id was' : 'ids were'} found only in catalog, documentation, fixture or reference data — not as something this application selects.`,
       '',
@@ -192,18 +214,38 @@ export function plainSummary(investigations: readonly ModelInvestigation[], cove
   // WORDING DISCIPLINE: source analysis proves a DIRECT PROVIDER CALL SITE exists
   // in the code. It does not prove production executes it — only runtime evidence
   // can say that. Never let a located call site read as proven production traffic.
-  const kind = (inv: ModelInvestigation): string => {
-    if (inv.productionUsage.observed) return 'receiving production traffic';
-    if (inv.locations.selectors.some((s) => s.role === 'code_call_site')) return 'a verified direct provider call site';
-    if (inv.locations.selectors.some((s) => s.role === 'code_candidate')) return 'a possible code call';
-    if (inv.locations.selectors.some((s) => s.surface === 'config')) return 'a possible configuration selector';
-    if (inv.locations.catalog.some((c) => c.role === 'test_fixture')) return 'test data';
-    return 'informational only';
+  // "Verified" is keyed on the TIER, never on a role or a name: a Tier-B call
+  // site is real but unverified, and 9 of 12 validation repos read "verified"
+  // for exactly that. Each kind carries its plural so the sentence stays English.
+  const kind = (inv: ModelInvestigation): [string, string] => {
+    if (inv.productionUsage.observed) return ['receiving production traffic', 'receiving production traffic'];
+    if (inv.locations.selectors.some((s) => s.tier === 'A')) {
+      return [
+        'a verified direct provider call site (auto-fix available, nothing applied)',
+        'verified direct provider call sites (auto-fix available, nothing applied)',
+      ];
+    }
+    if (inv.locations.selectors.some((s) => s.surface === 'code')) {
+      return [
+        'a code default or call that could not be traced to a provider request — review before changing',
+        'code defaults or calls that could not be traced to a provider request — review before changing',
+      ];
+    }
+    if (inv.locations.selectors.some((s) => s.surface === 'config')) {
+      return ['a possible configuration selector', 'possible configuration selectors'];
+    }
+    if (inv.locations.catalog.some((c) => c.role === 'test_fixture')) return ['test data', 'test data'];
+    return ['informational only', 'informational only'];
   };
-  const buckets = new Map<string, number>();
-  for (const inv of exposure) buckets.set(kind(inv), (buckets.get(kind(inv)) ?? 0) + 1);
-  for (const [k, count] of buckets) {
-    lines.push(`${word(count).replace(/^\w/, (c) => c.toUpperCase())} ${count === 1 ? 'is' : 'are'} ${k}.`);
+  const buckets = new Map<string, { plural: string; count: number }>();
+  for (const inv of exposure) {
+    const [one, many] = kind(inv);
+    const b = buckets.get(one) ?? { plural: many, count: 0 };
+    b.count += 1;
+    buckets.set(one, b);
+  }
+  for (const [one, { plural, count }] of buckets) {
+    lines.push(`${word(count).replace(/^\w/, (c) => c.toUpperCase())} ${count === 1 ? `is ${one}` : `are ${plural}`}.`);
   }
   if (informational.length > 0) {
     lines.push('');
@@ -278,7 +320,9 @@ export function renderAuditReport(investigations: readonly ModelInvestigation[],
   lines.push('');
   for (const line of plainSummary(investigations, meta.coverage)) lines.push(line);
   lines.push('');
-  lines.push(`${investigations.length} deprecated model(s): ${count('patch')} patch, ${count('review')} review, ${count('monitor')} monitor`);
+  lines.push(
+    `${investigations.length} deprecated model ids: ${count('patch')} patch-eligible (no change applied), ${count('review')} need human review, ${count('monitor')} informational`,
+  );
 
   for (const inv of [...exposure, ...informational]) {
     const r = inv.retirementEvidence;
@@ -287,11 +331,18 @@ export function renderAuditReport(investigations: readonly ModelInvestigation[],
     lines.push('');
     lines.push(`Model: ${inv.model}  (${inv.provider})`);
 
-    const locs = [...inv.locations.selectors, ...inv.locations.catalog];
+    // Presentation order: selectors before catalog, and code before config within
+    // each, so a catalog block can never push the one code reference out of view.
+    const byCodeFirst = (a: LocationRef, b: LocationRef): number =>
+      (a.surface === 'code' ? 0 : 1) - (b.surface === 'code' ? 0 : 1);
+    const locs = [
+      ...[...inv.locations.selectors].sort(byCodeFirst),
+      ...[...inv.locations.catalog].sort(byCodeFirst),
+    ];
     if (locs.length > 0) {
       lines.push(`Location: ${locationPhrase(locs[0])}`);
       for (const extra of locs.slice(1, 5)) lines.push(`          ${locationPhrase(extra)}`);
-      if (locs.length > 5) lines.push(`          … and ${locs.length - 5} more`);
+      if (locs.length > 5) lines.push(`          … and ${locs.length - 5} more (every location is listed in --json)`);
     } else {
       lines.push('Location: not located in code or config (may be a datastore, a flag, or an unscanned runtime)');
     }
@@ -306,7 +357,10 @@ export function renderAuditReport(investigations: readonly ModelInvestigation[],
       lines.push(`Migration evidence: ${r.replacement} [registry: ${verdict}] (${note})`);
     }
     lines.push(productionUsageLine(inv));
-    lines.push(`Reader tie-back: ${inv.verification.readerTieBackProven ? 'proven' : 'not proven'}`);
+    // Only meaningful when a CONFIG location is involved; printed once per such model.
+    if (inv.locations.selectors.some((l) => l.surface === 'config')) {
+      lines.push(`Reader tie-back: ${inv.verification.readerTieBackProven ? 'proven' : 'not proven'}`);
+    }
     // The audit is READ-ONLY. "patch" must never read as though mendr changed
     // something — it means a migration is ELIGIBLE, pending human review.
     for (const line of decisionLines(inv)) lines.push(line);

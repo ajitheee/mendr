@@ -236,7 +236,13 @@ describe('computeExposure classifies real code the same way fix-llm does', () =>
     const dir = mkdtempSync(join(tmpdir(), 'mendr-watch-ts-'));
     writeFileSync(
       join(dir, 'app.ts'),
-      'export const c = create({ model: "gpt-4-0314" });\n' +
+      // Tier A needs a resolved first-party client inside a function; a bare
+      // `create({ model })` on an unknown callee is capped at review by rule.
+      'import OpenAI from "openai";\n' +
+        'const client = new OpenAI();\n' +
+        'export async function ask() {\n' +
+        '  return client.chat.completions.create({ model: "gpt-4-0314", messages: [] });\n' +
+        '}\n' +
         'export const PRICES = { "gpt-4-0314": 1 };\n',
     );
     const registry: LlmRegistry = [entry({ verification: autoApplyVerification() })];
