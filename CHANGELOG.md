@@ -1,5 +1,52 @@
 # Changelog
 
+## v0.2.4-alpha — 2026-09-04
+
+**Focused hardening from the first five external repository audits** (Browser
+Use, Mem0, CrewAI, Agno, LiteLLM; Windows PowerShell). Every Review finding was
+read in code. Zero PATCH ELIGIBLE findings before and after, confirmed correct.
+LiteLLM's review count fell from 19 to 3; fourteen genuine defaults Mem0 and
+Agno had filed as informational are review candidates. See
+`RELEASE-v0.2.4-alpha.md` for the per-repository table and the acceptance gate.
+
+### Fixed — classification
+
+- Templates and fixtures are informational: `.env.example` and other
+  `*.example` / `*.sample` / `*-template` / `example_*` files, `cookbook/`,
+  `benchmarks/`, `notebooks/`, `example_*/` and `sample_*/` directories, JSON
+  Schema files, configs named by the repository's own `.gitignore`, configs
+  carrying mock-testing flags; a fake-key/fake-model entry demotes only itself.
+- Router `model_list`: `model_name` beside `litellm_params` is an alias; the
+  sibling `model:` selects. UI metadata keys (`*_placeholder`, `*_hint`,
+  `label`, `description`) never select.
+- Never a selector: ids handed to tokenizer/encoding helpers; local model
+  assignments, parameter defaults and lookup fallbacks inside pricing, cost,
+  tokenizer, logging, metrics or `map_*_params` helpers; a response's own
+  `model` field read back. A traced same-function request still wins.
+- Genuine defaults are review candidates: assignment expressions
+  (`this.model = config.model || "…"`), `getattr` / `.get` / `getenv` fallbacks
+  on a model-named key, `model:` inside a default-configuration object or dict
+  that is not catalog-shaped, `id` on a model/embedder class, and `models/` or
+  `publishers/google/models/` prefixed ids.
+- `test-config.ts` / `test_*.ts` are test support, as `test_*.py` already was.
+
+### Fixed — report
+
+- An informational reference never says "migrate now": *"No migration action
+  required from this reference. Monitor provider status."*
+- A registry date with no provider notice is *"registry date … UNVERIFIED"* and
+  the next action asks to verify with the provider; never "OVERDUE".
+- Informational references collapse to a count and the first five; `--verbose`
+  lists all; `--json` carries all. Each JSON location carries a per-location
+  `disposition`.
+
+### Fixed — Windows
+
+- Plain ASCII output when stdout is piped/captured on Windows or the terminal
+  is not known UTF-8; `--plain` forces it; `MENDR_UNICODE=1` forces glyphs.
+- Progress lines only when stderr is a terminal (no more NativeCommandError
+  under PowerShell 5.1); `--quiet` / `--no-progress`.
+
 ## v0.2.3-alpha — 2026-09-03
 
 **Hardening release.** `mendr audit` v0.2.2-alpha was run against a validation

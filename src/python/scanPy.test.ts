@@ -168,13 +168,14 @@ describe('python call-site awareness: swap live model arguments, skip data', () 
     const sources = [src('app/llm.py', CALL_SITE_SOURCE)];
     const result = await applyPyModelIdFixesToSources(sources, REGISTRY);
 
-    // Five data positions: standalone dict value, pricing key, list element,
-    // == operand, in-tuple element.
-    expect(result.dataMatches).toHaveLength(5);
+    // Four data positions: pricing key, list element, == operand, in-tuple
+    // element. (The `CONFIG = {"model": …}` dict is a DEFAULT-configuration
+    // container — a review candidate since the 2026-09-04 partner audits, so it
+    // is no longer a data match.)
+    expect(result.dataMatches).toHaveLength(4);
     const values = result.dataMatches.map((d) => d.value).sort();
     expect(values).toEqual([
       'claude-3-5-sonnet-20241022',
-      'claude-3-opus-20240229',
       'claude-3-opus-20240229',
       'o1-mini',
       'o1-mini',
@@ -191,12 +192,15 @@ describe('python call-site awareness: swap live model arguments, skip data', () 
     const swaps = matches.filter((m) => m.position === 'model_arg');
     const data = matches.filter((m) => m.position === 'data');
     const capped = matches.filter((m) => m.position === 'surface_capped');
+    const unverified = matches.filter((m) => m.position === 'usage_unverified');
     // Two swap-eligible positions remain. The module-level model factory is
     // demoted by G1 (real at import, review-only), and the dict passed to
-    // client.post by G2 (unrecognized sink) — both `surface_capped`.
+    // client.post by G2 (unrecognized sink) — both `surface_capped`. The
+    // `CONFIG = {"model": …}` default-configuration dict is a review candidate.
     expect(swaps).toHaveLength(2);
     expect(capped).toHaveLength(2);
-    expect(data).toHaveLength(5);
+    expect(unverified).toHaveLength(1);
+    expect(data).toHaveLength(4);
   });
 
   it('tags each data match with a purpose (mirrors the TS purpose labels)', async () => {
@@ -204,8 +208,9 @@ describe('python call-site awareness: swap live model arguments, skip data', () 
     const data = matches.filter((m) => m.position === 'data');
     const byPurpose = (p: string) => data.filter((m) => m.purpose === p).map((m) => m.value);
 
-    // Standalone dict value -> config/catalog entry.
-    expect(byPurpose('catalog_entry')).toEqual(['claude-3-opus-20240229']);
+    // The standalone `CONFIG = {"model": …}` dict is a default-configuration
+    // container (review candidate), so no catalog_entry data remains here.
+    expect(byPurpose('catalog_entry')).toEqual([]);
     // Pricing-table key -> lookup key.
     expect(byPurpose('lookup_key')).toEqual(['claude-3-5-sonnet-20241022']);
     // Model-picker list element -> list entry.
@@ -384,15 +389,32 @@ describe('python sink rule: assignments swap ONLY when traced to an in-file sink
     expect(result.siteCount).toBe(0);
     expect(result.patchedFiles).toHaveLength(0);
     expect(result.diff).toBe('');
+    // Since the 2026-09-04 partner audits a literal inside a COST / event-payload
+    // helper is informational (its name says it cannot be selecting a request
+    // model), so this one is a data match with that reason — still visible, never
+    // swapped, and not double-reported on any other surface.
+    expect(result.usageUnverifiedMatches).toHaveLength(0);
+    expect(result.dataMatches).toHaveLength(1);
+    expect(result.dataMatches[0]).toMatchObject({ value: 'gpt-4', replacement: 'gpt-5.6-sol' });
+    expect(result.blockedMatches).toHaveLength(0);
+  });
+
+  it('the same bare assignment in a neutrally-named function is a usage-unverified candidate', async () => {
+    const source = [
+      'def generate_event():',
+      '    model = "gpt-4"',
+      '    return {"event": "spike", "model": model}',
+      '',
+    ].join('\n');
+    const result = await applyPyModelIdFixesToSources([src('sim/simulator.py', source)], REGISTRY);
+    expect(result.siteCount).toBe(0);
     expect(result.usageUnverifiedMatches).toHaveLength(1);
     expect(result.usageUnverifiedMatches[0]).toMatchObject({
       value: 'gpt-4',
       replacement: 'gpt-5.6-sol',
       reason: USAGE_UNVERIFIED_REASON,
     });
-    // Not double-reported on any other surface.
     expect(result.dataMatches).toHaveLength(0);
-    expect(result.blockedMatches).toHaveLength(0);
   });
 
   it('the SAME assignment swaps once the file passes the name to a provider sink', async () => {

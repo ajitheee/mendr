@@ -1,6 +1,6 @@
 import { Node, SyntaxKind } from 'ts-morph';
 import type { CallExpression, Expression, Identifier, NewExpression, SourceFile } from 'ts-morph';
-import { isModelLikeName } from './scanLiterals.js';
+import { CATALOG_SIBLING_KEYS, isDefaultContainerName, isModelLikeName } from './sharedRules.js';
 
 // The TypeScript spelling of the Python guards G1–G5 (src/python/sinks.ts).
 //
@@ -66,6 +66,10 @@ export const TS_EXAMPLE_REASON =
   'example / sample / demo / docs tree: informational, not a dependency of the shipped product';
 export const TS_DEFAULT_UNTRACED_REASON =
   'model-named declaration not traced to any provider request in this file';
+export const TS_DEFAULT_CONTAINER_REASON =
+  'model value inside a default-configuration object; a real default whose consumer is not traced, review before changing';
+export const TS_LOOKUP_DEFAULT_REASON =
+  'fallback value of a model lookup; a real default whose consumer is not traced, review before changing';
 
 // --- AST helpers ----------------------------------------------------------------
 
@@ -449,9 +453,16 @@ function leavesOf(expr: Node): Node[] {
   return [expr];
 }
 
+/** `this.model = …` — an assignment to instance state, scoped to the class like a property. */
+export function isThisAssignment(node: Node): boolean {
+  if (!Node.isBinaryExpression(node) || node.getOperatorToken().getKind() !== SyntaxKind.EqualsToken) return false;
+  const left = node.getLeft();
+  return Node.isPropertyAccessExpression(left) && Node.isThisExpression(left.getExpression());
+}
+
 /** Does a sink call see the declaration? Module-level: everywhere. Local: same function. Class property: same class. */
 function sinkInScope(decl: Node, call: CallExpression): boolean {
-  if (Node.isPropertyDeclaration(decl)) {
+  if (Node.isPropertyDeclaration(decl) || isThisAssignment(decl)) {
     const c = enclosingClass(decl);
     const u = enclosingClass(call);
     return !!c && !!u && c === u;
@@ -493,6 +504,46 @@ export function enclosingCallOfObject(obj: Node): CallExpression | undefined {
   const parent = top.getParent();
   if (parent && Node.isCallExpression(parent) && parent.getArguments().includes(top as Expression)) return parent;
   return undefined;
+}
+
+/** Does an object literal carry catalog-shaped siblings (label, pricing, description…)? */
+export function hasCatalogSiblings(obj: Node): boolean {
+  if (!Node.isObjectLiteralExpression(obj)) return false;
+  return obj.getProperties().some((p) => {
+    const name = Node.isPropertyAssignment(p) || Node.isShorthandPropertyAssignment(p) ? p.getName() : '';
+    return CATALOG_SIBLING_KEYS.test(name.replace(/^['"]|['"]$/g, ''));
+  });
+}
+
+/**
+ * Is this object literal (through nested objects/arrays) the value of a
+ * declaration whose NAME says "default configuration" — `DEFAULT_MEMORY_CONFIG`,
+ * `defaultLlm`, `settings`? Then a `model:` inside it is the default a caller
+ * inherits, not a catalog card.
+ */
+export function isInDefaultContainer(obj: Node): boolean {
+  let n: Node | undefined = obj;
+  while (n) {
+    if (Node.isVariableDeclaration(n) || Node.isPropertyDeclaration(n)) return isDefaultContainerName(n.getName());
+    if (Node.isBinaryExpression(n) && n.getOperatorToken().getKind() === SyntaxKind.EqualsToken) {
+      const left = n.getLeft();
+      const name = Node.isIdentifier(left) ? left.getText() : Node.isPropertyAccessExpression(left) ? left.getName() : '';
+      return isDefaultContainerName(name);
+    }
+    if (
+      Node.isObjectLiteralExpression(n) ||
+      Node.isPropertyAssignment(n) ||
+      Node.isArrayLiteralExpression(n) ||
+      Node.isAsExpression(n) ||
+      Node.isParenthesizedExpression(n) ||
+      Node.isSatisfiesExpression(n)
+    ) {
+      n = n.getParent();
+      continue;
+    }
+    return false;
+  }
+  return false;
 }
 
 /** `program.option('-m, --model <model>', 'Model ID', 'dall-e-3')`: the default of a --model flag. */

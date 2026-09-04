@@ -4,7 +4,13 @@ import { fileURLToPath } from 'node:url';
 import { Language, Parser, type Node as PyNode, type Tree } from 'web-tree-sitter';
 import type { LlmModelIdDeprecation, LlmRegistry, SourceLocation } from '../types.js';
 import { effectiveVerificationState, isVerified, modelIdEntries } from '../usage/llmRegistry.js';
-import { isExamplePath, splitProviderPrefix } from '../usage/sharedRules.js';
+import {
+  CATALOG_SIBLING_KEYS,
+  isDefaultContainerName,
+  isExamplePath,
+  LOOKUP_WITH_DEFAULT,
+  splitProviderPrefix,
+} from '../usage/sharedRules.js';
 import {
   detectPySurface,
   dottedCallee,
@@ -530,6 +536,116 @@ export const PY_EXAMPLE_REASON =
 export const PY_PREFIXED_REASON =
   'provider-prefixed selector (gateway / provider registry); the successor may need a different prefix, capped at review';
 
+export const PY_LOOKUP_DEFAULT_REASON =
+  'fallback value of a model lookup (getattr / .get / getenv); a real default whose consumer is not traced, review before changing';
+export const PY_DEFAULT_CONTAINER_REASON =
+  'model value inside a default-configuration dict; a real default whose consumer is not traced, review before changing';
+
+/** Is the literal the LAST argument of a lookup whose key names a model, or whose result is assigned to a model-named name? */
+function isLookupDefaultForModel(argList: PyNode, literal: PyNode): boolean {
+  const args = argList.namedChildren;
+  if (args.length < 2 || !args[args.length - 1].equals(literal)) return false;
+  // `response.get("modelVersion", …)` / `message.get("model", …)` read the model
+  // a PROVIDER RETURNED; the default fills a parse, it does not select a request.
+  const callee = argList.parent?.childForFieldName('function');
+  const receiver = callee?.type === 'attribute' ? (callee.childForFieldName('object')?.text ?? '') : '';
+  if (/(response|resp|result|message|msg|reply|output|usage|event|chunk)/i.test(receiver.split('.').pop() ?? '')) return false;
+  for (const a of args.slice(0, -1)) {
+    const c = plainStringContent(a);
+    if (c && isModelLikeName(c.value)) return true;
+  }
+  const call = argList.parent;
+  const assign = call?.parent;
+  if (assign?.type === 'assignment') {
+    const left = assign.childForFieldName('left');
+    const name = left ? traceableName(left) : undefined;
+    if (name && isModelLikeName(name)) return true;
+  }
+  return false;
+}
+
+/** Does the dict holding `pair` carry catalog-shaped sibling keys (label, pricing, description…)? */
+function hasCatalogSiblingsPy(pair: PyNode): boolean {
+  const dict = pair.parent;
+  if (!dict || dict.type !== 'dictionary') return false;
+  for (const p of dict.namedChildren) {
+    if (p.type !== 'pair') continue;
+    const k = p.childForFieldName('key');
+    const c = k ? plainStringContent(k) : undefined;
+    if (c && CATALOG_SIBLING_KEYS.test(c.value)) return true;
+  }
+  return false;
+}
+
+/** Is this pair (through nested dicts/lists) the value of an assignment to a default-configuration name? */
+function isInDefaultContainerPy(pair: PyNode): boolean {
+  let n: PyNode | null = pair.parent;
+  while (n) {
+    if (n.type === 'assignment') {
+      const left = n.childForFieldName('left');
+      const name = left ? traceableName(left) : undefined;
+      return !!name && isDefaultContainerName(name);
+    }
+    if (n.type === 'dictionary' || n.type === 'pair' || n.type === 'list' || n.type === 'parenthesized_expression') {
+      n = n.parent;
+      continue;
+    }
+    return false;
+  }
+  return false;
+}
+
+/** Is the node inside a class whose name says it IS a model / LLM / embedder / provider? */
+function isModelClassScope(node: PyNode): boolean {
+  let n: PyNode | null = node.parent;
+  while (n) {
+    if (n.type === 'function_definition') return false; // a local `id = …` inside a method is not a field
+    if (n.type === 'class_definition') {
+      const name = n.childForFieldName('name')?.text ?? '';
+      return /(model|llm|chat|embed|provider|client|completion)/i.test(name);
+    }
+    n = n.parent;
+  }
+  return false;
+}
+
+export const PY_TOKENIZER_REASON =
+  'model id selects a local tokenizer / encoding table, not a provider request';
+export const PY_NON_SELECTOR_FUNCTION_REASON =
+  'model literal inside a pricing, tokenizer, logging, metrics or param-mapping helper — not a request selector';
+
+/** Callees that take a model id to pick a LOCAL encoding table, never to send a request. */
+const TOKENIZER_CALLEES: ReadonlySet<string> = new Set([
+  'token_counter', 'count_tokens', 'num_tokens_from_messages', 'num_tokens', 'decode', 'encode',
+  'encoding_for_model', 'get_encoding', 'get_tokenizer', 'tokenizer', 'get_max_tokens', 'get_model_info',
+]);
+
+/** Is `dotted` a tokenizer / encoding helper (`litellm.decode`, `token_counter`, `tiktoken.encoding_for_model`)? */
+function isTokenizerCallee(dotted: string | null): boolean {
+  if (!dotted) return false;
+  return TOKENIZER_CALLEES.has(dotted.split('.').pop() ?? '');
+}
+
+/**
+ * Functions whose model literals are NEVER request selectors: pricing and cost
+ * calculators, tokenizers, logging/observability callbacks, metrics/analytics
+ * filters, and OpenAI-param mapping helpers that use a sentinel model to pick a
+ * capability branch. Partner audits (2026-09-04, litellm): fifteen such literals
+ * were review candidates.
+ */
+const NON_SELECTOR_FUNCTION =
+  /(token|encod|tokeniz|cost|pric|spend|metric|analytic|dashboard|^log_|_log$|_log_|logger|^map_\w*params$|_params$|^supports_|^get_supported)/i;
+
+/** Files whose whole purpose is tokenizing, pricing or observability logging. */
+const NON_SELECTOR_FILE = /(^|\/)([^/]*(token_count|tokeniz|cost_calc|pricing)[^/]*\.py|integrations\/[^/]+\.py)$/i;
+
+/** Is the node inside a function whose name says it cannot be selecting a request model? */
+function isNonSelectorFunction(node: PyNode): boolean {
+  const fn = enclosingFunction(node);
+  const name = fn?.childForFieldName('name')?.text;
+  return !!name && NON_SELECTOR_FUNCTION.test(name);
+}
+
 /** Wrapper factories: real selection points that are NOT the provider SDK. */
 const LANGCHAIN_FACTORIES: ReadonlySet<string> = new Set([
   'ChatOpenAI',
@@ -635,6 +751,11 @@ export function applyPyGuards(
   // G5 — legacy SDK generation caps at review.
   if (isLegacySdkSink(dotted)) return { position: 'surface_capped', reason: PY_LEGACY_SDK_REASON };
 
+  // A model id handed to a tokenizer / encoding helper (`token_counter(model=…)`,
+  // `litellm.decode(model=…)`) selects a local table, not a provider request.
+  if (call && !sink && isTokenizerCallee(dotted)) {
+    return { position: 'data', purpose: 'generic', reason: PY_TOKENIZER_REASON };
+  }
   // G2 — a call that is NOT a recognized sink is an unknown function or wrapper.
   // We only reach here when the positional rules already said `model_arg`, so
   // ANY such position must be capped: a raw `requests.post(json={"model": ...})`
@@ -707,6 +828,12 @@ export function applyPyGuards(
     const isSelfAttr = left?.type === 'attribute';
     const targets = reachable.filter((t) => sinkIsInScope(literal, t.call, isSelfAttr));
     if (targets.length === 0) {
+      // No in-scope consumer. A same-named sink elsewhere in the file made the
+      // positional rule say model_arg, but inside a pricing / tokenizer / logging /
+      // param-mapping helper the literal is a sentinel or lookup key, not a default.
+      if (isNonSelectorFunction(literal)) {
+        return { position: 'data', purpose: 'generic', reason: PY_NON_SELECTOR_FUNCTION_REASON };
+      }
       return { position: 'usage_unverified', reason: USAGE_UNVERIFIED_REASON };
     }
     for (const t of targets) {
@@ -905,7 +1032,7 @@ export function classifyPyPosition(
   if (parent.type === 'return_statement') {
     const fn = enclosingFunction(node);
     const fname = fn?.childForFieldName('name')?.text;
-    if (fname && isModelLikeName(fname)) {
+    if (fname && isModelLikeName(fname) && !isNonSelectorFunction(node)) {
       return { position: 'usage_unverified', reason: PY_RETURN_DEFAULT_REASON };
     }
     return { position: 'data', purpose: 'generic' };
@@ -928,6 +1055,12 @@ export function classifyPyPosition(
       if (isModelLikeStringKey(key) && isEnclosingDictACallArgument(parent)) {
         return { position: 'model_arg' };
       }
+      // A `"model"` value in a standalone DEFAULT-configuration dict
+      // (`DEFAULT_CONFIG = {"llm": {"config": {"model": "…"}}}`) is the default a
+      // caller inherits — review — unless the dict is catalog-shaped.
+      if (isModelLikeStringKey(key) && !hasCatalogSiblingsPy(parent) && isInDefaultContainerPy(parent)) {
+        return { position: 'usage_unverified', reason: PY_DEFAULT_CONTAINER_REASON };
+      }
       return { position: 'data', purpose: 'catalog_entry' };
     }
     return { position: 'data', purpose: 'generic' };
@@ -946,8 +1079,19 @@ export function classifyPyPosition(
         return { position: 'azure_deployment', reason: AZURE_DEPLOYMENT_REASON };
       }
       if (name && isModelLikeName(name)) {
+        // A traced sink is EVIDENCE and always wins over a name heuristic.
         if (sinkNames?.has(name)) return { position: 'model_arg' };
+        // Otherwise a local `model = "…"` inside a pricing / tokenizer / logging /
+        // param-mapping helper is a sentinel or a lookup key, never a selector.
+        if (isNonSelectorFunction(node)) {
+          return { position: 'data', purpose: 'generic', reason: PY_NON_SELECTOR_FUNCTION_REASON };
+        }
         return { position: 'usage_unverified', reason: USAGE_UNVERIFIED_REASON };
+      }
+      // `id: str = "gemini-embedding-001"` on a class whose NAME says it is a model
+      // or embedder (agno's convention): the field is the model id, review.
+      if (name === 'id' && isModelClassScope(node)) {
+        return { position: 'usage_unverified', reason: PY_FIELD_DEFAULT_REASON };
       }
     }
     return { position: 'data', purpose: 'generic' };
@@ -965,6 +1109,11 @@ export function classifyPyPosition(
       }
       if (isModelLikeName(name.text)) {
         if (sinkNames?.has(name.text)) return { position: 'model_arg' };
+        // A parameter default on a metrics / cost / logging endpoint filters data;
+        // it does not select a request model (litellm `/model/metrics`).
+        if (isNonSelectorFunction(node)) {
+          return { position: 'data', purpose: 'generic', reason: PY_NON_SELECTOR_FUNCTION_REASON };
+        }
         return { position: 'usage_unverified', reason: USAGE_UNVERIFIED_REASON };
       }
     }
@@ -975,6 +1124,15 @@ export function classifyPyPosition(
   if (parent.type === 'argument_list' && parent.parent?.type === 'call') {
     const factory = calleeLastIdentifier(parent.parent);
     if (factory && PY_MODEL_FACTORIES.has(factory)) return { position: 'model_arg' };
+    // M2 (partner audits, mem0): `getattr(cfg, "model", "gpt-4")`,
+    // `os.environ.get("MEM0_DEFAULT_LLM_MODEL", "gpt-4")`, `d.get("model", "gpt-4")`
+    // — the literal is the DEFAULT of a model-named lookup: a real selector.
+    if (factory && LOOKUP_WITH_DEFAULT.has(factory) && isLookupDefaultForModel(parent, node)) {
+      if (isNonSelectorFunction(node)) {
+        return { position: 'data', purpose: 'generic', reason: PY_NON_SELECTOR_FUNCTION_REASON };
+      }
+      return { position: 'usage_unverified', reason: PY_LOOKUP_DEFAULT_REASON };
+    }
     return { position: 'data', purpose: 'generic' };
   }
 
@@ -1072,6 +1230,15 @@ export async function findPyModelIdLiterals(
         // been one; in a list or a catalog dict it is data like any other.
         if (prefixed && !example && classification.position !== 'data') {
           classification = { position: 'surface_capped', reason: PY_PREFIXED_REASON };
+        }
+        // A default that lives in a tokenizer / cost / pricing module or an
+        // observability integration is a lookup key or a log field, not a selector.
+        if (
+          (classification.position === 'usage_unverified' || classification.position === 'surface_capped') &&
+          !prefixed &&
+          (NON_SELECTOR_FILE.test(source.path.replace(/\\/g, '/')) || isNonSelectorFunction(node))
+        ) {
+          classification = { position: 'data', purpose: 'generic', reason: PY_NON_SELECTOR_FUNCTION_REASON };
         }
         const line = node.startPosition.row + 1;
         const column = node.startPosition.column + 1;

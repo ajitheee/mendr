@@ -4,7 +4,7 @@ import { autoApplyVerification } from '../usage/llmRegistry.js';
 import type { ExposedModel } from '../watch/exposure.js';
 import { NO_RUNTIME_EVIDENCE } from '../runtime/evidence.js';
 import { analyzedIsMinority, buildInvestigations, concludeAudit, coverageGaps, type AuditCoverage } from './investigation.js';
-import { decisionLines } from '../report/auditReport.js';
+import { decisionLines, INFORMATIONAL_PREVIEW, renderAuditReport } from '../report/auditReport.js';
 
 // Decision-engine hardening — regression suite for the external-validation
 // defects (VALIDATION-2026-09-03.md): M1 "verified" keyed on role, M6
@@ -18,7 +18,11 @@ const REGISTRY: LlmRegistry = [
 ];
 const NOW = new Date('2026-09-03T00:00:00Z');
 
-function codeModel(id: string, locs: Array<{ line: number; tier: 'A' | 'B' | 'C'; reason?: string }>): ExposedModel {
+function codeModel(
+  id: string,
+  locs: Array<{ line: number; tier: 'A' | 'B' | 'C'; reason?: string }>,
+  sourceUrl: string | null = 'https://developers.openai.com/api/docs/deprecations',
+): ExposedModel {
   const tierCounts = { A: 0, B: 0, C: 0 };
   for (const l of locs) tierCounts[l.tier] += 1;
   const highest = tierCounts.A ? 'A' : tierCounts.B ? 'B' : 'C';
@@ -32,7 +36,7 @@ function codeModel(id: string, locs: Array<{ line: number; tier: 'A' | 'B' | 'C'
     replacement: entry.replacement,
     replacementVerdict: 'verified',
     autoApplyAllowed: true,
-    sourceUrl: null,
+    sourceUrl,
     occurrences: locs.length,
     tierCounts,
     highestTier: highest,
@@ -86,14 +90,62 @@ describe('M6 — patch eligibility is per line, and the report says which lines'
   });
 });
 
-describe('m1 — an already-retired model is told to migrate, not to track', () => {
-  it('MONITOR on a retired id says migrate now with the date', () => {
+describe('m1 — next actions never contradict the finding they sit under', () => {
+  it('an INFORMATIONAL reference to a retired id asks for no migration (partner audits, 2026-09-04)', () => {
     const [inv] = buildInvestigations(NO_RUNTIME_EVIDENCE, [], NOW, [codeModel('gpt-3.5-turbo', [{ line: 3, tier: 'C' }])], REGISTRY);
     expect(inv.decision).toBe('monitor');
+    expect(inv.locations.selectors).toHaveLength(0);
     const next = decisionLines(inv).find((l) => l.startsWith('Next action'))!;
+    expect(next).toBe('Next action: No migration action required from this reference. Monitor provider status.');
+    expect(next).not.toContain('Migrate now');
+  });
+  it('a real selector on a retired id with a provider notice says migrate now', () => {
+    const [inv] = buildInvestigations(
+      NO_RUNTIME_EVIDENCE, [], NOW,
+      [codeModel('gpt-3.5-turbo', [{ line: 3, tier: 'B', reason: 'insufficient_dataflow' }])],
+      REGISTRY,
+    );
+    // Tier B selectors decide 'review'; force the MONITOR renderer to see the dated branch.
+    const monitor = { ...inv, decision: 'monitor' as const };
+    const next = decisionLines(monitor).find((l) => l.startsWith('Next action'))!;
     expect(next).toContain('Migrate now');
     expect(next).toContain('2024-09-13');
     expect(next).not.toContain('Track until');
+  });
+  it('a registry date with NO provider notice is never called overdue, and asks for verification', () => {
+    const [inv] = buildInvestigations(
+      NO_RUNTIME_EVIDENCE, [], NOW,
+      [codeModel('gpt-3.5-turbo', [{ line: 3, tier: 'B', reason: 'insufficient_dataflow' }], null)],
+      REGISTRY,
+    );
+    const monitor = { ...inv, decision: 'monitor' as const };
+    const next = decisionLines(monitor).find((l) => l.startsWith('Next action'))!;
+    expect(next).toContain('Verify the retirement date with the provider before acting');
+    expect(next).not.toContain('Migrate now');
+    const report = renderAuditReport([inv], { from: null, to: null, coverage: coverage() }).join('\n');
+    expect(report).toContain('registry date 2024-09-13');
+    expect(report).toContain('UNVERIFIED: no provider notice on file');
+    expect(report).not.toContain('OVERDUE');
+  });
+});
+
+describe('informational references are collapsed by default', () => {
+  const many = Array.from({ length: INFORMATIONAL_PREVIEW + 3 }, (_, i) =>
+    ({ ...codeModel('gpt-4', [{ line: i + 1, tier: 'C' as const }]), id: `gpt-4`, entryId: `gpt-4.${i}` }),
+  );
+  const exposure = codeModel('gpt-3.5-turbo', [{ line: 9, tier: 'B', reason: 'insufficient_dataflow' }]);
+  it('shows every exposure, the first few references, and a count with the way to see the rest', () => {
+    const invs = buildInvestigations(NO_RUNTIME_EVIDENCE, [], NOW, [exposure, ...many], REGISTRY);
+    const out = renderAuditReport(invs, { from: null, to: null, coverage: coverage() }).join('\n');
+    expect(out).toContain('Deprecated model dependency located');
+    expect(out.match(/Informational reference \(not a dependency\)/g)?.length).toBe(INFORMATIONAL_PREVIEW);
+    expect(out).toContain('more informational references (not dependencies). Use --verbose to list them all, or --json.');
+  });
+  it('--verbose lists them all', () => {
+    const invs = buildInvestigations(NO_RUNTIME_EVIDENCE, [], NOW, [exposure, ...many], REGISTRY);
+    const out = renderAuditReport(invs, { from: null, to: null, coverage: coverage(), verbose: true }).join('\n');
+    expect(out.match(/Informational reference \(not a dependency\)/g)?.length).toBe(many.length);
+    expect(out).not.toContain('more informational references');
   });
 });
 

@@ -3,8 +3,10 @@ import type { LlmRegistry } from '../types.js';
 import { autoApplyVerification } from '../usage/llmRegistry.js';
 import {
   findPyModelIdLiterals,
+  PY_DEFAULT_CONTAINER_REASON,
   PY_EXAMPLE_REASON,
   PY_FIELD_DEFAULT_REASON,
+  PY_LOOKUP_DEFAULT_REASON,
   PY_PREFIXED_REASON,
   PY_RETURN_DEFAULT_REASON,
   PY_WRAPPER_FACTORY_REASON,
@@ -103,6 +105,107 @@ def get_label():
     return cfg.LABEL if cfg.LABEL else "dall-e-2"
 `);
     expect(t.find((x) => x.value === 'dall-e-2')?.tier).toBe('C');
+  }, 60_000);
+});
+
+describe('M2 (partner audits, 2026-09-04) — lookup defaults, default-config dicts, model-class id fields', () => {
+  it('`getattr(config, "model", "gpt-4")` is a review candidate', async () => {
+    const t = await tiers('mem0/reranker/llm_reranker.py', `
+def build(config):
+    model = getattr(config, "model", "gpt-4")
+    return model
+`);
+    const hit = t.find((x) => x.value === 'gpt-4');
+    expect(hit?.tier).toBe('B');
+    expect(hit?.reason).toBe(PY_LOOKUP_DEFAULT_REASON);
+  }, 60_000);
+
+  it('`os.environ.get("MEM0_DEFAULT_LLM_MODEL", "gpt-4")` is a review candidate', async () => {
+    const t = await tiers('server/main.py', `
+import os
+DEFAULT_LLM_MODEL = os.environ.get("MEM0_DEFAULT_LLM_MODEL", "gpt-4")
+`);
+    expect(t.find((x) => x.value === 'gpt-4')?.tier).toBe('B');
+  }, 60_000);
+
+  it('a lookup whose key is not model-named stays data', async () => {
+    const t = await tiers('app/x.py', `
+label = cfg.get("label", "gpt-4")
+`);
+    expect(t.find((x) => x.value === 'gpt-4')?.tier).toBe('C');
+  }, 60_000);
+
+  it('a `"model"` inside DEFAULT_CONFIG is a review candidate; a catalog dict is not', async () => {
+    const t = await tiers('server/defaults.py', `
+DEFAULT_CONFIG = {"llm": {"provider": "openai", "config": {"model": "gpt-4"}}}
+MODEL_CARDS = [{"model": "gpt-3.5-turbo", "label": "GPT-3.5", "pricing": 1}]
+`);
+    expect(t.find((x) => x.value === 'gpt-4')?.tier).toBe('B');
+    expect(t.find((x) => x.value === 'gpt-4')?.reason).toBe(PY_DEFAULT_CONTAINER_REASON);
+    expect(t.find((x) => x.value === 'gpt-3.5-turbo')?.tier).toBe('C');
+  }, 60_000);
+
+  it('`id: str = "…"` on an embedder/model class is a review candidate (agno shape); on an unrelated class it is data', async () => {
+    const t = await tiers('agno/knowledge/embedder/google.py', `
+from dataclasses import dataclass
+
+@dataclass
+class GeminiEmbedder:
+    id: str = "gpt-4"
+
+@dataclass
+class Ticket:
+    id: str = "gpt-3.5-turbo"
+`);
+    expect(t.find((x) => x.value === 'gpt-4')?.tier).toBe('B');
+    expect(t.find((x) => x.value === 'gpt-3.5-turbo')?.tier).toBe('C');
+  }, 60_000);
+});
+
+describe('literals that are never request selectors (partner audits, 2026-09-04, litellm)', () => {
+  it('a model id handed to a tokenizer helper is informational', async () => {
+    const t = await tiers('litellm/llms/a2a/transformation.py', `
+def usage(messages):
+    prompt_tokens = token_counter(model="gpt-3.5-turbo", messages=messages)
+    text = litellm.decode(model="gpt-4", tokens=[1, 2])
+    return prompt_tokens, text
+`);
+    expect(t.find((x) => x.value === 'gpt-3.5-turbo')?.tier).toBe('C');
+    expect(t.find((x) => x.value === 'gpt-4')?.tier).toBe('C');
+  }, 60_000);
+
+  it('a local model assignment inside a cost / logging / param-mapping helper is informational', async () => {
+    const t = await tiers('litellm/cost_calculator.py', `
+def completion_cost(model, provider):
+    if provider == "azure" and model == "":
+        model = "dall-e-2"
+    return lookup(model)
+
+def log_success(kwargs):
+    model = kwargs.get("model") or "gpt-4"
+    return {"model": model}
+
+class Anthropic:
+    def map_openai_params(self, params, model):
+        original_model = model
+        model = "gpt-3.5-turbo"
+        return params, original_model
+`);
+    expect(t.find((x) => x.value === 'dall-e-2')?.tier).toBe('C');
+    expect(t.find((x) => x.value === 'gpt-4')?.tier).toBe('C');
+    expect(t.find((x) => x.value === 'gpt-3.5-turbo')?.tier).toBe('C');
+  }, 60_000);
+
+  it('a parameter default on a metrics endpoint is informational; on a request path it stays review', async () => {
+    const t = await tiers('litellm/proxy/proxy_server.py', `
+async def model_metrics(_selected_model_group: str = "gpt-4"):
+    return query(_selected_model_group)
+
+def ask(model: str = "gpt-3.5-turbo"):
+    return model
+`);
+    expect(t.find((x) => x.value === 'gpt-4')?.tier).toBe('C');
+    expect(t.find((x) => x.value === 'gpt-3.5-turbo')?.tier).toBe('B');
   }, 60_000);
 });
 

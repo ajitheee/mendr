@@ -153,10 +153,22 @@ export type ClassificationSignal =
   | 'model_keyed_block' // the id is also the map key of the block it sits in
   | 'catalog_density' // many distinct ids in one file (WEAK, never decisive alone)
   | 'selector_key' // a model-like key whose value is exactly the id
+  | 'ui_metadata_key' // the key names UI/presentation metadata (placeholder, hint, label), never a selection
+  | 'alias_key' // router model_list: `model_name` is the client alias; the sibling litellm_params.model selects
+  | 'mock_markers' // the file carries fake keys / mock flags — a test fixture, whatever its path
+  | 'gitignored' // the repo's own .gitignore names this file: a local/dev artifact, not deployed config
   | 'runtime_route_key' // a key naming a runtime route/selection
   | 'lookup_key' // the id IS the key
   | 'list_entry'
   | 'embedded_value';
+
+/**
+ * Keys that carry UI / presentation METADATA — the grey text in a form field, a
+ * hint, a label — never a runtime selection, however model-like the key looks.
+ * Partner audits (2026-09-04): litellm's `default_model_placeholder` produced
+ * 120 review candidates from one form-schema file.
+ */
+const UI_METADATA_KEYS = /(placeholder|_hint$|^hint$|tooltip|help_?text|_label$|^label$|_description$|^description$|display_?name|_example$|^example_)/i;
 
 /** Keys that name a RUNTIME SELECTION rather than a catalog record. */
 const RUNTIME_ROUTE_KEYS =
@@ -186,7 +198,15 @@ export function isTestFixturePath(file: string): boolean {
   const p = file.replace(/\\/g, '/').toLowerCase();
   // Generated-output and example/demo trees are DATA, never runtime selectors.
   if (/(^|\/)(test-results?|test-output|playwright-report|allure-results|coverage|reports?|artifacts|\.mendr)(\/)/.test(p)) return true;
-  if (/(^|\/)(examples?|samples?|demos?|docs?)(\/)/.test(p)) return true;
+  if (/(^|\/)(examples?|samples?|demos?|docs?|cookbooks?|benchmarks?|templates?|example[_-]?configs?[^/]*|sample[_-]?configs?[^/]*)(\/)/.test(p)) return true;
+  // TEMPLATE files are not active configuration: `.env.example`, `.env.sample`,
+  // `config.example.yaml`, `settings-template.json`. Partner audits (2026-09-04):
+  // mem0's `.env.example` was reported as a runtime selector.
+  if (/(^|\/)\.env\.(example|sample|template|dist|default|local\.example)$/.test(p)) return true;
+  if (/(^|\/)[^/]*[._-](example|sample|template|dist)\.[^/]+$/.test(p)) return true;
+  if (/(^|\/)[^/]*[._-](example|sample|template)$/.test(p)) return true;
+  // `example_config.yaml`, `sample-settings.json`: the name starts with the word.
+  if (/(^|\/)(example|sample|template)[._-][^/]*\.[^/]+$/.test(p)) return true;
   // A test/fixture/mock DIRECTORY anywhere in the path.
   if (/(^|\/)(__data__|__fixtures?__|__mocks?__|fixtures?|test-fixtures?|testdata|test-data|mocks?|snapshots?|__snapshots__)(\/)/.test(p)) return true;
   if (/(^|\/)(tests?|e2e|specs?|__tests__)(\/)/.test(p)) return true;
@@ -391,6 +411,27 @@ function hasCatalogSiblings(lines: readonly string[], index: number): boolean {
   return hits >= 2;
 }
 
+/** Does the block that contains line `index` have a sibling key named `key`? */
+function hasSiblingKey(lines: readonly string[], index: number, key: string): boolean {
+  const indentOf = (s: string): number => s.search(/\S/);
+  // A YAML list item (`  - model_name: x`) puts its siblings two columns deeper.
+  const own = indentOf(lines[index]) + (/^\s*-\s/.test(lines[index]) ? 2 : 0);
+  if (own < 0) return false;
+  const scan = (from: number, step: number): boolean => {
+    for (let i = from, n = 0; i >= 0 && i < lines.length && n < 80; i += step, n++) {
+      const l = lines[i];
+      if (l.trim() === '') continue;
+      const ind = indentOf(l);
+      if (ind < own) break;
+      if (ind > own) continue;
+      const m = /^\s*-?\s*["']?([A-Za-z0-9_.\-]+)["']?\s*:/.exec(l);
+      if (m && m[1].toLowerCase() === key) return true;
+    }
+    return false;
+  };
+  return scan(index - 1, -1) || scan(index + 1, 1);
+}
+
 function inModelKeyedBlock(lines: readonly string[], index: number, id: string): boolean {
   const indent = (s: string): number => s.search(/\S/);
   const own = indent(lines[index]);
@@ -448,6 +489,21 @@ export function classifyOccurrenceWithSignals(
 
   // From here the occurrence IS selector-shaped: `<model-like key>: <exact id>`.
   signals.push('selector_key');
+  // A placeholder / hint / label key is presentation, not selection — whatever
+  // the value looks like.
+  if (base.key !== null && UI_METADATA_KEYS.test(base.key)) {
+    return { position: 'config_catalog', purpose: 'catalog_entry', key: base.key, signals: [...signals, 'ui_metadata_key'] };
+  }
+  // Router `model_list` idiom (litellm, others): `model_name` is the client-facing
+  // ALIAS; the provider selector is the sibling `litellm_params.model`. Reporting
+  // the alias doubled every entry and mislabeled the alias as the selection.
+  if (base.key !== null && /^model_name$/i.test(base.key) && index >= 0 && hasSiblingKey(lines, index, 'litellm_params')) {
+    return { position: 'config_catalog', purpose: 'catalog_entry', key: base.key, signals: [...signals, 'alias_key'] };
+  }
+  // An entry pointing at a fake model / fake key is a stub, whatever the file is.
+  if (index >= 0 && blockHasMockMarker(lines, index)) {
+    return { position: 'config_catalog', purpose: 'data_fixture', key: base.key, signals: [...signals, 'mock_markers'] };
+  }
   const isRuntimeRoute = base.key !== null && RUNTIME_ROUTE_KEYS.test(base.key);
   if (isRuntimeRoute) signals.push('runtime_route_key');
   if (file.dense) signals.push('catalog_density');
@@ -482,7 +538,48 @@ export function classifyOccurrenceWithSignals(
 }
 
 /** Scan one config file's text for deprecated ids. Pure (no fs). */
-export function scanConfigText(file: string, text: string, registry: LlmRegistry): ConfigMatch[] {
+/**
+ * Content markers of a TEST FIXTURE config, whatever its path: fake keys, mock
+ * models, mock-testing flags. Partner audits (2026-09-04, litellm): the root
+ * `proxy_server_config.yaml` is mounted only by CI and a hardening/QA compose
+ * overlay and carries `dangerously_allow_mock_testing_request_params: true`,
+ * `mock_timeout`, `my-fake-model`; a docker sample config points every entry at
+ * `openai/fake` with `fake-key`.
+ */
+const FILE_MOCK_FLAGS = /\b(mock_timeout|mock_response|dangerously_allow_mock_testing\w*|FAKE_[A-Z_]*API_BASE)/i;
+/** Entry-level: a fake key or a fake model inside ONE model_list entry marks that entry, not the file (a Helm chart can carry a stub entry beside a real one). */
+const ENTRY_MOCK_MARKERS = /\b(fake-key|my-fake-model|openai\/fake|test-api-key)\b/i;
+
+/** Does the whole FILE declare itself a mock/test configuration? */
+export function hasMockMarkers(text: string): boolean {
+  return FILE_MOCK_FLAGS.test(text);
+}
+
+/** Does the BLOCK around line `index` (its siblings and their children) carry a fake key or fake model? */
+function blockHasMockMarker(lines: readonly string[], index: number): boolean {
+  const indentOf = (s: string): number => s.search(/\S/);
+  const own = indentOf(lines[index]) + (/^\s*-\s/.test(lines[index]) ? 2 : 0);
+  if (own < 0) return false;
+  const scan = (from: number, step: number): boolean => {
+    // Bounded: a flat 10k-entry catalog must not make this quadratic.
+    for (let i = from, n = 0; i >= 0 && i < lines.length && n < 80; i += step, n++) {
+      const l = lines[i];
+      if (l.trim() === '') continue;
+      const ind = indentOf(l) + (/^\s*-\s/.test(l) ? 2 : 0);
+      if (ind < own) break;
+      if (ENTRY_MOCK_MARKERS.test(l)) return true;
+    }
+    return false;
+  };
+  return ENTRY_MOCK_MARKERS.test(lines[index]) || scan(index - 1, -1) || scan(index + 1, 1);
+}
+
+export function scanConfigText(
+  file: string,
+  text: string,
+  registry: LlmRegistry,
+  opts: { gitignored?: boolean } = {},
+): ConfigMatch[] {
   const entries = modelIdEntries(registry);
   const byValue = new Map<string, LlmModelIdDeprecation[]>();
   for (const e of entries) {
@@ -495,7 +592,10 @@ export function scanConfigText(file: string, text: string, registry: LlmRegistry
   // file defines, not a runtime selection. Surface rides on every match.
   // FILE-LEVEL SIGNALS. None of these is a verdict on its own; they are inputs to
   // the per-occurrence decision below.
-  const dataFixture = isTestFixturePath(file);
+  // A fixture by PATH (examples/, templates, tests), by CONTENT (fake keys, mock
+  // flags), or by the repo's own .gitignore naming it (a local/dev artifact that
+  // happens to be tracked). Any one is decisive: nothing here is deployed config.
+  const dataFixture = isTestFixturePath(file) || hasMockMarkers(text) || !!opts.gitignored;
   const catalogDef = isCatalogDefinitionFile(file, text);
   const surface = detectProviderSurface(file);
   let distinct = 0;
@@ -562,6 +662,11 @@ export function scanConfigFiles(repoPath: string, registry: LlmRegistry): {
   const excluded = new Set<string>();
   const files = collectConfigFiles(abs, excluded);
   const rel = (f: string): string => relative(abs, f).replace(/\\/g, '/');
+  // The repo's own .gitignore naming a tracked file means the file is a local /
+  // developer artifact, not deployed configuration (litellm's
+  // `_super_secret_config.yaml`). Exact paths and basenames only — no glob
+  // semantics, so this can only ever DEMOTE a file the author explicitly listed.
+  const ignored = gitignoredExactPaths(abs);
   const matches: ConfigMatch[] = [];
   let filesRead = 0;
   let filesUnreadable = 0;
@@ -582,9 +687,28 @@ export function scanConfigFiles(repoPath: string, registry: LlmRegistry): {
       generatedSkipped++;
       continue;
     }
-    for (const m of scanConfigText(rel(file), text, registry)) matches.push(m);
+    const r = rel(file);
+    const gitignored = ignored.has(r) || ignored.has(r.split('/').pop() ?? '');
+    for (const m of scanConfigText(r, text, registry, { gitignored })) matches.push(m);
   }
   return { matches, filesScanned: files.length, filesRead, filesUnreadable, generatedSkipped, excludedDirs: [...excluded].sort() };
+}
+
+/** Exact (non-glob) entries of the root .gitignore, as repo-relative paths or bare basenames. */
+export function gitignoredExactPaths(repoAbs: string): ReadonlySet<string> {
+  const out = new Set<string>();
+  let text: string;
+  try {
+    text = readFileSync(join(repoAbs, '.gitignore'), 'utf8');
+  } catch {
+    return out;
+  }
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#') || line.startsWith('!') || /[*?[\]]/.test(line)) continue;
+    out.add(line.replace(/^\/+/, '').replace(/\/+$/, ''));
+  }
+  return out;
 }
 
 /** A found deprecated id, aggregated by model, with the registry facts and locations. */

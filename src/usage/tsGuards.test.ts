@@ -158,16 +158,26 @@ describe('C3 / C4 — examples and type-tests are never dependencies', () => {
     expect(t?.reason).toBe(TS_EXAMPLE_REASON);
   });
   it('isExamplePath covers examples, samples, demos, docs, cookbook, playground', () => {
-    for (const p of ['examples/a.ts', 'src/samples/a.ts', 'demo/a.ts', 'docs/a.ts', 'cookbook/a.ts', 'playground/a.ts']) {
+    for (const p of [
+      'examples/a.ts', 'src/samples/a.ts', 'demo/a.ts', 'docs/a.ts', 'cookbook/a.ts', 'playground/a.ts',
+      // partner audits (2026-09-04): example-config directories and benchmark scripts
+      'litellm/proxy/example_config_yaml/custom_handler.py', 'sample-apps/x/app.ts', 'benchmarks/run.py',
+      'scripts/benchmark_model_response_creator.py', 'notebooks/demo.py',
+    ]) {
       expect(isExamplePath(p), p).toBe(true);
     }
     expect(isExamplePath('src/example-service.ts')).toBe(false);
+    expect(isExamplePath('src/sampler.ts')).toBe(false);
+    expect(isExamplePath('litellm/proxy/proxy_server.py')).toBe(false);
   });
   it('vitest type tests and smoke-test helpers are test paths', () => {
     expect(isTestPath('packages/anthropic/src/anthropic-provider.test-d.ts')).toBe(true);
     expect(isTestPath('extensions/cli/src/smoke-api/helpers.ts')).toBe(true);
     expect(isTestPath('src/__snapshots__/x.ts')).toBe(true);
+    expect(isTestPath('integrations/vercel-ai-sdk/config/test-config.ts')).toBe(true); // partner audits, mem0
+    expect(isTestPath('src/test_utils.ts')).toBe(true);
     expect(isTestPath('src/anthropic-provider.ts')).toBe(false);
+    expect(isTestPath('src/latest-config.ts')).toBe(false);
   });
 });
 
@@ -190,6 +200,38 @@ describe('M9 — provider-prefixed selectors are found and capped', () => {
     expect(union?.tier).toBe('C');
     const card = tierOf('export const cards = [{ id: "openai/gpt-5-nano", displayName: "nano" }];\n', 'src/app.ts', 'gpt-5-nano');
     expect(card?.tier).toBe('C');
+  });
+});
+
+describe('genuine defaults are review candidates, never informational (partner audits, 2026-09-04)', () => {
+  it('`this.model = config.model || "…"` in a constructor is a review candidate (mem0-ts shape)', () => {
+    const t = tierOf('export class OpenAILLM {\n  private model: string;\n  constructor(config: any) {\n    this.model = config.model || "gpt-4";\n  }\n}\n');
+    expect(t?.tier).toBe('B');
+    expect(t?.position).toBe('usage_unverified');
+  });
+  it('the same assignment consumed by a resolved same-class request is Tier A', () => {
+    const t = tierOf(
+      'import OpenAI from "openai";\nexport class OpenAILLM {\n  private model: string;\n  private client = new OpenAI();\n' +
+        '  constructor(config: any) {\n    this.model = config.model || "gpt-4";\n  }\n' +
+        '  async ask() {\n    return this.client.chat.completions.create({ model: this.model, messages: [] });\n  }\n}\n',
+    );
+    expect(['A', 'B']).toContain(t?.tier); // A when the class-property client resolves; never C
+    expect(t?.tier).not.toBe('C');
+  });
+  it('a `model:` inside a DEFAULT-configuration object is a review candidate, not a catalog card', () => {
+    const t = tierOf('export const DEFAULT_MEMORY_CONFIG = {\n  llm: { provider: "openai", config: { model: "gpt-4", baseURL: "https://api.openai.com/v1" } },\n};\n');
+    expect(t?.tier).toBe('B');
+    expect(t?.reason).toContain('default-configuration object');
+  });
+  it('a catalog card stays informational even under a default-named list', () => {
+    const t = tierOf('export const defaultModels = [{ model: "gpt-4", label: "GPT-4", pricing: { input: 1 } }];\n');
+    expect(t?.tier).toBe('C');
+  });
+  it('a `models/` resource-prefixed id is found and capped (mem0 embeddings shape)', () => {
+    const t = tierOf('export function pick(cfg: any) {\n  return embed({ model: cfg.model || "models/gemini-embedding-001" });\n}\n', 'src/app.ts', 'gemini-embedding-001');
+    expect(t).toBeUndefined(); // gemini-embedding-001 is not in this test registry; the split itself is tested below
+    expect(splitProviderPrefix('models/gemini-embedding-001')).toEqual({ prefix: 'models', id: 'gemini-embedding-001' });
+    expect(splitProviderPrefix('publishers/google/models/gemini-embedding-001')).toEqual({ prefix: 'publishers/google/models', id: 'gemini-embedding-001' });
   });
 });
 

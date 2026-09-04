@@ -57,10 +57,12 @@ function sampleRepo(): string {
 }
 
 async function runAudit(args: string[], env: Record<string, string> = {}): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  // The canonical report is UTF-8; a captured stdout on Windows would otherwise
+  // (correctly) switch to ASCII. Pin the glyph form so assertions are stable.
   const result = await execa('tsx', ['src/cli.ts', 'audit', ...args], {
     cwd: MENDR_ROOT,
     reject: false,
-    env: { ...process.env, ...env },
+    env: { ...process.env, MENDR_UNICODE: '1', ...env },
   });
   return { exitCode: result.exitCode ?? 0, stdout: result.stdout, stderr: result.stderr };
 }

@@ -65,6 +65,17 @@ export interface LocationRef {
    * must never read as "will be fixed" (external validation, chatbot-ui).
    */
   patchEligible: boolean;
+  /**
+   * Per LOCATION: what this line asks of the reader. The model-level `decision`
+   * is the strictest of its locations, so an informational catalog row under a
+   * review model must not read as "review" itself (partner audits, 2026-09-04).
+   */
+  disposition: 'patch' | 'review' | 'informational';
+}
+
+/** The per-location disposition a tier implies. */
+export function dispositionOf(tier: Tier): 'patch' | 'review' | 'informational' {
+  return tier === 'A' ? 'patch' : tier === 'B' ? 'review' : 'informational';
 }
 
 /** The retirement facts, straight from the deprecation registry. */
@@ -290,6 +301,7 @@ function toConfigLocation(m: ConfigMatch): LocationRef {
   return {
     file: m.file, line: m.line, column: m.column, key: m.key, value: m.value,
     role, surface: 'config', tier: m.tier, providerSurface: m.providerSurface, patchEligible: false,
+    disposition: dispositionOf(m.tier),
   };
 }
 
@@ -309,6 +321,7 @@ function toSourceLocation(o: ExposureOccurrence, model: string): LocationRef {
   return {
     file: o.file, line: o.line, column: o.column, key: null, value: model,
     role, surface: 'code', tier: o.tier, providerSurface: null, patchEligible: o.tier === 'A',
+    disposition: dispositionOf(o.tier),
   };
 }
 

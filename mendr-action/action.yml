@@ -17,7 +17,7 @@ inputs:
   mendr-spec:
     description: "npm or GitHub spec for the Mendr CLI that runs in your CI (pins the version). Defaults to the pinned GitHub release; use an npm spec once the package is on the registry. Local specs must use the file: protocol (e.g. file:/path/to/mendr.tgz) — npm silently no-ops on raw absolute paths."
     required: false
-    default: "github:ajitheee/mendr#v0.2.3-alpha"
+    default: "github:ajitheee/mendr#v0.2.4-alpha"
   install-command:
     description: "Command to install the target repo's deps so Mendr's test gate can run. Empty = auto-detect from the lockfile."
     required: false

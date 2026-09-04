@@ -17,10 +17,10 @@ jobs:
       pull-requests: write # open/update the Mendr PR
     steps:
       - uses: actions/checkout@v4
-      - uses: ajitheee/mendr/mendr-action@v0.2.3-alpha
+      - uses: ajitheee/mendr/mendr-action@v0.2.4-alpha
         with:
           # pin the CLI the action runs to the same release as the action itself
-          mendr-spec: github:ajitheee/mendr#v0.2.3-alpha
+          mendr-spec: github:ajitheee/mendr#v0.2.4-alpha
         # with:
         #   working-directory: packages/api   # if your code isn't at the repo root
         #   node-version: "22"

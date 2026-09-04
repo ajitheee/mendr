@@ -5,7 +5,7 @@
 One command scans TypeScript, TSX, Python and config files, joins a dated retirement registry for OpenAI, Anthropic and Google, and tells you what breaks, where, and by when. No API key. Nothing is changed.
 
 ```sh
-npx github:ajitheee/mendr#v0.2.3-alpha audit .
+npx github:ajitheee/mendr#v0.2.4-alpha audit .
 ```
 
 (`npx mendr audit .` once the package lands on the npm registry.)
@@ -39,7 +39,7 @@ Every output carries the coverage matrix, so a skipped surface can never read as
 ## keep it watched
 
 ```sh
-npx github:ajitheee/mendr#v0.2.3-alpha audit . --install
+npx github:ajitheee/mendr#v0.2.4-alpha audit . --install
 ```
 
 scaffolds a GitHub workflow that keeps **one issue per repository** current: new, continuing and resolved findings, the exact commit scanned, and the coverage matrix. It asks for `contents: read` and `issues: write`, never touches your default branch, and never merges anything.
@@ -49,25 +49,25 @@ scaffolds a GitHub workflow that keeps **one issue per repository** current: new
 `fix-llm` goes one step further: it writes the exact diff for a retired id at a verified call site and proves it against your type-check and tests before anything is applied. Print-only by default — read the patch, and if it's right, apply it:
 
 ```sh
-npx github:ajitheee/mendr#v0.2.3-alpha fix-llm .
+npx github:ajitheee/mendr#v0.2.4-alpha fix-llm .
 ```
 
 You can also point it straight at a GitHub link. mendr clones a throwaway copy and scans that, so the real repo is never touched:
 
 ```sh
-npx github:ajitheee/mendr#v0.2.3-alpha fix-llm https://github.com/someone/their-repo
+npx github:ajitheee/mendr#v0.2.4-alpha fix-llm https://github.com/someone/their-repo
 ```
 
 It never writes to your working tree on its own. The default is print-only. When you're ready to apply:
 
 ```sh
-npx github:ajitheee/mendr#v0.2.3-alpha fix-llm . --write
+npx github:ajitheee/mendr#v0.2.4-alpha fix-llm . --write
 ```
 
 `--write` only applies a fix that passed the gates (type-check, plus your tests when they can run). Anything it can't verify is shown for review and left alone. You can also pipe the diff straight into git, since it's a standard patch:
 
 ```sh
-npx github:ajitheee/mendr#v0.2.3-alpha fix-llm . -o mendr.patch && git apply mendr.patch
+npx github:ajitheee/mendr#v0.2.4-alpha fix-llm . -o mendr.patch && git apply mendr.patch
 ```
 
 ### keep watching a repo
@@ -75,7 +75,7 @@ npx github:ajitheee/mendr#v0.2.3-alpha fix-llm . -o mendr.patch && git apply men
 `fix-llm` is one-shot. `mendr watch` is the resident version — it scans in your own GitHub Actions and keeps one issue listing every deprecated model id you use, grouped by risk and deadline, so you find out before a model retires. Run it once to see your exposure, or `--install` to make it resident:
 
 ```sh
-npx github:ajitheee/mendr#v0.2.3-alpha watch .
+npx github:ajitheee/mendr#v0.2.4-alpha watch .
 ```
 
 See [standing watch](#standing-watch) for the details and [WATCH-SCHEMA.md](WATCH-SCHEMA.md) for the JSON.
@@ -198,7 +198,7 @@ Mendr Watch continuously rescans your repository inside your own GitHub Actions 
 Run it once to see your exposure (a local path, or a GitHub URL to scan a read-only copy):
 
 ```sh
-npx github:ajitheee/mendr#v0.2.3-alpha watch .
+npx github:ajitheee/mendr#v0.2.4-alpha watch .
 ```
 
 ```
@@ -220,7 +220,7 @@ Every occurrence carries the same A/B/C tier `fix-llm` uses, so the two tools al
 Then make it resident:
 
 ```sh
-npx github:ajitheee/mendr#v0.2.3-alpha watch --install
+npx github:ajitheee/mendr#v0.2.4-alpha watch --install
 ```
 
 That scaffolds `.github/workflows/mendr-watch.yml` — a workflow that runs in **your own CI** (no server, nothing on our infrastructure) and maintains **one** GitHub issue: your deprecated model ids, each mapped to its retirement date, sorted by the nearest deadline. It's the [Renovate dashboard](https://docs.renovatebot.com/key-concepts/dashboard/) mechanic — the issue is found by a hidden marker and edited in place forever, never re-posted, so it re-surfaces itself without ever spamming you. It asks for `issues: write` and `contents: read` and nothing else: it opens no pull requests, runs none of your tests, and pushes no commits. It's pinned to an immutable Mendr release (overridable via a `MENDR_SPEC` repo variable), so a future upstream change can't run in your CI without you choosing it.
@@ -377,7 +377,7 @@ The collapsed Tier C line carries line numbers for the same reason:
 ### gating CI on a tier
 
 ```sh
-npx github:ajitheee/mendr#v0.2.3-alpha fix-llm . --fail-on tierB
+npx github:ajitheee/mendr#v0.2.4-alpha fix-llm . --fail-on tierB
 ```
 
 `--fail-on` takes `tierA`, `tierB`, or `none` (the default). `blocked` still works as a **deprecated alias for `tierB`** and prints a notice on stderr — note that it now covers every review-required finding, not just unverified replacements.

@@ -26,14 +26,27 @@ export interface AuditMeta {
   from: string | null;
   to: string | null;
   coverage: AuditCoverage;
+  /** List every informational reference in full (default: a count and the first few). */
+  verbose?: boolean;
 }
+
+/** How many informational references the default report lists in full. */
+export const INFORMATIONAL_PREVIEW = 5;
 
 const int = (n: number): string => n.toLocaleString('en-US');
 const usd = (n: number): string =>
   `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-function deadline(status: string | null, days: number | null, shutdownDate: string | null): string {
-  const life = status ?? 'listed in registry (no provider notice on file)';
+function deadline(status: string | null, days: number | null, shutdownDate: string | null, verified: boolean): string {
+  // A date with no provider notice on file is a REGISTRY date, not a fact we can
+  // call overdue. Partner audits (2026-09-04) read "no provider notice on file —
+  // 311d OVERDUE" as an assertion; it is not one.
+  if (!verified) {
+    if (!shutdownDate || days === null) return `${status ?? 'listed in registry'} — no dated deadline; no provider notice on file`;
+    const rel = days < 0 ? `${-days}d past` : days === 0 ? 'today' : `${days}d ahead`;
+    return `${status ?? 'listed in registry'} — registry date ${shutdownDate} (${rel}), UNVERIFIED: no provider notice on file`;
+  }
+  const life = status ?? 'listed in registry';
   let when: string;
   if (days === null) when = shutdownDate ? `shuts ${shutdownDate}` : 'no dated deadline';
   else if (days < 0) when = `${-days}d OVERDUE`;
@@ -89,12 +102,19 @@ export function decisionLines(inv: ModelInvestigation): string[] {
   // "Track until the retirement date" is nonsense when there is no date, and
   // worse when the date is already past. Say what the reader can actually do.
   const r = inv.retirementEvidence;
-  const next =
-    r.shutdownDate === null
+  const informational = inv.locations.selectors.length === 0;
+  const dated = r.shutdownDate !== null && r.sourceUrl !== null; // a provider-backed date
+  const next = informational
+    ? // An informational reference is NOT a dependency: telling the reader to
+      // "migrate now" contradicts the label two lines above it (partner audits, 2026-09-04).
+      'No migration action required from this reference. Monitor provider status.'
+    : r.shutdownDate === null
       ? 'Monitor provider status'
-      : r.daysUntil !== null && r.daysUntil < 0
-        ? `Migrate now — retired on ${r.shutdownDate} (${-r.daysUntil} days ago); requests using this id fail today`
-        : 'Track until the retirement date';
+      : !dated
+        ? `Verify the retirement date with the provider before acting — the registry date ${r.shutdownDate} has no provider notice on file`
+        : r.daysUntil !== null && r.daysUntil < 0
+          ? `Migrate now — retired on ${r.shutdownDate} (${-r.daysUntil} days ago); requests using this id fail today`
+          : 'Track until the retirement date';
   return ['Decision: MONITOR', 'Status: No change applied', `Next action: ${next}`];
 }
 
@@ -324,7 +344,11 @@ export function renderAuditReport(investigations: readonly ModelInvestigation[],
     `${investigations.length} deprecated model ids: ${count('patch')} patch-eligible (no change applied), ${count('review')} need human review, ${count('monitor')} informational`,
   );
 
-  for (const inv of [...exposure, ...informational]) {
+  // Every exposure in full. Informational references are NOT dependencies and
+  // there can be hundreds (litellm: 57); by default show a count and the first
+  // few, and let --verbose or --json carry the rest (partner audits, 2026-09-04).
+  const shownInformational = meta.verbose ? informational : informational.slice(0, INFORMATIONAL_PREVIEW);
+  for (const inv of [...exposure, ...shownInformational]) {
     const r = inv.retirementEvidence;
     lines.push('');
     lines.push(isExposureInv(inv) ? 'Deprecated model dependency located' : 'Informational reference (not a dependency)');
@@ -347,7 +371,7 @@ export function renderAuditReport(investigations: readonly ModelInvestigation[],
       lines.push('Location: not located in code or config (may be a datastore, a flag, or an unscanned runtime)');
     }
 
-    lines.push(`Retirement: ${deadline(r.status, r.daysUntil, r.shutdownDate)}${r.sourceUrl ? `  [source: ${r.sourceUrl}]` : ''}`);
+    lines.push(`Retirement: ${deadline(r.status, r.daysUntil, r.shutdownDate, r.sourceUrl !== null)}${r.sourceUrl ? `  [source: ${r.sourceUrl}]` : ''}`);
     if (r.replacement) {
       const verdict = r.replacementVerdict ?? 'unstamped';
       const note =
@@ -365,6 +389,12 @@ export function renderAuditReport(investigations: readonly ModelInvestigation[],
     // something — it means a migration is ELIGIBLE, pending human review.
     for (const line of decisionLines(inv)) lines.push(line);
     lines.push(`Reason: ${inv.reason}`);
+  }
+  if (informational.length > shownInformational.length) {
+    lines.push('');
+    lines.push(
+      `… and ${informational.length - shownInformational.length} more informational references (not dependencies). Use --verbose to list them all, or --json.`,
+    );
   }
 
   const gaps = coverageGaps(meta.coverage);

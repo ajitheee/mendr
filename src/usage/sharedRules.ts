@@ -23,12 +23,39 @@ export function isModelLikeName(name: string): boolean {
  */
 export function isExamplePath(file: string): boolean {
   const p = file.replace(/\\/g, '/').toLowerCase();
-  return /(^|\/)(examples?|samples?|demos?|docs?|playground|cookbook|tutorials?|__snapshots__)(\/)/.test(p);
+  // A directory segment that IS or STARTS WITH example/sample/demo
+  // (`example_config_yaml/`, `sample-apps/`), plus cookbooks, tutorials,
+  // notebooks, playgrounds and benchmarks. Partner audits (2026-09-04):
+  // litellm's `example_config_yaml/custom_handler.py` and a benchmark script
+  // were review candidates.
+  if (/(^|\/)(examples?|samples?|demos?)([_-][^/]*)?(\/)/.test(p)) return true;
+  if (/(^|\/)(docs?|playground|cookbooks?|tutorials?|notebooks?|benchmarks?|bench|__snapshots__)(\/)/.test(p)) return true;
+  // A benchmark SCRIPT by name: `scripts/benchmark_model_response_creator.py`.
+  if (/(^|\/)(bench|benchmark)[_-][^/]*\.(py|[mc]?[jt]sx?)$/.test(p)) return true;
+  return false;
 }
 
 /** Providers whose `provider/model` and `provider:model` spellings we recognize. */
 const PROVIDER_PREFIX =
-  /^(openai|anthropic|google|gemini|vertex|vertex_ai|vertexai|azure|azure_openai|bedrock|openrouter|litellm|gateway)[/:](.+)$/i;
+  /^(openai|anthropic|google|gemini|vertex|vertex_ai|vertexai|azure|azure_openai|bedrock|openrouter|litellm|gateway|models|publishers\/google\/models)[/:](.+)$/i;
+
+/**
+ * Is a declaration / variable name the kind that holds a DEFAULT configuration
+ * (`DEFAULT_MEMORY_CONFIG`, `defaultLlm`, `settings`, `options`)? A `model:` in
+ * such an object is the library-wide default a caller inherits — a real
+ * selector — not a catalog card. Partner audits (2026-09-04, mem0): a dozen
+ * such defaults were filed as informational.
+ */
+export function isDefaultContainerName(name: string): boolean {
+  return /(default|config|settings|options|preset)/i.test(name);
+}
+
+/** Sibling keys that mark an object as a CATALOG record rather than a configuration. */
+export const CATALOG_SIBLING_KEYS =
+  /^(label|title|display_?name|description|pricing|price|input_?price|output_?price|context_?window|max_?tokens|max_?output|deprecated|releasedAt|released_at|vision|functionCall|function_call|reasoning)$/i;
+
+/** Names of lookup calls whose LAST argument is a DEFAULT: `getattr(cfg, "model", "gpt-4")`, `os.environ.get("X_MODEL", "gpt-4")`. */
+export const LOOKUP_WITH_DEFAULT = new Set(['get', 'getattr', 'getenv', 'setdefault', 'pop', 'get_env', 'getEnv']);
 
 /**
  * Split a gateway / registry style selector — `openai/gpt-5-nano`,

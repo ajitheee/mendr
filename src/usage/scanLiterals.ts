@@ -5,9 +5,12 @@ import {
   classifyCallSurface,
   collectTsSinks,
   enclosingCallOfObject,
+  hasCatalogSiblings,
   isCliModelOptionDefault,
+  isInDefaultContainer,
   judgeDeclarationSinks,
   TS_CLI_DEFAULT_REASON,
+  TS_DEFAULT_CONTAINER_REASON,
   TS_EXAMPLE_REASON,
   TS_MODEL_FACTORIES,
   TS_PREFIXED_REASON,
@@ -495,6 +498,13 @@ function classifyByEnclosure(node: Node, parent: Node | undefined, sinks?: TsSin
       // `JSON.stringify` of a mocked response, or an internal wrapper is REAL but
       // never an unattended swap.
       if (isModelLikeName(keyName) && call) return classifyCallSurface(call);
+      // A `model:` in a standalone DEFAULT-configuration object (`DEFAULT_CONFIG =
+      // { llm: { model: "…" } }`, `defaultLlm = { config: { model } }`) is the
+      // default a caller inherits — a real selector, review — unless the object
+      // is catalog-shaped (label/pricing siblings). Partner audits, mem0.
+      if (isModelLikeName(keyName) && obj && !hasCatalogSiblings(obj) && isInDefaultContainer(obj)) {
+        return { position: 'usage_unverified', reason: TS_DEFAULT_CONTAINER_REASON };
+      }
       // A property VALUE that is not a proven live model argument sits in a
       // standalone / catalog-shaped object (the chatbot-ui failure mode).
       return { position: 'data', purpose: 'catalog_entry' };
@@ -545,6 +555,25 @@ function classifyByEnclosure(node: Node, parent: Node | undefined, sinks?: TsSin
 
   // Equality operand: `m == "gpt-4"` may gate runtime logic — worth flagging
   // as a comparison rather than burying it under generic data.
+  // (b') assignment expression: `this.model = config.model || "…"`, `model = "…"`.
+  // The Python scanner has always treated `self.model = "…"` as a declaration;
+  // the TS scanner filed it as data (partner audits, mem0-ts: six such defaults).
+  if (
+    Node.isBinaryExpression(parent) &&
+    parent.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
+    parent.getRight() === node
+  ) {
+    const left = parent.getLeft();
+    const name = Node.isIdentifier(left)
+      ? left.getText()
+      : Node.isPropertyAccessExpression(left)
+        ? left.getName()
+        : undefined;
+    if (name && isAzureDeploymentName(name)) return { position: 'azure_deployment', reason: AZURE_DEPLOYMENT_REASON };
+    if (name && isModelLikeName(name)) return judgeDeclarationSinks(parent, name, sinks);
+    return { position: 'data', purpose: 'generic' };
+  }
+
   if (Node.isBinaryExpression(parent) && isEqualityOperator(parent.getOperatorToken().getKind())) {
     return { position: 'data', purpose: 'comparison' };
   }
@@ -569,6 +598,8 @@ export function isTestPath(file: string): boolean {
   const f = file.replace(/\\/g, '/');
   return (
     /\.(test|spec|vitest|e2e|test-d|spec-d)\.[mc]?[jt]sx?$/.test(f) ||
+    // `test-config.ts`, `test_utils.ts`, `test.helpers.ts`: named as test support (the Python rule already skips `test_*.py`).
+    /(^|\/)test[-_.][^/]*\.[mc]?[jt]sx?$/.test(f) ||
     /(^|\/)(__tests__|__mocks__|__fixtures__|__snapshots__|tests?|test-helpers?|test-utils|testing|mocks?|fixtures?|e2e|smoke-api|smoke-tests?)\//.test(f) ||
     /(^|\/)mock[-.][^/]*$|[-.]mocks?\.[mc]?[jt]sx?$/.test(f)
   );

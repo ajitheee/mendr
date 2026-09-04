@@ -159,6 +159,7 @@ import { buildInvestigations, concludeAudit, partitionFindings, type AuditCovera
 import { EMPTY_STATE, parseAuditState, renderAuditIssue } from './audit/issueReport.js';
 import { installAuditWorkflow } from './audit/installAuditWorkflow.js';
 import { unanalyzedCensus } from './audit/languages.js';
+import { shouldPrintProgress, shouldUsePlain, toPlainLines } from './report/plain.js';
 import {
   loadRuntimeEvidenceFile,
   runtimeEvidenceFromUsage,
@@ -2827,6 +2828,10 @@ program
   .option('--install', 'scaffold .github/workflows/mendr-audit.yml (runs in YOUR CI; no provider key)')
   .option('--force', 'with --install, overwrite an existing workflow file')
   .option('--json', 'emit the machine-readable investigation record on stdout')
+  .option('--plain', 'ASCII-only report (no ✓/○/— glyphs); automatic on Windows when output is piped or captured')
+  .option('--quiet', 'no progress lines on stderr (automatic when stderr is not a terminal)')
+  .option('--no-progress', 'alias of --quiet')
+  .option('--verbose', 'list every informational reference in full (default: a count and the first five)')
   .description(
     '[preview] Audit a repository for retiring AI dependencies. Needs only the REPO: scans TS/TSX/Python ' +
       'source + config, joins the deprecation registry, and locates every occurrence. Runtime evidence ' +
@@ -2841,9 +2846,13 @@ program
         runtime?: string; runtimeSource?: string; from?: string; to?: string;
         apiKeyEnv?: string; fixture?: string; skipSource?: boolean; json?: boolean;
         sha?: string; previousBody?: string; issueBody?: string; install?: boolean; force?: boolean;
+        plain?: boolean; quiet?: boolean; progress?: boolean; verbose?: boolean;
       },
     ) => {
       const json = !!opts.json;
+      // Progress goes to stderr ONLY when stderr is a terminal: PowerShell 5.1 turns
+      // every redirected stderr line into a NativeCommandError (partner audits, 2026-09-04).
+      const progress = !json && shouldPrintProgress(!!opts.quiet || opts.progress === false);
       if (opts.install) {
         const target = resolveRepoOrExit(repoPath);
         const res = installAuditWorkflow(target, !!opts.force);
@@ -2921,7 +2930,7 @@ program
           const pyTests = countPyTestFiles(pyAll);
           pyFiles = pyAll.length - pyTests;
           testFilesSkipped = countTsTestFiles(resolved) + pyTests;
-          if (!json) console.error(`Scanning source (${tsFiles} TS/TSX, ${pyFiles} Python file(s); ${testFilesSkipped} test file(s) skipped by rule)...`);
+          if (progress) console.error(`Scanning source (${tsFiles} TS/TSX, ${pyFiles} Python file(s); ${testFilesSkipped} test file(s) skipped by rule)...`);
           const scan = await scanForExposure(resolved, registry);
           source = foldExposure(scan.matches);
           sourceAnalyzed = true;
@@ -2946,7 +2955,7 @@ program
           const src: RuntimeSource =
             kind === 'otel' || kind === 'gateway_logs' || kind === 'usage_export' ? kind : 'usage_export';
           runtime = loadRuntimeEvidenceFile(opts.runtime, src);
-          if (!json) console.error(`Read runtime evidence from ${opts.runtime} (${runtime.observations.length} model(s)).`);
+          if (progress) console.error(`Read runtime evidence from ${opts.runtime} (${runtime.observations.length} model(s)).`);
         } else if (opts.fixture || provider !== undefined) {
           // Option 3: the customer's OWN read-only key, kept in their CI/secret manager.
           to = opts.to ?? iso(now);
@@ -3104,8 +3113,9 @@ program
         return;
       }
 
-      const meta: AuditMeta = { from, to, coverage };
-      for (const line of renderAuditReport(investigations, meta)) console.log(line);
+      const meta: AuditMeta = { from, to, coverage, verbose: !!opts.verbose };
+      const rendered = renderAuditReport(investigations, meta);
+      for (const line of shouldUsePlain(opts.plain) ? toPlainLines(rendered) : rendered) console.log(line);
     },
   );
 
