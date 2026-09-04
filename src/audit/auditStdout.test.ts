@@ -140,6 +140,26 @@ describe('audit CLI — claim discipline (release-copy corrections)', () => {
     expect(inv.productionUsageDetail.measured).toBe(false); // detail preserved
   }, 120_000);
 
+  it('JSON carries the evidence a UI needs: repo, timestamp, next action, a limited snippet and a line hash per location', async () => {
+    const dir = sampleRepo();
+    const { stdout } = await runAudit([dir, '--json']);
+    const report = JSON.parse(stdout);
+    expect(typeof report.repo).toBe('string');
+    expect(report.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    const inv = report.investigations.find((i: { decision: string }) => i.decision === 'patch');
+    expect(inv.nextAction).toContain('mendr fix-llm <path>');
+    const loc = inv.locations.selectors[0];
+    expect(loc.disposition).toBe('patch');
+    expect(loc.patchEligible).toBe(true);
+    // A few lines of context around the reported line, never the file; the
+    // reported line is inside the window and its hash is stable.
+    expect(loc.snippet.startLine).toBeGreaterThan(0);
+    expect(loc.snippet.startLine).toBeLessThanOrEqual(loc.line);
+    expect(loc.snippet.lines.length).toBeLessThanOrEqual(7);
+    expect(loc.snippet.lines[loc.line - loc.snippet.startLine]).toContain('gpt-4');
+    expect(loc.lineHash).toMatch(/^[0-9a-f]{16}$/);
+  }, 120_000);
+
   it('never reports patchApplied true for any finding', async () => {
     const dir = sampleRepo();
     const { stdout } = await runAudit([dir, '--json']);

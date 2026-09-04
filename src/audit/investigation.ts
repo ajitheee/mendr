@@ -71,6 +71,8 @@ export interface LocationRef {
    * review model must not read as "review" itself (partner audits, 2026-09-04).
    */
   disposition: 'patch' | 'review' | 'informational';
+  /** The Tier-B reason code for a code occurrence (why it is not Tier A), or null. */
+  reason: string | null;
 }
 
 /** The per-location disposition a tier implies. */
@@ -301,7 +303,7 @@ function toConfigLocation(m: ConfigMatch): LocationRef {
   return {
     file: m.file, line: m.line, column: m.column, key: m.key, value: m.value,
     role, surface: 'config', tier: m.tier, providerSurface: m.providerSurface, patchEligible: false,
-    disposition: dispositionOf(m.tier),
+    disposition: dispositionOf(m.tier), reason: null,
   };
 }
 
@@ -321,7 +323,7 @@ function toSourceLocation(o: ExposureOccurrence, model: string): LocationRef {
   return {
     file: o.file, line: o.line, column: o.column, key: null, value: model,
     role, surface: 'code', tier: o.tier, providerSurface: null, patchEligible: o.tier === 'A',
-    disposition: dispositionOf(o.tier),
+    disposition: dispositionOf(o.tier), reason: o.reason ?? null,
   };
 }
 

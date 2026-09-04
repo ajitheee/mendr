@@ -3,7 +3,7 @@ import { Command } from 'commander';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { simpleGit } from 'simple-git';
 import { loadSpec } from './detect/fetchSpec.js';
 import { diffSpecs } from './detect/diffSpec.js';
@@ -166,7 +166,7 @@ import {
   NO_RUNTIME_EVIDENCE,
   type RuntimeSource,
 } from './runtime/evidence.js';
-import { renderAuditReport, type AuditMeta } from './report/auditReport.js';
+import { decisionLines, renderAuditReport, type AuditMeta } from './report/auditReport.js';
 
 const program = new Command();
 
@@ -3069,12 +3069,44 @@ program
       }
 
       if (json) {
+        // A LIMITED snippet per reported line — the evidence a reviewer needs to
+        // judge the finding, and all that ever leaves the machine: a few lines of
+        // context, capped in width, plus a hash of the exact line so a later run
+        // (or a UI) can tell "same line, moved" from "changed". Never the file.
+        const SNIPPET_CONTEXT = 3;
+        const SNIPPET_WIDTH = 160;
+        const snippetCache = new Map<string, string[] | null>();
+        const linesOf = (file: string): string[] | null => {
+          if (snippetCache.has(file)) return snippetCache.get(file) ?? null;
+          let lines: string[] | null = null;
+          try {
+            lines = readFileSync(join(resolved, file), 'utf8').split(/\r?\n/);
+          } catch {
+            lines = null;
+          }
+          snippetCache.set(file, lines);
+          return lines;
+        };
+        const withSnippet = <T extends { file: string; line: number }>(l: T): T & { snippet: { startLine: number; lines: string[] } | null; lineHash: string | null } => {
+          const lines = linesOf(l.file);
+          if (!lines || l.line < 1 || l.line > lines.length) return { ...l, snippet: null, lineHash: null };
+          const start = Math.max(1, l.line - SNIPPET_CONTEXT);
+          const end = Math.min(lines.length, l.line + SNIPPET_CONTEXT);
+          const clip = (s: string): string => (s.length > SNIPPET_WIDTH ? `${s.slice(0, SNIPPET_WIDTH)}…` : s);
+          return {
+            ...l,
+            snippet: { startLine: start, lines: lines.slice(start - 1, end).map(clip) },
+            lineHash: createHash('sha256').update(lines[l.line - 1].trim()).digest('hex').slice(0, 16),
+          };
+        };
         console.log(
           JSON.stringify(
             {
               generatedBy: 'mendr',
               schema: 'mendr-audit/v3',
               preview: true,
+              repo: basename(resolved),
+              generatedAt: now.toISOString(),
               period: { from, to },
               sha: opts.sha ?? null,
               coverage,
@@ -3084,6 +3116,13 @@ program
               // production usage as a scalar status alongside the detail object.
               investigations: investigations.map((inv) => ({
                 ...inv,
+                locations: {
+                  selectors: inv.locations.selectors.map(withSnippet),
+                  catalog: inv.locations.catalog.map(withSnippet),
+                },
+                // The same next action the human report prints, so a UI never
+                // re-derives (and drifts from) the CLI's wording.
+                nextAction: decisionLines(inv).find((l) => l.startsWith('Next action: '))?.slice('Next action: '.length) ?? null,
                 patchEligible: inv.decision === 'patch',
                 patchApplied: false,
                 productionUsage: !inv.productionUsage.measured

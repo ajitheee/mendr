@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+### Added — investigation workspace prototype (`site/app/`)
+
+A static page that imports `mendr audit --json` output and shows a repository
+overview (conclusion, coverage, limits, the three decision counts with unequal
+weight, nearest verified retirement), a three-panel investigation view (models
+and files · the reported line in context · what was found, why it matters, the
+provider surface, production usage, the decision and why, what remains unknown,
+the next action), and history across runs (new, continuing, carried, resolved,
+reopened, dismissed) keyed on the same finding identity the GitHub issue uses.
+Nothing is uploaded: the page parses JSON in the browser and keeps dismissals in
+local storage. Served at `/app/` on the site. Built to test whether engineers
+understand a report without explanation, before any GitHub App or backend.
+
+### Added — audit JSON (additive, schema stays `mendr-audit/v3`)
+
+- `repo`, `generatedAt`.
+- Per investigation: `nextAction` — the same sentence the human report prints.
+- Per location: `disposition`, `reason` (the Tier-B reason code), a limited
+  `snippet` (up to three lines either side of the reported line, 160 characters
+  wide) and `lineHash` (a hash of the exact line, so a later run can tell
+  "moved" from "changed"). Never a whole file.
+
 ## v0.2.4-alpha — 2026-09-04
 
 **Focused hardening from the first five external repository audits** (Browser

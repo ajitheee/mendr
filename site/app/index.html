@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mendr investigation workspace</title>
+<meta name="description" content="Prototype: import mendr audit JSON and investigate what will break, where it lives, what was proven, what remains unknown, and what to do next. Nothing is uploaded — this page reads the JSON in your browser.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%23F4F1EA'/><line x1='30' y1='24' x2='30' y2='76' stroke='%23315CFF' stroke-width='7'/><line x1='30' y1='50' x2='68' y2='50' stroke='%23D88916' stroke-width='7'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ivory:#F4F1EA; --ivory-2:#EEEAE0; --paper:#FAF8F3; --carbon:#0B0D10; --ink-2:#33383f; --grey:#747B89; --grey-2:#9aa0a9;
+    --cobalt:#315CFF; --cobalt-soft:#E6ECFF; --amber:#D88916; --amber-soft:#FBEFD9; --jade:#15805D; --jade-soft:#E1F3EA; --red:#B0392C; --red-soft:#F8E1DD;
+    --hair:#DED7C7; --hair-2:#E7E1D4;
+    --sans:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--ivory);color:var(--carbon);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  a{color:var(--cobalt);text-decoration:none}
+  button{font:inherit;cursor:pointer}
+  .mono{font-family:var(--mono);font-size:12.5px}
+  /* --- top bar --- */
+  .top{display:flex;align-items:center;gap:14px;padding:10px 18px;border-bottom:1px solid var(--hair);background:var(--paper);position:sticky;top:0;z-index:5}
+  .mark{display:flex;align-items:center;gap:8px;font-weight:600;letter-spacing:.01em}
+  .sig{display:inline-block;width:10px;height:14px;border-left:3px solid var(--cobalt);border-bottom:3px solid var(--amber)}
+  .top .proto{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--grey);margin-left:4px}
+  .tabs{display:flex;gap:2px;margin-left:18px}
+  .tab{padding:6px 12px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--ink-2)}
+  .tab[aria-selected="true"]{background:var(--ivory-2);border-color:var(--hair);color:var(--carbon);font-weight:600}
+  .spacer{flex:1}
+  .btn{padding:6px 12px;border:1px solid var(--hair);border-radius:6px;background:var(--paper);color:var(--carbon)}
+  .btn.primary{background:var(--carbon);color:#fff;border-color:var(--carbon)}
+  .btn:focus-visible,.tab:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--cobalt);outline-offset:2px}
+  select{font:inherit;padding:6px 8px;border:1px solid var(--hair);border-radius:6px;background:var(--paper)}
+  /* --- layout --- */
+  .view{display:none;padding:18px}
+  .view.on{display:block}
+  .wrap{max-width:1280px;margin:0 auto}
+  h1{font-size:22px;font-weight:600;margin:0 0 4px;letter-spacing:-.01em}
+  h2{font-size:15px;font-weight:600;margin:0 0 10px}
+  .sub{color:var(--grey);margin:0 0 18px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:18px}
+  .card{background:var(--paper);border:1px solid var(--hair);border-radius:8px;padding:12px 14px}
+  .card .k{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--grey);margin-bottom:6px}
+  .card .v{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+  .card .d{color:var(--grey);font-size:12.5px;margin-top:2px}
+  .banner{display:flex;gap:14px;align-items:flex-start;padding:14px 16px;border-radius:8px;border:1px solid var(--hair);background:var(--paper);border-left:5px solid var(--grey);margin-bottom:18px}
+  .banner.exposure{border-left-color:var(--amber)} .banner.clean{border-left-color:var(--jade)} .banner.inconclusive{border-left-color:var(--grey)} .banner.failed{border-left-color:var(--red)}
+  .banner b{display:block;font-size:15px;margin-bottom:2px}
+  table{border-collapse:collapse;width:100%;background:var(--paper);border:1px solid var(--hair);border-radius:8px;overflow:hidden}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--hair-2);vertical-align:top}
+  th{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--grey);font-weight:600;background:var(--ivory-2)}
+  tr:last-child td{border-bottom:0}
+  .tw{overflow-x:auto}
+  /* --- decision states: never equal weight --- */
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border-radius:999px;font-size:11.5px;font-weight:600;letter-spacing:.02em;white-space:nowrap}
+  .pill.patch{background:var(--cobalt-soft);color:var(--cobalt)} .pill.review{background:var(--amber-soft);color:#9a5f08} .pill.informational{background:var(--ivory-2);color:var(--grey)}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}
+  .dot.patch{background:var(--cobalt)} .dot.review{background:var(--amber)} .dot.informational{background:var(--grey-2)}
+  .mark-ok{color:var(--jade)} .mark-no{color:var(--grey)} .mark-bad{color:var(--red)}
+  /* --- investigation: three panels --- */
+  .inv{display:grid;grid-template-columns:300px minmax(0,1fr) 360px;gap:14px;min-height:calc(100vh - 140px)}
+  @media (max-width:1100px){.inv{grid-template-columns:1fr}}
+  .panel{background:var(--paper);border:1px solid var(--hair);border-radius:8px;display:flex;flex-direction:column;min-height:0}
+  .panel .ph{padding:10px 12px;border-bottom:1px solid var(--hair);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--grey);display:flex;align-items:center;gap:8px}
+  .panel .pb{padding:10px 12px;overflow:auto;flex:1}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+  .chip{padding:3px 9px;border:1px solid var(--hair);border-radius:999px;background:transparent;font-size:12px;color:var(--ink-2)}
+  .chip[aria-pressed="true"]{background:var(--carbon);color:#fff;border-color:var(--carbon)}
+  .model{margin-bottom:10px}
+  .model > .mh{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:var(--ivory-2)}
+  .model > .mh .name{font-family:var(--mono);font-weight:500}
+  .model > .mh .dl{margin-left:auto;font-size:11.5px;color:var(--grey);white-space:nowrap}
+  .loc{display:flex;align-items:center;gap:8px;padding:5px 8px 5px 14px;border-radius:6px;width:100%;border:0;background:transparent;text-align:left;color:var(--ink-2);font-family:var(--mono);font-size:12px}
+  .loc:hover{background:var(--ivory-2)} .loc[aria-current="true"]{background:var(--cobalt-soft);color:var(--carbon)}
+  .loc .path{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .code{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#0f1216;color:#e7ecf2;border-radius:6px;padding:10px 0;overflow:auto}
+  .code .ln{display:grid;grid-template-columns:52px 1fr;gap:10px;padding:0 12px;white-space:pre}
+  .code .ln .n{color:#5c6675;text-align:right;user-select:none}
+  .code .ln.hit{background:rgba(216,137,22,.18);box-shadow:inset 3px 0 0 var(--amber)}
+  .code .ln.hit .n{color:var(--amber)}
+  .empty{color:var(--grey);padding:18px;text-align:center}
+  .ev h3{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--grey);margin:12px 0 4px}
+  .ev h3:first-child{margin-top:0}
+  .ev p{margin:0 0 4px}
+  .ev ul{margin:0;padding-left:18px}
+  .ev .miss li{color:#9a5f08}
+  .ev .next{background:var(--ivory-2);border-radius:6px;padding:8px 10px;margin-top:4px}
+  .ev .why{color:var(--ink-2)}
+  .kv{display:grid;grid-template-columns:120px 1fr;gap:2px 8px;font-size:13px}
+  .kv .k{color:var(--grey)}
+  .dismiss{margin-top:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .dismiss input{font:inherit;padding:5px 8px;border:1px solid var(--hair);border-radius:6px;flex:1;min-width:120px;background:#fff}
+  .note{font-size:12px;color:var(--grey)}
+  /* --- history --- */
+  .state{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11.5px;font-weight:600;letter-spacing:.03em}
+  .state.new{background:var(--cobalt-soft);color:var(--cobalt)} .state.continuing{background:var(--ivory-2);color:var(--ink-2)} .state.carried{background:var(--amber-soft);color:#9a5f08}
+  .state.resolved{background:var(--jade-soft);color:var(--jade)} .state.reopened{background:var(--red-soft);color:var(--red)} .state.dismissed{background:#eee;color:var(--grey);text-decoration:line-through}
+  /* --- loader --- */
+  .drop{border:2px dashed var(--hair);border-radius:10px;padding:26px;text-align:center;color:var(--grey);background:var(--paper);margin-bottom:14px}
+  .drop.over{border-color:var(--cobalt);color:var(--carbon)}
+  textarea{width:100%;min-height:120px;font-family:var(--mono);font-size:12px;border:1px solid var(--hair);border-radius:6px;padding:8px;background:#fff}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}
+  .privacy{font-size:12.5px;color:var(--grey);margin-top:10px}
+  .sr{position:absolute;left:-9999px}
+  .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--carbon);color:#fff;padding:8px 14px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
+  .toast.on{opacity:1}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <span class="mark"><span class="sig"></span> mendr <span class="proto">investigation workspace · prototype</span></span>
+  <nav class="tabs" role="tablist" aria-label="Views">
+    <button class="tab" role="tab" data-view="load" aria-selected="true">Load</button>
+    <button class="tab" role="tab" data-view="overview" aria-selected="false">Overview</button>
+    <button class="tab" role="tab" data-view="investigation" aria-selected="false">Investigation</button>
+    <button class="tab" role="tab" data-view="history" aria-selected="false">History</button>
+  </nav>
+  <span class="spacer"></span>
+  <label class="note" for="runSel">Run</label>
+  <select id="runSel" aria-label="Select run"></select>
+  <button class="btn" id="demoBtn">Load demo</button>
+</header>
+
+<!-- LOAD -->
+<section class="view on" id="view-load">
+  <div class="wrap">
+    <h1>Import a mendr audit</h1>
+    <p class="sub">Run <span class="mono">npx github:ajitheee/mendr#v0.2.4-alpha audit . --json &gt; audit.json</span> in a repository, then bring the JSON here. Load several runs of the same repository to see history.</p>
+    <div class="drop" id="drop">Drop one or more <span class="mono">audit.json</span> files here, or
+      <label class="btn" for="file" style="display:inline-block;margin-left:6px">Choose files</label>
+      <input class="sr" id="file" type="file" accept="application/json,.json" multiple>
+    </div>
+    <div class="row"><label for="paste" class="note">Or paste the JSON:</label></div>
+    <textarea id="paste" placeholder='{"generatedBy":"mendr","schema":"mendr-audit/v3", …}'></textarea>
+    <div class="row"><button class="btn primary" id="pasteBtn">Import pasted JSON</button><span class="note" id="loadStatus"></span></div>
+    <p class="privacy">Nothing is uploaded. This page parses the JSON in your browser and keeps dismissals in your browser's local storage only. A run's JSON contains file paths, line numbers, classifications and a few lines of context per finding — never whole files.</p>
+  </div>
+</section>
+
+<!-- OVERVIEW -->
+<section class="view" id="view-overview"><div class="wrap" id="overview"></div></section>
+
+<!-- INVESTIGATION -->
+<section class="view" id="view-investigation">
+  <div class="inv">
+    <div class="panel">
+      <div class="ph">Models and affected files</div>
+      <div class="pb">
+        <div class="chips" id="chips">
+          <button class="chip" data-f="patch" aria-pressed="true">Patch eligible</button>
+          <button class="chip" data-f="review" aria-pressed="true">Review required</button>
+          <button class="chip" data-f="informational" aria-pressed="false">Informational</button>
+        </div>
+        <div id="list"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="ph"><span id="codeTitle">Code</span><span class="spacer"></span><button class="btn" id="copyBtn" style="padding:2px 8px;font-size:12px">Copy location</button></div>
+      <div class="pb" id="code"><div class="empty">Select a location on the left.</div></div>
+    </div>
+    <div class="panel">
+      <div class="ph">Evidence, confidence, next action</div>
+      <div class="pb ev" id="evidence"><div class="empty">Select a location on the left.</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- HISTORY -->
+<section class="view" id="view-history"><div class="wrap" id="history"></div></section>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+  // ---------- state ----------
+  const S = { runs: [], current: 0, filters: { patch: true, review: true, informational: false }, selected: null };
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const LS_KEY = 'mendr.dismissed.v1';
+  const dismissed = (() => { try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch { return {}; } })();
+  const saveDismissed = () => { try { localStorage.setItem(LS_KEY, JSON.stringify(dismissed)); } catch { /* storage unavailable: dismissals are session-only */ } };
+  const toast = (m) => { const t = $('toast'); t.textContent = m; t.classList.add('on'); setTimeout(() => t.classList.remove('on'), 1800); };
+
+  // ---------- identity: the same rule as src/audit/fingerprint.ts ----------
+  // provider + normalized model + repo-relative path + key/symbol + evidence type.
+  // Line numbers are mutable detail: a reformat must not create a "new" finding.
+  const fp = (inv, loc) => [inv.provider, String(inv.model).toLowerCase(), loc.file, loc.key ?? '', loc.role].join('|');
+
+  // ---------- vocabulary (mirrors the CLI, never re-derives a decision) ----------
+  const ROLE = {
+    code_call_site: 'verified provider SDK call site (model argument)',
+    code_candidate: 'code default or call not traced to a provider request',
+    code_reference: 'code data reference (list, map, comparison, type)',
+    runtime_selector_candidate: 'configuration selector candidate',
+    catalog_definition: 'configuration catalog definition',
+    catalog_reference: 'configuration catalog reference',
+    test_fixture: 'test / data fixture',
+  };
+  const REASON = {
+    usage_unverified: 'the value is a default whose use as a live request could not be traced',
+    insufficient_dataflow: 'the client or receiver could not be resolved to a first-party provider in this file',
+    platform_blocked: 'the provider surface caps this at review (Azure deployment, proxy, gateway, or an endpoint without a verified successor)',
+    replacement_unverified: 'the registry replacement is not verified for this migration pair',
+    type_cast_masked: 'a type cast masks the literal; a raw swap would bypass the repo’s own model-id union',
+    dynamic_model_value: 'the model value is built at runtime',
+  };
+  const SURFACE = (loc, inv) => {
+    if (loc.tier === 'A') return 'Direct first-party provider SDK (' + inv.provider + '), resolved in this file';
+    if (loc.surface === 'config') return loc.providerSurface ? 'Configuration — provider surface: ' + loc.providerSurface : 'Configuration — provider surface not determined';
+    if (loc.reason === 'platform_blocked') return 'Not a direct provider surface: Azure, Vertex, Bedrock, a proxy, or an endpoint without a verified successor';
+    if (loc.reason === 'insufficient_dataflow') return 'Unknown wrapper or an injected client — not resolved to a first-party SDK in this file';
+    if (loc.tier === 'C') return 'Not a request';
+    return 'Not proven to be a direct provider request';
+  };
+  const dispositionOf = (loc) => loc.disposition || (loc.tier === 'A' ? 'patch' : loc.tier === 'B' ? 'review' : 'informational');
+  const invDisposition = (inv) => inv.decision === 'patch' ? 'patch' : inv.decision === 'review' ? 'review' : 'informational';
+  const DISP_LABEL = { patch: 'Patch eligible', review: 'Review required', informational: 'Informational' };
+  const CONCLUSION = {
+    exposure_detected: ['exposure', 'Exposure detected', 'At least one retiring model is a dependency of this code or its configuration.'],
+    no_exposure_in_completed_surfaces: ['clean', 'No exposure in completed surfaces', 'None found in the surfaces that finished. This is not a general all-clear: surfaces mendr does not analyze are not covered.'],
+    inconclusive: ['inconclusive', 'Inconclusive', 'The core source scan did not complete, or covered too small a share of this repository to say anything.'],
+    audit_failed: ['failed', 'Audit failed', 'A surface was attempted and errored. These results prove nothing.'],
+  };
+
+  // ---------- run management ----------
+  function addRuns(objs) {
+    let added = 0;
+    for (const o of objs) {
+      if (!o || o.generatedBy !== 'mendr' || !Array.isArray(o.investigations)) { toast('Not a mendr audit JSON'); continue; }
+      o._loadedAt = Date.now() + added;
+      o._label = (o.repo ? o.repo + ' · ' : '') + (o.generatedAt ? o.generatedAt.replace('T', ' ').slice(0, 16) : 'run ' + (S.runs.length + 1)) + (o.sha ? ' · ' + String(o.sha).slice(0, 7) : '');
+      S.runs.push(o); added++;
+    }
+    S.runs.sort((a, b) => (a.generatedAt && b.generatedAt) ? a.generatedAt.localeCompare(b.generatedAt) : a._loadedAt - b._loadedAt);
+    S.current = S.runs.length - 1;
+    renderRunSelect();
+    if (added) { $('loadStatus').textContent = added + ' run(s) loaded, ' + S.runs.length + ' total.'; show('overview'); }
+    renderAll();
+  }
+  function renderRunSelect() {
+    const sel = $('runSel'); sel.innerHTML = '';
+    S.runs.forEach((r, i) => { const o = document.createElement('option'); o.value = i; o.textContent = r._label; if (i === S.current) o.selected = true; sel.appendChild(o); });
+    sel.hidden = S.runs.length === 0;
+    document.querySelector('label[for="runSel"]').hidden = S.runs.length === 0;
+  }
+  $('runSel').addEventListener('change', (e) => { S.current = Number(e.target.value); S.selected = null; renderAll(); });
+
+  // ---------- loading ----------
+  const readFiles = (files) => Promise.all([...files].map((f) => f.text().then((t) => { try { return JSON.parse(t); } catch { toast('Could not parse ' + f.name); return null; } })));
+  $('file').addEventListener('change', async (e) => addRuns(await readFiles(e.target.files)));
+  const drop = $('drop');
+  drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', async (e) => { e.preventDefault(); drop.classList.remove('over'); addRuns(await readFiles(e.dataTransfer.files)); });
+  $('pasteBtn').addEventListener('click', () => { try { addRuns([JSON.parse($('paste').value)]); } catch { toast('That is not valid JSON'); } });
+  $('demoBtn').addEventListener('click', () => { S.runs = []; addRuns(DEMO_RUNS()); toast('Demo loaded: 3 runs of a fictional repository'); });
+
+  // ---------- views ----------
+  function show(view) {
+    document.querySelectorAll('.tab').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.view === view)));
+    document.querySelectorAll('.view').forEach((v) => v.classList.toggle('on', v.id === 'view-' + view));
+  }
+  document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => show(t.dataset.view)));
+  function renderAll() { renderOverview(); renderList(); renderSelected(); renderHistory(); }
+  const run = () => S.runs[S.current];
+
+  // ---------- overview ----------
+  function nearestDeadline(invs, verifiedOnly) {
+    let best = null;
+    for (const inv of invs) {
+      const r = inv.retirementEvidence || {};
+      if (!r.shutdownDate) continue;
+      if (verifiedOnly && !r.sourceUrl) continue;
+      if (!best || r.shutdownDate < best.date) best = { date: r.shutdownDate, model: inv.model, days: r.daysUntil, verified: !!r.sourceUrl };
+    }
+    return best;
+  }
+  function renderOverview() {
+    const el = $('overview'); const r = run();
+    if (!r) { el.innerHTML = '<div class="empty">No run loaded.</div>'; return; }
+    const c = r.coverage || {}; const src = c.source || {}; const cfg = c.config || {}; const rt = c.runtime || {};
+    const exposure = r.investigations.filter((i) => i.decision !== 'monitor');
+    const info = r.investigations.filter((i) => i.decision === 'monitor');
+    const locs = r.investigations.flatMap((i) => [...(i.locations?.selectors || []), ...(i.locations?.catalog || [])]);
+    const byDisp = { patch: 0, review: 0, informational: 0 };
+    for (const l of locs) byDisp[dispositionOf(l)]++;
+    const patchModels = r.investigations.filter((i) => i.decision === 'patch').length;
+    const reviewModels = r.investigations.filter((i) => i.decision === 'review').length;
+    const [cls, title, blurb] = CONCLUSION[r.conclusion] || ['inconclusive', r.conclusion, ''];
+    const analyzed = (src.tsFiles || 0) + (src.pyFiles || 0);
+    const other = src.unanalyzedFiles || 0;
+    const near = nearestDeadline(exposure, true), nearU = nearestDeadline(exposure, false);
+    const limits = [];
+    if (src.failed) limits.push('source scan FAILED');
+    else if (!src.analyzed) limits.push('source code was not scanned');
+    else if (analyzed === 0) limits.push('no TypeScript/TSX or Python source was found to scan');
+    if ((src.unanalyzedLanguages || []).length) limits.push('present but NOT analyzed: ' + src.unanalyzedLanguages.join(', ') + (other && analyzed && analyzed * 3 < other ? ' — only ' + analyzed + ' of ' + (analyzed + other) + ' source files were in a language mendr reads' : ''));
+    if (src.testFilesSkipped) limits.push(src.testFilesSkipped + ' test/spec/fixture source files were counted but their model ids were not examined');
+    if (cfg.failed) limits.push('config scan FAILED');
+    if (!rt.connected) limits.push('runtime usage was not measured — whether these models receive production traffic is unknown');
+    limits.push('reader tie-back not proven — a config location is a candidate; mendr has not shown that runtime reads it');
+    const cov = (ok, label, detail, mark) => '<tr><td>' + (ok === true ? '<span class="mark-ok">✓</span>' : ok === false ? '<span class="mark-bad">✗</span>' : '<span class="mark-no">○</span>') + ' ' + esc(label) + '</td><td>' + detail + '</td></tr>';
+    el.innerHTML =
+      '<h1>' + esc(r.repo || 'Repository') + '</h1>' +
+      '<p class="sub">' + (r.sha ? 'commit <span class="mono">' + esc(String(r.sha).slice(0, 12)) + '</span> · ' : '') + (r.generatedAt ? 'scanned ' + esc(r.generatedAt.replace('T', ' ').slice(0, 16)) + ' · ' : '') + 'schema ' + esc(r.schema || '') + (r.preview ? ' · preview' : '') + '</p>' +
+      '<div class="banner ' + cls + '"><div><b>' + esc(title) + '</b><span class="why">' + esc(blurb) + '</span></div></div>' +
+      '<div class="cards">' +
+        '<div class="card"><div class="k">Patch eligible</div><div class="v" style="color:var(--cobalt)">' + patchModels + '</div><div class="d">' + byDisp.patch + ' location' + (byDisp.patch === 1 ? '' : 's') + ' · a verified direct call with verified migration evidence · nothing applied</div></div>' +
+        '<div class="card"><div class="k">Review required</div><div class="v" style="color:#9a5f08">' + reviewModels + '</div><div class="d">' + byDisp.review + ' location' + (byDisp.review === 1 ? '' : 's') + ' · a probable dependency with something unproven</div></div>' +
+        '<div class="card"><div class="k">Informational</div><div class="v" style="color:var(--grey)">' + info.length + '</div><div class="d">' + byDisp.informational + ' location' + (byDisp.informational === 1 ? '' : 's') + ' · docs, examples, fixtures, catalogs — not dependencies</div></div>' +
+        '<div class="card"><div class="k">Nearest verified retirement</div><div class="v">' + (near ? esc(near.date) : '—') + '</div><div class="d">' + (near ? esc(near.model) + (near.days != null ? ' · ' + (near.days < 0 ? (-near.days) + ' days past' : near.days + ' days left') : '') : (nearU ? 'unverified registry date only: ' + esc(nearU.date) + ' (' + esc(nearU.model) + ')' : 'no dated deadline among dependencies')) + '</div></div>' +
+      '</div>' +
+      '<h2>Coverage</h2><div class="tw"><table><tbody>' +
+        cov(src.failed ? false : src.analyzed ? true : null, 'Source code', src.analyzed ? esc(analyzed.toLocaleString()) + ' files scanned (' + (src.tsFiles || 0) + ' TS/TSX, ' + (src.pyFiles || 0) + ' Python)' + (other ? '; ' + other.toLocaleString() + ' files in languages not analyzed' : '') : 'not scanned') +
+        (src.testFilesSkipped ? cov(null, 'Test files', esc(src.testFilesSkipped.toLocaleString()) + ' skipped by rule — test data is not a dependency; ids inside were not examined') : '') +
+        cov(cfg.failed ? false : (cfg.filesScanned ? true : null), 'Configuration', cfg.failed ? 'scan FAILED' : cfg.filesScanned ? esc(String(cfg.filesRead ?? cfg.filesScanned)) + ' files scanned' : 'not applicable — no supported configuration files found') +
+        cov(true, 'Registry', esc((c.registry?.providers || []).join(', ') || 'none')) +
+        cov(rt.failed ? false : rt.connected ? true : null, 'Runtime usage', rt.connected ? 'measured via ' + esc(rt.source || 'export') : 'not measured — no runtime source connected (optional)') +
+        cov(null, 'Reader tie-back', 'not proven — a config location is a candidate; mendr has not shown that runtime reads it') +
+      '</tbody></table></div>' +
+      '<h2 style="margin-top:18px">Limits of this run</h2><ul>' + limits.map((l) => '<li>' + esc(l) + '</li>').join('') + '</ul>';
+  }
+
+  // ---------- investigation: left list ----------
+  document.querySelectorAll('#chips .chip').forEach((b) => b.addEventListener('click', () => {
+    const f = b.dataset.f; S.filters[f] = !S.filters[f]; b.setAttribute('aria-pressed', String(S.filters[f])); renderList();
+  }));
+  function visibleInvestigations() {
+    const r = run(); if (!r) return [];
+    const order = { patch: 0, review: 1, monitor: 2 };
+    return r.investigations.filter((i) => S.filters[invDisposition(i)]).slice().sort((a, b) => (order[a.decision] - order[b.decision]) || String(a.retirementEvidence?.shutdownDate || '9').localeCompare(String(b.retirementEvidence?.shutdownDate || '9')));
+  }
+  function renderList() {
+    const el = $('list'); const r = run();
+    if (!r) { el.innerHTML = '<div class="empty">No run loaded.</div>'; return; }
+    const invs = visibleInvestigations();
+    if (!invs.length) { el.innerHTML = '<div class="empty">Nothing matches the filters.</div>'; return; }
+    el.innerHTML = invs.map((inv, ii) => {
+      const d = invDisposition(inv); const re = inv.retirementEvidence || {};
+      const dl = re.shutdownDate ? (re.sourceUrl ? '' : 'unverified ') + re.shutdownDate : 'no dated deadline';
+      const locs = [...(inv.locations?.selectors || []), ...(inv.locations?.catalog || [])];
+      return '<div class="model"><div class="mh"><span class="dot ' + d + '"></span><span class="name">' + esc(inv.model) + '</span><span class="pill ' + d + '">' + DISP_LABEL[d] + '</span><span class="dl">' + esc(dl) + '</span></div>' +
+        locs.map((l, li) => {
+          const key = fp(inv, l); const dis = dismissed[key];
+          const cur = S.selected && S.selected.inv === inv.entryId + '|' + inv.model && S.selected.file === l.file && S.selected.line === l.line;
+          return '<button class="loc" data-i="' + ii + '" data-l="' + li + '" aria-current="' + cur + '"' + (dis ? ' style="opacity:.55;text-decoration:line-through"' : '') + '><span class="dot ' + dispositionOf(l) + '"></span><span class="path">' + esc(l.file) + ':' + l.line + '</span></button>';
+        }).join('') + '</div>';
+    }).join('');
+    el.querySelectorAll('.loc').forEach((b) => b.addEventListener('click', () => {
+      const inv = invs[Number(b.dataset.i)]; const locs = [...(inv.locations?.selectors || []), ...(inv.locations?.catalog || [])]; const l = locs[Number(b.dataset.l)];
+      S.selected = { inv: inv.entryId + '|' + inv.model, file: l.file, line: l.line, _inv: inv, _loc: l };
+      renderList(); renderSelected();
+    }));
+  }
+
+  // ---------- center + right ----------
+  function renderSelected() {
+    const code = $('code'), ev = $('evidence');
+    if (!S.selected) { code.innerHTML = '<div class="empty">Select a location on the left.</div>'; ev.innerHTML = '<div class="empty">Select a location on the left.</div>'; $('codeTitle').textContent = 'Code'; return; }
+    const inv = S.selected._inv, l = S.selected._loc; const d = dispositionOf(l); const re = inv.retirementEvidence || {};
+    $('codeTitle').textContent = l.file + ':' + l.line;
+    if (l.snippet && Array.isArray(l.snippet.lines)) {
+      code.innerHTML = '<div class="code">' + l.snippet.lines.map((t, i) => { const n = l.snippet.startLine + i; return '<div class="ln' + (n === l.line ? ' hit' : '') + '"><span class="n">' + n + '</span><span>' + esc(t) + '</span></div>'; }).join('') + '</div>' +
+        (l.lineHash ? '<p class="note" style="margin:8px 2px 0">line hash <span class="mono">' + esc(l.lineHash) + '</span> — a later run can tell "moved" from "changed"</p>' : '');
+    } else {
+      code.innerHTML = '<div class="empty">This report carries no code context for this location.<br><span class="note">Reports from mendr 0.2.5 and later include a few lines around each finding; open <span class="mono">' + esc(l.file) + '</span> at line ' + l.line + ' in your editor.</span></div>';
+    }
+    const missing = [];
+    if (l.surface === 'config') missing.push('Reader tie-back: it is not proven that runtime reads this configuration value.');
+    if (l.reason && REASON[l.reason]) missing.push('Why not patch eligible: ' + REASON[l.reason] + '.');
+    if (inv.productionUsage === 'not_measured') missing.push('Production usage was not measured; whether this model receives traffic is unknown.');
+    if (re.replacementVerdict && re.replacementVerdict !== 'verified') missing.push('The registry replacement (' + esc(re.replacement || '?') + ') is ' + esc(re.replacementVerdict) + ', not verified.');
+    if (re.shutdownDate && !re.sourceUrl) missing.push('The retirement date is a registry date with no provider notice on file.');
+    const when = re.shutdownDate ? (re.sourceUrl ? esc(re.shutdownDate) + (re.daysUntil != null ? ' (' + (re.daysUntil < 0 ? (-re.daysUntil) + ' days past' : re.daysUntil + ' days left') + ')' : '') : 'registry date ' + esc(re.shutdownDate) + ', UNVERIFIED — no provider notice on file') : 'no dated deadline';
+    const key = fp(inv, l); const dis = dismissed[key];
+    ev.innerHTML =
+      '<h3>What mendr found</h3><div class="kv"><span class="k">Model</span><span class="mono">' + esc(inv.model) + '</span><span class="k">Provider</span><span>' + esc(inv.provider) + '</span><span class="k">Location</span><span class="mono">' + esc(l.file) + ':' + l.line + (l.key ? ' · key <b>' + esc(l.key) + '</b>' : '') + '</span><span class="k">Role</span><span>' + esc(ROLE[l.role] || l.role) + '</span><span class="k">This line</span><span><span class="pill ' + d + '">' + DISP_LABEL[d] + '</span></span></div>' +
+      '<h3>Why it matters</h3><p>' + esc(re.status || 'listed') + ' — ' + when + '.' + (re.sourceUrl ? ' <a href="' + esc(re.sourceUrl) + '" target="_blank" rel="noopener">provider notice</a>' : '') + '</p>' +
+      (re.replacement ? '<p class="why">Migration evidence: <span class="mono">' + esc(re.replacement) + '</span> [registry: ' + esc(re.replacementVerdict || 'unstamped') + '] — evidence only, not applied here.</p>' : '') +
+      '<h3>Provider surface</h3><p>' + esc(SURFACE(l, inv)) + '</p>' +
+      '<h3>Production usage</h3><p>' + (inv.productionUsage === 'observed' ? 'Observed in the connected runtime source.' : inv.productionUsage === 'not_observed' ? 'Not observed in the connected source (which covers only what it records). Absence is not proof.' : 'Not measured. No runtime source was connected; this is optional.') + '</p>' +
+      '<h3>Decision for this model</h3><p><span class="pill ' + invDisposition(inv) + '">' + DISP_LABEL[invDisposition(inv)] + '</span></p><p class="why">' + esc(inv.reason || '') + '</p>' +
+      (missing.length ? '<h3>What remains unknown</h3><ul class="miss">' + missing.map((m) => '<li>' + m + '</li>').join('') + '</ul>' : '<h3>What remains unknown</h3><p>Nothing that blocks this line from being patch eligible.</p>') +
+      '<h3>Next action</h3><div class="next">' + esc(inv.nextAction || nextFromDecision(inv)) + '</div>' +
+      '<div class="dismiss">' + (dis
+        ? '<span class="state dismissed">dismissed</span><span class="note">' + esc(dis.note || '') + ' · ' + esc(dis.at.slice(0, 10)) + '</span><button class="btn" id="undismiss">Restore</button>'
+        : '<input id="dnote" placeholder="Reason (kept in this browser only)" aria-label="Dismiss reason"><button class="btn" id="dodismiss">Dismiss</button>') + '</div>';
+    const dd = $('dodismiss'); if (dd) dd.addEventListener('click', () => { dismissed[key] = { note: $('dnote').value.trim(), at: new Date().toISOString() }; saveDismissed(); renderList(); renderSelected(); renderHistory(); toast('Dismissed in this browser'); });
+    const ud = $('undismiss'); if (ud) ud.addEventListener('click', () => { delete dismissed[key]; saveDismissed(); renderList(); renderSelected(); renderHistory(); });
+  }
+  function nextFromDecision(inv) {
+    if (inv.decision === 'patch') return 'Run mendr fix-llm <path> to print the verified diff; review it before applying. Only Tier-A lines are rewritten.';
+    if (inv.decision === 'review') return 'Human review before any change.';
+    const sel = (inv.locations?.selectors || []).length;
+    if (!sel) return 'No migration action required from this reference. Monitor provider status.';
+    return 'Monitor provider status.';
+  }
+  $('copyBtn').addEventListener('click', () => { if (!S.selected) return; navigator.clipboard?.writeText(S.selected.file + ':' + S.selected.line).then(() => toast('Copied ' + S.selected.file + ':' + S.selected.line)); });
+
+  // ---------- history across runs ----------
+  function findingsOf(r) {
+    const m = new Map();
+    for (const inv of r.investigations) for (const l of [...(inv.locations?.selectors || []), ...(inv.locations?.catalog || [])]) {
+      const k = fp(inv, l); if (!m.has(k)) m.set(k, { key: k, inv, loc: l, surface: l.surface });
+    }
+    return m;
+  }
+  function surfaceCompleted(r, surface) {
+    const c = r.coverage || {};
+    if (surface === 'config') return !!(c.config && c.config.analyzed && !c.config.failed);
+    return !!(c.source && c.source.analyzed && !c.source.failed && ((c.source.tsFiles || 0) + (c.source.pyFiles || 0)) > 0);
+  }
+  function renderHistory() {
+    const el = $('history');
+    if (!S.runs.length) { el.innerHTML = '<div class="empty">No run loaded.</div>'; return; }
+    const runs = S.runs; const latest = runs[S.current];
+    const sets = runs.map(findingsOf);
+    const cur = sets[S.current];
+    const rows = [];
+    // Each finding's timeline up to the selected run.
+    const seenEver = new Map(); // key -> {first, last, resolvedAt}
+    for (let i = 0; i <= S.current; i++) for (const k of sets[i].keys()) { const e = seenEver.get(k) || { first: i, last: i }; e.last = i; seenEver.set(k, e); }
+    const prev = S.current > 0 ? sets[S.current - 1] : null;
+    for (const [k, f] of cur) {
+      let state;
+      if (dismissed[k]) state = 'dismissed';
+      else if (!prev) state = 'new';
+      else if (prev.has(k)) state = 'continuing';
+      else { const e = seenEver.get(k); state = e && e.first < S.current - 1 ? 'reopened' : 'new'; }
+      rows.push({ state, k, f, first: seenEver.get(k).first, last: S.current });
+    }
+    if (prev) for (const [k, f] of prev) if (!cur.has(k)) {
+      const state = dismissed[k] ? 'dismissed' : surfaceCompleted(latest, f.surface) ? 'resolved' : 'carried';
+      rows.push({ state, k, f, first: seenEver.get(k).first, last: S.current - 1 });
+    }
+    const order = { reopened: 0, new: 1, carried: 2, continuing: 3, resolved: 4, dismissed: 5 };
+    rows.sort((a, b) => order[a.state] - order[b.state] || String(a.f.inv.model).localeCompare(String(b.f.inv.model)));
+    const counts = {}; for (const r of rows) counts[r.state] = (counts[r.state] || 0) + 1;
+    const LEGEND = { new: 'first seen in this run', continuing: 'also in the previous run', carried: 'absent from this run because its surface did not complete — still open', resolved: 'absent from this run and its surface completed', reopened: 'resolved in an earlier run, present again', dismissed: 'dismissed by you in this browser' };
+    el.innerHTML =
+      '<h1>History</h1><p class="sub">' + (runs.length < 2 ? 'One run loaded. Load an earlier or later run of the same repository to see what is new, continuing, carried, resolved or reopened. Identity is provider + model + path + key + evidence type, so a reformat never creates a new finding.' : 'Comparing <b>' + esc(latest._label) + '</b> with the previous run <b>' + esc(runs[S.current - 1]._label) + '</b>.') + '</p>' +
+      '<div class="cards">' + Object.keys(LEGEND).map((s) => '<div class="card"><div class="k"><span class="state ' + s + '">' + s + '</span></div><div class="v">' + (counts[s] || 0) + '</div><div class="d">' + esc(LEGEND[s]) + '</div></div>').join('') + '</div>' +
+      '<div class="tw"><table><thead><tr><th>State</th><th>Model</th><th>Location</th><th>This line</th><th>First seen</th><th>Last seen</th></tr></thead><tbody>' +
+      rows.map((r) => '<tr><td><span class="state ' + r.state + '">' + r.state + '</span></td><td class="mono">' + esc(r.f.inv.model) + '</td><td class="mono">' + esc(r.f.loc.file) + ':' + r.f.loc.line + (r.f.loc.key ? ' · ' + esc(r.f.loc.key) : '') + '</td><td><span class="pill ' + dispositionOf(r.f.loc) + '">' + DISP_LABEL[dispositionOf(r.f.loc)] + '</span></td><td>' + esc(runs[r.first]._label) + '</td><td>' + esc(runs[r.last]._label) + '</td></tr>').join('') +
+      '</tbody></table></div>';
+  }
+
+  // ---------- demo: three runs of a fictional repository ----------
+  function DEMO_RUNS() {
+    const cov = (over) => ({ source: { analyzed: true, failed: false, filesScanned: 412, filesRead: 412, tsFiles: 380, pyFiles: 32, unanalyzedLanguages: ['JavaScript (41 files)', 'Markdown/docs (23 files)'], unanalyzedFiles: 41, docsFiles: 23, testFilesSkipped: 96, ...(over && over.source) }, config: { analyzed: true, failed: false, filesScanned: 9, filesRead: 9, generatedSkipped: 0, excludedDirs: ['.git'], ...(over && over.config) }, registry: { providers: ['anthropic', 'google', 'openai'] }, runtime: { connected: false, source: null, failed: false }, readerTieBack: { proven: false } });
+    const loc = (file, line, o) => ({ file, line, column: 1, key: null, value: '', role: 'code_call_site', surface: 'code', tier: 'A', providerSurface: null, patchEligible: true, disposition: 'patch', reason: null, snippet: null, lineHash: null, ...o });
+    const snip = (start, lines) => ({ startLine: start, lines });
+    const gpt4 = (sel) => ({ entryId: 'openai:gpt-4', provider: 'openai', model: 'gpt-4', retirementEvidence: { deprecated: true, status: 'deprecated', shutdownDate: '2026-10-23', daysUntil: 49, replacement: 'gpt-5.6-sol', replacementVerdict: 'verified', sourceUrl: 'https://developers.openai.com/api/docs/deprecations' }, productionUsage: 'not_measured', productionUsageDetail: { measured: false, observed: false }, locations: { selectors: sel, catalog: [] }, decision: 'patch', patchEligible: true, patchApplied: false, reason: 'A verified auto-fix exists for src/ai/client.ts:14 — fix-llm can rewrite it to gpt-5.6-sol. 1 other listed location(s) are not Tier A and will NOT be rewritten. Nothing is applied by the audit; a change is proposed as a reviewed PR, never auto-merged. Production usage was not measured. Config occurrences remain review-only (reader tie-back not proven).', nextAction: 'run `mendr fix-llm <path>` to print the verified diff for src/ai/client.ts:14; review it before applying. Only Tier-A lines are rewritten.' });
+    const gpt4Sel = [
+      loc('src/ai/client.ts', 14, { snippet: snip(11, ['import OpenAI from "openai";', 'const client = new OpenAI();', 'export async function summarize(text: string) {', '  return client.chat.completions.create({ model: "gpt-4", messages: [{ role: "user", content: text }] });', '}', '', 'export const MAX_TOKENS = 4096;']), lineHash: '3f9a1c0d2b7e4a55' }),
+      loc('config/app.yaml', 3, { key: 'model', role: 'runtime_selector_candidate', surface: 'config', tier: 'B', patchEligible: false, disposition: 'review', providerSurface: 'openai', snippet: snip(1, ['service: support-bot', 'llm:', '  model: gpt-4', '  temperature: 0.2', '  max_tokens: 4096']), lineHash: 'c11e5b9f0a2d4e01' }),
+    ];
+    const haiku = () => ({ entryId: 'anthropic:claude-3-haiku-20240307', provider: 'anthropic', model: 'claude-3-haiku-20240307', retirementEvidence: { deprecated: true, status: 'deprecated', shutdownDate: '2026-11-01', daysUntil: 58, replacement: 'claude-haiku-4-5', replacementVerdict: 'verified', sourceUrl: 'https://platform.claude.com/docs/en/about-claude/model-deprecations' }, productionUsage: 'not_measured', productionUsageDetail: { measured: false, observed: false }, locations: { selectors: [loc('src/llm/router.ts', 42, { role: 'code_candidate', tier: 'B', patchEligible: false, disposition: 'review', reason: 'insufficient_dataflow', snippet: snip(39, ['export class Router {', '  constructor(private readonly llm: LLMClient) {}', '  async classify(ticket: Ticket) {', '    return this.llm.complete({ model: "claude-3-haiku-20240307", prompt: ticket.body, maxTokens: 64 });', '  }', '}']), lineHash: '7b2d90e1f4c3aa18' })], catalog: [] }, decision: 'review', patchEligible: false, patchApplied: false, reason: 'Located at a code default or call not traced to a provider request (its use as a live call is not proven). Production usage was not measured. Human review required before any change.', nextAction: 'Human review before any change' });
+    const gemini = () => ({ entryId: 'google:gemini-2.0-flash', provider: 'google', model: 'gemini-2.0-flash', retirementEvidence: { deprecated: true, status: 'deprecated', shutdownDate: '2026-12-15', daysUntil: 102, replacement: 'gemini-flash-latest', replacementVerdict: 'verified', sourceUrl: 'https://ai.google.dev/gemini-api/docs/changelog' }, productionUsage: 'not_measured', productionUsageDetail: { measured: false, observed: false }, locations: { selectors: [loc('helm/values.yaml', 21, { key: 'model', role: 'runtime_selector_candidate', surface: 'config', tier: 'B', patchEligible: false, disposition: 'review', providerSurface: 'vertex', snippet: snip(18, ['embeddings:', '  provider: vertex', '  project: acme-prod', '  model: gemini-2.0-flash', '  region: us-central1']), lineHash: 'e0a4c7d29b1f6633' })], catalog: [] }, decision: 'review', patchEligible: false, patchApplied: false, reason: 'Located at a config selector candidate (reader tie-back not proven). Production usage was not measured. Human review required before any change.', nextAction: 'Human review before any change' });
+    const gpt35 = () => ({ entryId: 'openai:gpt-3.5-turbo', provider: 'openai', model: 'gpt-3.5-turbo', retirementEvidence: { deprecated: true, status: 'deprecated', shutdownDate: '2026-10-23', daysUntil: 49, replacement: 'gpt-5.6-terra', replacementVerdict: 'verified', sourceUrl: 'https://developers.openai.com/api/docs/deprecations' }, productionUsage: 'not_measured', productionUsageDetail: { measured: false, observed: false }, locations: { selectors: [], catalog: [loc('examples/quickstart.ts', 8, { role: 'code_reference', tier: 'C', patchEligible: false, disposition: 'informational', snippet: snip(6, ['// Quickstart: replace the model id with the one you use.', 'const client = new OpenAI();', 'const r = await client.chat.completions.create({ model: "gpt-3.5-turbo", messages: [] });', 'console.log(r.choices[0].message.content);']), lineHash: '9c8b7a6d5e4f3021' }), loc('.env.example', 4, { key: 'OPENAI_MODEL', role: 'test_fixture', surface: 'config', tier: 'C', patchEligible: false, disposition: 'informational', snippet: snip(1, ['# Copy to .env and fill in', 'OPENAI_API_KEY=', 'PORT=3000', 'OPENAI_MODEL=gpt-3.5-turbo']), lineHash: '1a2b3c4d5e6f7089' })] }, decision: 'monitor', patchEligible: false, patchApplied: false, reason: 'Only catalog / reference / data occurrences found (no selector). Production usage was not measured. Nothing is proven live to change — monitor.', nextAction: 'No migration action required from this reference. Monitor provider status.' });
+    const davinci = () => ({ entryId: 'openai:text-davinci-003', provider: 'openai', model: 'text-davinci-003', retirementEvidence: { deprecated: true, status: 'retired', shutdownDate: '2024-01-04', daysUntil: -973, replacement: 'gpt-5.6-terra', replacementVerdict: 'quarantined', sourceUrl: null }, productionUsage: 'not_measured', productionUsageDetail: { measured: false, observed: false }, locations: { selectors: [], catalog: [loc('src/models/catalog.ts', 9, { role: 'code_reference', tier: 'C', patchEligible: false, disposition: 'informational', snippet: snip(6, ['export const LEGACY_MODELS = [', '  "gpt-3.5-turbo-instruct",', '  "davinci-002",', '  "text-davinci-003",', '];']), lineHash: '5d4c3b2a1f0e9d88' })] }, decision: 'monitor', patchEligible: false, patchApplied: false, reason: 'Only catalog / reference / data occurrences found (no selector). Production usage was not measured. Nothing is proven live to change — monitor.', nextAction: 'No migration action required from this reference. Monitor provider status.' });
+    const legacy = () => ({ entryId: 'openai:gpt-4-32k', provider: 'openai', model: 'gpt-4-32k', retirementEvidence: { deprecated: true, status: 'deprecated', shutdownDate: '2026-10-23', daysUntil: 49, replacement: 'gpt-5.6-sol', replacementVerdict: 'verified', sourceUrl: 'https://developers.openai.com/api/docs/deprecations' }, productionUsage: 'not_measured', productionUsageDetail: { measured: false, observed: false }, locations: { selectors: [loc('src/legacy/summarizer.ts', 7, { role: 'code_candidate', tier: 'B', patchEligible: false, disposition: 'review', reason: 'usage_unverified', snippet: snip(5, ['// Legacy path, removed in 2026-09', 'export const LEGACY_SUMMARY_MODEL = "gpt-4-32k";', 'export function legacySummary(text: string) { return text.slice(0, 200); }']), lineHash: '0f1e2d3c4b5a6978' })], catalog: [] }, decision: 'review', patchEligible: false, patchApplied: false, reason: 'Located at a code default or call not traced to a provider request (its use as a live call is not proven). Production usage was not measured. Human review required before any change.', nextAction: 'Human review before any change' });
+    const base = (generatedAt, sha, investigations, over) => ({ generatedBy: 'mendr', schema: 'mendr-audit/v3', preview: true, repo: 'acme-support-bot', generatedAt, sha, period: { from: null, to: null }, coverage: cov(over), conclusion: 'exposure_detected', investigations });
+    return [
+      base('2026-08-20T09:12:00.000Z', 'a1b2c3d4e5f60718', [gpt4(gpt4Sel), haiku(), legacy(), gpt35()]),
+      base('2026-08-27T09:15:00.000Z', 'b2c3d4e5f6071829', [gpt4(gpt4Sel), legacy(), gpt35(), davinci()]),
+      base('2026-09-04T09:10:00.000Z', 'c3d4e5f60718293a', [gpt4(gpt4Sel), haiku(), gemini(), gpt35(), davinci()]),
+    ];
+  }
+
+  renderRunSelect();
+})();
+</script>
+</body>
+</html>
