@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { auditWorkflowYaml, MENDR_AUDIT_WORKFLOW_PATH, newWorkflowFileUrl, setupWorkflowUrl } from './workflowTemplate.js';
 
-const OPTS = { appUrl: 'https://app.example', audience: 'mendr', mendrSpec: 'v0.2.4-alpha', defaultBranch: 'trunk' };
+const OPTS = { appUrl: 'https://app.example', audience: 'mendr', mendrSpec: 'v0.3.0-alpha', defaultBranch: 'trunk' };
 
 describe('auditWorkflowYaml', () => {
   const yaml = auditWorkflowYaml(OPTS);
@@ -23,7 +23,7 @@ describe('auditWorkflowYaml', () => {
   });
 
   it('keeps GitHub ${{ }} expressions literal and pins the CLI to a ref', () => {
-    expect(yaml).toContain("${{ vars.MENDR_SPEC || 'v0.2.4-alpha' }}");
+    expect(yaml).toContain("${{ vars.MENDR_SPEC || 'v0.3.0-alpha' }}");
     expect(yaml).toContain('${{ github.event.pull_request.head.sha || github.sha }}');
     expect(yaml).toContain('branches: [trunk]');
     expect(yaml).toContain('persist-credentials: false');

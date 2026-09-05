@@ -69,7 +69,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     maxBodyBytes: int(env.MAX_BODY_BYTES, 2 * 1024 * 1024),
     maxRunsPerRepo: int(env.MAX_RUNS_PER_REPO, 100),
     uiDir: opt(env.UI_DIR),
-    mendrSpec: opt(env.MENDR_CLI_SPEC) ?? 'v0.2.4-alpha',
+    mendrSpec: opt(env.MENDR_CLI_SPEC) ?? 'v0.3.0-alpha',
     dataKey: opt(env.MENDR_DATA_KEY),
     retentionDays: Math.max(0, Math.floor(Number(env.MENDR_RETENTION_DAYS) || 0)),
   };

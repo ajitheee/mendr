@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+## 0.3.0-alpha — 2026-09-05
+
+### Added — trust package for connecting private repositories
+
+Everything a team needs to trust the hosted App with a private repo, each claim
+backed by code and tests (see [TRUST.md](TRUST.md), [SECURITY.md](SECURITY.md),
+[INCIDENT-RESPONSE.md](INCIDENT-RESPONSE.md)):
+
+- **Cross-package schema compatibility test** — real `mendr audit --json` output
+  is validated against the App's real consumer on every build, so a schema
+  change on either side blocks the release.
+- **Stored-data inventory** — TRUST.md documents every field the App stores, and
+  a guard test fails if a credential-shaped column is ever added. No tokens or
+  source code are stored, ever.
+- **Field-level encryption at rest** — the one sensitive column (the `report`:
+  paths + redacted snippets) is AES-256-GCM encrypted with a key held outside
+  the database, via a rotatable keyring (`MENDR_DATA_KEY`).
+- **Retention, deletion and uninstall cleanup** — uninstalling the App or
+  removing a repo hard-deletes its findings; a "Delete stored data" button and
+  `MENDR_RETENTION_DAYS` give on-demand and time-based deletion.
+- **Audit log** — an append-only, scalars-only record of installs, audits
+  received, and deletions; a sanitizer keeps findings, secrets and code out of it.
+- **Incident-response plan** and **privacy/security pages** grounded in the real
+  system, not generic promises.
+
 ### Added — scanner/report hardening: exit codes + test files as test-only references
 
 - **Deterministic `audit` exit codes**, so a broken scan can never read as clean

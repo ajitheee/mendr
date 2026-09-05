@@ -8,7 +8,7 @@ command reads, writes and sends, how the "no network" claim is enforced in code
 rather than in copy, what the threat model is, which permissions each surface
 needs, and where the known gaps are.
 
-Status: current for `v0.2.4-alpha` and `main`. Anything marked *planned* does not
+Status: current for `v0.3.0-alpha` and `main`. Anything marked *planned* does not
 exist yet and is listed so the boundary is stated before it is built.
 
 ---
@@ -309,7 +309,7 @@ page.
 | T5 | A committed file path or string injects Markdown, HTML or a forged state marker into the tracking issue. | `sanitizeRepoText` strips `<`, `>`, `|`, backticks and newlines, caps at 400 chars; the state block is parsed from the last occurrence only, so an injected earlier block cannot shadow it. Tested in `issueReport.test.ts`. | None known. |
 | T6 | A forged "clean" verdict or a wrongly closed issue. | The issue can only close when every required surface completed and no surface failed (`mayClose`). Partial coverage reports as inconclusive, never clean. Test files and unsupported languages are counted and shown. | Coverage is by file type; a model reference in an unsupported language is reported as unanalyzed, not found. |
 | T7 | `fix-llm` runs untrusted code. | It runs **your** test command in a temp copy of **your** repository. This is the same code you run in CI already. | If your repository is untrusted to you, do not run its tests through any tool. |
-| T8 | Malicious or tampered Mendr package. | Pin to a tag (`github:ajitheee/mendr#v0.2.4-alpha`) or, stricter, a commit SHA. Tags are annotated and never moved (see section 9). Dependencies are few and pinned in the lockfile. | Releases are not yet cryptographically signed and there is no SLSA provenance. Planned; stated honestly in section 9. |
+| T8 | Malicious or tampered Mendr package. | Pin to a tag (`github:ajitheee/mendr#v0.3.0-alpha`) or, stricter, a commit SHA. Tags are annotated and never moved (see section 9). Dependencies are few and pinned in the lockfile. | Releases are not yet cryptographically signed and there is no SLSA provenance. Planned; stated honestly in section 9. |
 | T9 | A poisoned registry entry makes Mendr recommend a wrong migration. | Registry changes go through PRs in Mendr's repository with a verify job; retirement dates are marked `UNVERIFIED` until confirmed and unverified dates are never rendered as overdue. | The registry is maintained by one team today. Independent review is a future control. |
 | T10 | `--install` writes a workflow you did not read. | It writes one file, prints the path, and the file's comments explain each permission. Nothing runs until you commit it. | None. |
 
