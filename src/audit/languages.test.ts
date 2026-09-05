@@ -34,10 +34,22 @@ describe('unanalyzed-language census', () => {
     const c = unanalyzedCensus(repo());
     expect(c.languages).toContain('Svelte (4 files)');
     expect(c.languages).toContain('SQL (3 files)');
-    expect(c.languages).not.toContain('JavaScript (42 files)'); // the 40 tooling scripts are not counted
+    // JavaScript is now an ANALYZED language, so it never appears as a gap.
+    expect(c.languages.some((l) => l.startsWith('JavaScript'))).toBe(false);
     expect(c.languages).toContain('Markdown/docs (3 files)');
-    expect(c.files).toBe(9); // 3 sql + 4 svelte + 2 js; tooling, docs and node_modules excluded
+    expect(c.files).toBe(7); // 3 sql + 4 svelte; the 2 server .js are analyzed now; tooling/docs/node_modules excluded
     expect(c.docs).toBe(3);
+  });
+
+  it('does not count JavaScript as an unanalyzed gap', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mendr-census-js-'));
+    created.push(dir);
+    for (let i = 0; i < 6; i++) writeFileSync(join(dir, `s${i}.js`), '// x\n');
+    for (let i = 0; i < 5; i++) writeFileSync(join(dir, `g${i}.go`), 'package g\n');
+    const c = unanalyzedCensus(dir);
+    expect(c.languages.some((l) => l.startsWith('JavaScript'))).toBe(false);
+    expect(c.languages).toContain('Go (5 files)');
+    expect(c.files).toBe(5); // only the Go files are an unanalyzed gap
   });
   it('keeps the legacy string list in sync with the census', () => {
     const dir = repo();

@@ -150,12 +150,14 @@ export interface SurfaceCoverage {
 export interface SourceCoverage extends SurfaceCoverage {
   tsFiles: number;
   pyFiles: number;
+  /** JavaScript source files analyzed (.js/.jsx/.mjs/.cjs). Absent on reports from before JS support. */
+  jsFiles?: number;
   /**
    * Source languages PRESENT in the repo that mendr does not analyze. A repo that
    * is 1% TypeScript and 99% Go must not read as fully covered.
    */
   unanalyzedLanguages?: string[];
-  /** Unanalyzed CODE files in total (JavaScript, Go, SQL, Svelte…) — the denominator honesty needs. */
+  /** Unanalyzed CODE files in total (Go, Ruby, SQL, Svelte…) — the denominator honesty needs. */
   unanalyzedFiles?: number;
   /** Documentation files (Markdown etc.) not read. */
   docsFiles?: number;
@@ -238,7 +240,7 @@ export function partitionFindings(investigations: readonly ModelInvestigation[])
 export function concludeAudit(coverage: AuditCoverage, exposureCount: number): AuditConclusion {
   if (exposureCount > 0) return 'exposure_detected';
   if (anySurfaceFailed(coverage)) return 'audit_failed';
-  const analyzed = coverage.source.tsFiles + coverage.source.pyFiles;
+  const analyzed = coverage.source.tsFiles + (coverage.source.jsFiles ?? 0) + coverage.source.pyFiles;
   const sourceComplete = coverage.source.analyzed && analyzed > 0;
   // M8 (external validation): anything-llm — 22 of 1,242 source files analyzed —
   // read "no retiring AI dependencies in use". When the analyzed share is a small
@@ -248,7 +250,7 @@ export function concludeAudit(coverage: AuditCoverage, exposureCount: number): A
 
 /** Fewer than a quarter of the repo's source files were in a language mendr reads. */
 export function analyzedIsMinority(coverage: AuditCoverage): boolean {
-  const analyzed = coverage.source.tsFiles + coverage.source.pyFiles;
+  const analyzed = coverage.source.tsFiles + (coverage.source.jsFiles ?? 0) + coverage.source.pyFiles;
   const other = coverage.source.unanalyzedFiles ?? 0;
   return analyzed > 0 && other > 0 && analyzed * 3 < other;
 }
@@ -258,14 +260,14 @@ export function coverageGaps(coverage: AuditCoverage): string[] {
   const gaps: string[] = [];
   if (coverage.source.failed) gaps.push('source scan FAILED');
   else if (!coverage.source.analyzed) gaps.push('source code (TS/TSX/Python) was not scanned');
-  else if (coverage.source.tsFiles + coverage.source.pyFiles === 0) {
+  else if (coverage.source.tsFiles + (coverage.source.jsFiles ?? 0) + coverage.source.pyFiles === 0) {
     gaps.push('no TS/TSX or Python source was found to scan (other languages are not analyzed)');
   }
   // Present-but-unanalyzed languages are a real coverage hole even when TS/Python
   // were scanned: a repo that is 1% TypeScript is not a covered repo.
   const other = coverage.source.unanalyzedLanguages ?? [];
   if (other.length > 0) {
-    const analyzed = coverage.source.tsFiles + coverage.source.pyFiles;
+    const analyzed = coverage.source.tsFiles + (coverage.source.jsFiles ?? 0) + coverage.source.pyFiles;
     const share = analyzedIsMinority(coverage)
       ? ` — only ${analyzed} of ${analyzed + (coverage.source.unanalyzedFiles ?? 0)} source files were in a language mendr reads; this result says nothing about the rest`
       : '';

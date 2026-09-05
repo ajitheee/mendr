@@ -39,27 +39,61 @@ export function loadProject(repoPath: string): Project {
     }
   }
 
-  // Fallback: no (usable) tsconfig. Add TS/TSX files by glob under sane defaults. We
-  // include .tsx/.mts/.cts (not just .ts) because the LLM beachhead is full of
-  // React/Next (.tsx) apps — scanning `.ts` only silently missed them. `jsx` is
-  // set so .tsx parses without a spurious "Cannot use JSX" diagnostic.
-  const project = new Project({
-    compilerOptions: {
-      target: ScriptTarget.ES2022,
-      module: ModuleKind.NodeNext,
-      moduleResolution: ModuleResolutionKind.NodeNext,
-      jsx: ts.JsxEmit.Preserve,
-      strict: true,
-      skipLibCheck: true,
-      esModuleInterop: true,
-    },
-  });
+  // Fallback: no (usable) tsconfig. Add JS/TS files by glob under sane defaults.
+  // We include .tsx/.mts/.cts (React/Next apps) AND .js/.jsx/.mjs/.cjs — a
+  // JavaScript-only repo has no tsconfig, so without JS here it fell to the glob
+  // loader and scanned nothing. `allowJs` puts .js files in the program (the
+  // literal/param locators are syntactic, so the same AST rules apply); `jsx`
+  // lets .tsx/.jsx parse without a spurious "Cannot use JSX" diagnostic.
+  const project = new Project({ compilerOptions: fallbackCompilerOptions() });
   project.addSourceFilesAtPaths([
-    join(abs, '**/*.{ts,tsx,mts,cts}'),
+    join(abs, '**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'),
     `!${join(abs, '**/node_modules/**')}`,
     `!${join(abs, '**/*.d.ts')}`,
+    `!${join(abs, '**/*.min.js')}`,
   ]);
   return project;
+}
+
+/** Compiler options shared by the two glob-based (no-tsconfig) loaders. */
+function fallbackCompilerOptions() {
+  return {
+    target: ScriptTarget.ES2022,
+    module: ModuleKind.NodeNext,
+    moduleResolution: ModuleResolutionKind.NodeNext,
+    jsx: ts.JsxEmit.Preserve,
+    allowJs: true,
+    strict: true,
+    skipLibCheck: true,
+    esModuleInterop: true,
+  };
+}
+
+/**
+ * The language of an analyzable script file, or null for one mendr does not
+ * scan: a `.d.ts` type-declaration file (no runtime), or a `.min.js` /
+ * `.min.mjs` bundle (generated, not authored source). Everything else with a
+ * JS/TS extension is `ts` or `js`.
+ */
+export function scriptLanguageOf(nameOrPath: string): 'ts' | 'js' | null {
+  const f = nameOrPath.replace(/\\/g, '/').toLowerCase();
+  if (f.endsWith('.d.ts')) return null;
+  if (/\.(min|bundle)\.[mc]?jsx?$/.test(f)) return null;
+  if (/\.(ts|tsx|mts|cts)$/.test(f)) return 'ts';
+  if (/\.(js|jsx|mjs|cjs)$/.test(f)) return 'js';
+  return null;
+}
+
+/** Split the non-test source files under `repoPath` into TypeScript and JavaScript counts. */
+export function countScriptFilesByLanguage(repoPath: string): { ts: number; js: number } {
+  let ts = 0;
+  let js = 0;
+  for (const f of collectTsSourceFiles(repoPath)) {
+    const lang = scriptLanguageOf(f);
+    if (lang === 'ts') ts++;
+    else if (lang === 'js') js++;
+  }
+  return { ts, js };
 }
 
 // --- fix-llm pre-filter -----------------------------------------------------
@@ -90,7 +124,8 @@ export function loadProject(repoPath: string): Project {
  * Directory names the fix-llm walker never descends into: vendored code,
  * build output, and coverage artifacts. Test FILES are skipped via
  * `isTestPath` — the same rule the literal scan applies — so the walked total
- * and the scan agree on scope by construction.
+ * and the scan agree on scope by construction. `.d.ts` and `.min.js` are
+ * skipped per file via {@link scriptLanguageOf}.
  */
 const SCAN_EXCLUDED_DIRS: ReadonlySet<string> = new Set([
   'node_modules',
@@ -103,13 +138,14 @@ const SCAN_EXCLUDED_DIRS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Every scannable {ts,tsx,mts,cts} file under `repoPath`: the ONE walker behind
+ * Every scannable JS/TS source file (.ts/.tsx/.mts/.cts/.js/.jsx/.mjs/.cjs,
+ * excluding .d.ts and .min.js) under `repoPath`: the ONE walker behind
  * the fix-llm scan scope, its "Scanned N source files" count, AND
  * `findUncoveredSourceFiles` — a single source of truth so the printed counts
  * can never disagree with what was actually visited.
  */
 /**
- * How many {ts,tsx,mts,cts} files under `repoPath` the scan SKIPS as test
+ * How many JS/TS source files under `repoPath` the scan SKIPS as test
  * support. Disclosed in coverage: external validation found the skipped count
  * (LibreChat 1,219 of 3,568) was invisible, so "N files scanned" overstated reach.
  */
@@ -127,12 +163,7 @@ export function countTsTestFiles(repoPath: string): number {
       const full = join(dir, entry.name);
       if (entry.isDirectory()) {
         if (!SCAN_EXCLUDED_DIRS.has(entry.name)) walk(full);
-      } else if (
-        entry.isFile() &&
-        /\.(ts|tsx|mts|cts)$/.test(entry.name) &&
-        !entry.name.endsWith('.d.ts') &&
-        isTestPath(full)
-      ) {
+      } else if (entry.isFile() && scriptLanguageOf(entry.name) !== null && isTestPath(full)) {
         count++;
       }
     }
@@ -155,12 +186,7 @@ export function collectTsSourceFiles(repoPath: string): string[] {
       const full = join(dir, entry.name);
       if (entry.isDirectory()) {
         if (!SCAN_EXCLUDED_DIRS.has(entry.name)) walk(full);
-      } else if (
-        entry.isFile() &&
-        /\.(ts|tsx|mts|cts)$/.test(entry.name) &&
-        !entry.name.endsWith('.d.ts') &&
-        !isTestPath(full)
-      ) {
+      } else if (entry.isFile() && scriptLanguageOf(entry.name) !== null && !isTestPath(full)) {
         out.push(full);
       }
     }
@@ -220,20 +246,10 @@ export function loadPrefilteredProject(
       }
     }
   }
-  // Same compiler options as the no-tsconfig fallback loader: the literal +
-  // param locators are syntax-driven (no cross-file type resolution), so the
-  // repo's own tsconfig adds nothing but load time here.
-  const project = new Project({
-    compilerOptions: {
-      target: ScriptTarget.ES2022,
-      module: ModuleKind.NodeNext,
-      moduleResolution: ModuleResolutionKind.NodeNext,
-      jsx: ts.JsxEmit.Preserve,
-      strict: true,
-      skipLibCheck: true,
-      esModuleInterop: true,
-    },
-  });
+  // Same compiler options as the no-tsconfig fallback loader (allowJs included):
+  // the literal + param locators are syntax-driven (no cross-file type
+  // resolution), so the repo's own tsconfig adds nothing but load time here.
+  const project = new Project({ compilerOptions: fallbackCompilerOptions() });
   for (const file of hits) project.addSourceFileAtPath(file);
   return { project, totalFiles: files.length, matchedFiles: hits.length };
 }
@@ -253,8 +269,8 @@ export function countAnalyzableSourceFiles(project: Project): number {
 }
 
 /**
- * The {ts,tsx,mts,cts} files under `repoPath` that the loaded `project` does
- * NOT contain — real TypeScript source a tsconfig-driven load silently skips.
+ * The JS/TS source files under `repoPath` that the loaded `project` does
+ * NOT contain — real source a tsconfig-driven load silently skips.
  * Returned repo-relative so a caller can print an honest coverage warning.
  *
  * Enumerates the disk through {@link collectTsSourceFiles} — the SAME walker

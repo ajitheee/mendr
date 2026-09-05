@@ -138,7 +138,13 @@ export function coverageReport(meta: AuditMeta): string[] {
         : row(
             '✓',
             'Source code',
-            `${int(src.tsFiles + src.pyFiles)} files scanned (${int(src.tsFiles)} TS/TSX, ${int(src.pyFiles)} Python)` +
+            `${int(src.tsFiles + (src.jsFiles ?? 0) + src.pyFiles)} files scanned (` +
+              [
+                `${int(src.tsFiles)} TS/TSX`,
+                ...((src.jsFiles ?? 0) > 0 ? [`${int(src.jsFiles ?? 0)} JS`] : []),
+                `${int(src.pyFiles)} Python`,
+              ].join(', ') +
+              ')' +
               ((src.unanalyzedFiles ?? 0) > 0 ? `; ${int(src.unanalyzedFiles ?? 0)} files in languages not analyzed` : ''),
           ),
   );
@@ -208,12 +214,12 @@ export function plainSummary(investigations: readonly ModelInvestigation[], cove
   // informational references get their own, clearly-labelled line.
   if (n === 0) {
     if (investigations.length === 0) return [];
-    const analyzed = coverage.source.tsFiles + coverage.source.pyFiles;
+    const analyzed = coverage.source.tsFiles + (coverage.source.jsFiles ?? 0) + coverage.source.pyFiles;
     const other = coverage.source.unanalyzedFiles ?? 0;
     // M8: a repo mendr mostly could not read must not get a clean-sounding headline.
     const headline = analyzedIsMinority(coverage)
       ? [
-          `No retiring model ids in the ${analyzed} TypeScript/Python files analyzed.`,
+          `No retiring model ids in the ${analyzed} TypeScript/JavaScript/Python files analyzed.`,
           `${other} source files in languages mendr does not read (${Math.round((other / (analyzed + other)) * 100)}% of this repository's source) were NOT analyzed — this result says nothing about them.`,
         ]
       : ['We found no retiring AI dependencies in use.'];

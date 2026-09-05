@@ -2,7 +2,7 @@
 
 **Find every retiring AI model your repo still calls, before the provider shuts it off.**
 
-One command scans TypeScript, TSX, Python and config files, joins a dated retirement registry for OpenAI, Anthropic and Google, and tells you what breaks, where, and by when. No API key. Nothing is changed.
+One command scans TypeScript, TSX, JavaScript, Python and config files, joins a dated retirement registry for OpenAI, Anthropic and Google, and tells you what breaks, where, and by when. No API key. Nothing is changed.
 
 ```sh
 npx github:ajitheee/mendr#v0.2.4-alpha audit .
@@ -96,7 +96,7 @@ The only optional network use is the provider usage read you ask for by name wit
 
 ## commands
 
-- `mendr audit [path]` — **(preview)** the unified audit: scan TS/TSX/Python source + config, join the deprecation registry, and report every retiring AI dependency with its location, deadline, and migration evidence. **Needs only the repository.** See below.
+- `mendr audit [path]` — **(preview)** the unified audit: scan TS/TSX/JS/Python source + config, join the deprecation registry, and report every retiring AI dependency with its location, deadline, and migration evidence. **Needs only the repository.** See below.
 - `mendr fix-llm <path>` — scan a repo for retired model ids and coupled params, print the gated diff. This is the one you'll use. Add `--eval-command "<cmd>"` to have it run your own evaluation against the patched code (see below).
 - `mendr watch [path]` — list the deprecated model ids your code touches, sorted by the nearest provider retirement date. `--install` scaffolds a GitHub Action that keeps one self-updating issue current (see [standing watch](#standing-watch)).
 - `mendr check --repo <path> --from <specA> --to <specB>` — list the breaking changes between two Stripe specs that your repo actually uses.
@@ -120,7 +120,7 @@ No provider key is required to get value. The default audit is repository-only:
 mendr audit .
 ```
 
-It scans TypeScript, TSX, Python, and supported config files, finds provider call
+It scans TypeScript, TSX, JavaScript, Python, and supported config files, finds provider call
 sites and model identifiers, joins them to the deprecation registry, and reports:
 
 ```

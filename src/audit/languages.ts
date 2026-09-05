@@ -1,10 +1,10 @@
 // Which source languages are PRESENT but not analyzed.
 //
-// mendr reads TypeScript, TSX and Python. A repository that is 1% TypeScript and
-// 99% Go is not a covered repository, and reporting "every required surface
-// completed" over it is the quiet kind of dishonesty that loses a customer's
-// trust the first time a Go call site retires. So we count what we cannot read
-// and name it in the coverage report.
+// mendr reads TypeScript, TSX, JavaScript and Python. A repository that is 1%
+// TypeScript and 99% Go is not a covered repository, and reporting "every
+// required surface completed" over it is the quiet kind of dishonesty that
+// loses a customer's trust the first time a Go call site retires. So we count
+// what we cannot read and name it in the coverage report.
 
 import { readdirSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
@@ -15,12 +15,11 @@ const EXCLUDED_DIRS: ReadonlySet<string> = new Set([
   '.cache', '.turbo', '.yarn', '.pnpm-store', '.mypy_cache', '.pytest_cache', '.tox', '.nuxt', '.svelte-kit',
 ]);
 
-/** Extensions mendr actually analyzes. */
-const ANALYZED: ReadonlySet<string> = new Set(['.ts', '.tsx', '.mts', '.cts', '.py']);
+/** Extensions mendr actually analyzes (JS/TS via ts-morph, Python via tree-sitter). */
+const ANALYZED: ReadonlySet<string> = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.py']);
 
 /** Extensions that carry LLM call sites we cannot read yet, and their language. */
 const UNANALYZED: Record<string, string> = {
-  '.js': 'JavaScript', '.jsx': 'JavaScript', '.mjs': 'JavaScript', '.cjs': 'JavaScript',
   '.go': 'Go', '.rb': 'Ruby', '.java': 'Java', '.kt': 'Kotlin', '.cs': 'C#',
   '.php': 'PHP', '.rs': 'Rust', '.swift': 'Swift', '.scala': 'Scala',
   '.ex': 'Elixir', '.exs': 'Elixir', '.dart': 'Dart', '.c': 'C', '.cpp': 'C++', '.cc': 'C++', '.h': 'C/C++ headers', '.hpp': 'C++',

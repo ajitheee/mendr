@@ -69,6 +69,45 @@ async function runAudit(args: string[], env: Record<string, string> = {}): Promi
   return { exitCode: result.exitCode ?? 0, stdout: result.stdout, stderr: result.stderr };
 }
 
+describe('audit CLI — JavaScript source is analyzed, not reported as a gap', () => {
+  const jsDirs: string[] = [];
+  afterEach(() => { for (const d of jsDirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
+
+  it('a JavaScript-only repo reports exposure with jsFiles counted, not "inconclusive"', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mendr-audit-js-'));
+    jsDirs.push(dir);
+    writeFileSync(
+      join(dir, 'client.mjs'),
+      'import OpenAI from "openai";\nconst client = new OpenAI();\nexport async function ask(t) {\n  return client.chat.completions.create({ model: "gpt-4", messages: [] });\n}\n',
+    );
+    writeFileSync(join(dir, 'util.js'), 'export const HELLO = "world";\n');
+    const { stdout, exitCode } = await runAudit([dir, '--json']);
+    expect(exitCode).toBe(0);
+    const report = JSON.parse(stdout);
+    expect(report.conclusion).toBe('exposure_detected');
+    expect(report.coverage.source.jsFiles).toBeGreaterThanOrEqual(2);
+    expect(report.coverage.source.tsFiles).toBe(0);
+    const inv = report.investigations.find((i: { model: string }) => i.model === 'gpt-4');
+    expect(inv).toBeDefined();
+    expect(['patch', 'review']).toContain(inv.decision);
+    expect(inv.locations.selectors.some((l: { file: string }) => l.file.endsWith('client.mjs'))).toBe(true);
+    // JavaScript must not be named as an unanalyzed language.
+    expect((report.coverage.source.unanalyzedLanguages || []).some((l: string) => l.startsWith('JavaScript'))).toBe(false);
+  }, 120_000);
+
+  it('the human report names the JS file count in the coverage matrix', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mendr-audit-js2-'));
+    jsDirs.push(dir);
+    writeFileSync(
+      join(dir, 'a.js'),
+      'import OpenAI from "openai";\nconst client = new OpenAI();\nexport async function ask() {\n  return client.chat.completions.create({ model: "gpt-4" });\n}\n',
+    );
+    const { stdout, exitCode } = await runAudit([dir]);
+    expect(exitCode).toBe(0);
+    expect(stdout).toMatch(/\d+ JS/);
+  }, 120_000);
+});
+
 describe('audit CLI — the JSON contract the GitHub workflow depends on', () => {
   it('carries every issue counter, including carriedCount', async () => {
     const dir = sampleRepo();

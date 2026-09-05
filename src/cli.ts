@@ -11,6 +11,7 @@ import { formatChangeSet } from './detect/changeModel.js';
 import {
   buildRegistryPrefilter,
   collectTsSourceFiles,
+  countScriptFilesByLanguage,
   countTsTestFiles,
   loadPrefilteredProject,
   loadProject,
@@ -472,18 +473,22 @@ program
     const pyFiles = collectPythonFiles(resolved);
     assertAnalyzable(tsFileCount, pyFiles.length, resolved);
 
+    // The JS/TS scan scope (tsFileCount) covers both languages; split it for the
+    // coverage report so a JavaScript repo is not silently labelled TypeScript.
+    const scriptByLang = countScriptFilesByLanguage(resolved);
+
     // Python gets the same text pre-filter: read once, parse only the hits.
     const pySourcesAll = readPythonSources(pyFiles);
     const pySources = prefilter ? pySourcesAll.filter((s) => prefilter.test(s.text)) : [];
 
     // The per-language breakdown appears as soon as any Python is in scope, so
-    // "Scanned 42 source files" never silently means "42 TS files, Python
-    // ignored". A TS-only repo keeps the original single-count line.
+    // "Scanned 42 source files" never silently means "42 JS/TS files, Python
+    // ignored". A JS/TS-only repo keeps the original single-count line.
     const totalFiles = tsFileCount + pyFiles.length;
     const totalMatched = tsMatched + pySources.length;
     say(
       pyFiles.length > 0
-        ? `Scanned ${totalFiles} source file${totalFiles === 1 ? '' : 's'} (${tsFileCount} ts, ${pyFiles.length} py; ` +
+        ? `Scanned ${totalFiles} source file${totalFiles === 1 ? '' : 's'} (${tsFileCount} js/ts, ${pyFiles.length} py; ` +
             `${totalMatched} matched the registry pre-filter and ${totalMatched === 1 ? 'was' : 'were'} parsed).`
         : `Scanned ${tsFileCount} source file${tsFileCount === 1 ? '' : 's'} ` +
             `(${tsMatched} matched the registry pre-filter and ${tsMatched === 1 ? 'was' : 'were'} parsed).`,
@@ -875,7 +880,8 @@ program
                 informational: 0,
                 usageUnverified: 0,
                 filesScanned: totalFiles,
-                tsFiles: tsFileCount,
+                tsFiles: scriptByLang.ts,
+                jsFiles: scriptByLang.js,
                 pyFiles: pyFiles.length,
                 // Machine consumers get the same boundary the human report
                 // prints: mendr's gates cover code, never model behavior.
@@ -1620,7 +1626,8 @@ program
               informational: tierCounts.tierC,
               usageUnverified: tierBFindings.filter((f) => f.reason === 'usage_unverified').length,
               filesScanned: totalFiles,
-              tsFiles: tsFileCount,
+              tsFiles: scriptByLang.ts,
+              jsFiles: scriptByLang.js,
               pyFiles: pyFiles.length,
               // The honesty split, machine-readable. Every OTHER gate mendr
               // runs judges CODE (compiles / parses / tests pass); this field
@@ -2831,7 +2838,7 @@ program
   .option('--to <date>', 'ISO end date YYYY-MM-DD (default: today) — only with a provider')
   .option('--api-key-env <NAME>', 'env var holding your read-only provider Admin key', 'MENDR_PROVIDER_KEY')
   .option('--fixture <file>', 'read usage from a JSON fixture (demo/test — no key)')
-  .option('--skip-source', 'skip the TS/TSX/Python source scan (the audit then cannot conclude anything)')
+  .option('--skip-source', 'skip the TS/TSX/JS/Python source scan (the audit then cannot conclude anything)')
   .option('--sha <sha>', 'the exact commit being scanned (recorded in the GitHub issue report)')
   .option('--previous-body <file>', 'the resident issue body from the last run, to diff new/continuing/resolved')
   .option('--issue-body <file>', 'write the GitHub issue body (markdown) to this file')
@@ -2843,7 +2850,7 @@ program
   .option('--no-progress', 'alias of --quiet')
   .option('--verbose', 'list every informational reference in full (default: a count and the first five)')
   .description(
-    '[preview] Audit a repository for retiring AI dependencies. Needs only the REPO: scans TS/TSX/Python ' +
+    '[preview] Audit a repository for retiring AI dependencies. Needs only the REPO: scans TS/TSX/JS/Python ' +
       'source + config, joins the deprecation registry, and locates every occurrence. Runtime evidence ' +
       '(is it actually live?) is OPTIONAL — connect OTel/an export/gateway logs via --runtime, or your own ' +
       'read-only key via [provider]. Nothing is ever changed.',
@@ -2914,9 +2921,10 @@ program
         console.error(`mendr: config scan FAILED: ${err instanceof Error ? err.message : String(err)}`);
       }
 
-      // --- LOCATE in SOURCE CODE (TS/TSX + Python; the same scanner fix-llm uses) ---
+      // --- LOCATE in SOURCE CODE (TS/TSX/JS + Python; the same scanner fix-llm uses) ---
       let source: ReturnType<typeof foldExposure> = [];
       let tsFiles = 0;
+      let jsFiles = 0;
       let pyFiles = 0;
       let sourceAnalyzed = false;
       let sourceFailed = false;
@@ -2937,12 +2945,14 @@ program
           // "files scanned" = files whose model ids were actually examined. Test-support
           // files are present and counted separately: their ids are skipped by rule,
           // and silently counting them as scanned overstated coverage (M10).
-          tsFiles = collectTsSourceFiles(resolved).length;
+          const byLang = countScriptFilesByLanguage(resolved);
+          tsFiles = byLang.ts;
+          jsFiles = byLang.js;
           const pyAll = collectPythonFiles(resolved);
           const pyTests = countPyTestFiles(pyAll);
           pyFiles = pyAll.length - pyTests;
           testFilesSkipped = countTsTestFiles(resolved) + pyTests;
-          if (progress) console.error(`Scanning source (${tsFiles} TS/TSX, ${pyFiles} Python file(s); ${testFilesSkipped} test file(s) skipped by rule)...`);
+          if (progress) console.error(`Scanning source (${tsFiles} TS/TSX, ${jsFiles} JavaScript, ${pyFiles} Python file(s); ${testFilesSkipped} test file(s) skipped by rule)...`);
           const scan = await scanForExposure(resolved, registry);
           source = foldExposure(scan.matches);
           sourceAnalyzed = true;
@@ -3025,9 +3035,10 @@ program
         source: {
           analyzed: sourceAnalyzed,
           failed: sourceFailed,
-          filesScanned: tsFiles + pyFiles,
-          filesRead: tsFiles + pyFiles,
+          filesScanned: tsFiles + jsFiles + pyFiles,
+          filesRead: tsFiles + jsFiles + pyFiles,
           tsFiles,
+          jsFiles,
           pyFiles,
           unanalyzedLanguages: otherLanguages,
           unanalyzedFiles,

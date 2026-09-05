@@ -11,11 +11,11 @@ import {
   loadProject,
 } from './scanRepo.js';
 
-// Regression tests for two real bugs found on real repos:
+// Regression tests for real bugs found on real repos:
 //   1. the no-tsconfig fallback glob only matched **/*.ts, so React/Next (.tsx)
 //      apps silently scanned to zero and reported "Nothing to fix";
-//   2. a JS-only repo loaded 0 analyzable files, which the CLI then reported as
-//      a clean pass instead of failing honestly.
+//   2. a JS-only repo used to load 0 analyzable files — now that JavaScript is
+//      supported, the fallback loader includes it (step 7).
 
 describe('loadProject fallback glob (no tsconfig)', () => {
   it('scans .tsx as well as .ts (the React/Next blind spot)', () => {
@@ -34,10 +34,24 @@ describe('loadProject fallback glob (no tsconfig)', () => {
     }
   });
 
-  it('reports zero analyzable files for a JS-only repo (so the CLI fails honestly)', () => {
+  it('loads a JS-only repo now that JavaScript is analyzed (.js/.jsx/.mjs/.cjs)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'mendr-js-'));
     try {
       writeFileSync(join(dir, 'index.js'), 'const x = 1;\n');
+      writeFileSync(join(dir, 'worker.mjs'), 'export const y = 2;\n');
+      writeFileSync(join(dir, 'ui.jsx'), 'export const C = () => null;\n');
+      const project = loadProject(dir);
+      expect(countAnalyzableSourceFiles(project)).toBeGreaterThanOrEqual(3);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('still excludes .d.ts and .min.js bundles from the fallback load', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mendr-js-excl-'));
+    try {
+      writeFileSync(join(dir, 'types.d.ts'), 'export type X = string;\n');
+      writeFileSync(join(dir, 'vendor.min.js'), 'const a=1;\n');
       const project = loadProject(dir);
       expect(countAnalyzableSourceFiles(project)).toBe(0);
     } finally {

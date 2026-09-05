@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Added — JavaScript source support
+
+- The audit, `fix-llm` and `watch` now scan JavaScript (`.js`, `.jsx`, `.mjs`,
+  `.cjs`), not only TypeScript. JavaScript rides the same syntactic ts-morph
+  scanner as TypeScript, so the literal and receiver rules are identical: an
+  ES-module first-party SDK call site is Tier A (auto-fixable), and a
+  `require()`-based receiver is detected but conservatively capped below Tier A
+  (found, never wrongly auto-patched). `.d.ts` and `.min.js`/bundle files are
+  excluded; `.test.js`/`.spec.jsx` and the usual test directories are skipped
+  by the same rule as TypeScript.
+- Coverage now reports a JavaScript file count of its own (`jsFiles` in the
+  audit JSON and the check-run/workspace views), and JavaScript is no longer
+  named as an "unanalyzed language" gap — a JavaScript-only repository now
+  reports real exposure instead of "inconclusive".
+- New tests: `src/usage/jsScan.test.ts` (ESM/JSX/MJS Tier A, CJS conservative,
+  data not a call site, walker/counter language split), a JavaScript-only audit
+  end-to-end in `auditStdout.test.ts`, and census assertions in
+  `languages.test.ts`. All run in the existing CI job. Verified end to end:
+  `fix-llm` produces and gate-verifies a correct diff on a `.mjs` call site.
+
 ### Added — the Action sends evidence to the App, and the workspace reads it back
 
 - `mendr audit --install` now scaffolds an optional, commented "Send audit
