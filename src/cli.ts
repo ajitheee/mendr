@@ -142,6 +142,7 @@ import {
   occurrenceTierCounts,
   scanForExposure,
 } from './watch/exposure.js';
+import { findTestReferences } from './audit/testReferences.js';
 import {
   EXPOSURE_RELATIVE_PATH,
   EXPOSURE_SCHEMA,
@@ -2852,11 +2853,16 @@ program
   .option('--quiet', 'no progress lines on stderr (automatic when stderr is not a terminal)')
   .option('--no-progress', 'alias of --quiet')
   .option('--verbose', 'list every informational reference in full (default: a count and the first five)')
+  .option('--fail-on-exposure', 'exit 1 when exposure is detected (default: exposure exits 0, for monitoring)')
   .description(
     '[preview] Audit a repository for retiring AI dependencies. Needs only the REPO: scans TS/TSX/JS/Python ' +
       'source + config, joins the deprecation registry, and locates every occurrence. Runtime evidence ' +
       '(is it actually live?) is OPTIONAL — connect OTel/an export/gateway logs via --runtime, or your own ' +
-      'read-only key via [provider]. Nothing is ever changed.',
+      'read-only key via [provider]. Nothing is ever changed.\n\n' +
+      'Exit codes: 0 = scan completed (clean, or exposure without --fail-on-exposure); ' +
+      '1 = scanner FAILURE, a surface errored (never mistake this for clean); ' +
+      '2 = usage error (bad path, or nothing analyzable); 3 = INCONCLUSIVE (scan ran but analyzed too little). ' +
+      'With --fail-on-exposure, exposure also exits 1.',
   )
   .action(
     async (
@@ -2866,7 +2872,7 @@ program
         runtime?: string; runtimeSource?: string; from?: string; to?: string;
         apiKeyEnv?: string; fixture?: string; skipSource?: boolean; json?: boolean;
         sha?: string; previousBody?: string; issueBody?: string; install?: boolean; force?: boolean;
-        plain?: boolean; quiet?: boolean; progress?: boolean; verbose?: boolean;
+        plain?: boolean; quiet?: boolean; progress?: boolean; verbose?: boolean; failOnExposure?: boolean;
       },
     ) => {
       const json = !!opts.json;
@@ -2945,9 +2951,9 @@ program
       }
       if (!opts.skipSource) {
         try {
-          // "files scanned" = files whose model ids were actually examined. Test-support
-          // files are present and counted separately: their ids are skipped by rule,
-          // and silently counting them as scanned overstated coverage (M10).
+          // "files scanned" = files whose model ids were examined as production
+          // dependencies. Test-support files are scanned SEPARATELY as test-only
+          // references (never migration candidates), so they are counted apart.
           const byLang = countScriptFilesByLanguage(resolved);
           tsFiles = byLang.ts;
           jsFiles = byLang.js;
@@ -2955,9 +2961,11 @@ program
           const pyTests = countPyTestFiles(pyAll);
           pyFiles = pyAll.length - pyTests;
           testFilesSkipped = countTsTestFiles(resolved) + pyTests;
-          if (progress) console.error(`Scanning source (${tsFiles} TS/TSX, ${jsFiles} JavaScript, ${pyFiles} Python file(s); ${testFilesSkipped} test file(s) skipped by rule)...`);
+          if (progress) console.error(`Scanning source (${tsFiles} TS/TSX, ${jsFiles} JavaScript, ${pyFiles} Python file(s); ${testFilesSkipped} test file(s) as test-only references)...`);
           const scan = await scanForExposure(resolved, registry);
-          source = foldExposure(scan.matches);
+          // Test-file references: informational, forced Tier C, never migrated.
+          const testRefs = findTestReferences(resolved, registry);
+          source = foldExposure([...scan.matches, ...testRefs]);
           sourceAnalyzed = true;
         } catch (err) {
           sourceFailed = true;
@@ -3081,6 +3089,15 @@ program
       // / fixture references are reported, but never produce exposure_detected.
       const { exposure: exposureFindings } = partitionFindings(investigations);
       const conclusion = concludeAudit(coverage, exposureFindings.length);
+
+      // DETERMINISTIC EXIT CODES (documented in --help/README), set before either
+      // the JSON or the human path so both agree. A failed or inconclusive scan
+      // must NEVER exit 0 — otherwise CI reads a broken scan as "clean/resolved".
+      //   1 = scanner FAILURE (a surface errored)   3 = INCONCLUSIVE
+      //   0 = clean, or exposure (unless --fail-on-exposure). 2 = usage error (set earlier).
+      if (conclusion === 'audit_failed') process.exitCode = 1;
+      else if (conclusion === 'inconclusive') process.exitCode = 3;
+      else if (conclusion === 'exposure_detected' && opts.failOnExposure) process.exitCode = 1;
 
       // --- GitHub-native single-issue report (optional) ----------------------
       let issueRender: ReturnType<typeof renderAuditIssue> | null = null;

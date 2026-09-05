@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### Added — scanner/report hardening: exit codes + test files as test-only references
+
+- **Deterministic `audit` exit codes**, so a broken scan can never read as clean
+  or resolved: `0` = the scan completed (clean, or exposure without
+  `--fail-on-exposure`); `1` = scanner FAILURE (a surface errored); `2` = usage
+  error (bad path, or nothing analyzable); `3` = INCONCLUSIVE (the scan ran but
+  analyzed too little to conclude). New `--fail-on-exposure` makes exposure exit
+  `1` for teams that want CI to gate. Documented in `--help`.
+- **Test files are scanned as test-only references**, no longer just skipped. A
+  retiring model id in a `.test.ts` / `_test.py` / fixture is surfaced as an
+  informational `test_fixture` reference (Tier C) — worth knowing, since those
+  tests break too — but it is NEVER a migration candidate: forced to Tier C at
+  the scan, and the fix-llm/migrate swap scope still excludes test files
+  entirely, so nothing can rewrite them. New `src/audit/testReferences.ts` (a
+  lightweight literal scan: TS/JS on the syntax tree so a comment never counts,
+  Python via quoted-literal text). The coverage matrix now shows "N scanned as
+  test-only references — never migration candidates" instead of "skipped".
+- Tests: `testReferences.test.ts` (TS/JS + Python test files → Tier C/testFile;
+  production files ignored; comments ignored; prefixed ids), plus audit
+  end-to-end cases for the exit codes and for a test-file id staying
+  informational while the production id stays patch-eligible. Root suite 71
+  files/971.
+
 ### Added — minimal GitHub UI: connect, understand one finding, act
 
 The App's own pages now carry a first-time developer from connect to a finding

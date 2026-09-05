@@ -149,7 +149,7 @@ export function coverageReport(meta: AuditMeta): string[] {
           ),
   );
   if ((src.testFilesSkipped ?? 0) > 0) {
-    lines.push(row('○', 'Test files', `${int(src.testFilesSkipped ?? 0)} skipped by rule — test data is not a dependency; ids inside were not examined`));
+    lines.push(row('✓', 'Test files', `${int(src.testFilesSkipped ?? 0)} scanned as test-only references — reported informational, never migration candidates`));
   }
   // `✓` is reserved for a surface that actually scanned something. No supported
   // config files at all is NOT APPLICABLE; files present but unreadable is a real

@@ -34,6 +34,8 @@ export interface ExposureMatch {
   reason?: TierBReason;
   /** Was the occurrence itself confirmed a live model argument? (confirmed/unverified/n/a) */
   usageVerdict: UsageVerdict;
+  /** From a test/spec/fixture file: always informational, never a migration candidate. */
+  testFile?: boolean;
 }
 
 /** Where one occurrence sits, and how serious it is — persisted verbatim. */
@@ -44,6 +46,8 @@ export interface ExposureOccurrence {
   tier: Tier;
   reason?: TierBReason;
   usageVerdict: UsageVerdict;
+  /** From a test/spec/fixture file — reported as a test-only reference, never migrated. */
+  testFile?: boolean;
 }
 
 /** How many occurrences of a model landed in each tier. */
@@ -253,6 +257,7 @@ export function foldExposure(matches: readonly ExposureMatch[]): ExposedModel[] 
       tier: match.tier,
       reason: match.reason,
       usageVerdict: match.usageVerdict,
+      ...(match.testFile ? { testFile: true } : {}),
     });
   }
 

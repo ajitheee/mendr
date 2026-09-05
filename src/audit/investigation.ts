@@ -286,11 +286,9 @@ export function coverageGaps(coverage: AuditCoverage): string[] {
       : '';
     gaps.push(`these languages are present but NOT analyzed: ${other.join(', ')}${share}`);
   }
-  if ((coverage.source.testFilesSkipped ?? 0) > 0) {
-    gaps.push(
-      `${coverage.source.testFilesSkipped} test/spec/fixture source files were counted but their model ids were not examined (test data is not a dependency)`,
-    );
-  }
+  // Test files are no longer a coverage GAP: they are scanned as test-only
+  // references (shown as informational, never migrated). The coverage matrix
+  // reports the count; it does not belong in "limits of this run".
   if (coverage.config.failed) gaps.push('config scan FAILED');
   else if (coverage.config.filesScanned > 0 && (coverage.config.filesRead ?? 0) === 0) {
     // Only a GAP when config files exist but could not be read. A repo with no
@@ -339,11 +337,19 @@ function isProvenCallSite(o: ExposureOccurrence): boolean {
 }
 
 function toSourceLocation(o: ExposureOccurrence, model: string): LocationRef {
-  const role: LocationRole =
-    o.tier === 'C' ? 'code_reference' : isProvenCallSite(o) ? 'code_call_site' : 'code_candidate';
+  // A test-file reference is always informational and NEVER patch-eligible: it is
+  // forced to Tier C at the scan (audit/testReferences.ts), so a test call site
+  // can never read as a live selector or a migration candidate.
+  const role: LocationRole = o.testFile
+    ? 'test_fixture'
+    : o.tier === 'C'
+      ? 'code_reference'
+      : isProvenCallSite(o)
+        ? 'code_call_site'
+        : 'code_candidate';
   return {
     file: o.file, line: o.line, column: o.column, key: null, value: model,
-    role, surface: 'code', tier: o.tier, providerSurface: null, patchEligible: o.tier === 'A',
+    role, surface: 'code', tier: o.tier, providerSurface: null, patchEligible: !o.testFile && o.tier === 'A',
     disposition: dispositionOf(o.tier), reason: o.reason ?? null,
   };
 }
@@ -544,7 +550,9 @@ export function buildInvestigations(
     fillRetirement(inv, m);
     for (const o of m.locations) {
       const loc = toSourceLocation(o, m.id);
-      if (loc.role === 'code_reference') inv.locations.catalog.push(loc);
+      // Informational occurrences (data references and test-file references)
+      // go to catalog; only real selectors go to selectors.
+      if (loc.role === 'code_reference' || loc.role === 'test_fixture') inv.locations.catalog.push(loc);
       else inv.locations.selectors.push(loc);
     }
   }

@@ -230,11 +230,7 @@ export interface PrefilteredScan {
  * own tsconfig/module resolution; this pre-filter is value-driven like the
  * scan it feeds.
  */
-export function loadPrefilteredProject(
-  repoPath: string,
-  prefilter: RegExp | undefined,
-): PrefilteredScan {
-  const files = collectTsSourceFiles(repoPath);
+function buildPrefiltered(files: readonly string[], prefilter: RegExp | undefined): PrefilteredScan {
   const hits: string[] = [];
   if (prefilter) {
     for (const file of files) {
@@ -252,6 +248,45 @@ export function loadPrefilteredProject(
   const project = new Project({ compilerOptions: fallbackCompilerOptions() });
   for (const file of hits) project.addSourceFileAtPath(file);
   return { project, totalFiles: files.length, matchedFiles: hits.length };
+}
+
+export function loadPrefilteredProject(repoPath: string, prefilter: RegExp | undefined): PrefilteredScan {
+  return buildPrefiltered(collectTsSourceFiles(repoPath), prefilter);
+}
+
+/**
+ * The TEST-file counterpart of {@link loadPrefilteredProject}: parses ONLY the
+ * test/spec/fixture files, for the audit's test-only-reference pass. These are
+ * never in the fix-llm/migrate swap scope (which stays on
+ * {@link collectTsSourceFiles}), so a model id found here can be reported but
+ * can never be written.
+ */
+export function loadPrefilteredTestProject(repoPath: string, prefilter: RegExp | undefined): PrefilteredScan {
+  return buildPrefiltered(collectTestSourceFiles(repoPath), prefilter);
+}
+
+/** Every JS/TS TEST-support source file under `repoPath` (the inverse of {@link collectTsSourceFiles}). */
+export function collectTestSourceFiles(repoPath: string): string[] {
+  const abs = resolve(repoPath);
+  const out: string[] = [];
+  const walk = (dir: string): void => {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!SCAN_EXCLUDED_DIRS.has(entry.name)) walk(full);
+      } else if (entry.isFile() && scriptLanguageOf(entry.name) !== null && isTestPath(full)) {
+        out.push(full);
+      }
+    }
+  };
+  walk(abs);
+  return out;
 }
 
 /**

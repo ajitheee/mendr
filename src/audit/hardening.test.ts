@@ -167,9 +167,11 @@ describe('M8 — a mostly-unread repository is inconclusive, not clean', () => {
   });
 });
 
-describe('M10 — skipped test files are disclosed', () => {
-  it('the limits list names the count', () => {
+describe('M10 — test files are scanned as test-only references, not a coverage gap', () => {
+  it('the test-file count is NOT listed as a limit (they are scanned as test-only references)', () => {
     const c = coverage({ testFilesSkipped: 815 });
-    expect(coverageGaps(c).join('\n')).toContain('815 test/spec/fixture source files were counted but their model ids were not examined');
+    // Now that test files are scanned (Tier C, informational, never migrated),
+    // they are reported in the coverage matrix — not as a "limit of this run".
+    expect(coverageGaps(c).join('\n')).not.toContain('test/spec/fixture');
   });
 });

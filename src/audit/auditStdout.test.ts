@@ -108,6 +108,63 @@ describe('audit CLI — JavaScript source is analyzed, not reported as a gap', (
   }, 120_000);
 });
 
+describe('audit CLI — test files are scanned as test-only references, never migrated', () => {
+  const trDirs: string[] = [];
+  afterEach(() => { for (const d of trDirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
+
+  it('a retiring id in a test file is informational (test_fixture, Tier C, not patch-eligible)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mendr-audit-tr-'));
+    trDirs.push(dir);
+    mkdirSync(join(dir, 'src'), { recursive: true });
+    writeFileSync(join(dir, 'src', 'app.ts'), 'import OpenAI from "openai";\nconst c = new OpenAI();\nexport async function a(){ return c.chat.completions.create({ model: "gpt-4", messages: [] }); }\n');
+    writeFileSync(join(dir, 'src', 'app.test.ts'), 'import OpenAI from "openai";\nconst c = new OpenAI();\ntest("x", async () => { await c.chat.completions.create({ model: "gpt-3.5-turbo", messages: [] }); });\n');
+    const { stdout, exitCode } = await runAudit([dir, '--json']);
+    expect(exitCode).toBe(0);
+    const report = JSON.parse(stdout);
+    const prod = report.investigations.find((i: { model: string }) => i.model === 'gpt-4');
+    const test = report.investigations.find((i: { model: string }) => i.model === 'gpt-3.5-turbo');
+    // production id is patch-eligible; the test-file id is informational only
+    expect(prod.decision).toBe('patch');
+    expect(test.decision).toBe('monitor');
+    const testLoc = [...test.locations.selectors, ...test.locations.catalog][0];
+    expect(testLoc.role).toBe('test_fixture');
+    expect(testLoc.tier).toBe('C');
+    expect(testLoc.patchEligible).toBe(false);
+    // it lives in catalog (informational), never as a selector
+    expect(test.locations.selectors.length).toBe(0);
+  }, 120_000);
+});
+
+describe('audit CLI — deterministic exit codes (a broken scan never reads as clean)', () => {
+  const exDirs: string[] = [];
+  afterEach(() => { for (const d of exDirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
+  function repo(files: Record<string, string>): string {
+    const dir = mkdtempSync(join(tmpdir(), 'mendr-exit-'));
+    exDirs.push(dir);
+    for (const [rel, content] of Object.entries(files)) writeFileSync(join(dir, rel), content);
+    return dir;
+  }
+  const CALL = 'import OpenAI from "openai";\nconst c = new OpenAI();\nexport async function a(){ return c.chat.completions.create({ model: "gpt-4", messages: [] }); }\n';
+
+  it('clean and exposure both exit 0 by default (monitoring stays green)', async () => {
+    expect((await runAudit([repo({ 'y.ts': 'export const x = 1;\n' })])).exitCode).toBe(0);
+    expect((await runAudit([repo({ 'x.ts': CALL })])).exitCode).toBe(0);
+  }, 120_000);
+
+  it('--fail-on-exposure makes exposure exit 1 (opt-in CI gate)', async () => {
+    expect((await runAudit([repo({ 'x.ts': CALL }), '--fail-on-exposure'])).exitCode).toBe(1);
+    // clean still exits 0 even with the flag
+    expect((await runAudit([repo({ 'y.ts': 'export const x = 1;\n' }), '--fail-on-exposure'])).exitCode).toBe(0);
+  }, 120_000);
+
+  it('an inconclusive scan exits 3, never 0 (not mistaken for clean/resolved)', async () => {
+    // --skip-source: the audit cannot conclude anything.
+    expect((await runAudit([repo({ 'x.ts': CALL }), '--skip-source'])).exitCode).toBe(3);
+    // a repo mendr cannot analyze (Go only) is inconclusive, not clean.
+    expect((await runAudit([repo({ 'main.go': 'package main\n' })])).exitCode).toBe(3);
+  }, 120_000);
+});
+
 describe('audit CLI — reader tie-back (config env-var read proven in code)', () => {
   const tbDirs: string[] = [];
   afterEach(() => { for (const d of tbDirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
