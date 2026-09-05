@@ -68,4 +68,15 @@ export interface Store {
   getRun(id: number): Promise<RunRecord | null>;
   pruneRuns(repoId: number, keep: number): Promise<void>;
   latestRunPerRepo(): Promise<Map<number, RunSummary>>;
+  // --- retention & deletion (trust: data cleanup) ---
+  /** Hard-delete a repository's stored runs (findings) and the repo row. Returns how many runs went. */
+  deleteRepoData(repoId: number): Promise<{ runsDeleted: number }>;
+  /**
+   * Hard-delete ALL stored findings and repositories for an installation (App
+   * uninstalled). The installation row is kept, marked deleted, as a deletion
+   * record that holds no findings.
+   */
+  deleteInstallationData(installationId: number, at: string): Promise<{ reposDeleted: number; runsDeleted: number }>;
+  /** Delete runs older than `days`, across all repos. Returns how many went. Retention control. */
+  pruneRunsByAge(days: number): Promise<number>;
 }

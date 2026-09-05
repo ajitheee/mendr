@@ -197,6 +197,7 @@ export function createApp(deps: AppDeps): Hono {
       checkRunUrl: null,
     });
     await store.pruneRuns(repo.id, config.maxRunsPerRepo);
+    if (config.retentionDays > 0) await store.pruneRunsByAge(config.retentionDays);
 
     const detailsUrl = `${config.appUrl}/r/${claims.repository}/runs/${run.id}`;
     let checkRun: string | null = null;
@@ -323,6 +324,20 @@ export function createApp(deps: AppDeps): Hono {
     const run = repo ? await store.getRun(Number(c.req.param('id'))) : null;
     if (!repo || !run || run.repoId !== repo.id) return c.html(errorPage('Not found', 'No such run is visible to you here.'), 404);
     return c.html(runPage(repo, run, sess.login, { webUrl: config.githubWebUrl, workflowUrl: workflowRunsUrl(config.githubWebUrl, repo.fullName) }));
+  });
+
+  // Self-service deletion: a signed-in user with access can delete this repo's
+  // stored findings now, without uninstalling. SameSite=Lax blocks a cross-site
+  // POST from carrying the session, so this needs no separate CSRF token.
+  app.post('/r/:owner/:name/delete', async (c) => {
+    const sess = await session(c);
+    if (!sess) return c.redirect(`/auth/login?next=${encodeURIComponent(`/r/${c.req.param('owner')}/${c.req.param('name')}`)}`);
+    const fullName = `${c.req.param('owner')}/${c.req.param('name')}`;
+    const repo = await accessibleRepo(sess, fullName);
+    if (!repo) return c.html(errorPage('Not found', 'No such repository is visible to you here.'), 404);
+    const gone = await store.deleteRepoData(repo.id);
+    log('data deleted', { repo: fullName, by: sess.login, runsDeleted: gone.runsDeleted });
+    return c.html(errorPage('Deleted', `Removed ${gone.runsDeleted} stored run(s) for ${fullName}. Nothing of this repository's findings remains. Re-run the audit to repopulate.`));
   });
 
   // --- the static investigation workspace (site/app) -------------------------------

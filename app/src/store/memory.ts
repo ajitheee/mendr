@@ -85,6 +85,39 @@ export class MemoryStore implements Store {
     for (const r of this.sorted(repoId).slice(keep)) this.runs.delete(r.id);
   }
 
+  async deleteRepoData(repoId: number): Promise<{ runsDeleted: number }> {
+    let runsDeleted = 0;
+    for (const [id, r] of [...this.runs]) {
+      if (r.repoId === repoId) {
+        this.runs.delete(id);
+        runsDeleted++;
+      }
+    }
+    this.repos.delete(repoId);
+    return { runsDeleted };
+  }
+
+  async deleteInstallationData(installationId: number, at: string): Promise<{ reposDeleted: number; runsDeleted: number }> {
+    const repoIds = [...this.repos.values()].filter((r) => r.installationId === installationId).map((r) => r.id);
+    let runsDeleted = 0;
+    for (const id of repoIds) runsDeleted += (await this.deleteRepoData(id)).runsDeleted;
+    const inst = this.installations.get(installationId);
+    if (inst) this.installations.set(installationId, { ...inst, deletedAt: at });
+    return { reposDeleted: repoIds.length, runsDeleted };
+  }
+
+  async pruneRunsByAge(days: number): Promise<number> {
+    const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
+    let deleted = 0;
+    for (const [id, r] of [...this.runs]) {
+      if (r.receivedAt < cutoff) {
+        this.runs.delete(id);
+        deleted++;
+      }
+    }
+    return deleted;
+  }
+
   async latestRunPerRepo(): Promise<Map<number, RunSummary>> {
     const out = new Map<number, RunSummary>();
     for (const r of [...this.runs.values()].sort((a, b) => b.receivedAt.localeCompare(a.receivedAt) || b.id - a.id)) {

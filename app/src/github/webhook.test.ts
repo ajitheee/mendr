@@ -39,7 +39,9 @@ describe('applyWebhook maintains the tenant boundary', () => {
     await applyWebhook(store, 'installation_repositories', { action: 'added', installation: inst, repositories_added: [{ id: 2, full_name: 'acme/web' }], repositories_removed: [] }, 't');
     await applyWebhook(store, 'installation_repositories', { action: 'removed', installation: inst, repositories_added: [], repositories_removed: [{ id: 1, full_name: 'acme/api' }] }, '2026-09-05T00:00:00Z');
     expect((await store.listRepos()).map((r) => r.fullName)).toEqual(['acme/web']);
-    expect((await store.getRepo(1))?.removedAt).toBe('2026-09-05T00:00:00Z');
+    // Removing access now HARD-DELETES the repo and its findings (data cleanup),
+    // not a soft-delete that keeps the row around.
+    expect(await store.getRepo(1)).toBeNull();
   });
 
   it('suspend, unsuspend and delete change what ingest will accept', async () => {

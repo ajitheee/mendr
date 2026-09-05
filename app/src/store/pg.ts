@@ -172,6 +172,25 @@ export class PgStore implements Store {
     );
   }
 
+  async deleteRepoData(repoId: number): Promise<{ runsDeleted: number }> {
+    const del = await this.pool.query('DELETE FROM runs WHERE repo_id = $1', [repoId]);
+    await this.pool.query('DELETE FROM repos WHERE id = $1', [repoId]);
+    return { runsDeleted: del.rowCount ?? 0 };
+  }
+
+  async deleteInstallationData(installationId: number, at: string): Promise<{ reposDeleted: number; runsDeleted: number }> {
+    const runs = await this.pool.query('DELETE FROM runs WHERE repo_id IN (SELECT id FROM repos WHERE installation_id = $1)', [installationId]);
+    const repos = await this.pool.query('DELETE FROM repos WHERE installation_id = $1', [installationId]);
+    // Keep the installation row as a deletion record (it holds no findings).
+    await this.pool.query('UPDATE installations SET deleted_at = $2, updated_at = now() WHERE id = $1', [installationId, at]);
+    return { reposDeleted: repos.rowCount ?? 0, runsDeleted: runs.rowCount ?? 0 };
+  }
+
+  async pruneRunsByAge(days: number): Promise<number> {
+    const del = await this.pool.query(`DELETE FROM runs WHERE received_at < now() - ($1 || ' days')::interval`, [String(days)]);
+    return del.rowCount ?? 0;
+  }
+
   async latestRunPerRepo(): Promise<Map<number, RunSummary>> {
     const { rows } = await this.pool.query(`SELECT DISTINCT ON (repo_id) ${SUMMARY_COLUMNS} FROM runs ORDER BY repo_id, received_at DESC, id DESC`);
     const out = new Map<number, RunSummary>();

@@ -30,6 +30,8 @@ export interface AppConfig {
   mendrSpec: string;
   /** Field-level encryption keyring for stored reports (MENDR_DATA_KEY); null = plaintext (dev). */
   dataKey: string | null;
+  /** Delete runs older than this many days (MENDR_RETENTION_DAYS); 0 = keep (bounded by MAX_RUNS_PER_REPO). */
+  retentionDays: number;
 }
 
 function int(v: string | undefined, fallback: number): number {
@@ -69,6 +71,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     uiDir: opt(env.UI_DIR),
     mendrSpec: opt(env.MENDR_CLI_SPEC) ?? 'v0.2.4-alpha',
     dataKey: opt(env.MENDR_DATA_KEY),
+    retentionDays: Math.max(0, Math.floor(Number(env.MENDR_RETENTION_DAYS) || 0)),
   };
 }
 

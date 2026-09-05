@@ -216,6 +216,32 @@ key, with the same backup and access controls, and never commit it. Without the
 key set, the App stores reports in plaintext and warns loudly at boot — that is
 a development-only mode.
 
+### Retention, deletion and uninstall (section 5b)
+
+Data leaves when access does:
+
+- **Uninstall the App** → every finding and every repository row for that
+  installation is **hard-deleted** immediately (the `installation.deleted`
+  webhook). The installation row survives only as a deletion record — an id, a
+  login, a `deleted_at` — holding no findings.
+- **Remove a repository** from the installation → that repository's stored runs
+  and its row are hard-deleted (`installation_repositories.removed`). Not a
+  soft-delete that keeps the data around.
+- **Delete on demand** → a signed-in user with access can delete a repository's
+  stored findings at any time from its page (`POST /r/:owner/:name/delete`),
+  without uninstalling.
+- **Retention** → `MENDR_RETENTION_DAYS` deletes runs older than N days; run
+  count per repository is always bounded by `MAX_RUNS_PER_REPO`. Set a short
+  retention if you want findings to age out on their own.
+- **Deletion is recorded, not the content.** Each deletion writes an audit-log
+  line with the repository and the count removed (section 5c) — never the
+  findings themselves.
+
+There are no user or installation **tokens** to revoke on uninstall: user tokens
+live only in the viewer's cookie (which the user clears by signing out), and
+installation tokens are minted in memory and expire on their own; GitHub also
+invalidates them the moment the App is uninstalled.
+
 ---
 
 ## 5. Threat model

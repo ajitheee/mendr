@@ -226,6 +226,38 @@ describe('ingest: evidence from the customer CI, proven by OIDC', () => {
     expect((await h.ingest(await actionsToken({ run_id: '100' }), sampleReport())).status).toBe(403);
   });
 
+  it('uninstalling the App purges the installation\'s findings and repos (data cleanup)', async () => {
+    const h = harness();
+    await h.install();
+    await h.ingest(await actionsToken(), sampleReport());
+    expect((await h.store.listRuns(REPO.id, 10)).length).toBe(1);
+    await h.webhook('installation', { action: 'deleted', installation: INSTALLATION });
+    // findings and the repo are gone; the installation row survives as a record.
+    expect(await h.store.getRun(1)).toBeNull();
+    expect(await h.store.getRepo(REPO.id)).toBeNull();
+    expect((await h.store.getInstallation(INSTALLATION.id))?.deletedAt).toBeTruthy();
+  });
+
+  it('removing a repository from the installation deletes that repo\'s findings', async () => {
+    const h = harness();
+    await h.install();
+    await h.ingest(await actionsToken(), sampleReport());
+    await h.webhook('installation_repositories', { action: 'removed', installation: INSTALLATION, repositories_added: [], repositories_removed: [REPO] });
+    expect((await h.store.listRuns(REPO.id, 10)).length).toBe(0);
+    expect(await h.store.getRepo(REPO.id)).toBeNull();
+  });
+
+  it('a signed-in user can delete their repo\'s stored data on demand', async () => {
+    const h = harness({ 'acme/api': REPO.id });
+    await h.install();
+    await h.ingest(await actionsToken(), sampleReport());
+    const cookie = await h.sessionCookie();
+    const res = await h.app.request('/r/acme/api/delete', { method: 'POST', headers: { cookie } });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('Removed 1 stored run');
+    expect((await h.store.listRuns(REPO.id, 10)).length).toBe(0);
+  });
+
   it('a failed check-run write does not lose the evidence', async () => {
     const h = harness();
     await h.install();

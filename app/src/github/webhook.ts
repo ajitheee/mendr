@@ -59,9 +59,12 @@ export async function applyWebhook(store: Store, event: string, payload: unknown
       case 'suspend':
         await store.setInstallationSuspended(inst.id, true);
         return `installation ${inst.id} suspended`;
-      case 'deleted':
-        await store.markInstallationDeleted(inst.id, now);
-        return `installation ${inst.id} deleted`;
+      case 'deleted': {
+        // Uninstall = remove the customer's stored data: every finding and repo
+        // is hard-deleted; the installation row survives as a deletion record.
+        const gone = await store.deleteInstallationData(inst.id, now);
+        return `installation ${inst.id} deleted: purged ${gone.reposDeleted} repositories and ${gone.runsDeleted} run(s)`;
+      }
       default:
         return `ignored: installation.${p.action ?? '?'}`;
     }
@@ -81,8 +84,11 @@ export async function applyWebhook(store: Store, event: string, payload: unknown
     const added = repos(p.repositories_added);
     const removed = repos(p.repositories_removed);
     if (added.length) await store.upsertRepos(inst.id, added);
-    if (removed.length) await store.removeRepos(inst.id, removed.map((r) => r.id), now);
-    return `installation ${inst.id}: +${added.length} -${removed.length} repositories`;
+    // Access removed = findings deleted: hard-delete each removed repo's runs
+    // and the repo row, not a soft-delete that keeps the data around.
+    let runsDeleted = 0;
+    for (const r of removed) runsDeleted += (await store.deleteRepoData(r.id)).runsDeleted;
+    return `installation ${inst.id}: +${added.length} repositories, -${removed.length} (purged ${runsDeleted} run(s))`;
   }
 
   return `ignored: ${event}`;

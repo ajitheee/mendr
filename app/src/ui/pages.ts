@@ -144,7 +144,8 @@ export function runsPage(repo: Repo, runs: RunSummary[], login: string, setupUrl
         `<tr><td><a href="/r/${esc(repo.fullName)}/runs/${r.id}">${esc(r.receivedAt.slice(0, 19).replace('T', ' '))}</a></td><td><span class="muted">${esc(r.ref.replace(/^refs\/heads\//, ''))}</span> @ <code>${esc(r.sha.slice(0, 7))}</code></td><td>${pill(r.counts)}</td><td>${r.checkRunUrl ? `<a href="${esc(r.checkRunUrl)}">check</a>` : '<span class="muted">no check</span>'}</td></tr>`,
     )
     .join('');
-  const body = `<h2>${esc(repo.fullName)}</h2><table><thead><tr><th>Received</th><th>Commit</th><th>Result</th><th>Check run</th></tr></thead><tbody>${rows}</tbody></table>`;
+  const del = `<h2>Stored data</h2><p class="muted">Delete every stored run for this repository now. Uninstalling the App does this automatically; this is the same, on demand.</p><form method="post" action="/r/${esc(repo.fullName)}/delete" onsubmit="return confirm('Delete all stored findings for ${esc(repo.fullName)}? This cannot be undone.')"><button type="submit" style="background:var(--patch)">Delete stored data</button></form>`;
+  const body = `<h2>${esc(repo.fullName)}</h2><table><thead><tr><th>Received</th><th>Commit</th><th>Result</th><th>Check run</th></tr></thead><tbody>${rows}</tbody></table>${del}`;
   return layout(repo.fullName, body, { login });
 }
 
