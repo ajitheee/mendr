@@ -11,7 +11,7 @@ import { applyWebhook, verifyWebhookSignature } from './github/webhook.js';
 import { buildCheckRun } from './ingest/checkRun.js';
 import { countDecisions, sanitizeReport, validateReport } from './ingest/validate.js';
 import type { Repo, Store } from './store/types.js';
-import { credentialsPage, errorPage, homePage, installedPage, runPage, runsPage, setupPage } from './ui/pages.js';
+import { credentialsPage, errorPage, homePage, installedPage, runPage, runsPage, setupPage, workflowRunsUrl } from './ui/pages.js';
 import { setupWorkflowUrl } from './ui/workflowTemplate.js';
 
 export interface AppDeps {
@@ -322,7 +322,7 @@ export function createApp(deps: AppDeps): Hono {
     const repo = await accessibleRepo(sess, `${c.req.param('owner')}/${c.req.param('name')}`);
     const run = repo ? await store.getRun(Number(c.req.param('id'))) : null;
     if (!repo || !run || run.repoId !== repo.id) return c.html(errorPage('Not found', 'No such run is visible to you here.'), 404);
-    return c.html(runPage(repo, run, sess.login));
+    return c.html(runPage(repo, run, sess.login, { webUrl: config.githubWebUrl, workflowUrl: workflowRunsUrl(config.githubWebUrl, repo.fullName) }));
   });
 
   // --- the static investigation workspace (site/app) -------------------------------

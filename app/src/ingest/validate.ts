@@ -33,8 +33,11 @@ export interface Location {
   disposition?: string;
   reason?: string;
   patchEligible?: boolean;
+  providerSurface?: string | null;
   snippet?: Snippet | null;
   lineHash?: string | null;
+  /** Config selectors: evidence that code reads this selector (reader tie-back). */
+  readerTieBack?: { proven?: boolean; readers?: { file: string; line: number; via?: string }[] } | null;
   [k: string]: unknown;
 }
 
@@ -45,7 +48,16 @@ export interface Investigation {
   reason?: string;
   nextAction?: string | null;
   entryId?: string | null;
-  retirementEvidence?: { status?: string | null; shutdownDate?: string | null; daysUntil?: number | null; replacement?: string | null } | null;
+  retirementEvidence?: {
+    status?: string | null;
+    shutdownDate?: string | null;
+    daysUntil?: number | null;
+    replacement?: string | null;
+    replacementVerdict?: string | null;
+    sourceUrl?: string | null;
+  } | null;
+  productionUsage?: string;
+  verification?: { readerTieBackProven?: boolean } | null;
   locations: { selectors: Location[]; catalog: Location[] };
   [k: string]: unknown;
 }

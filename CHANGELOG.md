@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+### Added — minimal GitHub UI: connect, understand one finding, act
+
+The App's own pages now carry a first-time developer from connect to a finding
+they can act on, without leaving the trust boundary (the App still holds
+`checks: write` + `metadata: read` only and never clones code).
+
+- **Connect (one click, no new scope).** Each installed repo with no run yet
+  gets a "Set up the audit" button that deep-links to GitHub's own prefilled
+  new-file editor with the audit workflow filled in; the user commits it and the
+  first audit runs in their CI. The generated workflow is least-privilege
+  (`contents: read` + `id-token: write`) and sends only the JSON here over an
+  OIDC-proven request. `app/src/ui/workflowTemplate.ts`.
+- **Exact finding page (the five things that matter, in order).** Each run page
+  lays out every finding as: **Possible cause** ("this retired model *may* be
+  the reason a request is failing" — never "the cause"), **Evidence** (exact
+  file:line, provider surface, role), **Confidence boundary** ("repository usage
+  confirmed · production traffic not measured", or "observed" when runtime is
+  connected), **Migration evidence** (verified / unverified replacement, or
+  none), **Next action** (the CLI's own wording). Action-needed findings are
+  separated from informational.
+- **Open in GitHub.** Every file:line is a `blob/<sha>/<file>#L<line>` link at
+  the exact scanned commit; the commit and provider notice link out too.
+- **Rerun audit.** A button links to the audit workflow's Actions page, where
+  "Run workflow" re-triggers the scan (no extra App scope needed).
+- Tests: `workflowTemplate.test.ts` and new `app.test.ts` cases (the setup
+  button and github.com/new link on the overview and repo page; the five-part
+  finding structure, the blob line link, and the rerun link on the run page).
+  App suite 8 files/49.
+
 ### Added — human-approved migration PRs
 
 - `mendr migrate --write` applies the migration to the working tree, but ONLY

@@ -20,6 +20,15 @@ table{border-collapse:collapse;width:100%;font-size:14px}th,td{text-align:left;p
 a{color:var(--accent)}button,.btn{background:var(--accent);color:#fff;border:0;padding:8px 14px;border-radius:4px;font:inherit;cursor:pointer;text-decoration:none;display:inline-block}
 .card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:16px;margin:12px 0}
 form.inline{display:inline}
+.finding{background:var(--card);border:1px solid var(--line);border-left-width:4px;border-radius:6px;padding:14px 16px;margin:14px 0}
+.finding.patch{border-left-color:var(--patch)}.finding.review{border-left-color:var(--review)}.finding.monitor{border-left-color:var(--info)}
+.finding h3{margin:0 0 2px;font-size:16px}
+.finding .part{margin-top:10px}
+.finding .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:2px}
+.finding .loc{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;display:block}
+.bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 18px}
+.chip{display:inline-block;padding:1px 8px;border-radius:4px;font-size:12px;border:1px solid var(--line);color:var(--muted)}
+.chip.ok{color:var(--ok);border-color:currentColor}.chip.warn{color:var(--review);border-color:currentColor}
 `;
 
 export function layout(title: string, body: string, opts: { login?: string | null } = {}): string {
@@ -139,26 +148,89 @@ export function runsPage(repo: Repo, runs: RunSummary[], login: string, setupUrl
   return layout(repo.fullName, body, { login });
 }
 
-const LABEL: Record<string, string> = { patch: 'PATCH ELIGIBLE', review: 'REVIEW REQUIRED', monitor: 'informational' };
+const LABEL: Record<string, string> = { patch: 'PATCH ELIGIBLE', review: 'REVIEW REQUIRED', monitor: 'INFORMATIONAL' };
 const CLASS: Record<string, string> = { patch: 'patch', review: 'review', monitor: 'info' };
 
-export function runPage(repo: Repo, run: RunRecord, login: string): string {
+type Loc = RunRecord['report']['investigations'][number]['locations']['selectors'][number];
+type Inv = RunRecord['report']['investigations'][number];
+
+/** A GitHub blob deep link to an exact line — "Open in GitHub". */
+function blobUrl(webUrl: string, fullName: string, sha: string, file: string, line: number): string {
+  const path = String(file).replace(/^\.?\//, '').replace(/\\/g, '/');
+  return `${webUrl.replace(/\/+$/, '')}/${fullName}/blob/${sha}/${path}#L${line}`;
+}
+
+/** The GitHub tree at the scanned commit. */
+function treeUrl(webUrl: string, fullName: string, sha: string): string {
+  return `${webUrl.replace(/\/+$/, '')}/${fullName}/tree/${sha}`;
+}
+
+/** The Actions page for the audit workflow — "Rerun audit" (Run workflow lives there). */
+export function workflowRunsUrl(webUrl: string, fullName: string): string {
+  return `${webUrl.replace(/\/+$/, '')}/${fullName}/actions/workflows/mendr-audit.yml`;
+}
+
+/** One finding, laid out as the five things a reader needs, in order. */
+function findingCard(inv: Inv, repo: Repo, run: RunRecord, webUrl: string): string {
+  const ev = inv.retirementEvidence ?? {};
+  const decision = inv.decision;
+
+  // 1. Possible cause — never "the cause": only runtime evidence could prove that.
+  const deadline = ev.shutdownDate
+    ? `${ev.status ?? 'retiring'}, shutdown ${esc(ev.shutdownDate)}${typeof ev.daysUntil === 'number' ? ` (${ev.daysUntil < 0 ? `${-ev.daysUntil} days past` : `${ev.daysUntil} days left`})` : ''}`
+    : (ev.status ?? 'listed');
+  const cause = `<strong>${esc(inv.model)}</strong> (${esc(inv.provider)}) is ${deadline}. If your code calls it, this retired model may be the reason a request is failing.`;
+
+  // 2. Evidence — exact locations, each a link into GitHub.
+  const locs = inv.locations.selectors.slice(0, 12);
+  const evidence = locs.length
+    ? locs
+        .map((l: Loc) => {
+          const surface = l.surface === 'config' ? `config${l.providerSurface ? ` · ${esc(l.providerSurface)}` : ''}` : `code${l.role ? ` · ${esc(String(l.role).replace(/_/g, ' '))}` : ''}`;
+          const read = l.readerTieBack?.proven ? ' · <span class="chip ok">read by code</span>' : '';
+          return `<a class="loc" href="${esc(blobUrl(webUrl, repo.fullName, run.sha, l.file, l.line))}" target="_blank" rel="noopener">${esc(l.file)}:${l.line} ↗</a><span class="muted">${surface}${read}</span>`;
+        })
+        .join('')
+    : '<span class="muted">No proven call site — this model appears only in catalog, docs or fixture data.</span>';
+  const more = inv.locations.selectors.length > 12 ? `<div class="muted">… ${inv.locations.selectors.length - 12} more</div>` : '';
+
+  // 3. Confidence boundary — say exactly what is and isn't proven.
+  const usage = inv.productionUsage;
+  const prod = usage === 'observed' ? '<span class="chip warn">production traffic observed</span>' : usage === 'not_observed' ? '<span class="chip">not seen in the connected source</span>' : '<span class="chip">production traffic not measured</span>';
+  const repoConfirmed = locs.length ? '<span class="chip ok">repository usage confirmed</span>' : '<span class="chip">no repository call site</span>';
+
+  // 4. Migration evidence — verified / unverified / none.
+  const migration = ev.replacement
+    ? `Replacement <code>${esc(ev.replacement)}</code> — <span class="chip ${ev.replacementVerdict === 'verified' ? 'ok' : 'warn'}">${esc(ev.replacementVerdict ?? 'unstamped')}</span>. Evidence only; nothing is applied here.${ev.sourceUrl ? ` <a href="${esc(ev.sourceUrl)}" target="_blank" rel="noopener">provider notice ↗</a>` : ''}`
+    : 'No safe replacement recommended yet — monitor the provider.';
+
+  // 5. Next action — the CLI's own wording, so the UI never drifts.
+  const next = esc(inv.nextAction ?? inv.reason ?? '');
+
+  const part = (label: string, html: string): string => `<div class="part"><div class="lbl">${label}</div><div>${html}</div></div>`;
+  return `<div class="finding ${decision}">
+    <div class="bar"><span class="pill ${CLASS[decision]}">${LABEL[decision]}</span><h3 style="display:inline">${esc(inv.model)}</h3></div>
+    ${part('Possible cause', cause)}
+    ${part('Evidence', evidence + more)}
+    ${part('Confidence boundary', `${repoConfirmed} ${prod}`)}
+    ${part('Migration evidence', migration)}
+    ${part('Next action', next)}
+  </div>`;
+}
+
+export function runPage(repo: Repo, run: RunRecord, login: string, opts: { webUrl: string; workflowUrl: string }): string {
   const invs = [...run.report.investigations].sort((a, b) => rank(a.decision) - rank(b.decision));
-  const rows = invs
-    .map((inv) => {
-      const locs = inv.locations.selectors
-        .slice(0, 8)
-        .map((l) => `<div><code>${esc(l.file)}:${l.line}</code> <span class="muted">${esc(l.disposition ?? l.tier ?? '')}</span></div>`)
-        .join('');
-      const more = inv.locations.selectors.length > 8 ? `<div class="muted">… ${inv.locations.selectors.length - 8} more</div>` : '';
-      const ev = inv.retirementEvidence;
-      return `<tr><td><span class="pill ${CLASS[inv.decision]}">${LABEL[inv.decision]}</span></td><td><strong>${esc(inv.model)}</strong><div class="muted">${esc(inv.provider)}${ev?.shutdownDate ? ` · shutdown ${esc(ev.shutdownDate)}` : ''}</div></td><td>${locs}${more}</td><td>${esc(inv.nextAction ?? inv.reason ?? '')}</td></tr>`;
-    })
-    .join('');
-  const body = `<h2><a href="/r/${esc(repo.fullName)}">${esc(repo.fullName)}</a> <span class="muted">· ${esc(run.ref.replace(/^refs\/heads\//, ''))} @ ${esc(run.sha.slice(0, 7))}</span></h2>
-<p>${pill(run.counts)} <span class="muted">· conclusion <code>${esc(run.conclusion)}</code> · received ${esc(run.receivedAt.slice(0, 19).replace('T', ' '))}${run.actor ? ` · by ${esc(run.actor)}` : ''}</span></p>
-<p>${run.checkRunUrl ? `<a href="${esc(run.checkRunUrl)}">Check run on GitHub</a> · ` : ''}<a href="/api/runs/${run.id}">Evidence JSON</a> · <a href="/app/?run=${run.id}">Open in the investigation workspace</a> <span class="muted">(loads this run directly)</span></p>
-<table><thead><tr><th>Decision</th><th>Model</th><th>Locations</th><th>Next action</th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="muted">No investigations in this run.</td></tr>'}</tbody></table>`;
+  const actionable = invs.filter((i) => i.decision !== 'monitor');
+  const info = invs.filter((i) => i.decision === 'monitor');
+
+  const header = `<h2><a href="/r/${esc(repo.fullName)}">${esc(repo.fullName)}</a> <span class="muted">· ${esc(run.ref.replace(/^refs\/heads\//, ''))} @ <a href="${esc(treeUrl(opts.webUrl, repo.fullName, run.sha))}" target="_blank" rel="noopener">${esc(run.sha.slice(0, 7))} ↗</a></span></h2>
+<div class="bar">${pill(run.counts)} <span class="muted">conclusion <code>${esc(run.conclusion)}</code> · received ${esc(run.receivedAt.slice(0, 19).replace('T', ' '))}${run.actor ? ` · by ${esc(run.actor)}` : ''}</span></div>
+<div class="bar">${run.checkRunUrl ? `<a class="btn" href="${esc(run.checkRunUrl)}" target="_blank" rel="noopener">Check run on GitHub ↗</a>` : ''}<a class="btn" href="${esc(opts.workflowUrl)}" target="_blank" rel="noopener">Rerun audit ↗</a><a href="/app/?run=${run.id}">Open in the investigation workspace</a> · <a href="/api/runs/${run.id}">Evidence JSON</a></div>`;
+
+  const body = actionable.length
+    ? `${header}<h2>Action needed (${actionable.length})</h2>${actionable.map((i) => findingCard(i, repo, run, opts.webUrl)).join('')}${info.length ? `<h2>Informational (${info.length})</h2><p class="muted">Catalog, documentation or fixture references — not dependencies. No migration action; monitor the provider.</p>${info.map((i) => findingCard(i, repo, run, opts.webUrl)).join('')}` : ''}`
+    : `${header}<div class="card"><strong>Nothing needs action.</strong> ${info.length ? `${info.length} informational reference(s) only.` : 'No retiring model dependencies in the completed surfaces.'}</div>${info.map((i) => findingCard(i, repo, run, opts.webUrl)).join('')}`;
+
   return layout(`${repo.fullName} run ${run.id}`, body, { login });
 }
 

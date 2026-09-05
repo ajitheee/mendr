@@ -267,7 +267,21 @@ describe('reading evidence requires sign-in AND GitHub access to the repository'
     expect(run.status).toBe(200);
     const page = await h.app.request(`/r/acme/api/runs/${runs.runs[0]!.id}`, { headers: { cookie } });
     expect(page.status).toBe(200);
-    expect(await page.text()).toContain('PATCH ELIGIBLE');
+    const html = await page.text();
+    expect(html).toContain('PATCH ELIGIBLE');
+    // the five-part finding structure
+    expect(html).toContain('Possible cause');
+    expect(html).toContain('Evidence');
+    expect(html).toContain('Confidence boundary');
+    expect(html).toContain('Migration evidence');
+    expect(html).toContain('Next action');
+    // never overclaims the cause without runtime evidence
+    expect(html).toContain('production traffic not measured');
+    expect(html).toContain('repository usage confirmed');
+    // Open in GitHub: exact blob line link at the scanned sha
+    expect(html).toContain(`github.com/acme/api/blob/${'c'.repeat(40)}/src/client.ts#L4`);
+    // Rerun audit: the workflow's Actions page
+    expect(html).toContain('github.com/acme/api/actions/workflows/mendr-audit.yml');
   });
 
   it('a user whose GitHub access does not cover the repository gets 404, not the evidence', async () => {
