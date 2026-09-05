@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mendr — privacy</title>
+<meta name="description" content="What Mendr runs, what leaves your environment, what it stores and for how long, and how you delete it — specific to how the system actually works.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ivory:#F4F1EA; --paper:#FAF8F3; --carbon:#0B0D10; --ink-2:#33383f; --grey:#5d6570; --hair:#DED7C7;
+    --cobalt:#315CFF; --jade:#15805D; --red:#B0392C;
+    --sans:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ivory);color:var(--carbon);font-family:var(--sans);font-size:17px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  main{max-width:760px;margin:0 auto;padding:40px 22px 72px}
+  a{color:var(--cobalt)}
+  h1{font-size:30px;margin:0 0 4px;letter-spacing:-.01em}
+  .lede{color:var(--grey);margin:0 0 28px}
+  h2{font-size:19px;margin:34px 0 8px}
+  code{font-family:var(--mono);font-size:14px;background:var(--paper);border:1px solid var(--hair);border-radius:4px;padding:1px 5px}
+  table{border-collapse:collapse;width:100%;font-size:15px;margin:8px 0}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--hair);vertical-align:top}
+  th{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--grey)}
+  .nav{display:flex;gap:16px;font-size:14px;margin-bottom:30px}
+  .updated{color:var(--grey);font-size:14px;margin-top:36px;border-top:1px solid var(--hair);padding-top:14px}
+  ul{padding-left:20px}
+</style>
+</head>
+<body>
+<main>
+  <div class="nav"><a href="/">← mendr</a><a href="/security.html">Security</a><a href="https://github.com/ajitheee/mendr/blob/main/TRUST.md">Trust (full detail)</a></div>
+  <h1>Privacy</h1>
+  <p class="lede">Written against how Mendr actually works — not generic promises. The authoritative, code-level detail is in <a href="https://github.com/ajitheee/mendr/blob/main/TRUST.md">TRUST.md</a>.</p>
+
+  <h2>Where the scan runs</h2>
+  <p>Mendr scans your repository <strong>inside your own GitHub Actions runner</strong>. The CLI reads your code, the bundled retirement registry, and your local <code>git</code>. The default audit makes <strong>no network calls at all</strong> — that is enforced in code (<code>--offline</code>, and a build-time test that runs the audit under a network-blocking preload), not just asserted here.</p>
+
+  <h2>What leaves your environment</h2>
+  <p>With the standalone CLI or the tracking-issue workflow: nothing leaves — the report is printed, or written to one GitHub issue in your own repository.</p>
+  <p>If you connect the <strong>Mendr GitHub App</strong>, your workflow sends it <strong>only the audit findings</strong>: model ids, file paths, line numbers, classifications, secret-redacted snippets of at most seven lines, and line hashes. <strong>Never your source code, never a clone, never a key.</strong> The upload is authenticated by the run's GitHub OIDC token, so there is no secret to store. The App holds <code>checks: write</code> and <code>metadata: read</code> only; it cannot read repository contents.</p>
+
+  <h2>What the App stores</h2>
+  <table>
+    <tr><th>Data</th><th>Kept</th></tr>
+    <tr><td>Which account installed the App, and which repositories it covers (ids, names)</td><td>while installed</td></tr>
+    <tr><td>Per audit run: commit, the findings (paths, line numbers, classifications, redacted snippets), and the result counts</td><td>see retention below</td></tr>
+    <tr><td>A security audit log of events (installs, audits received, deletions) — counts and ids only</td><td>for incident response</td></tr>
+  </table>
+  <p><strong>Not stored, ever:</strong> your source code, your GitHub tokens (your sign-in token lives only in an encrypted browser cookie), installation tokens (minted in memory, never written down), or provider API keys (Mendr never receives one). The one sensitive stored field — the findings — is <strong>encrypted at rest</strong> with a key held outside the database.</p>
+
+  <h2>How long, and how to delete it</h2>
+  <ul>
+    <li><strong>Uninstall the App</strong> → every finding and repository record is deleted immediately; only a minimal deletion record remains.</li>
+    <li><strong>Remove a repository</strong> from the installation → its findings are deleted.</li>
+    <li><strong>Delete on demand</strong> → from a repository's page in the App, "Delete stored data" removes its findings at any time.</li>
+    <li><strong>Retention</strong> → runs age out on a configurable schedule, and a per-repository cap always applies.</li>
+  </ul>
+
+  <h2>Who can see your findings</h2>
+  <p>Only people GitHub confirms can access the repository. Signing in proves who you are; the App checks your GitHub access on every view. Findings for a repository are never shown to anyone GitHub does not already let into that repository.</p>
+
+  <h2>Third parties</h2>
+  <p>Mendr's hosted App talks only to the GitHub API (to write the check and confirm your access). There is no analytics, advertising, or third-party tracking on the App. Fonts on this marketing site load from Google Fonts.</p>
+
+  <p class="updated">This page describes the system as built. If a claim here is ever shown to be wrong, it is corrected here and in TRUST.md in the same release. Questions or concerns: open a private report per the <a href="/security.html">security page</a>.</p>
+</main>
+</body>
+</html>

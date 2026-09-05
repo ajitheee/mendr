@@ -54,6 +54,14 @@ issue for a security problem until a fix has shipped.
 - If a report shows that a claim in TRUST.md is wrong, TRUST.md is corrected in
   the same release, even if the fix takes longer.
 
+## If an incident happens
+
+How we respond to a confirmed or suspected compromise — detection, ownership,
+credential revocation, containment, customer notification, recovery and a
+blameless post-incident review — is written down in
+[INCIDENT-RESPONSE.md](INCIDENT-RESPONSE.md), against the system that actually
+exists.
+
 ## Safe harbour
 
 Good-faith testing against your own repositories, your own forks, or this
