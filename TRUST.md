@@ -175,9 +175,46 @@ tenant boundary).
   whole file, never a clone.
 
 The single sensitive field is therefore `report` (paths + redacted snippets). It
-is the target of field-level encryption (section 5a) and of retention/deletion
+is the target of field-level encryption (below) and of retention/deletion
 (section 5b). `actor` is the only field kept purely for display rather than
 function, and can be dropped by a customer who wants no usernames retained.
+
+### Encryption at rest
+
+Two layers, because one is not enough:
+
+1. **Infrastructure encryption.** The Postgres deployment must have
+   encryption-at-rest enabled (managed Postgres — RDS, Cloud SQL, Neon, Supabase
+   — does this by default; a self-hosted instance needs an encrypted volume).
+   This protects the disk, but not a leaked logical dump.
+2. **Field-level encryption of `report`.** The one sensitive column is encrypted
+   by the App before it is written, with a key that lives in the App environment
+   (`MENDR_DATA_KEY`), never in the database. A stolen dump reveals installation
+   ids, repo names and headline counts — but every finding's paths and snippets
+   are AES-256-GCM ciphertext (`app/src/store/encryption.ts`). GCM is
+   authenticated, so a tampered row fails to decrypt rather than returning
+   forged findings.
+
+**There are no stored credentials to encrypt.** User tokens live only in the
+encrypted cookie; installation tokens are minted in memory; the App key is in
+the environment. So field-level encryption covers the entire sensitive-data-at-
+rest surface: the `report`.
+
+**Key format and rotation.** `MENDR_DATA_KEY` is one or more comma-separated
+`id:key` entries, each a 32-byte key in base64 or hex (a bare key gets id `k1`).
+The **first** entry seals new writes; the rest exist so rows sealed under an
+older key still decrypt. To rotate: generate a new key, prepend it as the new
+primary, and keep the previous key in the list — new writes use the new key,
+old rows keep opening under the old one, and no migration or re-encryption pass
+is required. Drop a retired key from the list only once no row is still sealed
+under it.
+
+**Recovery.** The key is the only thing that can open stored reports; losing it
+makes the `report` column unrecoverable (installation/repo metadata and counts
+survive). Keep `MENDR_DATA_KEY` in the same secret manager as the App private
+key, with the same backup and access controls, and never commit it. Without the
+key set, the App stores reports in plaintext and warns loudly at boot — that is
+a development-only mode.
 
 ---
 

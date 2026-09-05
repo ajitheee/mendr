@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import pg from 'pg';
 import type { AuditReport } from '../ingest/validate.js';
 import type { Installation, Repo, RepoInput, RunInput, RunRecord, RunSummary, Store } from './types.js';
+import { open as openField, sealForStore, type DataKeyring } from './encryption.js';
 
 type Row = Record<string, unknown>;
 
@@ -50,7 +51,11 @@ const SUMMARY_COLUMNS = 'id, repo_id, sha, ref, run_id, run_attempt, workflow_re
 
 export class PgStore implements Store {
   readonly kind = 'postgres' as const;
-  constructor(private readonly pool: pg.Pool) {}
+  constructor(
+    private readonly pool: pg.Pool,
+    /** Field-level encryption for the `report` column; null = plaintext (dev). */
+    private readonly keyring: DataKeyring | null = null,
+  ) {}
 
   /** Apply schema.sql (idempotent) so a fresh database is usable at boot. */
   async ensureSchema(): Promise<void> {
@@ -137,11 +142,11 @@ export class PgStore implements Store {
         run.counts.patch,
         run.counts.review,
         run.counts.informational,
-        JSON.stringify(run.report),
+        JSON.stringify(sealForStore(run.report, this.keyring)),
       ],
     );
     const row = rows[0] as Row;
-    return { ...summary(row), report: row.report as AuditReport };
+    return { ...summary(row), report: openField<AuditReport>(row.report, this.keyring) };
   }
 
   async setRunCheckUrl(id: number, url: string): Promise<void> {
@@ -157,7 +162,7 @@ export class PgStore implements Store {
     const { rows } = await this.pool.query('SELECT * FROM runs WHERE id = $1', [id]);
     if (!rows[0]) return null;
     const row = rows[0] as Row;
-    return { ...summary(row), report: row.report as AuditReport };
+    return { ...summary(row), report: openField<AuditReport>(row.report, this.keyring) };
   }
 
   async pruneRuns(repoId: number, keep: number): Promise<void> {
@@ -178,9 +183,9 @@ export class PgStore implements Store {
   }
 }
 
-export async function createPgStore(connectionString: string): Promise<PgStore> {
+export async function createPgStore(connectionString: string, keyring: DataKeyring | null = null): Promise<PgStore> {
   const pool = new pg.Pool({ connectionString, max: 5 });
-  const store = new PgStore(pool);
+  const store = new PgStore(pool, keyring);
   await store.ensureSchema();
   return store;
 }

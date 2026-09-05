@@ -7,11 +7,14 @@ import { createGitHubApi } from './github/api.js';
 import { createActionsVerifier, remoteActionsJwks } from './github/oidc.js';
 import { MemoryStore } from './store/memory.js';
 import { createPgStore } from './store/pg.js';
+import { loadKeyring } from './store/encryption.js';
 
 const config = loadConfig();
 
-const store = config.databaseUrl ? await createPgStore(config.databaseUrl) : new MemoryStore();
+const keyring = loadKeyring(config.dataKey);
+const store = config.databaseUrl ? await createPgStore(config.databaseUrl, keyring) : new MemoryStore();
 if (!config.databaseUrl) console.warn('DATABASE_URL is not set: using the in-memory store. Runs vanish on restart. Development only.');
+if (config.databaseUrl && !keyring) console.warn('MENDR_DATA_KEY is not set: stored reports are NOT field-encrypted at rest. Set it in production.');
 if (config.sessionGenerated) console.warn('SESSION_SECRET is not set: a random one was generated; every restart signs everyone out.');
 
 const keys = config.oidcJwksFile ? createLocalJWKSet(JSON.parse(readFileSync(config.oidcJwksFile, 'utf8'))) : remoteActionsJwks(config.oidcIssuer);

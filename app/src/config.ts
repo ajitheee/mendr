@@ -28,6 +28,8 @@ export interface AppConfig {
   uiDir: string | null;
   /** The Mendr CLI ref the scaffolded audit workflow pins to (a tag or commit SHA). */
   mendrSpec: string;
+  /** Field-level encryption keyring for stored reports (MENDR_DATA_KEY); null = plaintext (dev). */
+  dataKey: string | null;
 }
 
 function int(v: string | undefined, fallback: number): number {
@@ -66,6 +68,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     maxRunsPerRepo: int(env.MAX_RUNS_PER_REPO, 100),
     uiDir: opt(env.UI_DIR),
     mendrSpec: opt(env.MENDR_CLI_SPEC) ?? 'v0.2.4-alpha',
+    dataKey: opt(env.MENDR_DATA_KEY),
   };
 }
 
