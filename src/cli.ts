@@ -152,6 +152,8 @@ import { renderBadge, renderIssueBody, renderTextSummary } from './watch/issue.j
 import { installWatchWorkflow, MENDR_RELEASE } from './watch/installWorkflow.js';
 import { foldConfigExposure, scanConfigFiles } from './config/scanConfig.js';
 import { findConfigReaders, looksLikeEnvVar, type EnvReader } from './config/readerTieBack.js';
+import { runMigration } from './migrate/migrate.js';
+import { renderMigrationReport } from './migrate/report.js';
 import { renderConfigReport } from './report/configReport.js';
 import { auditUsage } from './recon/usageAudit.js';
 import { fetchProviderUsage, loadFixtureUsage, providerCoverageNotes } from './recon/providers.js';
@@ -3199,6 +3201,52 @@ program
       const meta: AuditMeta = { from, to, coverage, verbose: !!opts.verbose };
       const rendered = renderAuditReport(investigations, meta);
       for (const line of shouldUsePlain(opts.plain) ? toPlainLines(rendered) : rendered) console.log(line);
+    },
+  );
+
+program
+  .command('migrate')
+  .argument('[repoPath]', 'path to the target repo (local only — the sandbox runs your build and tests)', '.')
+  .description('[preview] Verify a model-id migration in an isolated sandbox and emit a portable result. Never writes your working tree.')
+  .option('--json', 'emit the mendr-migration/v1 artifact as JSON instead of the human report')
+  .option('--patch <file>', 'write the git-applyable patch to this file')
+  .option('--eval-command <cmd>', 'run YOUR evaluation in the sandbox as a behavioral gate')
+  .option('--sha <sha>', 'the commit being migrated (recorded in the artifact)')
+  .option('--skip-verify', 'plan + diff only — prove nothing (do not open a PR from this)')
+  .action(
+    async (
+      repoPath: string,
+      opts: { json?: boolean; patch?: string; evalCommand?: string; sha?: string; skipVerify?: boolean },
+    ) => {
+      if (/^(https?:\/\/|git@)/i.test(repoPath)) {
+        console.error(
+          'mendr: migrate needs a LOCAL path — its sandbox runs your build and tests. Clone the repo first:\n' +
+            '  git clone <url>\n  mendr migrate <cloned-dir>',
+        );
+        process.exit(2);
+      }
+      const resolved = resolveRepoOrExit(repoPath);
+      const registry = loadLlmRegistry();
+      const result = await runMigration(resolved, registry, {
+        sha: opts.sha ?? process.env.GITHUB_SHA ?? null,
+        evalCommand: opts.evalCommand,
+        skipVerify: opts.skipVerify,
+      });
+
+      if (opts.patch) {
+        if (result.diff) writeDiffOrExit(opts.patch, result.diff);
+        else console.error('mendr: no migration to write — the patch file was not created.');
+      }
+
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        for (const line of renderMigrationReport(result)) console.log(line);
+      }
+
+      // A failed gate is the one CI-blocking outcome. A verified migration, an
+      // inconclusive verification, and "nothing to migrate" all exit 0.
+      if (result.verification.verdict === 'failed') process.exit(1);
     },
   );
 

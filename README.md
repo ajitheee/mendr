@@ -98,6 +98,7 @@ The only optional network use is the provider usage read you ask for by name wit
 
 - `mendr audit [path]` — **(preview)** the unified audit: scan TS/TSX/JS/Python source + config, join the deprecation registry, and report every retiring AI dependency with its location, deadline, and migration evidence. **Needs only the repository.** See below.
 - `mendr fix-llm <path>` — scan a repo for retired model ids and coupled params, print the gated diff. This is the one you'll use. Add `--eval-command "<cmd>"` to have it run your own evaluation against the patched code (see below).
+- `mendr migrate [path]` — **(preview)** verify a migration in an isolated sandbox and emit a portable result (`mendr-migration/v1`): the diff, every model swap, each gate's outcome (type-check, your build, your tests, an optional eval), an overall verdict and whether it is PR-ready. It never writes your working tree. `--json` for the artifact, `--patch <file>` for the git-applyable patch, `--eval-command "<cmd>"` for a behavioral gate.
 - `mendr watch [path]` — list the deprecated model ids your code touches, sorted by the nearest provider retirement date. `--install` scaffolds a GitHub Action that keeps one self-updating issue current (see [standing watch](#standing-watch)).
 - `mendr check --repo <path> --from <specA> --to <specB>` — list the breaking changes between two Stripe specs that your repo actually uses.
 - `mendr scan <path>` — list the Stripe API surface a repo touches.

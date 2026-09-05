@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### Added — the migration sandbox (`mendr migrate`)
+
+- A new command proves a model-id migration in an ISOLATED sandbox and emits one
+  self-contained artifact, without ever touching the working tree. It reuses
+  fix-llm's verified-only swap engine (TS/JS + Python) and the gate sandbox, and
+  adds a real, baseline-relative BUILD gate: the repo's own build is run once
+  without the change and once with it, so a build that was already broken is
+  never blamed on the migration.
+- Verification runs four gates — in-memory type-check, the repo's build, the
+  repo's tests, and an optional `--eval-command` — and reaches a verdict:
+  `verified` (PR-ready) requires a REAL run (build, tests or eval) to have
+  passed, not just the in-memory type-check; `failed` if any gate rejects it;
+  `inconclusive` when nothing executable ran (e.g. no build script or no
+  installed dependencies); `no_migration` when there is nothing to swap. It
+  states plainly that behavior is untested unless an eval command passed.
+- Output: a human report (verdict first, then swaps, then each gate, then the
+  diff), `--json` (`mendr-migration/v1`: migrations, changedFiles, diff,
+  per-gate verification, prReady, notes), and `--patch <file>` for the
+  git-applyable patch. Exit 1 only when a gate fails. Local path only — the
+  sandbox runs your build and tests. This is the input to human-approved
+  migration PRs (next) and post-merge monitoring.
+- New `src/gates/runBuild.ts` and `src/migrate/`. Tests: `migrate.test.ts`
+  (verdict matrix; plan + git-applyable diff with the tree untouched; JS call
+  sites; verified/failed with real build+test scripts) and `runBuild.test.ts`
+  (detection; not-configured; no-deps inconclusive; pass; baseline-broken
+  inconclusive). Root suite 70 files/960.
+
 ### Added — reader tie-back for environment-variable config selectors
 
 - A config selector like `OPENAI_MODEL: gpt-4` was always a bare *candidate*:
