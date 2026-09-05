@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Added — reader tie-back for environment-variable config selectors
+
+- A config selector like `OPENAI_MODEL: gpt-4` was always a bare *candidate*:
+  the audit found a retiring id in configuration but had not shown any code
+  reads it. The audit now proves the one config→code link it can prove soundly
+  — an environment-variable selector whose exact name is read in source
+  (`process.env.OPENAI_MODEL`, `os.getenv("OPENAI_MODEL")`, `import.meta.env.X`,
+  `Deno.env.get("X")`, `os.environ[...]`). When a read exists, the finding
+  carries the reader's file and line, the per-model `readerTieBackProven` flips
+  true, and the coverage matrix shows Reader tie-back as proven.
+- Deliberately conservative and honest: only UPPER_SNAKE keys with an
+  underscore are treated as env vars (a generic `model:` never triggers a
+  `process.env.model` hunt); TS/JS reads are matched on the **syntax tree**, so
+  a mention in a comment or unrelated string never counts; and a proven read
+  adds evidence only — config is still never auto-patched, and "read by code" is
+  still not "called in production" (that needs runtime evidence). New module
+  `src/config/readerTieBack.ts`, surfaced in the CLI report, the audit JSON
+  (`locations[].readerTieBack`), the GitHub issue body, and the workspace.
+- Tests: `src/config/readerTieBack.test.ts` (env-var key shapes; process.env /
+  bracket / import.meta.env / Deno.env.get / os.getenv / os.environ reads; no
+  comment/string false matches; non-env keys ignored) and two audit end-to-end
+  cases in `auditStdout.test.ts` (proven with reader location; unproven when no
+  code reads it). Root suite 68 files/947.
+
 ### Added — JavaScript source support
 
 - The audit, `fix-llm` and `watch` now scan JavaScript (`.js`, `.jsx`, `.mjs`,

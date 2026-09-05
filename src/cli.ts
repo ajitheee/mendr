@@ -151,6 +151,7 @@ import {
 import { renderBadge, renderIssueBody, renderTextSummary } from './watch/issue.js';
 import { installWatchWorkflow, MENDR_RELEASE } from './watch/installWorkflow.js';
 import { foldConfigExposure, scanConfigFiles } from './config/scanConfig.js';
+import { findConfigReaders, looksLikeEnvVar, type EnvReader } from './config/readerTieBack.js';
 import { renderConfigReport } from './report/configReport.js';
 import { auditUsage } from './recon/usageAudit.js';
 import { fetchProviderUsage, loadFixtureUsage, providerCoverageNotes } from './recon/providers.js';
@@ -3029,7 +3030,25 @@ program
         console.error(`mendr: runtime evidence read FAILED: ${err instanceof Error ? err.message : String(err)}`);
       }
 
-      const investigations = buildInvestigations(runtime, config, now, source, registry);
+      // READER TIE-BACK: for env-var config selectors, find where code reads the
+      // variable (process.env.X / os.getenv("X") / …). A proven read turns a bare
+      // config candidate into "read by code here" — evidence, never an auto-fix.
+      // Skipped when the source scan was skipped or when there are no selectors.
+      let configReaders: Map<string, EnvReader[]> | undefined;
+      if (!opts.skipSource) {
+        const selectorKeys = new Set<string>();
+        for (const e of config) for (const s of e.selectors) if (s.key) selectorKeys.add(s.key);
+        if ([...selectorKeys].some(looksLikeEnvVar)) {
+          try {
+            configReaders = findConfigReaders(resolved, selectorKeys);
+          } catch (err) {
+            if (progress) console.error(`mendr: reader tie-back scan skipped: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+      }
+
+      const investigations = buildInvestigations(runtime, config, now, source, registry, configReaders);
+      const anyReaderProven = investigations.some((i) => i.verification.readerTieBackProven);
 
       const coverage: AuditCoverage = {
         source: {
@@ -3054,7 +3073,7 @@ program
           failed: runtimeFailed,
           notes: runtime.notes.length > 0 ? runtime.notes : undefined,
         },
-        readerTieBack: { proven: false },
+        readerTieBack: { proven: anyReaderProven },
       };
       // The verdict turns on real EXPOSURE. Informational catalog / documentation
       // / fixture references are reported, but never produce exposure_detected.

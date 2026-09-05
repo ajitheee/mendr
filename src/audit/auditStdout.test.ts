@@ -108,6 +108,49 @@ describe('audit CLI — JavaScript source is analyzed, not reported as a gap', (
   }, 120_000);
 });
 
+describe('audit CLI — reader tie-back (config env-var read proven in code)', () => {
+  const tbDirs: string[] = [];
+  afterEach(() => { for (const d of tbDirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
+
+  it('proves the tie-back when code reads the env-var config selector, and reports the reader', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mendr-audit-tb-'));
+    tbDirs.push(dir);
+    // A committed env selector setting a retiring id, and code that reads that
+    // exact env var and passes it as the model argument.
+    writeFileSync(join(dir, 'config.env'), 'PORT=3000\nOPENAI_MODEL=gpt-4\n');
+    writeFileSync(
+      join(dir, 'client.ts'),
+      'import OpenAI from "openai";\nconst client = new OpenAI();\nexport async function ask() {\n  const model = process.env.OPENAI_MODEL ?? "gpt-4";\n  return client.chat.completions.create({ model, messages: [] });\n}\n',
+    );
+    const { stdout, exitCode } = await runAudit([dir, '--json']);
+    expect(exitCode).toBe(0);
+    const report = JSON.parse(stdout);
+    expect(report.coverage.readerTieBack.proven).toBe(true);
+    const inv = report.investigations.find((i: { model: string }) => i.model === 'gpt-4');
+    expect(inv.verification.readerTieBackProven).toBe(true);
+    const configLoc = inv.locations.selectors.find((l: { surface: string }) => l.surface === 'config');
+    expect(configLoc.readerTieBack.proven).toBe(true);
+    expect(configLoc.readerTieBack.readers[0].via).toContain('process.env.OPENAI_MODEL');
+    expect(configLoc.readerTieBack.readers[0].file).toMatch(/client\.ts$/);
+
+    // The human report shows the proven tie-back with the reader location.
+    const human = await runAudit([dir]);
+    expect(human.stdout).toMatch(/Reader tie-back: proven — read in code at .*client\.ts:4/);
+  }, 120_000);
+
+  it('leaves the tie-back unproven when no code reads the env var', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mendr-audit-tb2-'));
+    tbDirs.push(dir);
+    writeFileSync(join(dir, 'config.env'), 'OPENAI_MODEL=gpt-4\n');
+    writeFileSync(join(dir, 'unrelated.ts'), 'export const x = 1;\n');
+    const { stdout } = await runAudit([dir, '--json']);
+    const report = JSON.parse(stdout);
+    expect(report.coverage.readerTieBack.proven).toBe(false);
+    const inv = report.investigations.find((i: { model: string }) => i.model === 'gpt-4');
+    if (inv) expect(inv.verification.readerTieBackProven).toBe(false);
+  }, 120_000);
+});
+
 describe('audit CLI — the JSON contract the GitHub workflow depends on', () => {
   it('carries every issue counter, including carriedCount', async () => {
     const dir = sampleRepo();

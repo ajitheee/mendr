@@ -55,8 +55,8 @@ export function loadProject(repoPath: string): Project {
   return project;
 }
 
-/** Compiler options shared by the two glob-based (no-tsconfig) loaders. */
-function fallbackCompilerOptions() {
+/** Compiler options shared by the glob-based (no-tsconfig) loaders and the env-reader scan. */
+export function fallbackCompilerOptions() {
   return {
     target: ScriptTarget.ES2022,
     module: ModuleKind.NodeNext,

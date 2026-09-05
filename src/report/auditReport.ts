@@ -185,7 +185,11 @@ export function coverageReport(meta: AuditMeta): string[] {
     if (exDirs.length > 0) bits.push(`dirs: ${exDirs.join(', ')}`);
     lines.push(row('○', 'Excluded', bits.join('; ')));
   }
-  lines.push(row('○', 'Reader tie-back', 'not proven — a config location is a candidate; mendr has not shown that runtime reads it'));
+  lines.push(
+    c.readerTieBack.proven
+      ? row('✓', 'Reader tie-back', 'proven for at least one config selector — code reads the env var (see the finding)')
+      : row('○', 'Reader tie-back', 'not proven — a config location is a candidate; mendr has not shown that runtime reads it'),
+  );
 
   for (const note of rt.notes ?? []) lines.push(`    · ${note}`);
   return lines;
@@ -389,7 +393,12 @@ export function renderAuditReport(investigations: readonly ModelInvestigation[],
     lines.push(productionUsageLine(inv));
     // Only meaningful when a CONFIG location is involved; printed once per such model.
     if (inv.locations.selectors.some((l) => l.surface === 'config')) {
-      lines.push(`Reader tie-back: ${inv.verification.readerTieBackProven ? 'proven' : 'not proven'}`);
+      const readLoc = inv.locations.selectors.find((l) => l.readerTieBack?.proven)?.readerTieBack?.readers[0];
+      lines.push(
+        inv.verification.readerTieBackProven && readLoc
+          ? `Reader tie-back: proven — read in code at ${readLoc.file}:${readLoc.line} (${readLoc.via})`
+          : 'Reader tie-back: not proven',
+      );
     }
     // The audit is READ-ONLY. "patch" must never read as though mendr changed
     // something — it means a migration is ELIGIBLE, pending human review.
@@ -422,7 +431,7 @@ export function renderAuditReport(investigations: readonly ModelInvestigation[],
 function footer(): string {
   return (
     'mendr locates retiring AI dependencies and, when you choose to connect runtime evidence, verifies which\n' +
-    'are live. It does not prove that a config location controls runtime selection (no reader tie-back yet),\n' +
-    'so every change stays under human review. No changes were applied. This command is a preview.'
+    'are live. For an env-var config selector it can prove that code reads it (reader tie-back); other config\n' +
+    'selection is not traced, so every config change stays under human review. No changes were applied. This command is a preview.'
   );
 }

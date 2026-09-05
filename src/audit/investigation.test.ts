@@ -319,8 +319,8 @@ describe('renderAuditReport — matches the intended per-model report shape', ()
   });
 
   it('states the human-review boundary in the footer', () => {
-    expect(out).toContain('does not prove that a');
-    expect(out).toContain('controls runtime selection');
-    expect(out).toContain('every change stays under human');
+    expect(out).toContain('reader tie-back');
+    expect(out).toContain('is not traced');
+    expect(out).toContain('every config change stays under human review');
   });
 });

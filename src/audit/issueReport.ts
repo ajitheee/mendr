@@ -254,7 +254,11 @@ export function coverageMatrixLines(coverage: AuditCoverage): string[] {
   if (c.source.unanalyzedLanguages && c.source.unanalyzedLanguages.length > 0) {
     rows.push(`| Other languages present | ○ not analyzed — ${c.source.unanalyzedLanguages.join(', ')} |`);
   }
-  rows.push('| Reader tie-back | ○ not proven |');
+  rows.push(
+    c.readerTieBack?.proven
+      ? '| Reader tie-back | ✓ proven for a config selector — code reads the env var |'
+      : '| Reader tie-back | ○ not proven |',
+  );
   return rows;
 }
 
@@ -425,7 +429,14 @@ export function renderAuditIssue(input: AuditIssueInput): AuditIssueRender {
               : 'not observed in the connected source (which covers only what it records)'
         }`,
       );
-      L.push('- **Reader tie-back:** not proven — a config location is a *candidate*, not a proven runtime control.');
+      if (inv.locations.selectors.some((l) => l.surface === 'config')) {
+        const readLoc = inv.locations.selectors.find((l) => l.readerTieBack?.proven)?.readerTieBack?.readers[0];
+        L.push(
+          inv.verification.readerTieBackProven && readLoc
+            ? `- **Reader tie-back:** proven — code reads the env var at \`${sanitizeRepoText(readLoc.file)}:${readLoc.line}\`.`
+            : '- **Reader tie-back:** not proven — a config location is a *candidate*, not a proven runtime control.',
+        );
+      }
       L.push(`- **Next action:** ${DECISION_LABEL[inv.decision] ?? inv.decision}`);
       L.push('');
     }
@@ -467,7 +478,7 @@ export function renderAuditIssue(input: AuditIssueInput): AuditIssueRender {
   L.push(
     'Mendr edits this one issue in place. It does not modify the default branch, does not merge anything, ' +
       'and opens a migration PR only for a verified Tier-A code call site — always for review. ' +
-      'Config findings stay review-only until reader tie-back is proven.',
+      'Config findings stay review-only; a proven reader tie-back (an env var read in code) adds evidence but never makes a config value auto-fixable.',
   );
   L.push('');
 

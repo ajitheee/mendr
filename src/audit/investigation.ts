@@ -16,7 +16,9 @@
 //
 // HONESTY INVARIANTS baked in here, not left to the renderer:
 //   * A CONFIG match is a "runtime selector candidate", never a proven control —
-//     readerTieBackProven is ALWAYS false (no config data-flow analysis yet).
+//     readerTieBackProven is true ONLY when an env-var selector's exact name is
+//     read in code (reader tie-back); config data-flow beyond env vars is not
+//     analyzed, and even a proven read never makes config auto-fixable.
 //   * A CODE match keeps the fix scanner's own verdict: a proven model argument
 //     ("code call site") vs an unproven literal ("code candidate") vs data
 //     ("code reference"). We never upgrade a candidate to a call site.
@@ -25,6 +27,7 @@
 //     successor. Config is never `patch`. A patch is a reviewed PR, never a merge.
 
 import type { ConfigExposure, ConfigMatch } from '../config/scanConfig.js';
+import type { EnvReader, ReaderTieBack } from '../config/readerTieBack.js';
 import type { ExposedModel, ExposureOccurrence } from '../watch/exposure.js';
 import type { RuntimeEvidence, RuntimeSource } from '../runtime/evidence.js';
 import type { LlmRegistry } from '../types.js';
@@ -73,6 +76,12 @@ export interface LocationRef {
   disposition: 'patch' | 'review' | 'informational';
   /** The Tier-B reason code for a code occurrence (why it is not Tier A), or null. */
   reason: string | null;
+  /**
+   * Config selectors only: evidence that code reads this selector. `proven` is
+   * true when an env-var read of this key's name was found in source. Absent on
+   * code locations and on config selectors with no env-var-shaped key.
+   */
+  readerTieBack?: ReaderTieBack;
 }
 
 /** The per-location disposition a tier implies. */
@@ -125,8 +134,12 @@ export interface ModelInvestigation {
   compatibility: { checked: false; result: null };
   verification: {
     replacementVerdict: string | null;
-    /** ALWAYS false: no CONFIG reader tie-back analysis exists yet. */
-    readerTieBackProven: false;
+    /**
+     * True when at least one config selector for this model has a proven reader
+     * tie-back (an env-var read found in source). False when no selector's read
+     * could be shown — which stays the common case, and never means "unread".
+     */
+    readerTieBackProven: boolean;
   };
   decision: AuditDecision;
   reason: string;
@@ -178,7 +191,7 @@ export interface AuditCoverage {
     note?: string;
     notes?: string[];
   };
-  readerTieBack: { proven: false };
+  readerTieBack: { proven: boolean };
 }
 
 /** The only four verdicts an audit may reach. A general `clean` is not one. */
@@ -293,7 +306,7 @@ export function coverageGaps(coverage: AuditCoverage): string[] {
 
 // --- the join ---------------------------------------------------------------
 
-function toConfigLocation(m: ConfigMatch): LocationRef {
+function toConfigLocation(m: ConfigMatch, readers?: Map<string, EnvReader[]>): LocationRef {
   const role: LocationRole =
     m.position === 'config_selector'
       ? 'runtime_selector_candidate'
@@ -302,11 +315,17 @@ function toConfigLocation(m: ConfigMatch): LocationRef {
         : m.purpose === 'data_fixture'
           ? 'test_fixture'
           : 'catalog_reference';
-  return {
+  const loc: LocationRef = {
     file: m.file, line: m.line, column: m.column, key: m.key, value: m.value,
     role, surface: 'config', tier: m.tier, providerSurface: m.providerSurface, patchEligible: false,
     disposition: dispositionOf(m.tier), reason: null,
   };
+  // Only a selector can be "read": a catalog entry is data, not a control.
+  if (m.position === 'config_selector' && m.key) {
+    const hits = readers?.get(m.key);
+    if (hits && hits.length > 0) loc.readerTieBack = { proven: true, readers: hits };
+  }
+  return loc;
 }
 
 /**
@@ -365,6 +384,7 @@ function decide(inv: ModelInvestigation): { decision: AuditDecision; reason: str
   const hasCall = sel.some((s) => s.role === 'code_call_site');
   const hasCodeCandidate = sel.some((s) => s.role === 'code_candidate');
   const hasConfig = sel.some((s) => s.surface === 'config');
+  const configRead = sel.some((s) => s.surface === 'config' && s.readerTieBack?.proven);
   const hasSelector = sel.length > 0;
   const u = inv.productionUsage;
   const live = u.observed;
@@ -382,7 +402,11 @@ function decide(inv: ModelInvestigation): { decision: AuditDecision; reason: str
       : ' It was NOT observed in the connected runtime source (which covers only what that source records).';
 
   if (patchable) {
-    const configNote = hasConfig ? ' Config occurrences remain review-only (reader tie-back not proven).' : '';
+    const configNote = hasConfig
+      ? configRead
+        ? ' Config occurrences remain review-only, though code is shown to read the selector (tie-back proven).'
+        : ' Config occurrences remain review-only (reader tie-back not proven).'
+      : '';
     // M6 (external validation): name the exact lines fix-llm would rewrite, and
     // say out loud that any other listed line is NOT part of the auto-fix. A
     // Tier-B line under a patch-eligible model was being read as "will be fixed".
@@ -401,7 +425,7 @@ function decide(inv: ModelInvestigation): { decision: AuditDecision; reason: str
     const parts: string[] = [];
     if (hasCall) parts.push('a verified provider SDK call site');
     if (hasCodeCandidate) parts.push('a code default or call not traced to a provider request (its use as a live call is not proven)');
-    if (hasConfig) parts.push('a config selector candidate (reader tie-back not proven)');
+    if (hasConfig) parts.push(configRead ? 'a config selector read by code (tie-back proven)' : 'a config selector candidate (reader tie-back not proven)');
     return {
       decision: 'review',
       reason: `Located at ${parts.join(' and ')}.${runtimeClause} Human review required before any change.`,
@@ -457,6 +481,7 @@ export function buildInvestigations(
   now: Date,
   source: readonly ExposedModel[] = [],
   registry: LlmRegistry = [],
+  configReaders?: Map<string, EnvReader[]>,
 ): ModelInvestigation[] {
   const measured = runtime.connected;
   const map = new Map<string, ModelInvestigation>();
@@ -505,8 +530,12 @@ export function buildInvestigations(
     const inv = seed(e.entryId, e.entryId, e.provider, e.model);
     fillRetirement(inv, e);
     inv.retirementEvidence.shutdownDate = e.shutdownDate ?? inv.retirementEvidence.shutdownDate;
-    for (const m of e.selectors) inv.locations.selectors.push(toConfigLocation(m));
-    for (const m of e.catalog) inv.locations.catalog.push(toConfigLocation(m));
+    for (const m of e.selectors) {
+      const loc = toConfigLocation(m, configReaders);
+      if (loc.readerTieBack?.proven) inv.verification.readerTieBackProven = true;
+      inv.locations.selectors.push(loc);
+    }
+    for (const m of e.catalog) inv.locations.catalog.push(toConfigLocation(m, configReaders));
   }
 
   // LOCATE (source code) — the SAME classifier watch/fix-llm use.
