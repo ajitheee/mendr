@@ -26,6 +26,8 @@ export interface AppConfig {
   maxRunsPerRepo: number;
   /** Directory holding the static investigation workspace (site/app). */
   uiDir: string | null;
+  /** The Mendr CLI ref the scaffolded audit workflow pins to (a tag or commit SHA). */
+  mendrSpec: string;
 }
 
 function int(v: string | undefined, fallback: number): number {
@@ -63,6 +65,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     maxBodyBytes: int(env.MAX_BODY_BYTES, 2 * 1024 * 1024),
     maxRunsPerRepo: int(env.MAX_RUNS_PER_REPO, 100),
     uiDir: opt(env.UI_DIR),
+    mendrSpec: opt(env.MENDR_CLI_SPEC) ?? 'v0.2.4-alpha',
   };
 }
 

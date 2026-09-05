@@ -1,6 +1,7 @@
-import type { AppConfig } from '../config.js';
+import { isConfigured, type AppConfig } from '../config.js';
 import type { ManifestCredentials } from '../github/api.js';
 import type { Repo, RunRecord, RunSummary } from '../store/types.js';
+import { setupWorkflowUrl } from './workflowTemplate.js';
 
 export function esc(s: unknown): string {
   return String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
@@ -37,7 +38,28 @@ function pill(counts: RunSummary['counts']): string {
   return parts.join(' ');
 }
 
-export function homePage(input: { config: AppConfig; configured: boolean; login: string | null; rows: { repo: Repo; latest: RunSummary | null }[] }): string {
+export interface RepoRow {
+  repo: Repo;
+  latest: RunSummary | null;
+  /** The repo's default branch, for the one-click setup link. */
+  defaultBranch: string;
+}
+
+/** The one-click "add the audit workflow" link for a repo, or '' when the App is unconfigured. */
+function setupLink(config: AppConfig, fullName: string, defaultBranch: string): string {
+  if (!isConfigured(config)) return '';
+  const url = setupWorkflowUrl({
+    webUrl: config.githubWebUrl,
+    repoFullName: fullName,
+    appUrl: config.appUrl,
+    audience: config.oidcAudience,
+    mendrSpec: config.mendrSpec,
+    defaultBranch,
+  });
+  return `<a class="btn" href="${esc(url)}" target="_blank" rel="noopener">Set up the audit</a>`;
+}
+
+export function homePage(input: { config: AppConfig; configured: boolean; login: string | null; rows: RepoRow[] }): string {
   const { config, configured, login, rows } = input;
   const setup = configured
     ? ''
@@ -47,16 +69,20 @@ export function homePage(input: { config: AppConfig; configured: boolean; login:
   if (!login) {
     list = `<p class="muted">Sign in to see the repositories where the App is installed and that you can access.</p>`;
   } else if (!rows.length) {
-    list = `<p class="muted">No installed repository is visible to you yet. Install the App on a repository, then add the upload step to its audit workflow.</p>`;
+    list = `<p class="muted">No installed repository is visible to you yet. Install the App on a repository, then set up its audit from here.</p>`;
   } else {
     list = `<table><thead><tr><th>Repository</th><th>Latest run</th><th>Result</th></tr></thead><tbody>${rows
-      .map(({ repo, latest }) => {
-        const when = latest ? `<a href="/r/${esc(repo.fullName)}/runs/${latest.id}">${esc(latest.receivedAt.slice(0, 16).replace('T', ' '))}</a> <span class="muted">${esc(latest.ref.replace(/^refs\/heads\//, ''))} @ ${esc(latest.sha.slice(0, 7))}</span>` : '<span class="muted">no run received yet</span>';
+      .map(({ repo, latest, defaultBranch }) => {
+        // A repo with no run yet is not connected: its first audit needs the
+        // workflow, so offer the one-click setup instead of "no run received".
+        const when = latest
+          ? `<a href="/r/${esc(repo.fullName)}/runs/${latest.id}">${esc(latest.receivedAt.slice(0, 16).replace('T', ' '))}</a> <span class="muted">${esc(latest.ref.replace(/^refs\/heads\//, ''))} @ ${esc(latest.sha.slice(0, 7))}</span>`
+          : `${setupLink(config, repo.fullName, defaultBranch)} <span class="muted">no run yet — add the workflow</span>`;
         return `<tr><td><a href="/r/${esc(repo.fullName)}">${esc(repo.fullName)}</a></td><td>${when}</td><td>${latest ? pill(latest.counts) : ''}</td></tr>`;
       })
       .join('')}</tbody></table>`;
   }
-  const body = `${setup}<p>This service receives the evidence your own CI run produces with <code>mendr audit --json</code>, writes a <em>Mendr audit</em> check on the commit, and keeps the findings here. It never clones or stores your code. <a href="https://github.com/ajitheee/mendr/blob/main/TRUST.md">What leaves your infrastructure</a>.</p>${install}<h2>Repositories</h2>${list}`;
+  const body = `${setup}<p>Connect a repository and Mendr keeps its retiring-AI-model findings current here, with a <em>Mendr audit</em> check on every commit. The scan runs in your own CI; the App never clones or stores your code. <a href="https://github.com/ajitheee/mendr/blob/main/TRUST.md">What leaves your infrastructure</a>.</p>${install}<h2>Repositories</h2>${list}`;
   return layout('overview', body, { login });
 }
 
@@ -85,20 +111,10 @@ export function credentialsPage(c: ManifestCredentials): string {
   return layout('credentials', body);
 }
 
-export function installedPage(config: AppConfig): string {
-  const body = `<div class="card"><strong>Installed.</strong> Now let the repository's audit workflow send its evidence here.</div>
-<p>Add <code>id-token: write</code> to the workflow's permissions and this step after <code>mendr audit</code> writes its JSON:</p>
-<pre>${esc(`      - name: Send audit evidence to Mendr
-        env:
-          MENDR_APP_URL: ${config.appUrl}
-        run: |
-          TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \\
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=${config.oidcAudience}" | jq -r .value)
-          curl -sS --fail-with-body -X POST "$MENDR_APP_URL/api/ingest" \\
-            -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \\
-            --data-binary @mendr-audit.json`)}</pre>
-<p class="muted">The token proves which repository and run the evidence came from; there is no shared secret to store. Only the JSON is sent.</p>
-<p><a class="btn" href="/">Back to the overview</a></p>`;
+export function installedPage(_config: AppConfig): string {
+  const body = `<div class="card"><strong>Installed.</strong> One step left to connect a repository: add the audit workflow.</div>
+<p>On the overview, each installed repository has a <strong>Set up the audit</strong> button. It opens GitHub's own new-file editor with the workflow filled in — you read it and commit it. The App writes nothing to your repo; the scan runs in your CI and sends only findings here.</p>
+<p><a class="btn" href="/">Go to the overview</a></p>`;
   return layout('installed', body);
 }
 
@@ -106,15 +122,19 @@ export function errorPage(title: string, message: string): string {
   return layout(title, `<div class="card"><strong>${esc(title)}.</strong> ${esc(message)}</div><p><a href="/">Back</a></p>`);
 }
 
-export function runsPage(repo: Repo, runs: RunSummary[], login: string): string {
-  const rows = runs.length
-    ? runs
-        .map(
-          (r) =>
-            `<tr><td><a href="/r/${esc(repo.fullName)}/runs/${r.id}">${esc(r.receivedAt.slice(0, 19).replace('T', ' '))}</a></td><td><span class="muted">${esc(r.ref.replace(/^refs\/heads\//, ''))}</span> @ <code>${esc(r.sha.slice(0, 7))}</code></td><td>${pill(r.counts)}</td><td>${r.checkRunUrl ? `<a href="${esc(r.checkRunUrl)}">check</a>` : '<span class="muted">no check</span>'}</td></tr>`,
-        )
-        .join('')
-    : `<tr><td colspan="4" class="muted">No runs received yet.</td></tr>`;
+export function runsPage(repo: Repo, runs: RunSummary[], login: string, setupUrl?: string): string {
+  if (!runs.length) {
+    const cta = setupUrl
+      ? `<div class="card"><strong>Not connected yet.</strong> Add the audit workflow to start receiving runs. <a class="btn" href="${esc(setupUrl)}" target="_blank" rel="noopener">Set up the audit</a><p class="muted" style="margin:10px 0 0">Opens GitHub's new-file editor with the workflow filled in. You commit it; the scan runs in your CI.</p></div>`
+      : `<p class="muted">No runs received yet.</p>`;
+    return layout(repo.fullName, `<h2>${esc(repo.fullName)}</h2>${cta}`, { login });
+  }
+  const rows = runs
+    .map(
+      (r) =>
+        `<tr><td><a href="/r/${esc(repo.fullName)}/runs/${r.id}">${esc(r.receivedAt.slice(0, 19).replace('T', ' '))}</a></td><td><span class="muted">${esc(r.ref.replace(/^refs\/heads\//, ''))}</span> @ <code>${esc(r.sha.slice(0, 7))}</code></td><td>${pill(r.counts)}</td><td>${r.checkRunUrl ? `<a href="${esc(r.checkRunUrl)}">check</a>` : '<span class="muted">no check</span>'}</td></tr>`,
+    )
+    .join('');
   const body = `<h2>${esc(repo.fullName)}</h2><table><thead><tr><th>Received</th><th>Commit</th><th>Result</th><th>Check run</th></tr></thead><tbody>${rows}</tbody></table>`;
   return layout(repo.fullName, body, { login });
 }

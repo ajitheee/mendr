@@ -12,6 +12,7 @@ import { buildCheckRun } from './ingest/checkRun.js';
 import { countDecisions, sanitizeReport, validateReport } from './ingest/validate.js';
 import type { Repo, Store } from './store/types.js';
 import { credentialsPage, errorPage, homePage, installedPage, runPage, runsPage, setupPage } from './ui/pages.js';
+import { setupWorkflowUrl } from './ui/workflowTemplate.js';
 
 export interface AppDeps {
   config: AppConfig;
@@ -86,12 +87,12 @@ export function createApp(deps: AppDeps): Hono {
 
   app.get('/', async (c) => {
     const sess = await session(c);
-    const rows: { repo: Repo; latest: import('./store/types.js').RunSummary | null }[] = [];
+    const rows: import('./ui/pages.js').RepoRow[] = [];
     if (sess) {
       const latest = await store.latestRunPerRepo();
       for (const repo of (await store.listRepos()).slice(0, 100)) {
         const gh = await github.getRepoAsUser(sess.token, repo.fullName);
-        if (gh && gh.id === repo.id) rows.push({ repo, latest: latest.get(repo.id) ?? null });
+        if (gh && gh.id === repo.id) rows.push({ repo, latest: latest.get(repo.id) ?? null, defaultBranch: gh.defaultBranch });
       }
     }
     return c.html(homePage({ config, configured: isConfigured(config), login: sess?.login ?? null, rows }));
@@ -295,9 +296,24 @@ export function createApp(deps: AppDeps): Hono {
   app.get('/r/:owner/:name', async (c) => {
     const sess = await session(c);
     if (!sess) return c.redirect(`/auth/login?next=${encodeURIComponent(c.req.path)}`);
-    const repo = await accessibleRepo(sess, `${c.req.param('owner')}/${c.req.param('name')}`);
+    const fullName = `${c.req.param('owner')}/${c.req.param('name')}`;
+    const repo = await accessibleRepo(sess, fullName);
     if (!repo) return c.html(errorPage('Not found', 'No such repository is visible to you here.'), 404);
-    return c.html(runsPage(repo, await store.listRuns(repo.id, 50), sess.login));
+    const runs = await store.listRuns(repo.id, 50);
+    // Only build the one-click setup link when there is nothing to show yet.
+    let setupUrl: string | undefined;
+    if (runs.length === 0 && isConfigured(config)) {
+      const gh = await github.getRepoAsUser(sess.token, fullName);
+      setupUrl = setupWorkflowUrl({
+        webUrl: config.githubWebUrl,
+        repoFullName: fullName,
+        appUrl: config.appUrl,
+        audience: config.oidcAudience,
+        mendrSpec: config.mendrSpec,
+        defaultBranch: gh?.defaultBranch ?? 'main',
+      });
+    }
+    return c.html(runsPage(repo, runs, sess.login, setupUrl));
   });
 
   app.get('/r/:owner/:name/runs/:id', async (c) => {

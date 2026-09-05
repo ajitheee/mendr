@@ -69,7 +69,7 @@ function fakeGitHub(userRepos: Record<string, number> = {}) {
     },
     async getRepoAsUser(_token, fullName) {
       const id = userRepos[fullName];
-      return id ? { id, fullName, private: true } : null;
+      return id ? { id, fullName, private: true, defaultBranch: 'main' } : null;
     },
   };
   return { api, checkRuns };
@@ -278,6 +278,21 @@ describe('reading evidence requires sign-in AND GitHub access to the repository'
     expect((await h.app.request('/api/repos/acme/api/runs', { headers: { cookie } })).status).toBe(404);
     expect((await h.app.request('/api/runs/1', { headers: { cookie } })).status).toBe(404);
     expect(((await (await h.app.request('/api/repos', { headers: { cookie } })).json()) as { repos: unknown[] }).repos).toEqual([]);
+  });
+
+  it('offers a one-click "Set up the audit" link for an installed repo with no run yet', async () => {
+    const h = harness({ 'acme/api': REPO.id });
+    await h.install(); // installed, but no run ingested
+    const cookie = await h.sessionCookie();
+    const page = await (await h.app.request('/', { headers: { cookie } })).text();
+    expect(page).toContain('Set up the audit');
+    // the link points at GitHub's prefilled new-file editor for this repo + workflow
+    expect(page).toContain('github.com/acme/api/new/main?filename=');
+    expect(page).toContain(encodeURIComponent('.github/workflows/mendr-audit.yml'));
+    // the repo page shows the same call to action
+    const repoPage = await (await h.app.request('/r/acme/api', { headers: { cookie } })).text();
+    expect(repoPage).toContain('Not connected yet');
+    expect(repoPage).toContain('/acme/api/new/main?filename=');
   });
 
   it('sign-in redirects to GitHub with the client id and a state cookie', async () => {

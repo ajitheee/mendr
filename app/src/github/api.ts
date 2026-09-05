@@ -22,6 +22,8 @@ export interface UserRepo {
   id: number;
   fullName: string;
   private: boolean;
+  /** The repo's default branch, for the one-click workflow setup link. */
+  defaultBranch: string;
 }
 
 /**
@@ -148,9 +150,9 @@ export function createGitHubApi(cfg: ApiConfig): GitHubApi {
     async getRepoAsUser(token, fullName) {
       try {
         const { json } = await call(`${cfg.githubApiUrl}/repos/${fullName}`, { method: 'GET' }, `Bearer ${token}`);
-        const r = json as { id?: number; full_name?: string; private?: boolean };
+        const r = json as { id?: number; full_name?: string; private?: boolean; default_branch?: string };
         if (typeof r?.id !== 'number' || typeof r.full_name !== 'string') return null;
-        return { id: r.id, fullName: r.full_name, private: r.private !== false };
+        return { id: r.id, fullName: r.full_name, private: r.private !== false, defaultBranch: typeof r.default_branch === 'string' && r.default_branch ? r.default_branch : 'main' };
       } catch (e) {
         if (e instanceof GitHubApiError && (e.status === 404 || e.status === 403 || e.status === 401)) return null;
         throw e;
