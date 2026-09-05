@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Added — human-approved migration PRs
+
+- `mendr migrate --write` applies the migration to the working tree, but ONLY
+  when the sandbox verdict is `verified` (a real build, test or eval passed).
+  Any other verdict (failed, inconclusive, nothing to migrate) writes nothing.
+  The write is atomic and drift-checked (fix/atomicWrite), so a file changed
+  since the scan aborts the whole write. The artifact's `applied` field lists
+  what landed. With `--write`, `migrate` exits 0 whenever a scan completed (the
+  applied-or-not is observable), so the PR workflow gates on the change itself.
+- The `mendr-action` GitHub Action now runs `mendr migrate . --write` instead
+  of `fix-llm --write`: it verifies the migration in your CI's sandbox
+  (type-check, your build, your tests, an optional `eval-command`) and opens or
+  updates ONE idempotent PR only when the migration verifies. The PR body is
+  built from the migration artifact — every swap and each gate's outcome — not
+  scraped stdout. New outcomes: `migration-proposed`, `not-verified` (a
+  migration exists but did not verify — nothing applied, no PR, existing PR left
+  untouched), `clean`, `error`. It never touches the default branch and never
+  merges; a human reviews and approves. New `eval-command` input for a
+  behavioral gate. Requires a Mendr build that includes `migrate` — pin
+  `mendr-spec` to a release tag that has it or a commit SHA.
+- Tests: `migrate.test.ts` gains `--write` cases (verified applies to the tree;
+  a failing gate writes nothing; `--skip-verify` proves and applies nothing).
+  Root suite 70 files/963.
+
 ### Added — the migration sandbox (`mendr migrate`)
 
 - A new command proves a model-id migration in an ISOLATED sandbox and emits one

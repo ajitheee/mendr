@@ -1,9 +1,10 @@
-name: "Mendr - fix deprecated LLM model ids"
+name: "Mendr - migrate deprecated LLM model ids"
 description: >-
-  Scan a TypeScript repo for retired LLM model ids and their coupled params and
-  open a verified, idempotent pull request. Mendr runs its gates (a required
-  type-check plus YOUR test suite) inside YOUR CI runner and only applies a fix
-  it can verify. It never edits your default branch.
+  Scan a repo for retired LLM model ids and their coupled params, VERIFY the
+  migration in an isolated sandbox (a baseline-relative type-check and build plus
+  YOUR test suite, and an optional eval), and open one idempotent, human-approved
+  pull request — only when the migration verifies. Mendr runs entirely inside
+  YOUR CI runner, never edits your default branch, and never merges.
 author: "Mendr"
 branding:
   icon: "git-pull-request"
@@ -30,6 +31,10 @@ inputs:
     description: "Stable branch Mendr updates each run to keep a single idempotent PR."
     required: false
     default: "mendr/deprecated-model-ids"
+  eval-command:
+    description: "Optional command run in the sandbox as a BEHAVIORAL gate (e.g. an eval suite). Empty = no behavioral gate; the PR body says behavior is untested."
+    required: false
+    default: ""
   base:
     description: "Base branch for the PR. Empty = the repo's default branch."
     required: false
@@ -45,10 +50,14 @@ inputs:
 
 outputs:
   outcome:
-    description: "clean | fixes-proposed | error (error = Mendr never completed a scan; the job fails red and no existing PR is touched)"
+    description: >-
+      clean (nothing to migrate) | migration-proposed (a verified migration is in
+      the PR) | not-verified (a migration exists but did not verify; nothing
+      applied, no PR) | error (Mendr never completed a scan; the job fails red and
+      no existing PR is touched)
     value: ${{ steps.mendr.outputs.outcome }}
   pr-url:
-    description: "URL of the opened/updated PR (empty when clean)."
+    description: "URL of the opened/updated PR (empty unless a verified migration was proposed)."
     value: ${{ steps.mendr.outputs.pr_url }}
 
 runs:
@@ -86,4 +95,5 @@ runs:
         MENDR_BRANCH: ${{ inputs.branch }}
         MENDR_BASE: ${{ inputs.base }}
         MENDR_LABELS: ${{ inputs.pr-labels }}
+        MENDR_EVAL: ${{ inputs.eval-command }}
       run: bash "$GITHUB_ACTION_PATH/scripts/run-mendr.sh"

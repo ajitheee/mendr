@@ -107,4 +107,29 @@ describe('runMigration — sandbox verification with real build/test scripts', (
     expect(r.verification.verdict).toBe('failed');
     expect(r.prReady).toBe(false);
   }, 120_000);
+
+  it('--write applies to the working tree ONLY on a verified verdict', async () => {
+    const dir = verifiableRepo(0);
+    const before = require('node:fs').readFileSync(join(dir, 'client.ts'), 'utf8');
+    expect(before).toContain('"gpt-4"');
+    const r = await runMigration(dir, REG, { write: true });
+    expect(r.verification.verdict).toBe('verified');
+    expect(r.applied).toEqual(['client.ts']);
+    expect(require('node:fs').readFileSync(join(dir, 'client.ts'), 'utf8')).toContain('"gpt-5.6-sol"');
+  }, 120_000);
+
+  it('--write writes NOTHING when a gate fails, leaving the tree untouched', async () => {
+    const dir = verifiableRepo(1);
+    const r = await runMigration(dir, REG, { write: true });
+    expect(r.verification.verdict).toBe('failed');
+    expect(r.applied).toEqual([]);
+    expect(require('node:fs').readFileSync(join(dir, 'client.ts'), 'utf8')).toContain('"gpt-4"');
+  }, 120_000);
+
+  it('--write with --skip-verify proves nothing and applies nothing', async () => {
+    const dir = repo({ 'client.ts': CALL, 'package.json': '{"name":"t"}' });
+    const r = await runMigration(dir, REG, { write: true, skipVerify: true });
+    expect(r.applied).toEqual([]);
+    expect(require('node:fs').readFileSync(join(dir, 'client.ts'), 'utf8')).toContain('"gpt-4"');
+  });
 });

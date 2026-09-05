@@ -3210,13 +3210,14 @@ program
   .description('[preview] Verify a model-id migration in an isolated sandbox and emit a portable result. Never writes your working tree.')
   .option('--json', 'emit the mendr-migration/v1 artifact as JSON instead of the human report')
   .option('--patch <file>', 'write the git-applyable patch to this file')
+  .option('--write', 'apply the migration to your working tree — ONLY when the sandbox verdict is verified')
   .option('--eval-command <cmd>', 'run YOUR evaluation in the sandbox as a behavioral gate')
   .option('--sha <sha>', 'the commit being migrated (recorded in the artifact)')
   .option('--skip-verify', 'plan + diff only — prove nothing (do not open a PR from this)')
   .action(
     async (
       repoPath: string,
-      opts: { json?: boolean; patch?: string; evalCommand?: string; sha?: string; skipVerify?: boolean },
+      opts: { json?: boolean; patch?: string; write?: boolean; evalCommand?: string; sha?: string; skipVerify?: boolean },
     ) => {
       if (/^(https?:\/\/|git@)/i.test(repoPath)) {
         console.error(
@@ -3231,6 +3232,7 @@ program
         sha: opts.sha ?? process.env.GITHUB_SHA ?? null,
         evalCommand: opts.evalCommand,
         skipVerify: opts.skipVerify,
+        write: opts.write,
       });
 
       if (opts.patch) {
@@ -3244,9 +3246,13 @@ program
         for (const line of renderMigrationReport(result)) console.log(line);
       }
 
-      // A failed gate is the one CI-blocking outcome. A verified migration, an
-      // inconclusive verification, and "nothing to migrate" all exit 0.
-      if (result.verification.verdict === 'failed') process.exit(1);
+      // Exit codes:
+      //   --write: 0 whenever the scan completed (the applied-or-not is observable
+      //     via `git diff` and `applied`); the PR workflow gates on that, and a
+      //     verified-but-declined run must not read as "mendr never ran".
+      //   without --write: a failed gate is the one CI-blocking outcome; verified,
+      //     inconclusive and no-migration all exit 0.
+      if (!opts.write && result.verification.verdict === 'failed') process.exit(1);
     },
   );
 

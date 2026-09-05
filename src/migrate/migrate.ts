@@ -12,6 +12,7 @@ import { runRepoTests } from '../gates/runTests.js';
 import { runRepoEval } from '../gates/runEval.js';
 import { runRepoBuild } from '../gates/runBuild.js';
 import type { PatchedFile } from '../gates/sandbox.js';
+import { writeAllOrNothing, type PendingWrite } from '../fix/atomicWrite.js';
 
 // THE MIGRATION SANDBOX.
 //
@@ -83,6 +84,11 @@ export interface MigrationResult {
   prReady: boolean;
   /** Honest caveats a reader must see (behavioral untested, build not configured, …). */
   notes: string[];
+  /**
+   * With `--write`: repo-relative files actually written to the working tree.
+   * Only ever non-empty when the verdict is `verified`. Absent without `--write`.
+   */
+  applied?: string[];
 }
 
 export interface MigrateOptions {
@@ -91,10 +97,18 @@ export interface MigrateOptions {
   /** Skip the sandbox verification (plan + diff only). */
   skipVerify?: boolean;
   buildTimeoutMs?: number;
+  /**
+   * Apply the migration to the working tree — but ONLY when the sandbox verdict
+   * is `verified`. Any other verdict writes nothing. The write is atomic and
+   * drift-checked (fix/atomicWrite).
+   */
+  write?: boolean;
 }
 
 interface PlannedMigration {
   patchedFiles: PatchedFile[];
+  /** The same files with their pre-migration text, for a drift-checked --write. */
+  writes: PendingWrite[];
   changedFiles: string[];
   diff: string;
   migrations: ModelMigration[];
@@ -143,17 +157,25 @@ async function plan(repoPath: string, registry: LlmRegistry): Promise<PlannedMig
   const baselineProject = loadProject(repoPath);
   const patchedProject = loadProject(repoPath);
   const tsResult = applyLlmFixesToProject(patchedProject, registry, repoPath);
-  const tsPatchedFiles: PatchedFile[] = tsResult.changedFiles.map((absPath) => ({
+  const tsWrites: PendingWrite[] = tsResult.changedFiles.map((absPath) => ({
     absPath,
     newText: patchedProject.getSourceFileOrThrow(absPath).getFullText(),
+    // The unpatched baseline load is exactly what the codemod read, so it is the
+    // right drift reference for a --write (not a fresh disk read).
+    originalText: baselineProject.getSourceFileOrThrow(absPath).getFullText(),
   }));
+  const tsPatchedFiles: PatchedFile[] = tsWrites.map(({ absPath, newText }) => ({ absPath, newText }));
   const migrations = tsMigrations(baselineProject, registry, repoPath);
 
   // Python: read sources and apply the same verified-only swap set.
   const pySources = readPythonSources(collectPythonFiles(repoPath));
+  const pyOriginalByPath = new Map(pySources.map((s) => [s.path, s.text]));
   const pyResult = await applyPyModelIdFixesToSources(pySources, registry, repoPath);
   const pyApplies = pyResult.syntaxGate.passed;
   const pyPatchedFiles: PatchedFile[] = pyApplies ? pyResult.patchedFiles : [];
+  const pyWrites: PendingWrite[] = pyApplies
+    ? pyResult.patchedFiles.map((f) => ({ absPath: f.absPath, newText: f.newText, originalText: pyOriginalByPath.get(f.absPath) ?? '' }))
+    : [];
   const pyMigrations = pyApplies
     ? groupMigrations(
         pyResult.swapMatches.map((m) => ({
@@ -167,9 +189,10 @@ async function plan(repoPath: string, registry: LlmRegistry): Promise<PlannedMig
     : [];
 
   const patchedFiles = [...tsPatchedFiles, ...pyPatchedFiles];
+  const writes = [...tsWrites, ...pyWrites];
   const changedFiles = patchedFiles.map((f) => relative(repoPath, f.absPath).replace(/\\/g, '/'));
   const diff = [tsResult.diff, pyApplies ? pyResult.diff : ''].filter(Boolean).join('\n');
-  return { patchedFiles, changedFiles, diff, migrations: [...migrations, ...pyMigrations], baselineProject, patchedProject };
+  return { patchedFiles, writes, changedFiles, diff, migrations: [...migrations, ...pyMigrations], baselineProject, patchedProject };
 }
 
 function outcome(status: GateStatus, detail?: string, command?: string): GateOutcome {
@@ -240,7 +263,11 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
         verdict: 'inconclusive',
       },
       prReady: false,
-      notes: ['Verification was skipped (--skip-verify): the diff is shown but NOTHING was proven. Do not open a PR from this run.'],
+      notes: [
+        'Verification was skipped (--skip-verify): the diff is shown but NOTHING was proven. Do not open a PR from this run.',
+        ...(opts.write ? ['--write was ignored: nothing is applied without verification.'] : []),
+      ],
+      ...(opts.write ? { applied: [] as string[] } : {}),
     };
   }
 
@@ -279,6 +306,27 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
   }
   if (verdict === 'verified') notes.push('This migration is a reviewed PR candidate. Mendr never merges; a human approves.');
 
+  // --- apply, ONLY when verified (--write) -----------------------------------
+  let applied: string[] | undefined;
+  if (opts.write) {
+    if (verdict !== 'verified') {
+      applied = [];
+      notes.push(`Nothing was written: --write applies only a VERIFIED migration, and this run is ${verdict}.`);
+    } else {
+      const result = writeAllOrNothing(planned.writes);
+      if (result.error) {
+        applied = [];
+        notes.push(`Nothing was written: ${result.error}`);
+        if (result.restoreFailures?.length) {
+          notes.push(`MIXED STATE — these files could not be restored and hold PATCHED content: ${result.restoreFailures.map((p) => relativeSafe(repoPath, p)).join(', ')}`);
+        }
+      } else {
+        applied = result.written.map((p) => relativeSafe(repoPath, p));
+        notes.push(`Applied the verified migration to ${applied.length} file(s) in the working tree.`);
+      }
+    }
+  }
+
   return {
     ...base,
     migrated: true,
@@ -288,5 +336,10 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
     verification: { typeCheck, build, tests, eval: evalOut, behavioralTested, verdict },
     prReady,
     notes,
+    ...(applied !== undefined ? { applied } : {}),
   };
+}
+
+function relativeSafe(root: string, abs: string): string {
+  return relative(root, abs).replace(/\\/g, '/');
 }
