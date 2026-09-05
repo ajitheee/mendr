@@ -54,15 +54,18 @@ export async function applyWebhook(store: Store, event: string, payload: unknown
         });
         const added = repos(p.repositories);
         if (added.length) await store.upsertRepos(inst.id, added);
+        await store.appendAuditLog({ event: 'installation_connected', installationId: inst.id, repo: null, actor: inst.account?.login ?? null, detail: { action: p.action ?? '', repositories: added.length } });
         return `installation ${inst.id} ${p.action}: ${added.length} repositories`;
       }
       case 'suspend':
         await store.setInstallationSuspended(inst.id, true);
+        await store.appendAuditLog({ event: 'installation_suspended', installationId: inst.id, repo: null, actor: inst.account?.login ?? null, detail: {} });
         return `installation ${inst.id} suspended`;
       case 'deleted': {
         // Uninstall = remove the customer's stored data: every finding and repo
         // is hard-deleted; the installation row survives as a deletion record.
         const gone = await store.deleteInstallationData(inst.id, now);
+        await store.appendAuditLog({ event: 'installation_removed', installationId: inst.id, repo: null, actor: inst.account?.login ?? null, detail: { reposDeleted: gone.reposDeleted, runsDeleted: gone.runsDeleted } });
         return `installation ${inst.id} deleted: purged ${gone.reposDeleted} repositories and ${gone.runsDeleted} run(s)`;
       }
       default:
@@ -88,6 +91,8 @@ export async function applyWebhook(store: Store, event: string, payload: unknown
     // and the repo row, not a soft-delete that keeps the data around.
     let runsDeleted = 0;
     for (const r of removed) runsDeleted += (await store.deleteRepoData(r.id)).runsDeleted;
+    if (added.length) await store.appendAuditLog({ event: 'repos_added', installationId: inst.id, repo: null, actor: inst.account?.login ?? null, detail: { count: added.length } });
+    if (removed.length) await store.appendAuditLog({ event: 'repos_removed', installationId: inst.id, repo: null, actor: inst.account?.login ?? null, detail: { count: removed.length, runsDeleted } });
     return `installation ${inst.id}: +${added.length} repositories, -${removed.length} (purged ${runsDeleted} run(s))`;
   }
 

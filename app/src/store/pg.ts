@@ -1,8 +1,9 @@
 import { readFile } from 'node:fs/promises';
 import pg from 'pg';
 import type { AuditReport } from '../ingest/validate.js';
-import type { Installation, Repo, RepoInput, RunInput, RunRecord, RunSummary, Store } from './types.js';
+import type { AuditLogEntry, AuditLogInput, Installation, Repo, RepoInput, RunInput, RunRecord, RunSummary, Store } from './types.js';
 import { open as openField, sealForStore, type DataKeyring } from './encryption.js';
+import { sanitizeEntry } from './auditLog.js';
 
 type Row = Record<string, unknown>;
 
@@ -189,6 +190,37 @@ export class PgStore implements Store {
   async pruneRunsByAge(days: number): Promise<number> {
     const del = await this.pool.query(`DELETE FROM runs WHERE received_at < now() - ($1 || ' days')::interval`, [String(days)]);
     return del.rowCount ?? 0;
+  }
+
+  async appendAuditLog(entry: AuditLogInput): Promise<void> {
+    const e = sanitizeEntry(entry);
+    await this.pool.query('INSERT INTO audit_log (event, installation_id, repo, actor, detail) VALUES ($1, $2, $3, $4, $5)', [
+      e.event,
+      e.installationId,
+      e.repo,
+      e.actor,
+      JSON.stringify(e.detail),
+    ]);
+  }
+
+  async listAuditLog(opts: { installationId?: number; limit?: number } = {}): Promise<AuditLogEntry[]> {
+    const limit = opts.limit ?? 200;
+    const { rows } =
+      opts.installationId === undefined
+        ? await this.pool.query('SELECT * FROM audit_log ORDER BY at DESC, id DESC LIMIT $1', [limit])
+        : await this.pool.query('SELECT * FROM audit_log WHERE installation_id = $1 ORDER BY at DESC, id DESC LIMIT $2', [opts.installationId, limit]);
+    return rows.map((r) => {
+      const row = r as Row;
+      return {
+        id: n(row.id),
+        at: iso(row.at) ?? new Date().toISOString(),
+        event: String(row.event) as AuditLogEntry['event'],
+        installationId: row.installation_id === null ? null : n(row.installation_id),
+        repo: row.repo === null ? null : String(row.repo),
+        actor: row.actor === null ? null : String(row.actor),
+        detail: (row.detail ?? {}) as AuditLogEntry['detail'],
+      };
+    });
   }
 
   async latestRunPerRepo(): Promise<Map<number, RunSummary>> {

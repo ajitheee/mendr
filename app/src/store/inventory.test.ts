@@ -12,9 +12,9 @@ const APP_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const schema = readFileSync(join(APP_ROOT, 'schema.sql'), 'utf8');
 
 describe('stored-data inventory', () => {
-  it('defines exactly the three documented tables', () => {
+  it('defines exactly the documented tables (three data tables + the audit log)', () => {
     const tables = [...schema.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].map((m) => m[1]).sort();
-    expect(tables).toEqual(['installations', 'repos', 'runs']);
+    expect(tables).toEqual(['audit_log', 'installations', 'repos', 'runs']);
   });
 
   it('has NO column that could hold a token, secret or private key', () => {

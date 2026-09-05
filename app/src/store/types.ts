@@ -79,4 +79,39 @@ export interface Store {
   deleteInstallationData(installationId: number, at: string): Promise<{ reposDeleted: number; runsDeleted: number }>;
   /** Delete runs older than `days`, across all repos. Returns how many went. Retention control. */
   pruneRunsByAge(days: number): Promise<number>;
+  // --- audit log (trust: an append-only record of security-relevant events) ---
+  /** Append one event. `detail` holds only scalars — never findings, secrets or code. */
+  appendAuditLog(entry: AuditLogInput): Promise<void>;
+  /** Read recent events, newest first; optionally scoped to one installation. */
+  listAuditLog(opts?: { installationId?: number; limit?: number }): Promise<AuditLogEntry[]>;
+}
+
+/** The security-relevant events the audit log records. */
+export type AuditEvent =
+  | 'installation_connected'
+  | 'installation_suspended'
+  | 'installation_removed'
+  | 'repos_added'
+  | 'repos_removed'
+  | 'audit_received'
+  | 'data_deleted'
+  // Emitted once their features land (acknowledgement tracking; the Action opens PRs):
+  | 'finding_acknowledged'
+  | 'migration_prepared'
+  | 'pr_created';
+
+export interface AuditLogInput {
+  event: AuditEvent;
+  installationId: number | null;
+  /** Repository full name, when the event is about one. */
+  repo: string | null;
+  /** The GitHub login that caused it, when known. */
+  actor: string | null;
+  /** Scalar-only context (counts, ids, a conclusion). NEVER findings, secrets or source. */
+  detail: Record<string, string | number | boolean | null>;
+}
+
+export interface AuditLogEntry extends AuditLogInput {
+  id: number;
+  at: string;
 }

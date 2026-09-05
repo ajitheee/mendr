@@ -212,6 +212,13 @@ export function createApp(deps: AppDeps): Hono {
       log('check run failed', { repo: claims.repository, error: checkRunError });
     }
     log('ingest', { repo: claims.repository, run: run.id, sha: sha.slice(0, 7), counts, conclusion: report.conclusion, checkRun: !!checkRun });
+    await store.appendAuditLog({
+      event: 'audit_received',
+      installationId: repo.installationId,
+      repo: claims.repository,
+      actor: claims.actor,
+      detail: { conclusion: report.conclusion, patch: counts.patch, review: counts.review, informational: counts.informational, sha: sha.slice(0, 7), checkRun: !!checkRun },
+    });
     return c.json({ ok: true, run: { id: run.id, url: detailsUrl, conclusion: report.conclusion, counts }, checkRun, checkRunError });
   });
 
@@ -337,6 +344,7 @@ export function createApp(deps: AppDeps): Hono {
     if (!repo) return c.html(errorPage('Not found', 'No such repository is visible to you here.'), 404);
     const gone = await store.deleteRepoData(repo.id);
     log('data deleted', { repo: fullName, by: sess.login, runsDeleted: gone.runsDeleted });
+    await store.appendAuditLog({ event: 'data_deleted', installationId: repo.installationId, repo: fullName, actor: sess.login, detail: { runsDeleted: gone.runsDeleted, via: 'self-service' } });
     return c.html(errorPage('Deleted', `Removed ${gone.runsDeleted} stored run(s) for ${fullName}. Nothing of this repository's findings remains. Re-run the audit to repopulate.`));
   });
 

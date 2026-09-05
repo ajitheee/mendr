@@ -129,9 +129,10 @@ you run.
 
 ### What the App stores (data inventory)
 
-The App's database has three tables and nothing else. Every field below is used;
-none is speculative. Two things are deliberately **absent**, and that absence is
-the point: **no access tokens or credentials of any kind, and no source code**.
+The App's database has three data tables plus an audit log, and nothing else.
+Every field below is used; none is speculative. Two things are deliberately
+**absent**, and that absence is the point: **no access tokens or credentials of
+any kind, and no source code**.
 
 **`installations`** — one row per GitHub account that installed the App (the
 tenant boundary).
@@ -160,6 +161,11 @@ tenant boundary).
 | `received_at`, `generated_at`, `conclusion`, `patch`/`review`/`informational` | when, and the headline result | low | listing and the check run |
 | `report` (JSONB) | the sanitized `mendr-audit/v3` document: findings, **file paths, line numbers**, classifications, **redacted ≤7-line snippets**, line hashes | **medium** — paths and short code fragments, already secret-redacted; never whole files | render the finding page and the check-run annotations |
 | `check_run_url` | link to the GitHub check | low | convenience |
+
+**`audit_log`** — an append-only record of security-relevant events (section
+5c): `event`, `installation_id`, `repo`, `actor`, and a `detail` object of
+**scalars only** (counts, ids, a conclusion). A sanitizer drops any non-scalar
+before it is written, so the audit log can never hold findings, secrets or code.
 
 **Not stored, ever:**
 
@@ -241,6 +247,27 @@ There are no user or installation **tokens** to revoke on uninstall: user tokens
 live only in the viewer's cookie (which the user clears by signing out), and
 installation tokens are minted in memory and expire on their own; GitHub also
 invalidates them the moment the App is uninstalled.
+
+### Audit log (section 5c)
+
+The App keeps an append-only `audit_log` of the security-relevant events, so an
+operator can reconstruct what happened during an incident:
+
+- installation connected, suspended, removed;
+- repositories added or removed;
+- an audit received (with its conclusion and counts);
+- data deleted (self-service or on uninstall).
+
+Two more events — a finding acknowledged, and a migration prepared / PR created
+— are wired to record once those features land (acknowledgement tracking, and
+the Action's PR flow reporting back).
+
+Every entry stores only **scalars** — an event name, ids, a login, counts, a
+conclusion — passed through a sanitizer that drops any object or array before it
+is written. The audit log therefore **never contains findings, secrets or source
+code**, by construction (`app/src/store/auditLog.ts`, enforced by tests). Reading
+it is an operator action (direct query / admin tooling), not a customer-facing
+page.
 
 ---
 

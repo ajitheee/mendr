@@ -1,4 +1,5 @@
-import type { Installation, Repo, RepoInput, RunInput, RunRecord, RunSummary, Store } from './types.js';
+import type { AuditLogEntry, AuditLogInput, Installation, Repo, RepoInput, RunInput, RunRecord, RunSummary, Store } from './types.js';
+import { sanitizeEntry } from './auditLog.js';
 
 /** Development and test store. Everything is lost on restart, by design. */
 export class MemoryStore implements Store {
@@ -104,6 +105,22 @@ export class MemoryStore implements Store {
     const inst = this.installations.get(installationId);
     if (inst) this.installations.set(installationId, { ...inst, deletedAt: at });
     return { reposDeleted: repoIds.length, runsDeleted };
+  }
+
+  private auditLog: AuditLogEntry[] = [];
+  private nextAuditId = 1;
+
+  async appendAuditLog(entry: AuditLogInput): Promise<void> {
+    const clean = sanitizeEntry(entry);
+    this.auditLog.push({ ...clean, id: this.nextAuditId++, at: new Date().toISOString() });
+  }
+
+  async listAuditLog(opts: { installationId?: number; limit?: number } = {}): Promise<AuditLogEntry[]> {
+    return this.auditLog
+      .filter((e) => opts.installationId === undefined || e.installationId === opts.installationId)
+      .sort((a, b) => b.id - a.id)
+      .slice(0, opts.limit ?? 200)
+      .map((e) => ({ ...e }));
   }
 
   async pruneRunsByAge(days: number): Promise<number> {

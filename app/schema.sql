@@ -47,3 +47,17 @@ CREATE TABLE IF NOT EXISTS runs (
   UNIQUE (repo_id, run_id, run_attempt)
 );
 CREATE INDEX IF NOT EXISTS runs_repo_received ON runs (repo_id, received_at DESC);
+
+-- audit_log: an append-only record of security-relevant events. `detail` holds
+-- only scalars (counts, ids, a conclusion) — never findings, secrets or code.
+CREATE TABLE IF NOT EXISTS audit_log (
+  id              BIGSERIAL PRIMARY KEY,
+  at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+  event           TEXT NOT NULL,
+  installation_id BIGINT,
+  repo            TEXT,
+  actor           TEXT,
+  detail          JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+CREATE INDEX IF NOT EXISTS audit_log_at ON audit_log (at DESC);
+CREATE INDEX IF NOT EXISTS audit_log_installation ON audit_log (installation_id, at DESC);
