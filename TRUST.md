@@ -127,6 +127,58 @@ modify your repository, not that we cannot read or store your code. Mendr's
 boundary is that the code is read only where it already lives, by a process
 you run.
 
+### What the App stores (data inventory)
+
+The App's database has three tables and nothing else. Every field below is used;
+none is speculative. Two things are deliberately **absent**, and that absence is
+the point: **no access tokens or credentials of any kind, and no source code**.
+
+**`installations`** — one row per GitHub account that installed the App (the
+tenant boundary).
+
+| Field | What | Sensitivity | Why it is kept |
+|---|---|---|---|
+| `id` | GitHub installation id | low (opaque id) | the tenant key |
+| `account_login`, `account_type` | the org/user name and kind | low (public) | display, and org vs user |
+| `suspended`, `deleted_at`, timestamps | lifecycle | low | to stop accepting evidence when access is gone |
+
+**`repos`** — one row per repository the installation covers.
+
+| Field | What | Sensitivity | Why it is kept |
+|---|---|---|---|
+| `id` | GitHub repo id | low | routing key |
+| `full_name` | `owner/name` | low–medium (a private repo's *name*, not its contents) | routing and display |
+| `private` | is the repo private | low | display |
+| `removed_at` | when access was removed | low | lifecycle |
+
+**`runs`** — one row per audit result a CI run sent.
+
+| Field | What | Sensitivity | Why it is kept |
+|---|---|---|---|
+| `sha`, `ref`, `run_id`, `run_attempt`, `workflow_ref` | which commit/run produced it | low | identify the run, dedupe attempts |
+| `actor` | the GitHub login that triggered the run | low–medium (a username) | shown on the run page; not required for function |
+| `received_at`, `generated_at`, `conclusion`, `patch`/`review`/`informational` | when, and the headline result | low | listing and the check run |
+| `report` (JSONB) | the sanitized `mendr-audit/v3` document: findings, **file paths, line numbers**, classifications, **redacted ≤7-line snippets**, line hashes | **medium** — paths and short code fragments, already secret-redacted; never whole files | render the finding page and the check-run annotations |
+| `check_run_url` | link to the GitHub check | low | convenience |
+
+**Not stored, ever:**
+
+- **User GitHub tokens** — held only inside the viewer's encrypted, HttpOnly
+  session cookie; there is no session table and no user token at rest
+  (`app/src/auth/session.ts`). A database dump contains no user credential.
+- **Installation tokens** — minted on demand per API call, cached in memory
+  with their short expiry, never written to the database
+  (`app/src/github/api.ts`).
+- **The App private key and client secret** — read from the environment, never
+  stored in the database.
+- **Source code** — only the redacted, capped snippets inside `report`; never a
+  whole file, never a clone.
+
+The single sensitive field is therefore `report` (paths + redacted snippets). It
+is the target of field-level encryption (section 5a) and of retention/deletion
+(section 5b). `actor` is the only field kept purely for display rather than
+function, and can be dropped by a customer who wants no usernames retained.
+
 ---
 
 ## 5. Threat model
