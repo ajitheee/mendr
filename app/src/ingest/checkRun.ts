@@ -1,3 +1,4 @@
+import { registryFreshnessLine, registryFreshnessOf } from './registry.js';
 import { countDecisions, type AuditReport, type Investigation, type Location } from './validate.js';
 
 // What the App writes back to the commit. A check run is the least invasive
@@ -87,6 +88,7 @@ export function buildCheckRun(report: AuditReport, opts: { sha: string; detailsU
   // Patch first, then review: never equal weight.
   actionable.sort((a, b) => (a.decision === b.decision ? 0 : a.decision === 'patch' ? -1 : 1));
 
+  const reg = registryFreshnessOf(report);
   const summaryLines: string[] = [];
   switch (report.conclusion) {
     case 'exposure_detected':
@@ -96,12 +98,19 @@ export function buildCheckRun(report: AuditReport, opts: { sha: string; detailsU
       summaryLines.push('**Conclusion: no exposure in completed surfaces.**');
       break;
     case 'inconclusive':
-      summaryLines.push('**Conclusion: inconclusive.** Too little of the repository was analyzed to conclude anything; see coverage in the run.');
+      // Two different reasons read the same on the outside; name the real one.
+      summaryLines.push(
+        reg.freshness === 'stale'
+          ? `**Conclusion: inconclusive.** The deprecation registry this scan used was not provably fresh (${registryFreshnessLine(reg)}), so a zero-finding result proves nothing about a retirement announced since.${reg.reason ? ` ${reg.reason}.` : ''}`
+          : '**Conclusion: inconclusive.** Too little of the repository was analyzed to conclude anything; see coverage in the run.',
+      );
       break;
     case 'audit_failed':
       summaryLines.push('**Conclusion: audit failed.** A surface did not complete; the result must not be read as clean.');
       break;
   }
+  // Which knowledge the verdict rests on, and how current it was.
+  if (reg.freshness !== 'unknown') summaryLines.push(`Registry: ${registryFreshnessLine(reg)}.`);
   summaryLines.push('');
   const shown = actionable.slice(0, 20);
   for (const inv of shown) {

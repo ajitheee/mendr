@@ -1,0 +1,103 @@
+# Publish the registry as a SIGNED, DATED snapshot, so a scanner pinned to an
+# immutable release can refresh its DATA without moving its CODE. See
+# REGISTRY-FRESHNESS.md and src/registry/freshRegistry.ts.
+#
+# When it runs:
+#   * the active registry changes on main (a promotion merged);
+#   * weekly, right after registry-verify PASSES — so `publishedAt` means
+#     "a maintainer pipeline verified this within the week". If this job ever
+#     stops, customers' audits turn INCONCLUSIVE instead of silently confident;
+#   * every release tag — a new scanner carries a rollback floor stamped just
+#     before tagging, and needs a snapshot at least that new to exist;
+#   * by hand.
+#
+# What it refuses: a registry that fails the offline integrity check, and a
+# signing key whose public half is not in src/registry/trustedKeys.ts (a
+# snapshot no scanner trusts must not look published). Both checks live in
+# scripts/publish-registry.mjs. Until the signing secret exists, the `gate`
+# job skips everything cleanly — no red runs, nothing published.
+#
+# The private key lives ONLY in the MENDR_REGISTRY_SIGNING_KEY repository
+# secret. It is never written to disk here and never appears in logs.
+name: registry-publish
+
+on:
+  push:
+    branches: [main]
+    paths: [registries/llm-deprecations.json]
+    tags: ['v*']
+  workflow_run:
+    workflows: [registry-verify]
+    types: [completed]
+  workflow_dispatch: {}
+
+# contents:write is needed to create the rolling release and replace its assets.
+# No other scope.
+permissions:
+  contents: write
+
+concurrency:
+  group: registry-publish
+  cancel-in-progress: false
+
+jobs:
+  # `secrets` cannot be read in a job-level `if`, so the presence of the signing
+  # key is turned into an output here and the publish job keys off it.
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    steps:
+      - id: check
+        env:
+          HAS_KEY: ${{ secrets.MENDR_REGISTRY_SIGNING_KEY != '' }}
+        run: |
+          echo "enabled=$HAS_KEY" >> "$GITHUB_OUTPUT"
+          if [ "$HAS_KEY" != "true" ]; then
+            echo "::notice::registry-publish: MENDR_REGISTRY_SIGNING_KEY is not configured; nothing published. See REGISTRY-FRESHNESS.md → Release checklist."
+          fi
+
+  publish:
+    needs: gate
+    # The weekly path publishes only after a GREEN verify; every other trigger runs.
+    if: ${{ needs.gate.outputs.enabled == 'true' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') }}
+    runs-on: ubuntu-latest
+    steps:
+      # Always publish main's registry: it is the source of truth, and newer is
+      # what a pinned scanner wants (the manifest records the exact commit).
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - name: Validate registry integrity (offline)
+        run: node scripts/validate-registry.mjs
+
+      - name: Build and sign the snapshot
+        env:
+          MENDR_REGISTRY_SIGNING_KEY: ${{ secrets.MENDR_REGISTRY_SIGNING_KEY }}
+        run: node scripts/publish-registry.mjs --out registry-dist
+
+      - name: Upload to the rolling release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view registry-latest >/dev/null 2>&1; then
+            gh release create registry-latest --latest=false \
+              --title "Registry snapshot (rolling)" \
+              --notes "Signed, dated snapshot of registries/llm-deprecations.json for pinned scanners. Replaced on every publish; the manifest names the exact source commit. Verify with the public key in src/registry/trustedKeys.ts. See REGISTRY-FRESHNESS.md."
+          fi
+          gh release upload registry-latest \
+            registry-dist/llm-deprecations.json \
+            registry-dist/manifest.json \
+            registry-dist/manifest.sig \
+            --clobber
+          echo "published: $(cat registry-dist/manifest.json)"

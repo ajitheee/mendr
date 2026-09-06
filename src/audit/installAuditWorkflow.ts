@@ -121,10 +121,15 @@ jobs:
             core.setOutput('state', issue ? issue.state : '');
             core.info(issue ? 'Found Mendr audit issue #' + issue.number : 'No Mendr audit issue yet');
 
-      # 2. Render the new body. Repository-only: no provider key, no network.
+      # 2. Render the new body. Repository-only: no provider key. The ONE network
+      #    call is MENDR_REGISTRY_REFRESH: a GET of public, signed registry files
+      #    from github.com so the audit uses current retirement knowledge; nothing
+      #    about this repository is sent. Remove it to stay fully offline (a
+      #    registry older than 14 days then makes a zero-finding result inconclusive).
       - name: Run the audit
         env:
           MENDR_SPEC: \${{ vars.MENDR_SPEC || '${AUDIT_MENDR_RELEASE}' }}
+          MENDR_REGISTRY_REFRESH: 'on'
         run: |
           npx --yes "github:ajitheee/mendr#$MENDR_SPEC" audit . \\
             --sha "$GITHUB_SHA" \\

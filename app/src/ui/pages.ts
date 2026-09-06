@@ -2,6 +2,7 @@ import { isConfigured, type AppConfig } from '../config.js';
 import type { ManifestCredentials } from '../github/api.js';
 import type { Repo, RunRecord, RunSummary } from '../store/types.js';
 import { setupWorkflowUrl } from './workflowTemplate.js';
+import { registryFreshnessLine, registryFreshnessOf } from '../ingest/registry.js';
 
 export function esc(s: unknown): string {
   return String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
@@ -224,13 +225,31 @@ export function runPage(repo: Repo, run: RunRecord, login: string, opts: { webUr
   const actionable = invs.filter((i) => i.decision !== 'monitor');
   const info = invs.filter((i) => i.decision === 'monitor');
 
+  // The registry the verdict rests on, and how current it was. A stale registry
+  // is why a zero-finding run reads `inconclusive` rather than clean.
+  const reg = registryFreshnessOf(run.report);
+  const regChip = reg.freshness === 'unknown' ? '' : ` <span class="chip ${reg.freshness === 'fresh' ? 'ok' : 'warn'}">registry: ${esc(registryFreshnessLine(reg))}</span>`;
+
+  // A run with nothing actionable is only "nothing needs action" when the audit
+  // actually concluded that. Inconclusive and failed runs must never read as clean.
+  const quiet =
+    run.conclusion === 'no_exposure_in_completed_surfaces'
+      ? `<div class="card"><strong>Nothing needs action.</strong> ${info.length ? `${info.length} informational reference(s) only.` : 'No retiring model dependencies in the completed surfaces.'}</div>`
+      : run.conclusion === 'inconclusive'
+        ? `<div class="card"><strong>Inconclusive — not a clean result.</strong> No actionable finding, but this scan cannot prove absence: ${esc(
+            reg.freshness === 'stale' ? (reg.reason ?? 'the deprecation registry it used was not provably fresh') : 'too little of the repository was analyzed (see coverage in the evidence JSON)',
+          )}.</div>`
+        : run.conclusion === 'audit_failed'
+          ? '<div class="card"><strong>Audit failed.</strong> A surface did not complete; this result must not be read as clean.</div>'
+          : `<div class="card"><strong>Nothing needs action.</strong> ${info.length ? `${info.length} informational reference(s) only.` : ''}</div>`;
+
   const header = `<h2><a href="/r/${esc(repo.fullName)}">${esc(repo.fullName)}</a> <span class="muted">· ${esc(run.ref.replace(/^refs\/heads\//, ''))} @ <a href="${esc(treeUrl(opts.webUrl, repo.fullName, run.sha))}" target="_blank" rel="noopener">${esc(run.sha.slice(0, 7))} ↗</a></span></h2>
-<div class="bar">${pill(run.counts)} <span class="muted">conclusion <code>${esc(run.conclusion)}</code> · received ${esc(run.receivedAt.slice(0, 19).replace('T', ' '))}${run.actor ? ` · by ${esc(run.actor)}` : ''}</span></div>
+<div class="bar">${pill(run.counts)} <span class="muted">conclusion <code>${esc(run.conclusion)}</code> · received ${esc(run.receivedAt.slice(0, 19).replace('T', ' '))}${run.actor ? ` · by ${esc(run.actor)}` : ''}</span>${regChip}</div>
 <div class="bar">${run.checkRunUrl ? `<a class="btn" href="${esc(run.checkRunUrl)}" target="_blank" rel="noopener">Check run on GitHub ↗</a>` : ''}<a class="btn" href="${esc(opts.workflowUrl)}" target="_blank" rel="noopener">Rerun audit ↗</a><a href="/app/?run=${run.id}">Open in the investigation workspace</a> · <a href="/api/runs/${run.id}">Evidence JSON</a></div>`;
 
   const body = actionable.length
     ? `${header}<h2>Action needed (${actionable.length})</h2>${actionable.map((i) => findingCard(i, repo, run, opts.webUrl)).join('')}${info.length ? `<h2>Informational (${info.length})</h2><p class="muted">Catalog, documentation or fixture references — not dependencies. No migration action; monitor the provider.</p>${info.map((i) => findingCard(i, repo, run, opts.webUrl)).join('')}` : ''}`
-    : `${header}<div class="card"><strong>Nothing needs action.</strong> ${info.length ? `${info.length} informational reference(s) only.` : 'No retiring model dependencies in the completed surfaces.'}</div>${info.map((i) => findingCard(i, repo, run, opts.webUrl)).join('')}`;
+    : `${header}${quiet}${info.map((i) => findingCard(i, repo, run, opts.webUrl)).join('')}`;
 
   return layout(`${repo.fullName} run ${run.id}`, body, { login });
 }

@@ -30,7 +30,7 @@ function coverage(over: Partial<AuditCoverage> = {}): AuditCoverage {
   return {
     source: { analyzed: true, filesScanned: 10, tsFiles: 10, pyFiles: 0 },
     config: { analyzed: true, filesScanned: 3 },
-    registry: { providers: ['openai'] },
+    registry: { providers: ['openai'], freshness: 'fresh' },
     runtime: { connected: false, source: null },
     readerTieBack: { proven: false },
     ...over,

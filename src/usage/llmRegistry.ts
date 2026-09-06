@@ -315,14 +315,32 @@ export function assertDeprecation(entry: unknown, index: number): LlmDeprecation
  */
 export function loadLlmRegistry(explicitPath?: string): LlmRegistry {
   const path = explicitPath ?? resolveRegistryPath();
-  let parsed: unknown;
+  let text: string;
   try {
-    parsed = JSON.parse(readFileSync(path, 'utf8'));
+    text = readFileSync(path, 'utf8');
   } catch (err) {
     throw new Error(`could not read/parse llm registry at ${path}: ${String(err)}`);
   }
+  return parseLlmRegistryText(text, `at ${path}`);
+}
+
+/**
+ * Parse + validate registry JSON text. THE single validation path: the bundled
+ * file, an operator's MENDR_REGISTRY_FILE and a downloaded signed snapshot all
+ * go through here, so nothing reaches the engine without `assertDeprecation`
+ * having checked every entry.
+ *
+ * @param label how to name the source in errors, e.g. `at <path>` / `from <url>`.
+ */
+export function parseLlmRegistryText(text: string, label: string): LlmRegistry {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (err) {
+    throw new Error(`could not read/parse llm registry ${label}: ${String(err)}`);
+  }
   if (!Array.isArray(parsed)) {
-    throw new Error(`llm registry at ${path} must be a JSON array`);
+    throw new Error(`llm registry ${label} must be a JSON array`);
   }
   return parsed.map(assertDeprecation);
 }

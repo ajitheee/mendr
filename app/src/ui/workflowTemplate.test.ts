@@ -37,6 +37,14 @@ describe('auditWorkflowYaml', () => {
     expect(yaml).toContain('pull_request: {}');
     expect(yaml).toContain('workflow_dispatch: {}');
   });
+
+  it('turns the signed registry refresh on VISIBLY (an env var an older pinned release ignores)', () => {
+    // An unknown env var is harmless to v0.3.0-alpha; an unknown flag would fail
+    // it. The comment block discloses the one extra outbound GET.
+    expect(yaml).toContain("MENDR_REGISTRY_REFRESH: 'on'");
+    expect(yaml).toMatch(/^# NETWORK:/m);
+    expect(yaml).not.toContain('--refresh-registry');
+  });
 });
 
 describe('newWorkflowFileUrl / setupWorkflowUrl', () => {

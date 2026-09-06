@@ -51,6 +51,8 @@ import {
 } from './usage/llmRegistry.js';
 import { displayEntryId, entryIdFor } from './registry/entryId.js';
 import { formatValidation, validateRegistry } from './registry/validateRegistry.js';
+import { coverageFieldsOf, loadRegistryWithFreshness } from './registry/freshRegistry.js';
+import { isOffline } from './net/offlineGuard.js';
 import {
   findModelIdLiterals,
   scanProjectAnnotations,
@@ -2854,6 +2856,12 @@ program
   .option('--no-progress', 'alias of --quiet')
   .option('--verbose', 'list every informational reference in full (default: a count and the first five)')
   .option('--fail-on-exposure', 'exit 1 when exposure is detected (default: exposure exits 0, for monitoring)')
+  .option(
+    '--refresh-registry',
+    'fetch the latest SIGNED registry snapshot before scanning: one GET of public files from github.com, ' +
+      'verified against a key built into this release, nothing sent. Same as MENDR_REGISTRY_REFRESH=on. ' +
+      'Off by default (the default audit makes no network call); --offline always wins.',
+  )
   .description(
     '[preview] Audit a repository for retiring AI dependencies. Needs only the REPO: scans TS/TSX/JS/Python ' +
       'source + config, joins the deprecation registry, and locates every occurrence. Runtime evidence ' +
@@ -2862,7 +2870,10 @@ program
       'Exit codes: 0 = scan completed (clean, or exposure without --fail-on-exposure); ' +
       '1 = scanner FAILURE, a surface errored (never mistake this for clean); ' +
       '2 = usage error (bad path, or nothing analyzable); 3 = INCONCLUSIVE (scan ran but analyzed too little). ' +
-      'With --fail-on-exposure, exposure also exits 1.',
+      'With --fail-on-exposure, exposure also exits 1.\n\n' +
+      'Registry freshness: silence is only evidence against current knowledge, so a registry older than ' +
+      '14 days (MENDR_REGISTRY_MAX_AGE_DAYS) makes a zero-finding result INCONCLUSIVE. --refresh-registry ' +
+      '(or MENDR_REGISTRY_REFRESH=on) fetches the latest signed snapshot; MENDR_REGISTRY_FILE uses your own.',
   )
   .action(
     async (
@@ -2873,6 +2884,7 @@ program
         apiKeyEnv?: string; fixture?: string; skipSource?: boolean; json?: boolean;
         sha?: string; previousBody?: string; issueBody?: string; install?: boolean; force?: boolean;
         plain?: boolean; quiet?: boolean; progress?: boolean; verbose?: boolean; failOnExposure?: boolean;
+        refreshRegistry?: boolean;
       },
     ) => {
       const json = !!opts.json;
@@ -2902,8 +2914,18 @@ program
         process.exit(2);
       }
       const resolved = resolveRepoOrExit(repoPath);
-      const registry = loadLlmRegistry();
       const now = new Date();
+      // The registry, graded for FRESHNESS (src/registry/freshRegistry.ts): the
+      // opt-in refresh fetches a signed snapshot; otherwise the bundled copy is
+      // used and dated by its release stamp. --offline always wins over a refresh.
+      const { registry, freshness: registryFreshness } = await loadRegistryWithFreshness({
+        now,
+        offline: isOffline(),
+        refresh: opts.refreshRegistry ? true : undefined,
+      });
+      if (registryFreshness.refresh.requested && !registryFreshness.refresh.ok) {
+        console.error(`mendr: registry refresh not applied — ${registryFreshness.refresh.error ?? 'unknown reason'}`);
+      }
       const iso = (d: Date): string => d.toISOString().slice(0, 10);
 
       // --- LOCATE in CONFIG (always runs, never needs a key) -----------------
@@ -3076,7 +3098,7 @@ program
           note: opts.skipSource ? 'skipped (--skip-source)' : undefined,
         },
         config: { analyzed: !configFailed, failed: configFailed, filesScanned, filesRead, generatedSkipped, excludedDirs },
-        registry: { providers: registryProviders(registry) },
+        registry: { providers: registryProviders(registry), ...coverageFieldsOf(registryFreshness) },
         runtime: {
           connected: runtime.connected,
           source: runtime.source,

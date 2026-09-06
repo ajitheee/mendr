@@ -64,7 +64,10 @@ async function runAudit(args: string[], env: Record<string, string> = {}): Promi
   const result = await execa('tsx', ['src/cli.ts', 'audit', ...args], {
     cwd: MENDR_ROOT,
     reject: false,
-    env: { ...process.env, MENDR_UNICODE: '1', ...env },
+    // Registry freshness is proven in src/registry/freshRegistry.cli.test.ts. Here
+    // the bundled registry counts as fresh, so these assertions never depend on
+    // the calendar distance from the release stamp.
+    env: { ...process.env, MENDR_UNICODE: '1', MENDR_REGISTRY_MAX_AGE_DAYS: '100000', ...env },
   });
   return { exitCode: result.exitCode ?? 0, stdout: result.stdout, stderr: result.stderr };
 }

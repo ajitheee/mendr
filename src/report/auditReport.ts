@@ -164,7 +164,20 @@ export function coverageReport(meta: AuditMeta): string[] {
           ? row('✗', 'Configuration', `${int(c.config.filesScanned)} files found but NONE could be read`)
           : row('✓', 'Configuration', `${int(cfgRead)} files scanned`),
   );
-  lines.push(row('✓', 'Registry', c.registry.providers.join(', ') || 'none'));
+  // The registry row carries its FRESHNESS: silence is only evidence against
+  // knowledge that is provably current, so a stale (or undated) registry wears
+  // ✗ and the conclusion below is inconclusive. The reason and the fix appear
+  // under "limits of this run".
+  {
+    const r = c.registry;
+    const fresh = r.freshness === 'fresh';
+    const when = r.publishedAt ? r.publishedAt.slice(0, 10) : 'undated';
+    const age = r.ageDays !== undefined && r.ageDays >= 0 ? `${Math.floor(r.ageDays)} d` : 'age unknown';
+    const grade = r.freshness === undefined ? 'freshness unknown' : fresh ? `fresh, ${age}` : `STALE ${age}, max ${r.maxAgeDays ?? '?'}`;
+    lines.push(
+      row(fresh ? '✓' : '✗', 'Registry', `${r.providers.join(', ') || 'none'} · ${r.source ?? 'bundled'} ${when} (${grade})${fresh ? '' : ' → inconclusive'}`),
+    );
+  }
 
   const rt = c.runtime;
   const window = meta.from && meta.to ? `, ${meta.from} to ${meta.to}` : '';

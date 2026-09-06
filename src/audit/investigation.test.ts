@@ -48,7 +48,7 @@ function fullCoverage(over: Partial<AuditCoverage> = {}): AuditCoverage {
   return {
     source: { analyzed: true, filesScanned: 10, tsFiles: 10, pyFiles: 0 },
     config: { analyzed: true, filesScanned: 5 },
-    registry: { providers: ['anthropic', 'google', 'openai'] },
+    registry: { providers: ['anthropic', 'google', 'openai'], freshness: 'fresh' },
     runtime: { connected: false, source: null },
     readerTieBack: { proven: false },
     ...over,

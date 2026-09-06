@@ -241,7 +241,18 @@ export function coverageMatrixLines(coverage: AuditCoverage): string[] {
             : `✓ ${configRead} files`
     } |`,
   );
-  rows.push(`| Deprecation registry | ✓ ${c.registry.providers.join(', ') || 'none'} |`);
+  {
+    // Freshness rides on the registry row: a stale or undated registry makes a
+    // zero-finding result inconclusive (see concludeAudit), and says so here.
+    const r = c.registry;
+    const fresh = r.freshness === 'fresh';
+    const when = r.publishedAt ? r.publishedAt.slice(0, 10) : 'undated';
+    const age = r.ageDays !== undefined && r.ageDays >= 0 ? `${Math.floor(r.ageDays)} d` : 'age unknown';
+    const grade = r.freshness === undefined ? 'freshness unknown' : fresh ? `fresh, ${age}` : `**STALE** ${age}, max ${r.maxAgeDays ?? '?'}`;
+    rows.push(
+      `| Deprecation registry | ${fresh ? '✓' : '✗'} ${r.providers.join(', ') || 'none'} · ${r.source ?? 'bundled'} ${when} (${grade})${fresh ? '' : ' → **inconclusive**'} |`,
+    );
+  }
   rows.push(
     `| Runtime usage | ${
       c.runtime.failed

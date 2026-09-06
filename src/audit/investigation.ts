@@ -178,11 +178,36 @@ export interface SourceCoverage extends SurfaceCoverage {
   testFilesSkipped?: number;
 }
 
+/**
+ * The deprecation registry the audit joined against, and how RECENT it is.
+ * Silence ("no exposure") is only evidence against knowledge that is provably
+ * current, so the conclusion gate refuses it unless `freshness` is 'fresh'. A
+ * report from before freshness existed carries no `freshness` — and is treated
+ * as NOT fresh, on purpose. Populated from src/registry/freshRegistry.ts.
+ */
+export interface RegistryCoverage {
+  providers: string[];
+  /** A signed snapshot, an operator's file (MENDR_REGISTRY_FILE), or the copy bundled with this build. */
+  source?: 'snapshot' | 'file' | 'bundled';
+  /** Content hash of the registry used (`sha256:` + 16 hex). */
+  version?: string;
+  /** Signed manifest time, or the bundled release stamp. null = unknown. */
+  publishedAt?: string | null;
+  /** Age in days (one decimal); -1 = unknown. */
+  ageDays?: number;
+  maxAgeDays?: number;
+  freshness?: 'fresh' | 'stale';
+  /** One plain-words line when not fresh: what happened and what to do. */
+  reason?: string;
+  /** Outcome of the opt-in refresh, for disclosure. */
+  refresh?: { requested: boolean; ok: boolean; error?: string };
+}
+
 /** Every surface the audit can cover, and whether it actually ran this time. */
 export interface AuditCoverage {
   source: SourceCoverage;
   config: SurfaceCoverage;
-  registry: { providers: string[] };
+  registry: RegistryCoverage;
   /** OPTIONAL by design — an unconnected runtime is disclosed, not a failure. */
   runtime: {
     connected: boolean;
@@ -217,7 +242,10 @@ function anySurfaceFailed(c: AuditCoverage): boolean {
  *                                        is optional by design.
  *   inconclusive                       — 0 findings but the CORE surface (source) did
  *                                        not run or found nothing to scan, so silence
- *                                        proves nothing.
+ *                                        proves nothing — OR the registry it was
+ *                                        joined against is not provably fresh, so
+ *                                        silence proves nothing about a retirement
+ *                                        announced since (registry.freshness).
  *
  * A general "clean" is unreachable in every branch.
  */
@@ -253,6 +281,10 @@ export function partitionFindings(investigations: readonly ModelInvestigation[])
 export function concludeAudit(coverage: AuditCoverage, exposureCount: number): AuditConclusion {
   if (exposureCount > 0) return 'exposure_detected';
   if (anySurfaceFailed(coverage)) return 'audit_failed';
+  // REGISTRY FRESHNESS, fail-closed: stale knowledge can still PROVE an exposure
+  // (handled above) but can never prove the absence of one. A missing
+  // `freshness` (a report from before the field existed) is not fresh either.
+  if (coverage.registry.freshness !== 'fresh') return 'inconclusive';
   const analyzed = coverage.source.tsFiles + (coverage.source.jsFiles ?? 0) + coverage.source.pyFiles;
   const sourceComplete = coverage.source.analyzed && analyzed > 0;
   // M8 (external validation): anything-llm — 22 of 1,242 source files analyzed —
@@ -294,6 +326,14 @@ export function coverageGaps(coverage: AuditCoverage): string[] {
     // Only a GAP when config files exist but could not be read. A repo with no
     // config files at all has nothing missing — that is "not applicable".
     gaps.push(`${coverage.config.filesScanned} configuration file(s) were found but NONE could be read`);
+  }
+  // A registry that is not provably fresh is a limit on what silence means: a
+  // retirement announced after it was published would not be in this report.
+  if (coverage.registry.freshness !== 'fresh') {
+    gaps.push(
+      coverage.registry.reason ??
+        'the deprecation registry is not provably fresh — a retirement announced since it was published would not be in this report',
+    );
   }
   if (coverage.runtime.failed) gaps.push('the runtime evidence read FAILED');
   else if (!coverage.runtime.connected) {
