@@ -1,0 +1,35 @@
+# Keep the Docker build context small. The app image (app/Dockerfile, built with
+# context = repo root) only needs app/{package*.json,tsconfig.json,src,schema.sql}
+# and site/app. Everything below is irrelevant to that build; shipping it as
+# context is what makes a hosted Docker build slow, oversized, or OOM.
+
+# dependencies (re-installed inside the image) and VCS
+**/node_modules
+.git
+.gitignore
+.github
+
+# build outputs (the image builds its own)
+dist
+app/dist
+
+# the scanner's own inputs/artifacts — used by the CLI in the customer's CI, not
+# by this hosted service
+fixtures
+registries/evidence
+test-results
+test-results.zip
+coverage
+.mendr
+scratchpad
+spikes
+
+# secrets and local env — never in an image
+.env
+**/.env
+app/.dev
+
+# noise
+*.log
+**/*.tgz
+*.xlsx
