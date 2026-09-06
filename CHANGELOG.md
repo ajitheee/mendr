@@ -2,6 +2,54 @@
 
 ## Unreleased
 
+### Added — registry freshness: pin the code, refresh the data, signed
+
+The scanner is pinned to an immutable release for supply-chain safety, and the
+registry used to ship frozen inside it — so a pinned scanner re-scanned forever
+with the knowledge of the day the tag was cut. Now the DATA can move without the
+CODE moving, and only if it is signed. Design and operations:
+[REGISTRY-FRESHNESS.md](REGISTRY-FRESHNESS.md).
+
+- **Signed, dated registry snapshots.** `.github/workflows/registry-publish.yml`
+  publishes `registries/llm-deprecations.json` (byte-identical) with a
+  canonical-JSON manifest (content hash, sha256, `publishedAt`, source commit)
+  and an Ed25519 signature to the rolling GitHub Release `registry-latest` — on
+  every registry change, weekly right after `registry-verify` passes, and on
+  every release tag. It refuses a registry that fails integrity validation and a
+  signing key whose public half is not in `src/registry/trustedKeys.ts`, and
+  skips cleanly until the signing secret exists.
+- **Opt-in refresh in the scanner** (`--refresh-registry` or
+  `MENDR_REGISTRY_REFRESH=on`): one GET of the three public files, then
+  signature → schema version → sha256 → rollback guard (never older than the
+  bundled stamp) → the same `assertDeprecation` validation as the bundled file.
+  Every failure falls back to the bundled registry and is disclosed; nothing
+  downloaded is ever executed. **The default audit still makes no network call**
+  (`noNetwork.test.ts` is unchanged) and `--offline` always wins. The generated
+  workflows turn the refresh on visibly with `MENDR_REGISTRY_REFRESH: 'on'` — an
+  environment variable, so a `v0.3.0-alpha` pin simply ignores it.
+- **Freshness is graded by AGE, whichever registry is in use.** The bundled copy
+  is stamped at release (`scripts/stamp-bundled-registry.mjs`); a registry older
+  than 14 days (`MENDR_REGISTRY_MAX_AGE_DAYS`) is STALE.
+- **Fail-closed conclusion.** Stale knowledge can still prove an exposure, never
+  the absence of one: `concludeAudit` returns `inconclusive` (exit 3) for a
+  zero-finding scan on a non-fresh registry. Reports carry
+  `coverage.registry.{source, version, publishedAt, ageDays, maxAgeDays,
+  freshness, reason, refresh}`; the Registry coverage row shows the date and
+  grade (✗ when stale) and the reason appears under "limits of this run".
+- **Operator and mirror knobs.** `MENDR_REGISTRY_FILE` (your own registry, graded
+  by a signed `manifest.json` + `manifest.sig` beside it; unsigned = age unknown
+  = stale), `MENDR_REGISTRY_URL` (a mirror — the signature, not the host, is the
+  trust anchor), `MENDR_REGISTRY_TRUSTED_KEYS_FILE` (replaces the built-in
+  keyring; the same trust level as `MENDR_SPEC`).
+- **App:** the run page and the check run show the registry's date and grade,
+  and an inconclusive run now reads "Inconclusive — not a clean result" with the
+  reason, instead of "Nothing needs action".
+
+Tests: every verify failure mode (untrusted key, tampered file, edited manifest,
+future schema, rollback, invalid entries, 404, network error, oversize) in
+`freshRegistry.test.ts`; the customer-facing contract through the real CLI in
+`freshRegistry.cli.test.ts`; and an end-to-end publish → HTTP → verify run.
+
 ### Added — the App-connected audit workflow now runs daily
 
 - **Daily scheduled scan in the "Connect GitHub" workflow.** The workflow the App

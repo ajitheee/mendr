@@ -30,7 +30,8 @@ exist yet and is listed so the boundary is stated before it is built.
 
 | Command | Reads | Writes | Network |
 |---|---|---|---|
-| `mendr audit [path]` | Source files under `path` (TS/TSX/Python, config formats, `.gitignore`), the bundled registry, `git rev-parse HEAD` via the local git binary. | stdout/stderr only. | **None.** |
+| `mendr audit [path]` | Source files under `path` (TS/TSX/JS/Python, config formats, `.gitignore`), the bundled registry, `git rev-parse HEAD` via the local git binary. | stdout/stderr only. | **None.** |
+| `mendr audit [path] --refresh-registry` (or `MENDR_REGISTRY_REFRESH=on`, which the generated workflows set) | Same, plus the latest registry snapshot. | Same. | **One outbound HTTPS GET of three public files** — `manifest.json`, `manifest.sig`, `llm-deprecations.json` — from `github.com/ajitheee/mendr/releases/download/registry-latest/` (or `MENDR_REGISTRY_URL`). It sends nothing: no body, no header of yours, nothing about the repository. The snapshot is used only if its Ed25519 signature verifies against a key built into the release, its sha256 matches, and it is not older than the bundled copy; otherwise the bundled registry is used and the reason is disclosed. `--offline` wins. See [REGISTRY-FRESHNESS.md](REGISTRY-FRESHNESS.md). |
 | `mendr audit [path] --json` | Same. Adds a ±3-line, 160-character snippet around each reported line and a 16-hex-character SHA-256 prefix of the reported line. | stdout only. | **None.** |
 | `mendr audit [path] --issue-body <file>` | Same. | The Markdown issue body to the file you name. | **None.** |
 | `mendr audit [path] --install` | Same. | One workflow file at `.github/workflows/mendr-audit.yml`. | **None.** |
@@ -56,8 +57,9 @@ Every place in the shipped source that can reach the network, with why it exists
 
 | Where | What | When it runs |
 |---|---|---|
-| `src/recon/providers.ts` (`getJson`) | The only `fetch` in the package. `GET` to the named provider's usage endpoint, 30-second timeout, `Authorization` header from the key you passed. | Only when you name a provider and supply a key. |
+| `src/recon/providers.ts` (`getJson`) | One of the two `fetch` call sites in the package (the other is the registry refresh below). `GET` to the named provider's usage endpoint, 30-second timeout, `Authorization` header from the key you passed. | Only when you name a provider and supply a key. |
 | `src/cli.ts` (`cloneRemoteOrExit`) | `git clone --depth 1` via `simple-git`, using your local git. | Only when the path argument is a GitHub URL. |
+| `src/registry/freshRegistry.ts` (`getBytes`) | The other `fetch`: `GET` of the three public registry-snapshot files, 10-second timeout per file, 8 MB cap, no header or body of yours. Verified before use — signature against a key built into the release, schema version, sha256, rollback floor, then the same entry validation as the bundled file — and any failure falls back to the bundled registry with the reason disclosed. | Only with `--refresh-registry` / `MENDR_REGISTRY_REFRESH=on`; never under `--offline`; never when the build trusts no signing key. |
 | `src/gates/runTests.ts`, `src/gates/runEval.ts` | `execa` runs the repository's own `npm test` or the `--eval-command` you pass, inside the sandbox copy. | Only in `fix-llm` gates. This is your code's network activity, not Mendr's. |
 | `scripts/` (registry maintenance) | Provider docs and model-list fetches. | Mendr's own CI on Mendr's own repository. Not part of the audit and not run in yours. |
 
@@ -295,14 +297,16 @@ page.
 - Your repository ↔ the sandbox where `fix-llm` runs your tests. Same trust
   level as running your own test suite locally.
 - Mendr ↔ the retirement registry. The registry is data shipped inside the
-  package and maintained by Mendr's own CI in its own repository. Mendr never
+  package and maintained by Mendr's own CI in its own repository — and, on
+  request, refreshed from a signed, dated snapshot that CI publishes. A snapshot
+  is used only if it verifies against a key built into the release. Mendr never
   auto-adds registry entries from a customer scan.
 
 ### Threats and mitigations
 
 | # | Threat | Mitigation | Residual |
 |---|---|---|---|
-| T1 | Repository contents exfiltrated by the scanner. | No backend, no telemetry, no `fetch` in the audit path; enforced by the offline test on every build and by `--offline` at run time. | The GitHub App receives only the JSON in section 4 and is tested to re-redact and re-cap it. It holds no `contents` permission, so it could not fetch code even if asked. |
+| T1 | Repository contents exfiltrated by the scanner. | No backend, no telemetry, no `fetch` in the default audit path; enforced by the offline test on every build and by `--offline` at run time. The opt-in registry refresh is a `GET` of public files that carries nothing of yours (section 3). | The GitHub App receives only the JSON in section 4 and is tested to re-redact and re-cap it. It holds no `contents` permission, so it could not fetch code even if asked. |
 | T2 | A committed secret published through the audit's own output (issue body, JSON snippet). | `redactSecrets` runs over the whole issue body and every snippet line before clipping. Snippets are ±3 lines and 160 chars, never whole files. | Pattern-based. An unusual secret format adjacent to a model line could survive. See section 8. |
 | T3 | Your provider key leaked by the usage read. | Key read from env or flag, held in memory, sent only to the provider named, over HTTPS, 30-second timeout. Provider error bodies are redacted before printing. Never written to disk. | You choose the key's scope. Use a read-only or usage-only key. |
 | T4 | Mendr modifies your default branch. | The scaffolded workflow runs with `contents: read` and `persist-credentials: false`. `fix-llm` never writes without `--write`; `mendr-action` writes to a branch and opens a PR, never pushes to the default branch. | `mendr-action` needs `contents: write` to push its branch. Branch protection on your side is the control. |
@@ -310,8 +314,9 @@ page.
 | T6 | A forged "clean" verdict or a wrongly closed issue. | The issue can only close when every required surface completed and no surface failed (`mayClose`). Partial coverage reports as inconclusive, never clean. Test files and unsupported languages are counted and shown. | Coverage is by file type; a model reference in an unsupported language is reported as unanalyzed, not found. |
 | T7 | `fix-llm` runs untrusted code. | It runs **your** test command in a temp copy of **your** repository. This is the same code you run in CI already. | If your repository is untrusted to you, do not run its tests through any tool. |
 | T8 | Malicious or tampered Mendr package. | Pin to a tag (`github:ajitheee/mendr#v0.3.0-alpha`) or, stricter, a commit SHA. Tags are annotated and never moved (see section 9). Dependencies are few and pinned in the lockfile. | Releases are not yet cryptographically signed and there is no SLSA provenance. Planned; stated honestly in section 9. |
-| T9 | A poisoned registry entry makes Mendr recommend a wrong migration. | Registry changes go through PRs in Mendr's repository with a verify job; retirement dates are marked `UNVERIFIED` until confirmed and unverified dates are never rendered as overdue. | The registry is maintained by one team today. Independent review is a future control. |
+| T9 | A poisoned registry entry makes Mendr recommend a wrong migration. | Registry changes go through PRs in Mendr's repository with a verify job; retirement dates are marked `UNVERIFIED` until confirmed and unverified dates are never rendered as overdue. Refreshed snapshots are Ed25519-signed by Mendr's CI and verified against a key built into the release, bound by sha256, refused if older than the bundled copy, and parsed through the same entry validation as the bundled file — a mirror or a network attacker cannot substitute a registry ([REGISTRY-FRESHNESS.md](REGISTRY-FRESHNESS.md)). | The registry is maintained by one team today. Independent review is a future control. |
 | T10 | `--install` writes a workflow you did not read. | It writes one file, prints the path, and the file's comments explain each permission. Nothing runs until you commit it. | None. |
+| T11 | A stale registry passes as current, so a newly announced retirement is missed while the scan still reads "no exposure". | Every registry in use is dated (a signed `publishedAt`, or the release stamp for the bundled copy) and graded by age; older than 14 days makes a zero-finding scan `inconclusive`, never clean, while exposure is still reported. The weekly publish re-stamps a verified registry; if that pipeline stops, results turn inconclusive rather than confident. | A retirement announced inside the window, or not yet in the registry, is invisible until the registry catches up. The report says only what the registry knew, and when. |
 
 ### Adversaries considered
 
@@ -429,7 +434,11 @@ the changelog will say which and why.
   (`v0.2.3-alpha` was not modified when `v0.2.4-alpha` fixed what the partner
   audits found). Each release has a `RELEASE-<tag>.md` in the repository with
   the exact claim it makes and the corpus it was validated on.
-- **Signing and provenance.** Not yet. Planned in this order: signed annotated
+- **Signing and provenance.** Registry snapshots are signed: `registry-publish`
+  signs a canonical manifest (content hash, sha256, `publishedAt`, source
+  commit) with an Ed25519 key held only as a CI secret, and scanners verify it
+  against the public key built into the release (`src/registry/trustedKeys.ts`).
+  Code releases are not yet signed. Planned in this order: signed annotated
   tags, then npm publication with provenance attestation, then a SLSA-style
   build statement from CI. Until then, verify a tag's commit SHA against the
   release notes.
@@ -440,7 +449,10 @@ the changelog will say which and why.
   against a runtime dependency are addressed in the next tag, and the changelog
   names the advisory.
 - **Registry updates** are data changes reviewed by PR in Mendr's repository.
-  They are never generated from a customer's scan.
+  They are never generated from a customer's scan. Once merged and verified,
+  they reach pinned scanners as a signed snapshot
+  ([REGISTRY-FRESHNESS.md](REGISTRY-FRESHNESS.md)): the code stays pinned,
+  only the data moves, and only signed.
 
 ---
 

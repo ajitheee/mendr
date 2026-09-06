@@ -92,7 +92,7 @@ Nothing, by default. The audit reads the repository, the bundled registry and yo
 npx github:ajitheee/mendr#v0.3.0-alpha audit . --offline
 ```
 
-The only optional network use is the provider usage read you ask for by name with your own read-only key, and a shallow `git clone` when you pass a GitHub URL instead of a path. The [Mendr GitHub App](app/README.md) is the one hosted piece: your workflow posts the audit JSON to it, proven by the run's OIDC token, and it writes a check run back; it has no `contents` permission and cannot read code. [TRUST.md](TRUST.md) has the per-command table, the data-flow diagram, the threat model, the permissions each surface needs, and the known gaps. [SECURITY.md](SECURITY.md) is how to report a problem with any of it.
+The optional network uses are: the **registry refresh** (`--refresh-registry`, or `MENDR_REGISTRY_REFRESH=on`, which the generated workflows set) — one GET of three public, signed files so the audit uses current retirement knowledge, verified against a key built into the release before use, sending nothing; the provider usage read you ask for by name with your own read-only key; and a shallow `git clone` when you pass a GitHub URL instead of a path. The [Mendr GitHub App](app/README.md) is the one hosted piece: your workflow posts the audit JSON to it, proven by the run's OIDC token, and it writes a check run back; it has no `contents` permission and cannot read code. [TRUST.md](TRUST.md) has the per-command table, the data-flow diagram, the threat model, the permissions each surface needs, and the known gaps. [SECURITY.md](SECURITY.md) is how to report a problem with any of it.
 
 ## commands
 
@@ -178,11 +178,22 @@ Exactly four verdicts — **never a general "clean"**:
 |---|---|
 | `exposure_detected` | at least one retiring dependency was found |
 | `no_exposure_in_completed_surfaces` | none found in the surfaces that finished |
-| `inconclusive` | the core source scan did not complete — silence proves nothing |
+| `inconclusive` | the core source scan did not complete, or the registry it was joined against is not provably fresh — silence proves nothing |
 | `audit_failed` | a surface was attempted and errored |
 
 Every run prints a coverage report showing which surfaces ran, so a skipped or
 failed surface is always visible.
+
+**Registry freshness.** A pinned release ships its registry; left alone it would
+re-scan forever with the knowledge of the day the tag was cut. So every registry
+in use is dated and graded by age: older than 14 days
+(`MENDR_REGISTRY_MAX_AGE_DAYS`) is stale, and a zero-finding scan on a stale
+registry is `inconclusive` (exit 3) — stale knowledge can still prove an
+exposure, never the absence of one. `--refresh-registry` (or
+`MENDR_REGISTRY_REFRESH=on`, which the generated workflows set) fetches the
+latest signed snapshot: one GET of public files, verified against a key built
+into the release before use, nothing sent. Off by default; `--offline` wins.
+Knobs, the verify path and the threat model: [REGISTRY-FRESHNESS.md](REGISTRY-FRESHNESS.md).
 
 **Limitations (this is a preview):**
 - Report-only. Nothing is written, nothing is merged. `patch` means a *reviewed

@@ -26,6 +26,9 @@ Anything that breaks a claim in TRUST.md is in scope, in particular:
 - Repository-controlled text (paths, strings, file contents) injecting into the
   tracking issue, forging its state block, or altering the verdict.
 - A wrongly closed tracking issue or a "clean" verdict with incomplete coverage.
+- The scanner accepting a registry snapshot that is unsigned, signed by an
+  untrusted key, tampered, of an unsupported schema, or older than its bundled
+  stamp — or grading a registry `fresh` when it is not.
 - The scaffolded workflow or `mendr-action` needing, or being able to use, more
   permission than TRUST.md states.
 - `fix-llm --write` touching files outside the reported locations.

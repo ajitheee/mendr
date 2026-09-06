@@ -15,3 +15,6 @@ spikes/
 # local real-repo scan evidence / exported test results (kept locally, never committed)
 test-results/
 test-results.zip
+
+# registry snapshot built by scripts/publish-registry.mjs (uploaded to the release, never committed)
+registry-dist/
