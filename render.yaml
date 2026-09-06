@@ -1,12 +1,16 @@
 # Render blueprint for the Mendr GitHub App (the Node + Postgres service).
 #
 # This is SEPARATE from the marketing site on Vercel (vercel.json → site/). The
-# static site does not have /setup or the API; this service does.
+# static site has no /setup or API; this service does.
 #
-# Deploy: push this file, then in Render → "New" → "Blueprint" → pick this repo.
-# Render provisions the Postgres database and the web service from app/Dockerfile,
-# generates SESSION_SECRET, and links DATABASE_URL. You then set the values marked
-# "set in dashboard" below. Full steps: app/DEPLOY.md.
+# Uses Render's NATIVE NODE runtime (no Docker) — Render checks out the repo,
+# builds in app/, and runs the compiled server. Simpler and more reliable on the
+# free tier than a Docker build. (app/Dockerfile still exists for local
+# docker-compose and other hosts.)
+#
+# Deploy: Render → New → Blueprint → this repo. It provisions Postgres, builds
+# the service, generates SESSION_SECRET, links DATABASE_URL. You then set the
+# values marked "set in dashboard". Full steps: app/DEPLOY.md.
 
 databases:
   - name: mendr-db
@@ -16,33 +20,37 @@ databases:
 services:
   - type: web
     name: mendr-app
-    runtime: docker
-    dockerfilePath: ./app/Dockerfile
-    dockerContext: . # build from repo root so the Dockerfile can COPY site/app
+    runtime: node
+    rootDir: app # build + run inside app/; the whole repo is still checked out
     plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: node dist/server.js
     healthCheckPath: /healthz
     autoDeploy: true
     envVars:
+      - key: NODE_VERSION
+        value: "22" # a Mendr dep needs Node >= 22
+      - key: UI_DIR
+        value: ../site/app # serve the investigation workspace (repo/site/app)
       # Linked + generated automatically:
       - key: DATABASE_URL
         fromDatabase:
           name: mendr-db
           property: connectionString
       - key: SESSION_SECRET
-        generateValue: true # 32+ random chars; rotating it signs everyone out
-      # Pin the CLI the scaffolded workflow runs (this release):
+        generateValue: true
       - key: MENDR_CLI_SPEC
         value: v0.3.0-alpha
       # --- set in the Render dashboard (sync:false = not committed) ---
-      # 1. Right after the FIRST deploy, set APP_URL to this service's public URL
+      # 1. After the FIRST deploy, set APP_URL to this service's public URL
       #    (e.g. https://mendr-app.onrender.com), then redeploy.
       - key: APP_URL
         sync: false
-      # 2. Field-level encryption for stored findings. Generate one:
+      # 2. Field-level encryption key. Generate one:
       #    node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
       - key: MENDR_DATA_KEY
         sync: false
-      # 3. The six GitHub App credentials — set these AFTER opening APP_URL/setup,
+      # 3. The six GitHub App credentials — set AFTER opening APP_URL/setup,
       #    which creates the App on GitHub and prints them once. Then redeploy.
       - key: GITHUB_APP_ID
         sync: false
