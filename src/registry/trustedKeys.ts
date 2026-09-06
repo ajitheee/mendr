@@ -24,5 +24,9 @@
 // runs.
 
 export const TRUSTED_REGISTRY_KEYS: readonly string[] = [
-  // Paste the PUBLIC key PEM (SPKI, `-----BEGIN PUBLIC KEY-----`) here.
+  // Registry signing key #1 — generated 2026-09-06. The private half is the
+  // MENDR_REGISTRY_SIGNING_KEY repository secret and nowhere else.
+  `-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAgLWMLRTny9bSkOqzMWaNU6HsJGjTR8fjdLZmK+w5PAE=
+-----END PUBLIC KEY-----`,
 ];
