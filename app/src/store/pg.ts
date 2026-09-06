@@ -235,7 +235,13 @@ export class PgStore implements Store {
 }
 
 export async function createPgStore(connectionString: string, keyring: DataKeyring | null = null): Promise<PgStore> {
-  const pool = new pg.Pool({ connectionString, max: 5 });
+  // Enable TLS only when the connection string asks for it (an external managed
+  // Postgres — sslmode=require, or a *.render.com host). A same-region Render
+  // internal URL needs no TLS, so this is a no-op there; forcing TLS on it would
+  // fail, which is why it is conditional. rejectUnauthorized:false accepts the
+  // provider's managed certificate chain.
+  const needsSsl = /sslmode=require/i.test(connectionString) || /\.render\.com|\.rds\.amazonaws\.com|\.neon\.tech|\.supabase\.co/i.test(connectionString);
+  const pool = new pg.Pool({ connectionString, max: 5, ...(needsSsl ? { ssl: { rejectUnauthorized: false } } : {}) });
   const store = new PgStore(pool, keyring);
   await store.ensureSchema();
   return store;
