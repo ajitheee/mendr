@@ -37,10 +37,19 @@ telemetry. The full statement is in [TRUST.md](../TRUST.md).
 | `GET /`, `/r/:owner/:name`, `/r/:owner/:name/runs/:id` | Overview, run list, run page. |
 | `GET /app/` | The static investigation workspace (`site/app`), when `UI_DIR` is set. |
 
-## Deploy (human steps, in order)
+## Deploy
 
-1. **Run it somewhere public** with Node 22+ and Postgres. Any host works;
-   the Dockerfile builds from the repository root:
+**Full step-by-step (deploy → create the GitHub App → connect a repo → test):
+[DEPLOY.md](DEPLOY.md).** It also explains the two-deployment split (this Node +
+Postgres service vs the static marketing site on Vercel), which is why `/setup`
+404s and `/app` shows a demo on the Vercel domain — those routes live here, on
+this service's own domain.
+
+The fastest path is the [Render blueprint](../render.yaml) (Docker + managed
+Postgres, near one-click). The short version:
+
+1. **Run it somewhere public** with Node 22+ and Postgres. Any container host
+   works; the Dockerfile builds from the repository root:
 
    ```bash
    docker build -f app/Dockerfile -t mendr-app .

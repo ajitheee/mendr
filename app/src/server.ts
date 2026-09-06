@@ -27,7 +27,9 @@ const app = createApp({
   verifyActionsToken: createActionsVerifier(keys, { issuer: config.oidcIssuer, audience: config.oidcAudience }),
 });
 
-serve({ fetch: app.fetch, port: config.port }, (info) => {
+// Bind all interfaces so containerized hosts (Render, Fly, Railway, Docker)
+// can reach it; they inject the port via PORT, which config.port reads.
+serve({ fetch: app.fetch, port: config.port, hostname: '0.0.0.0' }, (info) => {
   console.log(`mendr-app listening on http://localhost:${info.port}  public=${config.appUrl}  configured=${isConfigured(config)}  store=${store.kind}`);
   if (!isConfigured(config)) console.log(`Create the GitHub App at ${config.appUrl}/setup`);
 });

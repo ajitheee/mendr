@@ -1,0 +1,60 @@
+# Local end-to-end: the App + Postgres, for testing the GitHub connection flow
+# before (or instead of) a cloud deploy. Run from the app/ directory:
+#
+#   docker compose up --build
+#
+# Then expose it to GitHub with a tunnel (GitHub Actions OIDC ingest and OAuth
+# callbacks need a public URL), and set APP_URL to the tunnel URL:
+#
+#   cloudflared tunnel --url http://localhost:8080     # or: ngrok http 8080
+#   # put the https URL into APP_URL below, restart, open APP_URL/setup
+#
+# This validates the Postgres path, schema-on-boot, encryption at rest, and the
+# real GitHub App flow — without a cloud account.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mendr
+      POSTGRES_PASSWORD: mendr
+      POSTGRES_DB: mendr
+    ports:
+      - "5432:5432"
+    volumes:
+      - mendr-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mendr"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build:
+      context: ..
+      dockerfile: app/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      # Set to your tunnel's https URL to run the real GitHub flow (default is
+      # fine for a boot/health check only).
+      APP_URL: ${APP_URL:-http://localhost:8080}
+      DATABASE_URL: postgres://mendr:mendr@db:5432/mendr
+      # Dev secrets — replace for anything beyond local testing.
+      SESSION_SECRET: ${SESSION_SECRET:-local-dev-session-secret-change-me-please}
+      MENDR_DATA_KEY: ${MENDR_DATA_KEY:-}
+      MENDR_CLI_SPEC: ${MENDR_CLI_SPEC:-v0.3.0-alpha}
+      # The six GITHUB_* values from APP_URL/setup go here once you have them.
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      GITHUB_PRIVATE_KEY: ${GITHUB_PRIVATE_KEY:-}
+
+volumes:
+  mendr-pgdata:
