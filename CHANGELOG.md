@@ -44,6 +44,12 @@ CODE moving, and only if it is signed. Design and operations:
 - **App:** the run page and the check run show the registry's date and grade,
   and an inconclusive run now reads "Inconclusive — not a clean result" with the
   reason, instead of "Nothing needs action".
+- **Inconclusive evidence is delivered, and shown as such.** The generated
+  workflow now posts the report to the App before exiting with the audit's own
+  code (1 failure, 3 inconclusive), so the dashboard shows the run as what it is
+  instead of a stale "last good run" — and the step still fails truthfully. Run
+  pills on the overview and the runs list are conclusion-aware: an inconclusive
+  or failed run never wears the green "nothing found".
 
 Tests: every verify failure mode (untrusted key, tampered file, edited manifest,
 future schema, rollback, invalid entries, 404, network error, oversize) in

@@ -39,8 +39,12 @@ export function layout(title: string, body: string, opts: { login?: string | nul
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title><style>${CSS}</style></head><body><main><header><h1><a href="/" style="text-decoration:none;color:inherit">Mendr</a> <span class="muted" style="font-weight:400">· ${esc(title)}</span></h1><div>${who}</div></header>${body}</main></body></html>`;
 }
 
-function pill(counts: RunSummary['counts']): string {
+function pill(counts: RunSummary['counts'], conclusion?: string): string {
   const parts: string[] = [];
+  // A run that did not conclude must never wear the green "nothing found":
+  // inconclusive and failed audits say so first, whatever they counted.
+  if (conclusion === 'inconclusive') parts.push('<span class="pill review">inconclusive</span>');
+  else if (conclusion === 'audit_failed') parts.push('<span class="pill patch">audit failed</span>');
   if (counts.patch) parts.push(`<span class="pill patch">${counts.patch} patch eligible</span>`);
   if (counts.review) parts.push(`<span class="pill review">${counts.review} review required</span>`);
   if (counts.informational) parts.push(`<span class="pill info">${counts.informational} informational</span>`);
@@ -88,7 +92,7 @@ export function homePage(input: { config: AppConfig; configured: boolean; login:
         const when = latest
           ? `<a href="/r/${esc(repo.fullName)}/runs/${latest.id}">${esc(latest.receivedAt.slice(0, 16).replace('T', ' '))}</a> <span class="muted">${esc(latest.ref.replace(/^refs\/heads\//, ''))} @ ${esc(latest.sha.slice(0, 7))}</span>`
           : `${setupLink(config, repo.fullName, defaultBranch)} <span class="muted">no run yet — add the workflow</span>`;
-        return `<tr><td><a href="/r/${esc(repo.fullName)}">${esc(repo.fullName)}</a></td><td>${when}</td><td>${latest ? pill(latest.counts) : ''}</td></tr>`;
+        return `<tr><td><a href="/r/${esc(repo.fullName)}">${esc(repo.fullName)}</a></td><td>${when}</td><td>${latest ? pill(latest.counts, latest.conclusion) : ''}</td></tr>`;
       })
       .join('')}</tbody></table>`;
   }
@@ -142,7 +146,7 @@ export function runsPage(repo: Repo, runs: RunSummary[], login: string, setupUrl
   const rows = runs
     .map(
       (r) =>
-        `<tr><td><a href="/r/${esc(repo.fullName)}/runs/${r.id}">${esc(r.receivedAt.slice(0, 19).replace('T', ' '))}</a></td><td><span class="muted">${esc(r.ref.replace(/^refs\/heads\//, ''))}</span> @ <code>${esc(r.sha.slice(0, 7))}</code></td><td>${pill(r.counts)}</td><td>${r.checkRunUrl ? `<a href="${esc(r.checkRunUrl)}">check</a>` : '<span class="muted">no check</span>'}</td></tr>`,
+        `<tr><td><a href="/r/${esc(repo.fullName)}/runs/${r.id}">${esc(r.receivedAt.slice(0, 19).replace('T', ' '))}</a></td><td><span class="muted">${esc(r.ref.replace(/^refs\/heads\//, ''))}</span> @ <code>${esc(r.sha.slice(0, 7))}</code></td><td>${pill(r.counts, r.conclusion)}</td><td>${r.checkRunUrl ? `<a href="${esc(r.checkRunUrl)}">check</a>` : '<span class="muted">no check</span>'}</td></tr>`,
     )
     .join('');
   const del = `<h2>Stored data</h2><p class="muted">Delete every stored run for this repository now. Uninstalling the App does this automatically; this is the same, on demand.</p><form method="post" action="/r/${esc(repo.fullName)}/delete" onsubmit="return confirm('Delete all stored findings for ${esc(repo.fullName)}? This cannot be undone.')"><button type="submit" style="background:var(--patch)">Delete stored data</button></form>`;
@@ -244,7 +248,7 @@ export function runPage(repo: Repo, run: RunRecord, login: string, opts: { webUr
           : `<div class="card"><strong>Nothing needs action.</strong> ${info.length ? `${info.length} informational reference(s) only.` : ''}</div>`;
 
   const header = `<h2><a href="/r/${esc(repo.fullName)}">${esc(repo.fullName)}</a> <span class="muted">· ${esc(run.ref.replace(/^refs\/heads\//, ''))} @ <a href="${esc(treeUrl(opts.webUrl, repo.fullName, run.sha))}" target="_blank" rel="noopener">${esc(run.sha.slice(0, 7))} ↗</a></span></h2>
-<div class="bar">${pill(run.counts)} <span class="muted">conclusion <code>${esc(run.conclusion)}</code> · received ${esc(run.receivedAt.slice(0, 19).replace('T', ' '))}${run.actor ? ` · by ${esc(run.actor)}` : ''}</span>${regChip}</div>
+<div class="bar">${pill(run.counts, run.conclusion)} <span class="muted">conclusion <code>${esc(run.conclusion)}</code> · received ${esc(run.receivedAt.slice(0, 19).replace('T', ' '))}${run.actor ? ` · by ${esc(run.actor)}` : ''}</span>${regChip}</div>
 <div class="bar">${run.checkRunUrl ? `<a class="btn" href="${esc(run.checkRunUrl)}" target="_blank" rel="noopener">Check run on GitHub ↗</a>` : ''}<a class="btn" href="${esc(opts.workflowUrl)}" target="_blank" rel="noopener">Rerun audit ↗</a><a href="/app/?run=${run.id}">Open in the investigation workspace</a> · <a href="/api/runs/${run.id}">Evidence JSON</a></div>`;
 
   const body = actionable.length

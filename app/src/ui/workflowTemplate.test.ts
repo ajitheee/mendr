@@ -45,6 +45,19 @@ describe('auditWorkflowYaml', () => {
     expect(yaml).toMatch(/^# NETWORK:/m);
     expect(yaml).not.toContain('--refresh-registry');
   });
+
+  it('delivers the evidence BEFORE failing the step on an inconclusive or failed audit', () => {
+    // A zero-finding scan on a stale registry exits 3. The report must still
+    // reach the App (so the dashboard never shows a stale "last good run" as
+    // current), and the step must still fail truthfully afterwards.
+    const post = yaml.indexOf('/api/ingest');
+    const status = yaml.indexOf('MENDR_STATUS=$?');
+    const exit = yaml.indexOf('exit $MENDR_STATUS');
+    expect(status).toBeGreaterThan(-1);
+    expect(post).toBeGreaterThan(status);
+    expect(exit).toBeGreaterThan(post);
+    expect(yaml).toContain('if [ -s mendr-audit.json ]; then'); // a usage error (no report) posts nothing
+  });
 });
 
 describe('newWorkflowFileUrl / setupWorkflowUrl', () => {
