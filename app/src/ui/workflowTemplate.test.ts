@@ -28,6 +28,15 @@ describe('auditWorkflowYaml', () => {
     expect(yaml).toContain('branches: [trunk]');
     expect(yaml).toContain('persist-credentials: false');
   });
+
+  it('runs on a daily schedule as well as push/PR/manual, so an idle repo still re-scans', () => {
+    // The daily run is what catches a newly announced retirement when no code
+    // has changed. Off-the-hour, because GitHub throttles :00 schedules.
+    expect(yaml).toMatch(/^\s+schedule:\n\s+- cron: '\d{1,2} \d{1,2} \* \* \*'/m);
+    expect(yaml).not.toMatch(/cron: '0 /); // never on the hour
+    expect(yaml).toContain('pull_request: {}');
+    expect(yaml).toContain('workflow_dispatch: {}');
+  });
 });
 
 describe('newWorkflowFileUrl / setupWorkflowUrl', () => {

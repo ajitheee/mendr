@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Added — the App-connected audit workflow now runs daily
+
+- **Daily scheduled scan in the "Connect GitHub" workflow.** The workflow the App
+  hands a repository now triggers on a daily off-the-hour cron as well as push,
+  pull request and manual run — matching the CLI-scaffolded `audit --install`
+  and `watch` workflows, which already did. This is what catches a newly
+  announced retirement on a repository whose code has not changed; before, an
+  idle repo was never re-scanned against a newer registry. Existing connected
+  repos keep their committed workflow — add the `schedule` block (or re-run the
+  one-click setup) to pick it up. GitHub pauses schedules on a public repo with
+  no activity for 60 days.
+
 ## 0.3.0-alpha — 2026-09-05
 
 ### Added — trust package for connecting private repositories
