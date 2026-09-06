@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.0-alpha — 2026-09-06
+
 ### Added — registry freshness: pin the code, refresh the data, signed
 
 The scanner is pinned to an immutable release for supply-chain safety, and the

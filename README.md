@@ -5,7 +5,7 @@
 One command scans TypeScript, TSX, JavaScript, Python and config files, joins a dated retirement registry for OpenAI, Anthropic and Google, and tells you what breaks, where, and by when. No API key. Nothing is changed.
 
 ```sh
-npx github:ajitheee/mendr#v0.3.0-alpha audit .
+npx github:ajitheee/mendr#v0.4.0-alpha audit .
 ```
 
 (`npx mendr audit .` once the package lands on the npm registry.)
@@ -39,7 +39,7 @@ Every output carries the coverage matrix, so a skipped surface can never read as
 ## keep it watched
 
 ```sh
-npx github:ajitheee/mendr#v0.3.0-alpha audit . --install
+npx github:ajitheee/mendr#v0.4.0-alpha audit . --install
 ```
 
 scaffolds a GitHub workflow that keeps **one issue per repository** current: new, continuing and resolved findings, the exact commit scanned, and the coverage matrix. It asks for `contents: read` and `issues: write`, never touches your default branch, and never merges anything.
@@ -49,25 +49,25 @@ scaffolds a GitHub workflow that keeps **one issue per repository** current: new
 `fix-llm` goes one step further: it writes the exact diff for a retired id at a verified call site and proves it against your type-check and tests before anything is applied. Print-only by default — read the patch, and if it's right, apply it:
 
 ```sh
-npx github:ajitheee/mendr#v0.3.0-alpha fix-llm .
+npx github:ajitheee/mendr#v0.4.0-alpha fix-llm .
 ```
 
 You can also point it straight at a GitHub link. mendr clones a throwaway copy and scans that, so the real repo is never touched:
 
 ```sh
-npx github:ajitheee/mendr#v0.3.0-alpha fix-llm https://github.com/someone/their-repo
+npx github:ajitheee/mendr#v0.4.0-alpha fix-llm https://github.com/someone/their-repo
 ```
 
 It never writes to your working tree on its own. The default is print-only. When you're ready to apply:
 
 ```sh
-npx github:ajitheee/mendr#v0.3.0-alpha fix-llm . --write
+npx github:ajitheee/mendr#v0.4.0-alpha fix-llm . --write
 ```
 
 `--write` only applies a fix that passed the gates (type-check, plus your tests when they can run). Anything it can't verify is shown for review and left alone. You can also pipe the diff straight into git, since it's a standard patch:
 
 ```sh
-npx github:ajitheee/mendr#v0.3.0-alpha fix-llm . -o mendr.patch && git apply mendr.patch
+npx github:ajitheee/mendr#v0.4.0-alpha fix-llm . -o mendr.patch && git apply mendr.patch
 ```
 
 ### keep watching a repo
@@ -75,7 +75,7 @@ npx github:ajitheee/mendr#v0.3.0-alpha fix-llm . -o mendr.patch && git apply men
 `fix-llm` is one-shot. `mendr watch` is the resident version — it scans in your own GitHub Actions and keeps one issue listing every deprecated model id you use, grouped by risk and deadline, so you find out before a model retires. Run it once to see your exposure, or `--install` to make it resident:
 
 ```sh
-npx github:ajitheee/mendr#v0.3.0-alpha watch .
+npx github:ajitheee/mendr#v0.4.0-alpha watch .
 ```
 
 See [standing watch](#standing-watch) for the details and [WATCH-SCHEMA.md](WATCH-SCHEMA.md) for the JSON.
@@ -89,7 +89,7 @@ Nothing, unless you pass `--write`. By default mendr loads your code in memory, 
 Nothing, by default. The audit reads the repository, the bundled registry and your local `git rev-parse`, and prints a report. That is enforced in code, not just written here: the test suite runs the audit under a preload that makes every network primitive throw, and the audit must still pass. You can enforce it yourself:
 
 ```bash
-npx github:ajitheee/mendr#v0.3.0-alpha audit . --offline
+npx github:ajitheee/mendr#v0.4.0-alpha audit . --offline
 ```
 
 The optional network uses are: the **registry refresh** (`--refresh-registry`, or `MENDR_REGISTRY_REFRESH=on`, which the generated workflows set) — one GET of three public, signed files so the audit uses current retirement knowledge, verified against a key built into the release before use, sending nothing; the provider usage read you ask for by name with your own read-only key; and a shallow `git clone` when you pass a GitHub URL instead of a path. The [Mendr GitHub App](app/README.md) is the one hosted piece: your workflow posts the audit JSON to it, proven by the run's OIDC token, and it writes a check run back; it has no `contents` permission and cannot read code. [TRUST.md](TRUST.md) has the per-command table, the data-flow diagram, the threat model, the permissions each surface needs, and the known gaps. [SECURITY.md](SECURITY.md) is how to report a problem with any of it.
@@ -220,7 +220,7 @@ Mendr Watch continuously rescans your repository inside your own GitHub Actions 
 Run it once to see your exposure (a local path, or a GitHub URL to scan a read-only copy):
 
 ```sh
-npx github:ajitheee/mendr#v0.3.0-alpha watch .
+npx github:ajitheee/mendr#v0.4.0-alpha watch .
 ```
 
 ```
@@ -242,7 +242,7 @@ Every occurrence carries the same A/B/C tier `fix-llm` uses, so the two tools al
 Then make it resident:
 
 ```sh
-npx github:ajitheee/mendr#v0.3.0-alpha watch --install
+npx github:ajitheee/mendr#v0.4.0-alpha watch --install
 ```
 
 That scaffolds `.github/workflows/mendr-watch.yml` — a workflow that runs in **your own CI** (no server, nothing on our infrastructure) and maintains **one** GitHub issue: your deprecated model ids, each mapped to its retirement date, sorted by the nearest deadline. It's the [Renovate dashboard](https://docs.renovatebot.com/key-concepts/dashboard/) mechanic — the issue is found by a hidden marker and edited in place forever, never re-posted, so it re-surfaces itself without ever spamming you. It asks for `issues: write` and `contents: read` and nothing else: it opens no pull requests, runs none of your tests, and pushes no commits. It's pinned to an immutable Mendr release (overridable via a `MENDR_SPEC` repo variable), so a future upstream change can't run in your CI without you choosing it.
@@ -399,7 +399,7 @@ The collapsed Tier C line carries line numbers for the same reason:
 ### gating CI on a tier
 
 ```sh
-npx github:ajitheee/mendr#v0.3.0-alpha fix-llm . --fail-on tierB
+npx github:ajitheee/mendr#v0.4.0-alpha fix-llm . --fail-on tierB
 ```
 
 `--fail-on` takes `tierA`, `tierB`, or `none` (the default). `blocked` still works as a **deprecated alias for `tierB`** and prints a notice on stderr — note that it now covers every review-required finding, not just unverified replacements.

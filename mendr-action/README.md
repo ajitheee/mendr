@@ -24,15 +24,15 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
-      - uses: ajitheee/mendr/mendr-action@v0.3.0-alpha
+      - uses: ajitheee/mendr/mendr-action@v0.4.0-alpha
         with:
           # pin the CLI the action runs to the same release as the action itself
-          mendr-spec: github:ajitheee/mendr#v0.3.0-alpha
+          mendr-spec: github:ajitheee/mendr#v0.4.0-alpha
 ```
 
 That's the whole setup. It runs every Monday and whenever you trigger it by hand from the Actions tab.
 
-Want the read-only version first? `npx github:ajitheee/mendr#v0.3.0-alpha audit . --install` scaffolds a workflow that keeps one tracking issue current and changes no code — `contents: read`, `issues: write`, nothing else. This action is the step after that: it opens the verified migration as a PR.
+Want the read-only version first? `npx github:ajitheee/mendr#v0.4.0-alpha audit . --install` scaffolds a workflow that keeps one tracking issue current and changes no code — `contents: read`, `issues: write`, nothing else. This action is the step after that: it opens the verified migration as a PR.
 
 ## what it does on each run
 
@@ -47,7 +47,7 @@ Re-running never stacks new PRs. It keeps the one branch current, and it never m
 | input | default | purpose |
 | --- | --- | --- |
 | `working-directory` | `.` | where your code lives, if not the repo root |
-| `mendr-spec` | `github:ajitheee/mendr#v0.3.0-alpha` | the CLI that runs in your CI (npm spec once published) |
+| `mendr-spec` | `github:ajitheee/mendr#v0.4.0-alpha` | the CLI that runs in your CI (npm spec once published) |
 | `install-command` | auto | override the dependency install step |
 | `node-version` | `22` | Mendr needs Node 22 or newer |
 | `eval-command` | none | a command run in the sandbox as a behavioral gate (e.g. an eval suite); without it the PR says behavior is untested |

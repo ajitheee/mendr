@@ -105,7 +105,7 @@ demo reachable if you like, but make the primary CTA the App.
 See [`.env.example`](.env.example). Required in production: `APP_URL`,
 `DATABASE_URL`, `SESSION_SECRET`, `MENDR_DATA_KEY`, and the six `GITHUB_*` values
 from step 2. `MENDR_CLI_SPEC` pins the scanner the scaffolded workflow runs
-(default `v0.3.0-alpha`). Optional: `MENDR_RETENTION_DAYS`, `MAX_RUNS_PER_REPO`.
+(default `v0.4.0-alpha`). Optional: `MENDR_RETENTION_DAYS`, `MAX_RUNS_PER_REPO`.
 
 The App warns loudly at boot if `DATABASE_URL` (falls back to in-memory) or
 `MENDR_DATA_KEY` (plaintext storage) is missing — neither is acceptable for a
