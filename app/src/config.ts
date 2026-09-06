@@ -44,11 +44,27 @@ function opt(v: string | undefined): string | null {
   return t ? t : null;
 }
 
+/**
+ * Normalize APP_URL to a bare ORIGIN (scheme://host[:port]) — no path, query or
+ * trailing slash. APP_URL is the base every callback/webhook URL is built from,
+ * so a pasted `https://host/healthz` (a common mistake) must not corrupt them
+ * into `/healthz/setup/callback`. Falls back to the given default on a bad value.
+ */
+function originOf(v: string | undefined, fallback: string): string {
+  const t = opt(v);
+  if (!t) return fallback;
+  try {
+    return new URL(t.includes('://') ? t : `https://${t}`).origin;
+  } catch {
+    return t.replace(/\/+$/, '');
+  }
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const port = int(env.PORT, 8080);
   const secret = opt(env.SESSION_SECRET);
   return {
-    appUrl: (opt(env.APP_URL) ?? `http://localhost:${port}`).replace(/\/+$/, ''),
+    appUrl: originOf(env.APP_URL, `http://localhost:${port}`),
     port,
     githubAppName: opt(env.GITHUB_APP_NAME) ?? 'Mendr audit',
     githubAppId: opt(env.GITHUB_APP_ID),
