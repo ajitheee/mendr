@@ -4,6 +4,8 @@ import type { AuditReport } from '../ingest/validate.js';
 import type { MigrationOutcome, MigrationReport, MigrationVerdict } from '../ingest/migrationReport.js';
 import {
   COMPLETED_CONCLUSIONS,
+  type Acknowledgement,
+  type AcknowledgementInput,
   type AuditLogEntry,
   type AuditLogInput,
   type Installation,
@@ -11,6 +13,7 @@ import {
   type MigrationRecord,
   type MigrationSummary,
   type Repo,
+  type RepoDeletion,
   type RepoInput,
   type RunInput,
   type RunRecord,
@@ -84,6 +87,21 @@ function migrationSummary(r: Row): MigrationSummary {
 }
 
 const MIGRATION_SUMMARY_COLUMNS = 'id, repo_id, sha, ref, run_id, run_attempt, workflow_ref, actor, received_at, generated_at, outcome, verdict, pr_url';
+
+function acknowledgement(r: Row): Acknowledgement {
+  return {
+    id: n(r.id),
+    repoId: n(r.repo_id),
+    provider: String(r.provider),
+    model: String(r.model),
+    acknowledgedBy: String(r.acknowledged_by),
+    owner: r.owner === null ? null : String(r.owner),
+    note: r.note === null ? null : String(r.note),
+    createdAt: iso(r.created_at) ?? new Date().toISOString(),
+    clearedAt: iso(r.cleared_at),
+    clearedBy: r.cleared_by === null ? null : String(r.cleared_by),
+  };
+}
 
 export class PgStore implements Store {
   readonly kind = 'postgres' as const;
@@ -248,20 +266,64 @@ export class PgStore implements Store {
     return del.rowCount ?? 0;
   }
 
-  async deleteRepoData(repoId: number): Promise<{ runsDeleted: number; migrationsDeleted: number }> {
-    const del = await this.pool.query('DELETE FROM runs WHERE repo_id = $1', [repoId]);
-    const mig = await this.pool.query('DELETE FROM migrations WHERE repo_id = $1', [repoId]);
-    await this.pool.query('DELETE FROM repos WHERE id = $1', [repoId]);
-    return { runsDeleted: del.rowCount ?? 0, migrationsDeleted: mig.rowCount ?? 0 };
+  // --- acknowledgements ---
+
+  async acknowledge(a: AcknowledgementInput): Promise<Acknowledgement> {
+    // Retire the active row first so at most one is active per finding.
+    await this.pool.query('UPDATE acknowledgements SET cleared_at = now(), cleared_by = $4 WHERE repo_id = $1 AND provider = $2 AND model = $3 AND cleared_at IS NULL', [
+      a.repoId,
+      a.provider,
+      a.model,
+      a.acknowledgedBy,
+    ]);
+    const { rows } = await this.pool.query('INSERT INTO acknowledgements (repo_id, provider, model, acknowledged_by, owner, note) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *', [
+      a.repoId,
+      a.provider,
+      a.model,
+      a.acknowledgedBy,
+      a.owner,
+      a.note,
+    ]);
+    return acknowledgement(rows[0] as Row);
   }
 
-  async deleteInstallationData(installationId: number, at: string): Promise<{ reposDeleted: number; runsDeleted: number; migrationsDeleted: number }> {
+  async clearAcknowledgement(repoId: number, provider: string, model: string, clearedBy: string): Promise<boolean> {
+    const res = await this.pool.query('UPDATE acknowledgements SET cleared_at = now(), cleared_by = $4 WHERE repo_id = $1 AND provider = $2 AND model = $3 AND cleared_at IS NULL', [
+      repoId,
+      provider,
+      model,
+      clearedBy,
+    ]);
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  async activeAcknowledgements(repoId: number): Promise<Map<string, Acknowledgement>> {
+    const { rows } = await this.pool.query('SELECT * FROM acknowledgements WHERE repo_id = $1 AND cleared_at IS NULL ORDER BY id DESC', [repoId]);
+    const out = new Map<string, Acknowledgement>();
+    for (const r of rows) {
+      const a = acknowledgement(r as Row);
+      const key = `${a.provider}/${a.model}`;
+      if (!out.has(key)) out.set(key, a);
+    }
+    return out;
+  }
+
+  async deleteRepoData(repoId: number): Promise<RepoDeletion> {
+    const del = await this.pool.query('DELETE FROM runs WHERE repo_id = $1', [repoId]);
+    const mig = await this.pool.query('DELETE FROM migrations WHERE repo_id = $1', [repoId]);
+    const ack = await this.pool.query('DELETE FROM acknowledgements WHERE repo_id = $1', [repoId]);
+    await this.pool.query('DELETE FROM repos WHERE id = $1', [repoId]);
+    return { runsDeleted: del.rowCount ?? 0, migrationsDeleted: mig.rowCount ?? 0, acknowledgementsDeleted: ack.rowCount ?? 0 };
+  }
+
+  async deleteInstallationData(installationId: number, at: string): Promise<RepoDeletion & { reposDeleted: number }> {
     const runs = await this.pool.query('DELETE FROM runs WHERE repo_id IN (SELECT id FROM repos WHERE installation_id = $1)', [installationId]);
     const migrations = await this.pool.query('DELETE FROM migrations WHERE repo_id IN (SELECT id FROM repos WHERE installation_id = $1)', [installationId]);
+    const acks = await this.pool.query('DELETE FROM acknowledgements WHERE repo_id IN (SELECT id FROM repos WHERE installation_id = $1)', [installationId]);
     const repos = await this.pool.query('DELETE FROM repos WHERE installation_id = $1', [installationId]);
     // Keep the installation row as a deletion record (it holds no findings).
     await this.pool.query('UPDATE installations SET deleted_at = $2, updated_at = now() WHERE id = $1', [installationId, at]);
-    return { reposDeleted: repos.rowCount ?? 0, runsDeleted: runs.rowCount ?? 0, migrationsDeleted: migrations.rowCount ?? 0 };
+    return { reposDeleted: repos.rowCount ?? 0, runsDeleted: runs.rowCount ?? 0, migrationsDeleted: migrations.rowCount ?? 0, acknowledgementsDeleted: acks.rowCount ?? 0 };
   }
 
   async pruneRunsByAge(days: number): Promise<number> {

@@ -1,6 +1,6 @@
 import { isConfigured, type AppConfig } from '../config.js';
 import type { ManifestCredentials } from '../github/api.js';
-import type { MigrationRecord, Repo, RunRecord, RunSummary } from '../store/types.js';
+import type { Acknowledgement, MigrationRecord, Repo, RunRecord, RunSummary } from '../store/types.js';
 import { prNumber } from '../ingest/migrationReport.js';
 import { setupWorkflowUrl } from './workflowTemplate.js';
 import { registryFreshnessLine, registryFreshnessOf } from '../ingest/registry.js';
@@ -86,6 +86,10 @@ ul.plain{margin:6px 0 0;padding-left:18px}ul.plain li{margin:4px 0}
 .locrow{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin:3px 0}
 .finding .loc{font-family:var(--mono);font-size:.84rem;color:var(--cobalt)}
 .finding .part .muted{font-size:.9rem}
+.ackform{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:6px}
+.ackform input{font-family:var(--sans);font-size:.9rem;padding:9px 11px;border:1px solid var(--hair);border-radius:2px;background:var(--data);color:var(--carbon);min-width:200px}
+.ackform input:focus{outline:2px solid var(--cobalt);outline-offset:1px}
+.ackclear{display:inline;margin-left:6px}
 .foot{max-width:var(--maxw);margin:0 auto;padding:22px clamp(18px,4vw,40px) 40px;border-top:1px solid var(--hair);display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;font-family:var(--mono);font-size:.74rem;color:var(--grey)}
 .foot .fl{display:flex;gap:20px;flex-wrap:wrap}.foot a{color:var(--grey)}.foot a:hover{color:var(--carbon);text-decoration:none}
 `;
@@ -382,10 +386,15 @@ function resolvedCard(run: RunRecord, previous: RunRecord | null, migration: Mig
 <ul class="plain">${items}</ul></div>`;
 }
 
-/** One finding, laid out as the five things a reader needs, in order. */
-function findingCard(inv: Inv, repo: Repo, run: RunRecord, webUrl: string, migrateAnchor: boolean, migration: MigrationRecord | null): string {
+function slug(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+/** One finding, laid out as the six things a reader needs, in order. */
+function findingCard(inv: Inv, repo: Repo, run: RunRecord, webUrl: string, migrateAnchor: boolean, migration: MigrationRecord | null, ack: Acknowledgement | null): string {
   const ev = inv.retirementEvidence ?? {};
   const decision = inv.decision;
+  const anchor = `f-${slug(`${inv.provider}-${inv.model}`)}`;
 
   // 1. Possible cause — never "the cause": only runtime evidence could prove that.
   const deadline = ev.shutdownDate
@@ -426,14 +435,25 @@ function findingCard(inv: Inv, repo: Repo, run: RunRecord, webUrl: string, migra
     esc(inv.nextAction ?? inv.reason ?? '') +
     (decision === 'patch' && migrateAnchor ? ' <a class="tlink" href="#migrate">Prepare migration for review ↓</a>' : '');
 
+  // 6. Ownership — who has seen this and who owns the follow-up. A note ABOUT
+  //    the finding, keyed by repo + model so it follows the finding across runs.
+  //    It never moves the status — only a completed scan can — and clearing it
+  //    is one click. The acknowledging login comes from the session, not the form.
+  const back = `/r/${repo.fullName}/runs/${run.id}#${anchor}`;
+  const hidden = `<input type="hidden" name="provider" value="${esc(inv.provider)}"><input type="hidden" name="model" value="${esc(inv.model)}"><input type="hidden" name="back" value="${esc(back)}">`;
+  const ownership = ack
+    ? `<span class="chip ok">acknowledged</span> Acknowledged by <strong>${esc(ack.acknowledgedBy)}</strong> on ${esc(ack.createdAt.slice(0, 10))}${ack.owner ? ` · owner <strong>${esc(ack.owner)}</strong>` : ''}${ack.note ? ` · <span class="muted">“${esc(ack.note)}”</span>` : ''}<form method="post" action="/r/${esc(repo.fullName)}/ack/clear" class="ackclear">${hidden}<button class="linkbtn" type="submit">Clear</button></form>`
+    : `<form method="post" action="/r/${esc(repo.fullName)}/ack" class="ackform">${hidden}<input name="owner" placeholder="owner — a login, team or name" maxlength="80" aria-label="Owner"><input name="note" placeholder="note (optional)" maxlength="400" aria-label="Note"><button class="btn" type="submit">Acknowledge</button></form><div class="muted">Records who owns the follow-up. It does not change the result — only a completed scan can.</div>`;
+
   const part = (label: string, html: string): string => `<div class="part"><div class="lbl">${label}</div><div>${html}</div></div>`;
-  return `<div class="finding ${decision}">
+  return `<div class="finding ${decision}" id="${anchor}">
     <div class="bar"><span class="pill ${CLASS[decision]}">${LABEL[decision]}</span><h3 style="display:inline">${esc(inv.model)}</h3></div>
     ${part('Possible cause', cause)}
     ${part('Evidence', evidence + more)}
     ${part('Confidence boundary', `${repoConfirmed} ${prod}`)}
     ${part('Migration evidence', migrationEvidence)}
     ${part('Next action', next)}
+    ${part('Ownership', ownership)}
   </div>`;
 }
 
@@ -441,9 +461,10 @@ export function runPage(
   repo: Repo,
   run: RunRecord,
   login: string,
-  opts: { webUrl: string; workflowUrl: string; migrate?: MigrateLinks; migration?: MigrationRecord | null; previous?: RunRecord | null },
+  opts: { webUrl: string; workflowUrl: string; migrate?: MigrateLinks; migration?: MigrationRecord | null; previous?: RunRecord | null; acks?: Map<string, Acknowledgement> },
 ): string {
   const invs = [...run.report.investigations].sort((a, b) => rank(a.decision) - rank(b.decision));
+  const card = (i: Inv): string => findingCard(i, repo, run, opts.webUrl, !!opts.migrate, opts.migration ?? null, opts.acks?.get(`${i.provider}/${i.model}`) ?? null);
   const actionable = invs.filter((i) => i.decision !== 'monitor');
   const info = invs.filter((i) => i.decision === 'monitor');
   const migration =
@@ -473,8 +494,8 @@ export function runPage(
 <div class="bar">${run.checkRunUrl ? `<a class="btn" href="${esc(run.checkRunUrl)}" target="_blank" rel="noopener">Check run on GitHub ↗</a>` : ''}<a class="btn" href="${esc(opts.workflowUrl)}" target="_blank" rel="noopener">Rerun audit ↗</a><a class="tlink" href="/api/runs/${run.id}">Evidence JSON</a></div>`;
 
   const body = actionable.length
-    ? `${header}${migration}<h2>Action needed (${actionable.length})</h2>${actionable.map((i) => findingCard(i, repo, run, opts.webUrl, !!opts.migrate, opts.migration ?? null)).join('')}${info.length ? `<h2>Informational (${info.length})</h2><p class="muted">Catalog, documentation or fixture references — not dependencies. No migration action; monitor the provider.</p>${info.map((i) => findingCard(i, repo, run, opts.webUrl, !!opts.migrate, opts.migration ?? null)).join('')}` : ''}`
-    : `${header}${migration}${quiet}${info.map((i) => findingCard(i, repo, run, opts.webUrl, !!opts.migrate, opts.migration ?? null)).join('')}`;
+    ? `${header}${migration}<h2>Action needed (${actionable.length})</h2>${actionable.map(card).join('')}${info.length ? `<h2>Informational (${info.length})</h2><p class="muted">Catalog, documentation or fixture references — not dependencies. No migration action; monitor the provider.</p>${info.map(card).join('')}` : ''}`
+    : `${header}${migration}${quiet}${info.map(card).join('')}`;
 
   return layout(`${repo.fullName} run ${run.id}`, body, { login });
 }

@@ -72,9 +72,40 @@ export interface MigrationRecord extends MigrationSummary {
 export type MigrationInput = Omit<MigrationRecord, 'id' | 'receivedAt'>;
 
 /**
- * What the App remembers. Three things: who installed it, which repositories
- * that covers, and the sanitized evidence each run sent. No code, no user
- * tokens (those live only in the user's encrypted cookie).
+ * A person's decision about one finding: seen, and who owns it. Keyed by
+ * repository + provider + model so it follows the finding across runs. It is
+ * a note ABOUT a finding — never the finding, and never a change to its status.
+ */
+export interface Acknowledgement {
+  id: number;
+  repoId: number;
+  provider: string;
+  model: string;
+  /** The GitHub login that acknowledged (from the session, never from the form). */
+  acknowledgedBy: string;
+  /** Who owns the follow-up: a login, a team, a name. Free text, capped. */
+  owner: string | null;
+  /** A short free-text note, capped. */
+  note: string | null;
+  createdAt: string;
+  clearedAt: string | null;
+  clearedBy: string | null;
+}
+
+export type AcknowledgementInput = Pick<Acknowledgement, 'repoId' | 'provider' | 'model' | 'acknowledgedBy' | 'owner' | 'note'>;
+
+/** What deletion removed, by kind — reported to the user and to the audit log. */
+export interface RepoDeletion {
+  runsDeleted: number;
+  migrationsDeleted: number;
+  acknowledgementsDeleted: number;
+}
+
+/**
+ * What the App remembers. Four things: who installed it, which repositories
+ * that covers, the sanitized evidence each run sent, and who acknowledged a
+ * finding. No code, no user tokens (those live only in the user's encrypted
+ * cookie).
  */
 export interface Store {
   readonly kind: 'memory' | 'postgres';
@@ -107,15 +138,22 @@ export interface Store {
   pruneMigrations(repoId: number, keep: number): Promise<void>;
   /** Delete migration reports older than `days`, across all repos. Retention control. */
   pruneMigrationsByAge(days: number): Promise<number>;
+  // --- acknowledgements (a person's decision about a finding; never the finding) ---
+  /** Record that someone owns this finding. Replaces any active acknowledgement of the same (repo, provider, model). */
+  acknowledge(a: AcknowledgementInput): Promise<Acknowledgement>;
+  /** Clear the active acknowledgement, keeping it as history. Returns whether one was active. */
+  clearAcknowledgement(repoId: number, provider: string, model: string, clearedBy: string): Promise<boolean>;
+  /** The active acknowledgements of a repository, keyed by `${provider}/${model}`. */
+  activeAcknowledgements(repoId: number): Promise<Map<string, Acknowledgement>>;
   // --- retention & deletion (trust: data cleanup) ---
-  /** Hard-delete a repository's stored runs, migration reports and the repo row. Returns how many went. */
-  deleteRepoData(repoId: number): Promise<{ runsDeleted: number; migrationsDeleted: number }>;
+  /** Hard-delete a repository's stored runs, migration reports, acknowledgements and the repo row. Returns how many went. */
+  deleteRepoData(repoId: number): Promise<RepoDeletion>;
   /**
-   * Hard-delete ALL stored findings, migration reports and repositories for an
-   * installation (App uninstalled). The installation row is kept, marked
-   * deleted, as a deletion record that holds no findings.
+   * Hard-delete ALL stored findings, migration reports, acknowledgements and
+   * repositories for an installation (App uninstalled). The installation row
+   * is kept, marked deleted, as a deletion record that holds no findings.
    */
-  deleteInstallationData(installationId: number, at: string): Promise<{ reposDeleted: number; runsDeleted: number; migrationsDeleted: number }>;
+  deleteInstallationData(installationId: number, at: string): Promise<RepoDeletion & { reposDeleted: number }>;
   /** Delete runs older than `days`, across all repos. Returns how many went. Retention control. */
   pruneRunsByAge(days: number): Promise<number>;
   // --- audit log (trust: an append-only record of security-relevant events) ---
@@ -134,8 +172,9 @@ export type AuditEvent =
   | 'repos_removed'
   | 'audit_received'
   | 'data_deleted'
-  // Emitted once their features land (acknowledgement tracking; the Action opens PRs):
   | 'finding_acknowledged'
+  | 'acknowledgement_cleared'
+  // Emitted once their features land (the Action opens PRs):
   | 'migration_prepared'
   | 'pr_created';
 

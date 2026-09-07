@@ -409,11 +409,57 @@ export function createApp(deps: AppDeps): Hono {
     }
     // What mendr-action last reported for this repo, and the run before this one:
     // a resolution is only ever claimed by comparing completed scans.
-    const [migration, runs] = await Promise.all([store.latestMigration(repo.id), store.listRuns(repo.id, 50)]);
+    const [migration, runs, acks] = await Promise.all([store.latestMigration(repo.id), store.listRuns(repo.id, 50), store.activeAcknowledgements(repo.id)]);
     const idx = runs.findIndex((r) => r.id === run.id);
     const prevSummary = idx >= 0 ? runs[idx + 1] : undefined;
     const previous = prevSummary ? await store.getRun(prevSummary.id) : null;
-    return c.html(runPage(repo, run, sess.login, { webUrl: config.githubWebUrl, workflowUrl: workflowRunsUrl(config.githubWebUrl, repo.fullName), migrate, migration, previous }));
+    return c.html(runPage(repo, run, sess.login, { webUrl: config.githubWebUrl, workflowUrl: workflowRunsUrl(config.githubWebUrl, repo.fullName), migrate, migration, previous, acks }));
+  });
+
+  // Acknowledgement: a signed-in person with access says "seen — X owns this".
+  // It is a note ABOUT a finding, keyed by repository + model so it follows the
+  // finding across runs. It never changes the finding's status — only a
+  // completed scan can — and clearing it is one click. Same CSRF reasoning as
+  // deletion below: SameSite=Lax keeps a cross-site POST from carrying the session.
+  const ackForm = async (c: Context): Promise<{ provider: string; model: string; owner: string | null; note: string | null; back: string } | null> => {
+    const form = await c.req.parseBody();
+    const field = (key: string, max: number): string => {
+      const v = form[key];
+      return typeof v === 'string' ? v.trim().slice(0, max) : '';
+    };
+    const provider = field('provider', 64);
+    const model = field('model', 128);
+    if (!provider || !model) return null;
+    return { provider, model, owner: field('owner', 80) || null, note: field('note', 400) || null, back: safeNext(field('back', 300)) };
+  };
+
+  app.post('/r/:owner/:name/ack', async (c) => {
+    const fullName = `${c.req.param('owner')}/${c.req.param('name')}`;
+    const sess = await session(c);
+    if (!sess) return c.redirect(`/auth/login?next=${encodeURIComponent(`/r/${fullName}`)}`);
+    const repo = await accessibleRepo(sess, fullName);
+    if (!repo) return c.html(errorPage('Not found', 'No such repository is visible to you here.'), 404);
+    const f = await ackForm(c);
+    if (!f) return c.html(errorPage('Bad request', 'An acknowledgement names the provider and model of the finding it is about.'), 400);
+    await store.acknowledge({ repoId: repo.id, provider: f.provider, model: f.model, acknowledgedBy: sess.login, owner: f.owner, note: f.note });
+    // The note is free text typed by a person: it stays out of the audit log.
+    await store.appendAuditLog({ event: 'finding_acknowledged', installationId: repo.installationId, repo: fullName, actor: sess.login, detail: { provider: f.provider, model: f.model, owner: f.owner } });
+    return c.redirect(f.back, 303);
+  });
+
+  app.post('/r/:owner/:name/ack/clear', async (c) => {
+    const fullName = `${c.req.param('owner')}/${c.req.param('name')}`;
+    const sess = await session(c);
+    if (!sess) return c.redirect(`/auth/login?next=${encodeURIComponent(`/r/${fullName}`)}`);
+    const repo = await accessibleRepo(sess, fullName);
+    if (!repo) return c.html(errorPage('Not found', 'No such repository is visible to you here.'), 404);
+    const f = await ackForm(c);
+    if (!f) return c.html(errorPage('Bad request', 'An acknowledgement names the provider and model of the finding it is about.'), 400);
+    const cleared = await store.clearAcknowledgement(repo.id, f.provider, f.model, sess.login);
+    if (cleared) {
+      await store.appendAuditLog({ event: 'acknowledgement_cleared', installationId: repo.installationId, repo: fullName, actor: sess.login, detail: { provider: f.provider, model: f.model } });
+    }
+    return c.redirect(f.back, 303);
   });
 
   // Self-service deletion: a signed-in user with access can delete this repo's
@@ -426,18 +472,18 @@ export function createApp(deps: AppDeps): Hono {
     const repo = await accessibleRepo(sess, fullName);
     if (!repo) return c.html(errorPage('Not found', 'No such repository is visible to you here.'), 404);
     const gone = await store.deleteRepoData(repo.id);
-    log('data deleted', { repo: fullName, by: sess.login, runsDeleted: gone.runsDeleted, migrationsDeleted: gone.migrationsDeleted });
+    log('data deleted', { repo: fullName, by: sess.login, ...gone });
     await store.appendAuditLog({
       event: 'data_deleted',
       installationId: repo.installationId,
       repo: fullName,
       actor: sess.login,
-      detail: { runsDeleted: gone.runsDeleted, migrationsDeleted: gone.migrationsDeleted, via: 'self-service' },
+      detail: { ...gone, via: 'self-service' },
     });
     return c.html(
       errorPage(
         'Deleted',
-        `Removed ${gone.runsDeleted} stored run(s) and ${gone.migrationsDeleted} migration report(s) for ${fullName}. Nothing of this repository's findings remains. Re-run the audit to repopulate.`,
+        `Removed ${gone.runsDeleted} stored run(s), ${gone.migrationsDeleted} migration report(s) and ${gone.acknowledgementsDeleted} acknowledgement(s) for ${fullName}. Nothing of this repository's findings remains. Re-run the audit to repopulate.`,
       ),
     );
   });

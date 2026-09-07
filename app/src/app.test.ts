@@ -363,6 +363,96 @@ describe('migrations: what mendr-action did, proven by OIDC', () => {
   });
 });
 
+describe('acknowledgement: who owns a finding', () => {
+  // A browser form post: session cookie + urlencoded fields.
+  const post = (h: ReturnType<typeof harness>, path: string, fields: Record<string, string>, cookie?: string) =>
+    h.app.request(path, {
+      method: 'POST',
+      headers: { ...(cookie ? { cookie } : {}), 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(fields).toString(),
+    });
+  const finding = { provider: 'openai', model: 'gpt-4', back: '/r/acme/api/runs/1' };
+
+  it('a signed-in user acknowledges a finding; it shows on the run page; clearing removes it', async () => {
+    const h = harness({ 'acme/api': REPO.id });
+    await h.install();
+    await h.ingest(await actionsToken(), sampleReport());
+    const cookie = await h.sessionCookie();
+
+    const ack = await post(h, '/r/acme/api/ack', { ...finding, owner: '@acme/platform', note: 'migrating in the Q4 sprint' }, cookie);
+    expect(ack.status).toBe(303);
+    expect(ack.headers.get('location')).toBe('/r/acme/api/runs/1');
+    expect((await h.store.activeAcknowledgements(REPO.id)).get('openai/gpt-4')?.acknowledgedBy).toBe('octocat'); // from the session, never the form
+    expect((await h.store.listAuditLog()).some((e) => e.event === 'finding_acknowledged' && e.actor === 'octocat')).toBe(true);
+
+    let html = await (await h.app.request('/r/acme/api/runs/1', { headers: { cookie } })).text();
+    expect(html).toContain('Acknowledged by <strong>octocat</strong>');
+    expect(html).toContain('@acme/platform');
+    expect(html).toContain('migrating in the Q4 sprint');
+    expect(html).toContain('1 patch eligible'); // the status did not move
+
+    const clear = await post(h, '/r/acme/api/ack/clear', finding, cookie);
+    expect(clear.status).toBe(303);
+    expect((await h.store.activeAcknowledgements(REPO.id)).size).toBe(0);
+    expect((await h.store.listAuditLog()).some((e) => e.event === 'acknowledgement_cleared')).toBe(true);
+    html = await (await h.app.request('/r/acme/api/runs/1', { headers: { cookie } })).text();
+    expect(html).not.toContain('Acknowledged by');
+    expect(html).toContain('Acknowledge</button>');
+  });
+
+  it('follows the finding across runs and never changes the result', async () => {
+    const h = harness({ 'acme/api': REPO.id });
+    await h.install();
+    await h.ingest(await actionsToken(), sampleReport());
+    const cookie = await h.sessionCookie();
+    await post(h, '/r/acme/api/ack', { ...finding, owner: 'octocat' }, cookie);
+    await h.ingest(await actionsToken({ run_id: '100' }), sampleReport()); // the next scan still finds gpt-4
+    const html = await (await h.app.request('/r/acme/api/runs/2', { headers: { cookie } })).text();
+    expect(html).toContain('Acknowledged by <strong>octocat</strong>');
+    expect(html).toContain('1 patch eligible');
+  });
+
+  it('a note is capped and escaped, never rendered as markup', async () => {
+    const h = harness({ 'acme/api': REPO.id });
+    await h.install();
+    await h.ingest(await actionsToken(), sampleReport());
+    const cookie = await h.sessionCookie();
+    await post(h, '/r/acme/api/ack', { ...finding, note: `<script>alert(1)</script>${'x'.repeat(1000)}` }, cookie);
+    const stored = (await h.store.activeAcknowledgements(REPO.id)).get('openai/gpt-4');
+    expect(stored?.note?.length).toBe(400);
+    const html = await (await h.app.request('/r/acme/api/runs/1', { headers: { cookie } })).text();
+    expect(html).toContain('&lt;script&gt;');
+    expect(html).not.toContain('<script>alert');
+  });
+
+  it('needs sign-in, GitHub access to the repository, and a named finding', async () => {
+    const h = harness({ 'acme/api': REPO.id });
+    await h.install();
+    expect((await post(h, '/r/acme/api/ack', finding)).status).toBe(302); // anonymous → sign-in
+    const noAccess = harness();
+    await noAccess.install();
+    expect((await post(noAccess, '/r/acme/api/ack', finding, await noAccess.sessionCookie())).status).toBe(404);
+    expect((await post(h, '/r/acme/api/ack', { back: '/' }, await h.sessionCookie())).status).toBe(400);
+  });
+
+  it('is purged with the repository\'s data — on demand and on uninstall', async () => {
+    const h = harness({ 'acme/api': REPO.id });
+    await h.install();
+    await h.ingest(await actionsToken(), sampleReport());
+    const cookie = await h.sessionCookie();
+    await post(h, '/r/acme/api/ack', finding, cookie);
+    const res = await h.app.request('/r/acme/api/delete', { method: 'POST', headers: { cookie } });
+    expect(await res.text()).toContain('1 acknowledgement(s)');
+    expect((await h.store.activeAcknowledgements(REPO.id)).size).toBe(0);
+
+    const u = harness({ 'acme/api': REPO.id });
+    await u.install();
+    await post(u, '/r/acme/api/ack', finding, await u.sessionCookie());
+    await u.webhook('installation', { action: 'deleted', installation: INSTALLATION });
+    expect((await u.store.activeAcknowledgements(REPO.id)).size).toBe(0);
+  });
+});
+
 describe('reading evidence requires sign-in AND GitHub access to the repository', () => {
   it('anonymous callers get 401 from the API and a sign-in redirect from pages', async () => {
     const h = harness();

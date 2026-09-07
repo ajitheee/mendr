@@ -70,9 +70,9 @@ export async function applyWebhook(store: Store, event: string, payload: unknown
           installationId: inst.id,
           repo: null,
           actor: inst.account?.login ?? null,
-          detail: { reposDeleted: gone.reposDeleted, runsDeleted: gone.runsDeleted, migrationsDeleted: gone.migrationsDeleted },
+          detail: { ...gone },
         });
-        return `installation ${inst.id} deleted: purged ${gone.reposDeleted} repositories, ${gone.runsDeleted} run(s) and ${gone.migrationsDeleted} migration report(s)`;
+        return `installation ${inst.id} deleted: purged ${gone.reposDeleted} repositories, ${gone.runsDeleted} run(s), ${gone.migrationsDeleted} migration report(s) and ${gone.acknowledgementsDeleted} acknowledgement(s)`;
       }
       default:
         return `ignored: installation.${p.action ?? '?'}`;
@@ -97,16 +97,24 @@ export async function applyWebhook(store: Store, event: string, payload: unknown
     // and the repo row, not a soft-delete that keeps the data around.
     let runsDeleted = 0;
     let migrationsDeleted = 0;
+    let acknowledgementsDeleted = 0;
     for (const r of removed) {
       const gone = await store.deleteRepoData(r.id);
       runsDeleted += gone.runsDeleted;
       migrationsDeleted += gone.migrationsDeleted;
+      acknowledgementsDeleted += gone.acknowledgementsDeleted;
     }
     if (added.length) await store.appendAuditLog({ event: 'repos_added', installationId: inst.id, repo: null, actor: inst.account?.login ?? null, detail: { count: added.length } });
     if (removed.length) {
-      await store.appendAuditLog({ event: 'repos_removed', installationId: inst.id, repo: null, actor: inst.account?.login ?? null, detail: { count: removed.length, runsDeleted, migrationsDeleted } });
+      await store.appendAuditLog({
+        event: 'repos_removed',
+        installationId: inst.id,
+        repo: null,
+        actor: inst.account?.login ?? null,
+        detail: { count: removed.length, runsDeleted, migrationsDeleted, acknowledgementsDeleted },
+      });
     }
-    return `installation ${inst.id}: +${added.length} repositories, -${removed.length} (purged ${runsDeleted} run(s), ${migrationsDeleted} migration report(s))`;
+    return `installation ${inst.id}: +${added.length} repositories, -${removed.length} (purged ${runsDeleted} run(s), ${migrationsDeleted} migration report(s), ${acknowledgementsDeleted} acknowledgement(s))`;
   }
 
   return `ignored: ${event}`;

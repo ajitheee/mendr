@@ -1,12 +1,15 @@
--- Mendr App storage. Four data tables plus an audit log, and none of them holds code.
+-- Mendr App storage. Five data tables plus an audit log, and none of them holds code.
 --
--- installations: which GitHub accounts installed the App (the tenant boundary).
--- repos:         which repositories each installation covers (ids, names, privacy).
--- runs:          the sanitized evidence one CI run sent: findings, paths, line
---                numbers, classifications, redacted <=7-line snippets, line hashes.
--- migrations:    what mendr-action reported after a migration run: outcome, PR
---                url, verdict, gate statuses, model swaps and the file paths they
---                touch — never the diff.
+-- installations:    which GitHub accounts installed the App (the tenant boundary).
+-- repos:            which repositories each installation covers (ids, names, privacy).
+-- runs:             the sanitized evidence one CI run sent: findings, paths, line
+--                   numbers, classifications, redacted <=7-line snippets, line hashes.
+-- migrations:       what mendr-action reported after a migration run: outcome, PR
+--                   url, verdict, gate statuses, model swaps and the file paths they
+--                   touch — never the diff.
+-- acknowledgements: a person's decision about one finding — "seen; X owns it" —
+--                   keyed by repository and model so it follows the finding across
+--                   runs. Names and a short note only; never the finding itself.
 --
 -- Every statement is idempotent so the server can apply this file at boot.
 
@@ -69,6 +72,23 @@ CREATE TABLE IF NOT EXISTS migrations (
   UNIQUE (repo_id, run_id, run_attempt)
 );
 CREATE INDEX IF NOT EXISTS migrations_repo_received ON migrations (repo_id, received_at DESC);
+
+-- acknowledgements: one row per acknowledgement; clearing keeps the row as
+-- history (cleared_at, cleared_by). At most one row per (repo, provider, model)
+-- is active at a time. Never changes a finding's status — only a scan can.
+CREATE TABLE IF NOT EXISTS acknowledgements (
+  id              BIGSERIAL PRIMARY KEY,
+  repo_id         BIGINT NOT NULL REFERENCES repos(id),
+  provider        TEXT NOT NULL,
+  model           TEXT NOT NULL,
+  acknowledged_by TEXT NOT NULL,
+  owner           TEXT,
+  note            TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  cleared_at      TIMESTAMPTZ,
+  cleared_by      TEXT
+);
+CREATE INDEX IF NOT EXISTS acknowledgements_repo_active ON acknowledgements (repo_id) WHERE cleared_at IS NULL;
 
 -- audit_log: an append-only record of security-relevant events. `detail` holds
 -- only scalars (counts, ids, a conclusion) — never findings, secrets or code.

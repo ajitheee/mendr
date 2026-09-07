@@ -132,7 +132,7 @@ you run.
 
 ### What the App stores (data inventory)
 
-The App's database has four data tables plus an audit log, and nothing else.
+The App's database has five data tables plus an audit log, and nothing else.
 Every field below is used; none is speculative. Two things are deliberately
 **absent**, and that absence is the point: **no access tokens or credentials of
 any kind, and no source code**.
@@ -174,6 +174,20 @@ run (only when the workflow sets `app-url`).
 | `received_at`, `generated_at`, `outcome`, `verdict`, `pr_url` | when, what happened (`clean` / `migration-proposed` / `not-verified` / `error`), the sandbox verdict, the PR | low | the finding page's "PR #12 · verified" line |
 | `report` (JSONB) | the whitelisted `mendr-migration-report/v1`: the four gate statuses, the model swaps (`from` → `to`, provider, language, site count) and the **file paths** they touch, capped notes | **medium** — file paths; **never the diff**, which the action strips and the App strips again | render the migration status and confirm a resolution against the next audit |
 
+**`acknowledgements`** — one row per acknowledgement of a finding by a
+signed-in person: "seen; X owns it". Keyed by repository + provider + model so
+it follows the finding across runs; clearing keeps the row as history. An
+acknowledgement never changes a finding's status — only a completed scan on a
+fresh registry can — and the App writes nothing to GitHub for it.
+
+| Field | What | Sensitivity | Why it is kept |
+|---|---|---|---|
+| `provider`, `model` | which finding it is about | low (a model name) | the key that follows the finding across runs |
+| `acknowledged_by`, `cleared_by` | the GitHub logins that acknowledged / cleared — taken from the session, never from the form | low–medium (usernames) | the record *is* the feature: who has seen it |
+| `owner` | who owns the follow-up — a login, a team or a name, as typed | low–medium (free text, ≤ 80 chars, escaped on render) | shown on the finding |
+| `note` | a short note, as typed | **medium** — free text a person chose to write (≤ 400 chars, escaped on render); kept out of the audit log | shown on the finding |
+| `created_at`, `cleared_at` | lifecycle | low | at most one active row per finding |
+
 **`audit_log`** — an append-only record of security-relevant events (section
 5c): `event`, `installation_id`, `repo`, `actor`, and a `detail` object of
 **scalars only** (counts, ids, a conclusion). A sanitizer drops any non-scalar
@@ -197,6 +211,9 @@ The sensitive fields are therefore the two `report` columns — `runs.report`
 touches). Both are the target of field-level encryption (below) and of
 retention/deletion (section 5b). `actor` is the only field kept purely for display rather than
 function, and can be dropped by a customer who wants no usernames retained.
+`acknowledgements.owner` and `.note` are the only free text a person types
+into the App: both are capped, escaped on render, and deleted with the
+repository's data (on demand or on uninstall).
 
 ### Encryption at rest
 

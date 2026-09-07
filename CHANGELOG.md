@@ -25,6 +25,16 @@
   within a day) or quiet · N d — the daily workflow may be paused (GitHub pauses
   schedules on a public repository inactive for 60 days). The expected cadence
   is stated under the table.
+- **Acknowledge a finding: who has seen it, who owns the follow-up.** A new
+  "Ownership" part on every finding card: a signed-in person with access can
+  acknowledge it with an owner and a short note; the acknowledging login comes
+  from the session, never the form. Keyed by repository + provider + model, so
+  it follows the finding across runs until cleared (one click). It never
+  changes the finding's status — only a completed scan can. Stored in a new
+  `acknowledgements` table (names and a capped, escaped note; never the
+  finding), purged with the repository's data on demand and on uninstall,
+  audited as `finding_acknowledged` / `acknowledgement_cleared` (the note stays
+  out of the audit log). TRUST.md's data inventory and the inventory test cover it.
 
 ## 0.4.1-alpha — 2026-09-07
 

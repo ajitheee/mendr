@@ -1,5 +1,7 @@
 import {
   COMPLETED_CONCLUSIONS,
+  type Acknowledgement,
+  type AcknowledgementInput,
   type AuditLogEntry,
   type AuditLogInput,
   type Installation,
@@ -7,6 +9,7 @@ import {
   type MigrationRecord,
   type MigrationSummary,
   type Repo,
+  type RepoDeletion,
   type RepoInput,
   type RunInput,
   type RunRecord,
@@ -24,6 +27,8 @@ export class MemoryStore implements Store {
   private nextRunId = 1;
   private migrations = new Map<number, MigrationRecord>();
   private nextMigrationId = 1;
+  private acknowledgements = new Map<number, Acknowledgement>();
+  private nextAcknowledgementId = 1;
 
   async upsertInstallation(i: Installation): Promise<void> {
     this.installations.set(i.id, { ...i });
@@ -143,7 +148,35 @@ export class MemoryStore implements Store {
     return deleted;
   }
 
-  async deleteRepoData(repoId: number): Promise<{ runsDeleted: number; migrationsDeleted: number }> {
+  // --- acknowledgements ---
+
+  private activeAck(repoId: number, provider: string, model: string): Acknowledgement | undefined {
+    return [...this.acknowledgements.values()].find((a) => a.repoId === repoId && a.provider === provider && a.model === model && !a.clearedAt);
+  }
+
+  async acknowledge(a: AcknowledgementInput): Promise<Acknowledgement> {
+    const at = new Date().toISOString();
+    const prior = this.activeAck(a.repoId, a.provider, a.model);
+    if (prior) this.acknowledgements.set(prior.id, { ...prior, clearedAt: at, clearedBy: a.acknowledgedBy });
+    const record: Acknowledgement = { ...a, id: this.nextAcknowledgementId++, createdAt: at, clearedAt: null, clearedBy: null };
+    this.acknowledgements.set(record.id, record);
+    return { ...record };
+  }
+
+  async clearAcknowledgement(repoId: number, provider: string, model: string, clearedBy: string): Promise<boolean> {
+    const active = this.activeAck(repoId, provider, model);
+    if (!active) return false;
+    this.acknowledgements.set(active.id, { ...active, clearedAt: new Date().toISOString(), clearedBy });
+    return true;
+  }
+
+  async activeAcknowledgements(repoId: number): Promise<Map<string, Acknowledgement>> {
+    const out = new Map<string, Acknowledgement>();
+    for (const a of this.acknowledgements.values()) if (a.repoId === repoId && !a.clearedAt) out.set(`${a.provider}/${a.model}`, { ...a });
+    return out;
+  }
+
+  async deleteRepoData(repoId: number): Promise<RepoDeletion> {
     let runsDeleted = 0;
     for (const [id, r] of [...this.runs]) {
       if (r.repoId === repoId) {
@@ -158,22 +191,29 @@ export class MemoryStore implements Store {
         migrationsDeleted++;
       }
     }
+    let acknowledgementsDeleted = 0;
+    for (const [id, a] of [...this.acknowledgements]) {
+      if (a.repoId === repoId) {
+        this.acknowledgements.delete(id);
+        acknowledgementsDeleted++;
+      }
+    }
     this.repos.delete(repoId);
-    return { runsDeleted, migrationsDeleted };
+    return { runsDeleted, migrationsDeleted, acknowledgementsDeleted };
   }
 
-  async deleteInstallationData(installationId: number, at: string): Promise<{ reposDeleted: number; runsDeleted: number; migrationsDeleted: number }> {
+  async deleteInstallationData(installationId: number, at: string): Promise<RepoDeletion & { reposDeleted: number }> {
     const repoIds = [...this.repos.values()].filter((r) => r.installationId === installationId).map((r) => r.id);
-    let runsDeleted = 0;
-    let migrationsDeleted = 0;
+    const total: RepoDeletion = { runsDeleted: 0, migrationsDeleted: 0, acknowledgementsDeleted: 0 };
     for (const id of repoIds) {
       const gone = await this.deleteRepoData(id);
-      runsDeleted += gone.runsDeleted;
-      migrationsDeleted += gone.migrationsDeleted;
+      total.runsDeleted += gone.runsDeleted;
+      total.migrationsDeleted += gone.migrationsDeleted;
+      total.acknowledgementsDeleted += gone.acknowledgementsDeleted;
     }
     const inst = this.installations.get(installationId);
     if (inst) this.installations.set(installationId, { ...inst, deletedAt: at });
-    return { reposDeleted: repoIds.length, runsDeleted, migrationsDeleted };
+    return { reposDeleted: repoIds.length, ...total };
   }
 
   private auditLog: AuditLogEntry[] = [];
