@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Added — "Prepare migration for review"
+
+- A run page with a PATCH ELIGIBLE finding now carries the migration step. The
+  work runs in the customer's CI, never in the App: the App hands over a second
+  one-click workflow (`.github/workflows/mendr-migrate.yml`, `workflow_dispatch`
+  only, `contents: write` + `pull-requests: write`, both refs pinned to the
+  release) through GitHub's prefilled editor, and links to its Actions page
+  where GitHub's own "Run workflow" button is. That workflow runs
+  `mendr-action`: verify every swap on a throwaway copy (type-check, build, the
+  repo's tests), apply only on `verified`, push one stable branch, open or
+  update one PR. Mendr never merges. The App's permissions are unchanged.
+- The scanner now reports `coverage.migration.workflowPresent` (it can see
+  `.github/workflows/`; the App cannot), so the App offers the right step — add
+  the workflow, or run it — and offers both for reports from older scanners.
+  Each patch-eligible finding points at the step.
+
 ### Changed — the App wears the landing page's design
 
 - The hosted App (overview, runs, run page, setup, installed, errors) now uses

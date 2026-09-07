@@ -112,10 +112,10 @@ export function auditWorkflowYaml(opts: WorkflowTemplateOptions): string {
  * contents filled in and commits it themselves — the App writes nothing and
  * needs no extra scope.
  */
-export function newWorkflowFileUrl(webUrl: string, repoFullName: string, branch: string, yaml: string): string {
+export function newWorkflowFileUrl(webUrl: string, repoFullName: string, branch: string, yaml: string, path: string = MENDR_AUDIT_WORKFLOW_PATH): string {
   const base = webUrl.replace(/\/+$/, '');
   const b = encodeURIComponent(branch || 'main');
-  const filename = encodeURIComponent(MENDR_AUDIT_WORKFLOW_PATH);
+  const filename = encodeURIComponent(path);
   const value = encodeURIComponent(yaml);
   return `${base}/${repoFullName}/new/${b}?filename=${filename}&value=${value}`;
 }
@@ -125,4 +125,71 @@ export function setupWorkflowUrl(
   opts: WorkflowTemplateOptions & { webUrl: string; repoFullName: string },
 ): string {
   return newWorkflowFileUrl(opts.webUrl, opts.repoFullName, opts.defaultBranch, auditWorkflowYaml(opts));
+}
+
+// --- the migration workflow ---------------------------------------------------
+//
+// "Prepare migration for review" hands the customer a SECOND workflow, run by
+// hand from the Actions tab: mendr-action verifies every patch-eligible swap in
+// THEIR CI (a baseline-relative type-check and build, plus their tests) and
+// opens ONE human-approved pull request only when it verifies. The App writes
+// nothing and gains no permission — the branch push and the PR happen with the
+// workflow's own token, exactly as the action's published example does.
+
+export const MENDR_MIGRATE_WORKFLOW_PATH = '.github/workflows/mendr-migrate.yml';
+
+export function migrateWorkflowYaml(opts: { mendrSpec: string }): string {
+  const spec = opts.mendrSpec;
+  return [
+    '# Mendr migration — prepares a human-approved pull request for the retiring AI',
+    '# model ids this repository calls. Run it from the Actions tab ("Run workflow")',
+    '# after the Mendr audit shows a PATCH ELIGIBLE finding.',
+    '#',
+    '# Everything happens in THIS runner: `mendr migrate . --write` verifies each swap',
+    '# on a throwaway copy — a baseline-relative type-check and build, plus YOUR test',
+    '# suite — and applies it ONLY if the verdict is `verified`. Then it pushes ONE',
+    '# stable branch (mendr/deprecated-model-ids) and opens or updates ONE pull',
+    '# request. When verification fails nothing is applied and no PR is opened.',
+    '# Mendr never merges and never touches your default branch. A human reviews.',
+    '#',
+    '# PERMISSIONS: contents:write to push that branch, pull-requests:write to open',
+    '# the PR. Nothing else — no secrets, no provider key.',
+    '#',
+    '# SUPPLY CHAIN: both refs below pin the same Mendr release; bump them together',
+    '# (a 40-char commit SHA is the strictest pin). Never point them at a branch.',
+    'name: mendr migrate',
+    '',
+    'on:',
+    '  workflow_dispatch: {}',
+    '',
+    'permissions:',
+    '  contents: write',
+    '  pull-requests: write',
+    '',
+    'concurrency:',
+    '  group: mendr-migrate',
+    '  cancel-in-progress: false',
+    '',
+    'jobs:',
+    '  migrate:',
+    '    runs-on: ubuntu-latest',
+    '    steps:',
+    '      - uses: actions/checkout@v4',
+    '',
+    `      - uses: ajitheee/mendr/mendr-action@${spec}`,
+    '        with:',
+    `          mendr-spec: github:ajitheee/mendr#${spec}`,
+    '          # eval-command: npm run eval   # optional: a behavioral gate, run in the sandbox',
+    '',
+  ].join('\n');
+}
+
+/** The one-click "add the migration workflow" link: GitHub's prefilled new-file editor. */
+export function setupMigrateWorkflowUrl(opts: { webUrl: string; repoFullName: string; defaultBranch: string; mendrSpec: string }): string {
+  return newWorkflowFileUrl(opts.webUrl, opts.repoFullName, opts.defaultBranch, migrateWorkflowYaml({ mendrSpec: opts.mendrSpec }), MENDR_MIGRATE_WORKFLOW_PATH);
+}
+
+/** The Actions page for the migration workflow — GitHub's own "Run workflow" button lives there. */
+export function migrateActionsUrl(webUrl: string, fullName: string): string {
+  return `${webUrl.replace(/\/+$/, '')}/${fullName}/actions/workflows/mendr-migrate.yml`;
 }

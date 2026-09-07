@@ -217,6 +217,13 @@ export interface AuditCoverage {
     notes?: string[];
   };
   readerTieBack: { proven: boolean };
+  /**
+   * Whether the repository carries Mendr's migration workflow
+   * (.github/workflows/mendr-migrate.yml). The App reads this to offer the right
+   * "Prepare migration for review" step — add it, or run it. Absent on reports
+   * from before the field existed.
+   */
+  migration?: { workflowPresent: boolean };
 }
 
 /** The only four verdicts an audit may reach. A general `clean` is not one. */

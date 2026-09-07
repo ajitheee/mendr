@@ -3106,6 +3106,10 @@ program
           notes: runtime.notes.length > 0 ? runtime.notes : undefined,
         },
         readerTieBack: { proven: anyReaderProven },
+        // Seen from inside the repo (the App cannot look): does the migration
+        // workflow exist? Decides which "Prepare migration for review" step the
+        // App offers — add it, or run it.
+        migration: { workflowPresent: existsSync(join(resolved, '.github', 'workflows', 'mendr-migrate.yml')) },
       };
       // The verdict turns on real EXPOSURE. Informational catalog / documentation
       // / fixture references are reported, but never produce exposure_detected.

@@ -402,6 +402,16 @@ You can see a repository's evidence only if the App is installed on it and
 GitHub confirms you can access it. If a scope is ever added, this section and
 the changelog will say which and why.
 
+**"Prepare migration for review"** hands you a second workflow file
+(`.github/workflows/mendr-migrate.yml`) through GitHub's own editor — you read
+it and commit it, exactly like the audit workflow. It runs `mendr-action` in
+your CI with the permissions listed under *mendr-action* above
+(`contents: write` for its one branch, `pull-requests: write` for its one PR).
+The App's own permissions do not change, and the App never triggers it: you
+run it from the Actions tab. The audit reports whether that file exists
+(`coverage.migration.workflowPresent`) so the App can offer the right step;
+that is the only thing the App knows about it.
+
 ---
 
 ## 8. Known gaps, stated plainly

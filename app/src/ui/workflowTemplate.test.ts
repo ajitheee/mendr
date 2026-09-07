@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { auditWorkflowYaml, MENDR_AUDIT_WORKFLOW_PATH, newWorkflowFileUrl, setupWorkflowUrl } from './workflowTemplate.js';
+import {
+  auditWorkflowYaml,
+  MENDR_AUDIT_WORKFLOW_PATH,
+  MENDR_MIGRATE_WORKFLOW_PATH,
+  migrateActionsUrl,
+  migrateWorkflowYaml,
+  newWorkflowFileUrl,
+  setupMigrateWorkflowUrl,
+  setupWorkflowUrl,
+} from './workflowTemplate.js';
 
 const OPTS = { appUrl: 'https://app.example', audience: 'mendr', mendrSpec: 'v0.3.0-alpha', defaultBranch: 'trunk' };
 
@@ -74,5 +83,38 @@ describe('newWorkflowFileUrl / setupWorkflowUrl', () => {
     // the encoded value round-trips to the actual workflow
     const value = decodeURIComponent(new URL(url).searchParams.get('value')!);
     expect(value).toBe(auditWorkflowYaml(OPTS));
+  });
+});
+
+describe('migrateWorkflowYaml / setupMigrateWorkflowUrl — "Prepare migration for review"', () => {
+  const yaml = migrateWorkflowYaml({ mendrSpec: 'v0.3.0-alpha' });
+
+  it('runs by hand only, with exactly the two write scopes the branch and the PR need', () => {
+    expect(yaml).toContain('workflow_dispatch: {}');
+    expect(yaml).not.toMatch(/^\s+push:/m);
+    expect(yaml).not.toMatch(/^\s+schedule:/m);
+    expect(yaml).toMatch(/permissions:\n  contents: write\n  pull-requests: write\n/);
+    expect(yaml).not.toMatch(/^\s+(issues|actions|id-token|checks): /m);
+    expect(yaml).not.toContain('${{ secrets.');
+  });
+
+  it('pins the action and the CLI it runs to the same release', () => {
+    expect(yaml).toContain('uses: ajitheee/mendr/mendr-action@v0.3.0-alpha');
+    expect(yaml).toContain('mendr-spec: github:ajitheee/mendr#v0.3.0-alpha');
+    expect(yaml).not.toContain('@main');
+  });
+
+  it('says what it does and does not do, in the file the customer commits', () => {
+    expect(yaml).toMatch(/never merges/);
+    expect(yaml).toMatch(/never touches your default branch/);
+    expect(yaml).toMatch(/ONLY if the verdict is `verified`/);
+  });
+
+  it('deep-links to the prefilled editor at the migration path, and to the Actions page', () => {
+    const url = setupMigrateWorkflowUrl({ webUrl: 'https://github.com', repoFullName: 'acme/api', defaultBranch: 'trunk', mendrSpec: 'v0.3.0-alpha' });
+    expect(url.startsWith('https://github.com/acme/api/new/trunk?')).toBe(true);
+    expect(url).toContain(`filename=${encodeURIComponent(MENDR_MIGRATE_WORKFLOW_PATH)}`);
+    expect(decodeURIComponent(new URL(url).searchParams.get('value')!)).toBe(yaml);
+    expect(migrateActionsUrl('https://github.com/', 'acme/api')).toBe('https://github.com/acme/api/actions/workflows/mendr-migrate.yml');
   });
 });

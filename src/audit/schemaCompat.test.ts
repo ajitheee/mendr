@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os';
 // so it needs no app dependencies.
 
 import { validateReport, sanitizeReport, countDecisions, SCHEMA } from '../../app/src/ingest/validate.js';
+import { migrationWorkflowPresent } from '../../app/src/ingest/migration.js';
 
 const MENDR_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const created: string[] = [];
@@ -79,5 +80,8 @@ describe('scanner JSON validates against the App consumer', () => {
     expect(Number.isInteger(loc.line)).toBe(true);
     expect(patch!.retirementEvidence?.replacement).toBeTruthy();
     expect(typeof patch!.nextAction === 'string' || patch!.nextAction === null).toBe(true);
+    // The App decides which "Prepare migration for review" step to offer from
+    // this field; the sample repo carries no mendr-migrate.yml.
+    expect(migrationWorkflowPresent(report)).toBe(false);
   }, 120_000);
 });

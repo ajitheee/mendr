@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { Repo, RunSummary } from '../store/types.js';
-import { runsPage } from './pages.js';
+import type { Repo, RunRecord, RunSummary } from '../store/types.js';
+import { runPage, runsPage } from './pages.js';
 
 // "Failure must never look resolved": a run that did not conclude must not
 // wear the green "nothing found" pill anywhere a reader scans for status.
@@ -48,5 +48,57 @@ describe('run pills never let a non-conclusion look clean', () => {
     const html = runsPage(repo, [run('no_exposure_in_completed_surfaces')], 'octocat');
     expect(html).toContain('nothing found');
     expect(html).not.toContain('>inconclusive<');
+  });
+});
+
+describe('"Prepare migration for review" on the run page', () => {
+  type Decision = 'patch' | 'review' | 'monitor';
+  const investigation = (decision: Decision) => ({
+    provider: 'openai',
+    model: 'gpt-4',
+    decision,
+    reason: 'gpt-4 retires 2026-10-23',
+    nextAction: 'Prepare the migration to gpt-5.6-sol.',
+    locations: { selectors: decision === 'monitor' ? [] : [{ file: 'src/ai.ts', line: 4 }], catalog: decision === 'monitor' ? [{ file: 'docs/m.md', line: 1 }] : [] },
+  });
+  const record = (decision: Decision, coverage: Record<string, unknown> = {}): RunRecord =>
+    ({
+      ...run('exposure_detected', { patch: decision === 'patch' ? 1 : 0, review: decision === 'review' ? 1 : 0, informational: decision === 'monitor' ? 1 : 0 }),
+      report: { schema: 'mendr-audit/v3', conclusion: 'exposure_detected', coverage, investigations: [investigation(decision)] },
+    }) as RunRecord;
+  const view = {
+    webUrl: 'https://github.com',
+    workflowUrl: 'https://github.com/acme/api/actions/workflows/mendr-audit.yml',
+    migrate: { setupUrl: 'https://github.com/acme/api/new/main?filename=x', runUrl: 'https://github.com/acme/api/actions/workflows/mendr-migrate.yml' },
+  };
+
+  it('offers the one-click workflow when the scanner saw none in the repo', () => {
+    const html = runPage(repo, record('patch', { migration: { workflowPresent: false } }), 'octocat', view);
+    expect(html).toContain('Add the migration workflow ↗');
+    expect(html).toContain(view.migrate.setupUrl.replace(/&/g, '&amp;'));
+    expect(html).not.toContain('Prepare migration for review ↗');
+    expect(html).toContain('Prepare migration for review ↓'); // the finding points at the step
+    expect(html).toContain('never merges');
+  });
+
+  it('offers "Run workflow" once the workflow exists', () => {
+    const html = runPage(repo, record('patch', { migration: { workflowPresent: true } }), 'octocat', view);
+    expect(html).toContain('Prepare migration for review ↗');
+    expect(html).toContain(view.migrate.runUrl);
+    expect(html).not.toContain('Add the migration workflow ↗');
+  });
+
+  it('offers both when the report predates the field (older scanner)', () => {
+    const html = runPage(repo, record('patch'), 'octocat', view);
+    expect(html).toContain('Add the migration workflow ↗');
+    expect(html).toContain('Run it on GitHub ↗');
+  });
+
+  it('is absent when nothing is patch eligible, and when the App is unconfigured', () => {
+    expect(runPage(repo, record('review', { migration: { workflowPresent: true } }), 'octocat', view)).not.toContain('id="migrate"');
+    expect(runPage(repo, record('monitor'), 'octocat', view)).not.toContain('id="migrate"');
+    const unconfigured = runPage(repo, record('patch', { migration: { workflowPresent: true } }), 'octocat', { webUrl: view.webUrl, workflowUrl: view.workflowUrl });
+    expect(unconfigured).not.toContain('id="migrate"');
+    expect(unconfigured).not.toContain('Prepare migration for review ↓');
   });
 });

@@ -12,7 +12,7 @@ import { buildCheckRun } from './ingest/checkRun.js';
 import { countDecisions, sanitizeReport, validateReport } from './ingest/validate.js';
 import type { Repo, Store } from './store/types.js';
 import { credentialsPage, errorPage, homePage, installedPage, runPage, runsPage, setupPage, workflowRunsUrl } from './ui/pages.js';
-import { setupWorkflowUrl } from './ui/workflowTemplate.js';
+import { migrateActionsUrl, setupMigrateWorkflowUrl, setupWorkflowUrl } from './ui/workflowTemplate.js';
 
 export interface AppDeps {
   config: AppConfig;
@@ -327,10 +327,22 @@ export function createApp(deps: AppDeps): Hono {
   app.get('/r/:owner/:name/runs/:id', async (c) => {
     const sess = await session(c);
     if (!sess) return c.redirect(`/auth/login?next=${encodeURIComponent(c.req.path)}`);
-    const repo = await accessibleRepo(sess, `${c.req.param('owner')}/${c.req.param('name')}`);
+    const fullName = `${c.req.param('owner')}/${c.req.param('name')}`;
+    const repo = await accessibleRepo(sess, fullName);
     const run = repo ? await store.getRun(Number(c.req.param('id'))) : null;
     if (!repo || !run || run.repoId !== repo.id) return c.html(errorPage('Not found', 'No such run is visible to you here.'), 404);
-    return c.html(runPage(repo, run, sess.login, { webUrl: config.githubWebUrl, workflowUrl: workflowRunsUrl(config.githubWebUrl, repo.fullName) }));
+    // "Prepare migration for review": the one-click migration workflow (GitHub's
+    // prefilled editor) and its Actions page. Both run in the customer's CI with
+    // the workflow's own token; the App writes nothing and needs no new scope.
+    let migrate: { setupUrl: string; runUrl: string } | undefined;
+    if (isConfigured(config)) {
+      const gh = await github.getRepoAsUser(sess.token, fullName);
+      migrate = {
+        setupUrl: setupMigrateWorkflowUrl({ webUrl: config.githubWebUrl, repoFullName: fullName, defaultBranch: gh?.defaultBranch ?? 'main', mendrSpec: config.mendrSpec }),
+        runUrl: migrateActionsUrl(config.githubWebUrl, fullName),
+      };
+    }
+    return c.html(runPage(repo, run, sess.login, { webUrl: config.githubWebUrl, workflowUrl: workflowRunsUrl(config.githubWebUrl, repo.fullName), migrate }));
   });
 
   // Self-service deletion: a signed-in user with access can delete this repo's
