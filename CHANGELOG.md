@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.1-alpha — 2026-09-07
+
 ### Added — migration results reported back; resolution confirmed by the next audit
 
 - **`mendr-action` reports what it did** (new `app-url` input; the calling

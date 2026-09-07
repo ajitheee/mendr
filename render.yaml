@@ -40,7 +40,7 @@ services:
       - key: SESSION_SECRET
         generateValue: true
       - key: MENDR_CLI_SPEC
-        value: v0.4.0-alpha
+        value: v0.4.1-alpha
       # --- set in the Render dashboard (sync:false = not committed) ---
       # 1. After the FIRST deploy, set APP_URL to this service's public URL
       #    (e.g. https://mendr-app.onrender.com), then redeploy.
