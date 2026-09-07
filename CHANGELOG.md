@@ -18,6 +18,13 @@
   uploads — the audit workflow's POST and `mendr-action`'s report — so a
   sleeping free-tier App or a blip does not lose evidence. Both uploads are
   idempotent per workflow run attempt, so a repeat is safe.
+- **Overview: the last completed scan vs the latest attempt, and a monitoring
+  signal.** A repository's result rests on its newest COMPLETED scan; a newer
+  attempt that did not complete (inconclusive, failed) is shown beneath it,
+  never in its place. A "Monitoring" column reads active (evidence arrived
+  within a day) or quiet · N d — the daily workflow may be paused (GitHub pauses
+  schedules on a public repository inactive for 60 days). The expected cadence
+  is stated under the table.
 
 ## 0.4.1-alpha — 2026-09-07
 

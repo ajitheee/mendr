@@ -88,13 +88,15 @@ export function createApp(deps: AppDeps): Hono {
     const sess = await session(c);
     const rows: import('./ui/pages.js').RepoRow[] = [];
     if (sess) {
-      const latest = await store.latestRunPerRepo();
+      const [latest, completed] = await Promise.all([store.latestRunPerRepo(), store.latestCompletedRunPerRepo()]);
       for (const repo of (await store.listRepos()).slice(0, 100)) {
         const gh = await github.getRepoAsUser(sess.token, repo.fullName);
-        if (gh && gh.id === repo.id) rows.push({ repo, latest: latest.get(repo.id) ?? null, defaultBranch: gh.defaultBranch });
+        if (gh && gh.id === repo.id) {
+          rows.push({ repo, latest: latest.get(repo.id) ?? null, latestCompleted: completed.get(repo.id) ?? null, defaultBranch: gh.defaultBranch });
+        }
       }
     }
-    return c.html(homePage({ config, configured: isConfigured(config), login: sess?.login ?? null, rows }));
+    return c.html(homePage({ config, configured: isConfigured(config), login: sess?.login ?? null, rows, now: now() }));
   });
 
   // --- setup: create the App from its manifest --------------------------------

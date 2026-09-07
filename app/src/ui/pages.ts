@@ -131,10 +131,36 @@ function pill(counts: RunSummary['counts'], conclusion?: string): string {
 
 export interface RepoRow {
   repo: Repo;
+  /** The newest run, whatever it concluded — the latest attempt. */
   latest: RunSummary | null;
+  /** The newest run whose scan completed — what the result rests on. */
+  latestCompleted: RunSummary | null;
   /** The repo's default branch, for the one-click setup link. */
   defaultBranch: string;
 }
+
+const HOUR = 3_600_000;
+/** The generated workflow runs at least daily; more than this much silence is worth a look. */
+const QUIET_AFTER_MS = 26 * HOUR;
+
+/** How long ago, for humans: "just now", "3 h ago", "2 d ago". */
+function ago(iso: string, now: Date): string {
+  const ms = now.getTime() - Date.parse(iso);
+  if (!Number.isFinite(ms) || ms < HOUR) return 'just now';
+  if (ms < QUIET_AFTER_MS) return `${Math.round(ms / HOUR)} h ago`;
+  return `${Math.floor(ms / (24 * HOUR))} d ago`;
+}
+
+/** Is the daily monitoring alive? Proven by evidence arriving, not by a schedule existing. */
+function monitoringChip(latest: RunSummary | null, now: Date): string {
+  if (!latest) return '<span class="chip">not connected</span>';
+  const ms = now.getTime() - Date.parse(latest.receivedAt);
+  if (!Number.isFinite(ms) || ms <= QUIET_AFTER_MS) return `<span class="chip ok">active</span> <span class="muted">${esc(ago(latest.receivedAt, now))}</span>`;
+  const days = Math.floor(ms / (24 * HOUR));
+  return `<span class="chip warn" title="No run in ${days} days. The daily workflow may be paused — GitHub pauses schedules on a public repository with no activity for 60 days.">quiet · ${days} d</span>`;
+}
+
+const ATTEMPT_LABEL: Record<string, string> = { inconclusive: 'inconclusive', audit_failed: 'audit failed' };
 
 /** The one-click "add the audit workflow" link for a repo, or '' when the App is unconfigured. */
 function setupLink(config: AppConfig, fullName: string, defaultBranch: string): string {
@@ -150,8 +176,9 @@ function setupLink(config: AppConfig, fullName: string, defaultBranch: string): 
   return `<a class="btn" href="${esc(url)}" target="_blank" rel="noopener">Set up the audit</a>`;
 }
 
-export function homePage(input: { config: AppConfig; configured: boolean; login: string | null; rows: RepoRow[] }): string {
+export function homePage(input: { config: AppConfig; configured: boolean; login: string | null; rows: RepoRow[]; now?: Date }): string {
   const { config, configured, login, rows } = input;
+  const now = input.now ?? new Date();
   const setup = configured
     ? ''
     : `<div class="card"><strong>Not configured yet.</strong> Create the GitHub App from its manifest at <a href="/setup">/setup</a>, put the printed credentials in the environment, and restart.</div>`;
@@ -162,17 +189,29 @@ export function homePage(input: { config: AppConfig; configured: boolean; login:
   } else if (!rows.length) {
     list = `<p class="muted">No installed repository is visible to you yet. Install the App on a repository, then set up its audit from here.</p>`;
   } else {
-    list = `<div class="tbl"><table><thead><tr><th>Repository</th><th>Latest run</th><th>Result</th></tr></thead><tbody>${rows
-      .map(({ repo, latest, defaultBranch }) => {
+    list = `<div class="tbl"><table><thead><tr><th>Repository</th><th>Last completed scan</th><th>Result</th><th>Monitoring</th></tr></thead><tbody>${rows
+      .map(({ repo, latest, latestCompleted, defaultBranch }) => {
+        const runLink = (r: RunSummary) =>
+          `<a href="/r/${esc(repo.fullName)}/runs/${r.id}">${esc(r.receivedAt.slice(0, 16).replace('T', ' '))}</a> <span class="muted">${esc(r.ref.replace(/^refs\/heads\//, ''))} @ ${esc(r.sha.slice(0, 7))}</span>`;
+        // The newest COMPLETED scan is what the result rests on. A newer attempt
+        // that did not complete (inconclusive, failed) is shown beneath it — never
+        // in its place, and never hidden.
+        const attempt =
+          latest && (!latestCompleted || latest.id !== latestCompleted.id)
+            ? `<div class="muted" style="margin-top:4px;font-size:.9rem">latest attempt <a href="/r/${esc(repo.fullName)}/runs/${latest.id}">${esc(latest.receivedAt.slice(0, 16).replace('T', ' '))}</a> · ${esc(ATTEMPT_LABEL[latest.conclusion] ?? latest.conclusion)}</div>`
+            : '';
         // A repo with no run yet is not connected: its first audit needs the
         // workflow, so offer the one-click setup instead of "no run received".
-        const when = latest
-          ? `<a href="/r/${esc(repo.fullName)}/runs/${latest.id}">${esc(latest.receivedAt.slice(0, 16).replace('T', ' '))}</a> <span class="muted">${esc(latest.ref.replace(/^refs\/heads\//, ''))} @ ${esc(latest.sha.slice(0, 7))}</span>`
-          : setupLink(config, repo.fullName, defaultBranch);
-        const result = latest ? pill(latest.counts, latest.conclusion) : '<span class="muted">no run yet — add the workflow</span>';
-        return `<tr><td><a href="/r/${esc(repo.fullName)}">${esc(repo.fullName)}</a></td><td>${when}</td><td>${result}</td></tr>`;
+        const when = latestCompleted ? runLink(latestCompleted) + attempt : latest ? `<span class="muted">none yet</span>${attempt}` : setupLink(config, repo.fullName, defaultBranch);
+        const result = latestCompleted
+          ? pill(latestCompleted.counts, latestCompleted.conclusion)
+          : latest
+            ? pill(latest.counts, latest.conclusion)
+            : '<span class="muted">no run yet — add the workflow</span>';
+        return `<tr><td><a href="/r/${esc(repo.fullName)}">${esc(repo.fullName)}</a></td><td>${when}</td><td>${result}</td><td>${monitoringChip(latest, now)}</td></tr>`;
       })
-      .join('')}</tbody></table></div>`;
+      .join('')}</tbody></table></div>
+<p class="muted" style="font-size:.9rem;margin-top:12px">Connected repositories are scanned on every push and pull request, and daily at 06:37 UTC, by the generated workflow. A repository with no run for more than a day is marked quiet — check that its workflow is enabled.</p>`;
   }
   const body = `${setup}<p class="lede">Connect a repository and Mendr keeps its retiring-AI-model findings current here, with a <em>Mendr audit</em> check on every commit. The scan runs in your own CI; the App never clones or stores your code. <a href="https://github.com/ajitheee/mendr/blob/main/TRUST.md">What leaves your infrastructure</a>.</p>${install}<h2>Repositories</h2>${list}`;
   return layout('overview', body, { login });

@@ -43,6 +43,9 @@ export interface RunRecord extends RunSummary {
   report: AuditReport;
 }
 
+/** The conclusions of a scan that actually completed — the only runs a "last successful scan" may be. */
+export const COMPLETED_CONCLUSIONS: ReadonlySet<string> = new Set(['exposure_detected', 'no_exposure_in_completed_surfaces']);
+
 export type RunInput = Omit<RunRecord, 'id' | 'receivedAt'>;
 
 /** What mendr-action reported after one migration run — never the diff. */
@@ -91,7 +94,10 @@ export interface Store {
   listRuns(repoId: number, limit: number): Promise<RunSummary[]>;
   getRun(id: number): Promise<RunRecord | null>;
   pruneRuns(repoId: number, keep: number): Promise<void>;
+  /** The newest run per repository, whatever it concluded — the "last attempt". */
   latestRunPerRepo(): Promise<Map<number, RunSummary>>;
+  /** The newest run per repository whose scan COMPLETED (COMPLETED_CONCLUSIONS) — the "last successful scan". */
+  latestCompletedRunPerRepo(): Promise<Map<number, RunSummary>>;
   // --- migrations (what mendr-action reported; never the diff) ---
   /** Insert, or replace the report with the same (repo, run id, attempt). */
   saveMigration(m: MigrationInput): Promise<MigrationRecord>;

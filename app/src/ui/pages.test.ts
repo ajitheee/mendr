@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { MigrationRecord, Repo, RunRecord, RunSummary } from '../store/types.js';
-import { runPage, runsPage } from './pages.js';
+import { loadConfig } from '../config.js';
+import { homePage, runPage, runsPage, type RepoRow } from './pages.js';
 
 // "Failure must never look resolved": a run that did not conclude must not
 // wear the green "nothing found" pill anywhere a reader scans for status.
@@ -48,6 +49,62 @@ describe('run pills never let a non-conclusion look clean', () => {
     const html = runsPage(repo, [run('no_exposure_in_completed_surfaces')], 'octocat');
     expect(html).toContain('nothing found');
     expect(html).not.toContain('>inconclusive<');
+  });
+});
+
+describe('overview: the last completed scan vs the latest attempt, and whether monitoring is alive', () => {
+  const config = { ...loadConfig({}), githubAppId: '1', githubAppSlug: 'mendr-test', githubPrivateKey: 'x', githubWebhookSecret: 'x', githubClientId: 'x', githubClientSecret: 'x' };
+  const NOW = new Date('2026-09-07T12:00:00Z');
+  const hoursAgo = (h: number) => new Date(NOW.getTime() - h * 3_600_000).toISOString();
+  const zero = { patch: 0, review: 0, informational: 0 };
+  const page = (rows: RepoRow[]) => homePage({ config, configured: true, login: 'octocat', rows, now: NOW });
+
+  it('a completed scan three hours ago: active, and no separate attempt line', () => {
+    const r = { ...run('no_exposure_in_completed_surfaces', zero), id: 5, receivedAt: hoursAgo(3) };
+    const html = page([{ repo, latest: r, latestCompleted: r, defaultBranch: 'main' }]);
+    expect(html).toContain('>active<');
+    expect(html).toContain('3 h ago');
+    expect(html).toContain('nothing found');
+    expect(html).not.toContain('latest attempt');
+  });
+
+  it('a newer inconclusive attempt is shown beneath the last completed scan, never in its place', () => {
+    const completed = { ...run('exposure_detected', { patch: 1, review: 0, informational: 0 }), id: 5, receivedAt: hoursAgo(40) };
+    const attempt = { ...run('inconclusive', zero), id: 6, receivedAt: hoursAgo(1) };
+    const html = page([{ repo, latest: attempt, latestCompleted: completed, defaultBranch: 'main' }]);
+    expect(html).toContain('/r/acme/api/runs/5'); // the completed scan is the headline
+    expect(html).toContain('1 patch eligible'); // and its result is the row's result
+    expect(html).toContain('latest attempt');
+    expect(html).toContain('/r/acme/api/runs/6');
+    expect(html).toContain('· inconclusive');
+    expect(html).toContain('>active<'); // evidence arrived an hour ago — monitoring is alive
+  });
+
+  it('three days of silence reads quiet', () => {
+    const r = { ...run('no_exposure_in_completed_surfaces', zero), id: 5, receivedAt: hoursAgo(72) };
+    const html = page([{ repo, latest: r, latestCompleted: r, defaultBranch: 'main' }]);
+    expect(html).toContain('quiet · 3 d');
+    expect(html).not.toContain('>active<');
+  });
+
+  it('only an inconclusive run so far: "none yet" completed, and the attempt is what the row shows', () => {
+    const attempt = { ...run('inconclusive', zero), id: 6, receivedAt: hoursAgo(2) };
+    const html = page([{ repo, latest: attempt, latestCompleted: null, defaultBranch: 'main' }]);
+    expect(html).toContain('none yet');
+    expect(html).toContain('>inconclusive<');
+    expect(html).not.toContain('nothing found');
+  });
+
+  it('no run at all: the one-click setup, "no run yet", and "not connected"', () => {
+    const html = page([{ repo, latest: null, latestCompleted: null, defaultBranch: 'main' }]);
+    expect(html).toContain('Set up the audit');
+    expect(html).toContain('no run yet — add the workflow');
+    expect(html).toContain('>not connected<');
+  });
+
+  it('states the expected cadence under the table', () => {
+    const r = { ...run('no_exposure_in_completed_surfaces', zero), id: 5, receivedAt: hoursAgo(3) };
+    expect(page([{ repo, latest: r, latestCompleted: r, defaultBranch: 'main' }])).toContain('daily at 06:37 UTC');
   });
 });
 

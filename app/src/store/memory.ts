@@ -1,16 +1,17 @@
-import type {
-  AuditLogEntry,
-  AuditLogInput,
-  Installation,
-  MigrationInput,
-  MigrationRecord,
-  MigrationSummary,
-  Repo,
-  RepoInput,
-  RunInput,
-  RunRecord,
-  RunSummary,
-  Store,
+import {
+  COMPLETED_CONCLUSIONS,
+  type AuditLogEntry,
+  type AuditLogInput,
+  type Installation,
+  type MigrationInput,
+  type MigrationRecord,
+  type MigrationSummary,
+  type Repo,
+  type RepoInput,
+  type RunInput,
+  type RunRecord,
+  type RunSummary,
+  type Store,
 } from './types.js';
 import { sanitizeEntry } from './auditLog.js';
 
@@ -210,6 +211,16 @@ export class MemoryStore implements Store {
         const { report: _report, ...summary } = r;
         out.set(r.repoId, summary);
       }
+    }
+    return out;
+  }
+
+  async latestCompletedRunPerRepo(): Promise<Map<number, RunSummary>> {
+    const out = new Map<number, RunSummary>();
+    for (const r of [...this.runs.values()].sort((a, b) => b.receivedAt.localeCompare(a.receivedAt) || b.id - a.id)) {
+      if (!COMPLETED_CONCLUSIONS.has(r.conclusion) || out.has(r.repoId)) continue;
+      const { report: _report, ...summary } = r;
+      out.set(r.repoId, summary);
     }
     return out;
   }

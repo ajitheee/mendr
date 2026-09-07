@@ -2,19 +2,20 @@ import { readFile } from 'node:fs/promises';
 import pg from 'pg';
 import type { AuditReport } from '../ingest/validate.js';
 import type { MigrationOutcome, MigrationReport, MigrationVerdict } from '../ingest/migrationReport.js';
-import type {
-  AuditLogEntry,
-  AuditLogInput,
-  Installation,
-  MigrationInput,
-  MigrationRecord,
-  MigrationSummary,
-  Repo,
-  RepoInput,
-  RunInput,
-  RunRecord,
-  RunSummary,
-  Store,
+import {
+  COMPLETED_CONCLUSIONS,
+  type AuditLogEntry,
+  type AuditLogInput,
+  type Installation,
+  type MigrationInput,
+  type MigrationRecord,
+  type MigrationSummary,
+  type Repo,
+  type RepoInput,
+  type RunInput,
+  type RunRecord,
+  type RunSummary,
+  type Store,
 } from './types.js';
 import { open as openField, sealForStore, type DataKeyring } from './encryption.js';
 import { sanitizeEntry } from './auditLog.js';
@@ -301,6 +302,19 @@ export class PgStore implements Store {
 
   async latestRunPerRepo(): Promise<Map<number, RunSummary>> {
     const { rows } = await this.pool.query(`SELECT DISTINCT ON (repo_id) ${SUMMARY_COLUMNS} FROM runs ORDER BY repo_id, received_at DESC, id DESC`);
+    const out = new Map<number, RunSummary>();
+    for (const r of rows) {
+      const s = summary(r as Row);
+      out.set(s.repoId, s);
+    }
+    return out;
+  }
+
+  async latestCompletedRunPerRepo(): Promise<Map<number, RunSummary>> {
+    const { rows } = await this.pool.query(
+      `SELECT DISTINCT ON (repo_id) ${SUMMARY_COLUMNS} FROM runs WHERE conclusion = ANY($1::text[]) ORDER BY repo_id, received_at DESC, id DESC`,
+      [[...COMPLETED_CONCLUSIONS]],
+    );
     const out = new Map<number, RunSummary>();
     for (const r of rows) {
       const s = summary(r as Row);
