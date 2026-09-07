@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Changed — the App wears the landing page's design
+
+- The hosted App (overview, runs, run page, setup, installed, errors) now uses
+  the marketing site's design system: ivory ground with the cobalt/amber/jade
+  tints, carbon ink, hairline rules, Instrument Sans for prose and IBM Plex
+  Mono for every data value, the two-bar mark, the carbon button, glass cards,
+  and the landing page's tag language for state — solid amber PATCH ELIGIBLE,
+  amber tint REVIEW / inconclusive, slate informational, jade clean, red
+  failed. Dashboard discipline is kept: summary before detail, state encoded in
+  form, one committed light look, no motion. Page logic and every user-facing
+  string are unchanged. The type is loaded from Google Fonts on page view (a
+  browser request to fonts.googleapis.com / fonts.gstatic.com, as on the
+  landing page); nothing about findings is in that request.
+
 ### Changed — the old JSON-import prototype leaves the customer journey
 
 - The marketing site's `/app` (the pre-App "investigation workspace" that asked
