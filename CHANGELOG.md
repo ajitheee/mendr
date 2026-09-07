@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Changed — the old JSON-import prototype leaves the customer journey
+
+- The marketing site's `/app` (the pre-App "investigation workspace" that asked
+  visitors to paste audit JSON) now redirects to the real App at
+  https://mendr-app.onrender.com/, and the App's run page no longer links to its
+  own copy of it. The prototype stays reachable only at the App's `/app/` as a
+  developer/debug tool.
+
 ## 0.4.0-alpha — 2026-09-06
 
 ### Added — registry freshness: pin the code, refresh the data, signed

@@ -249,7 +249,7 @@ export function runPage(repo: Repo, run: RunRecord, login: string, opts: { webUr
 
   const header = `<h2><a href="/r/${esc(repo.fullName)}">${esc(repo.fullName)}</a> <span class="muted">· ${esc(run.ref.replace(/^refs\/heads\//, ''))} @ <a href="${esc(treeUrl(opts.webUrl, repo.fullName, run.sha))}" target="_blank" rel="noopener">${esc(run.sha.slice(0, 7))} ↗</a></span></h2>
 <div class="bar">${pill(run.counts, run.conclusion)} <span class="muted">conclusion <code>${esc(run.conclusion)}</code> · received ${esc(run.receivedAt.slice(0, 19).replace('T', ' '))}${run.actor ? ` · by ${esc(run.actor)}` : ''}</span>${regChip}</div>
-<div class="bar">${run.checkRunUrl ? `<a class="btn" href="${esc(run.checkRunUrl)}" target="_blank" rel="noopener">Check run on GitHub ↗</a>` : ''}<a class="btn" href="${esc(opts.workflowUrl)}" target="_blank" rel="noopener">Rerun audit ↗</a><a href="/app/?run=${run.id}">Open in the investigation workspace</a> · <a href="/api/runs/${run.id}">Evidence JSON</a></div>`;
+<div class="bar">${run.checkRunUrl ? `<a class="btn" href="${esc(run.checkRunUrl)}" target="_blank" rel="noopener">Check run on GitHub ↗</a>` : ''}<a class="btn" href="${esc(opts.workflowUrl)}" target="_blank" rel="noopener">Rerun audit ↗</a><a href="/api/runs/${run.id}">Evidence JSON</a></div>`;
 
   const body = actionable.length
     ? `${header}<h2>Action needed (${actionable.length})</h2>${actionable.map((i) => findingCard(i, repo, run, opts.webUrl)).join('')}${info.length ? `<h2>Informational (${info.length})</h2><p class="muted">Catalog, documentation or fixture references — not dependencies. No migration action; monitor the provider.</p>${info.map((i) => findingCard(i, repo, run, opts.webUrl)).join('')}` : ''}`

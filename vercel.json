@@ -3,5 +3,9 @@
   "framework": null,
   "installCommand": "echo no install needed",
   "buildCommand": "echo static landing page, no build",
-  "outputDirectory": "site"
+  "outputDirectory": "site",
+  "redirects": [
+    { "source": "/app", "destination": "https://mendr-app.onrender.com/", "permanent": false },
+    { "source": "/app/(.*)", "destination": "https://mendr-app.onrender.com/", "permanent": false }
+  ]
 }
