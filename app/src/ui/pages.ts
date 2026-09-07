@@ -1,6 +1,7 @@
 import { isConfigured, type AppConfig } from '../config.js';
 import type { ManifestCredentials } from '../github/api.js';
-import type { Repo, RunRecord, RunSummary } from '../store/types.js';
+import type { MigrationRecord, Repo, RunRecord, RunSummary } from '../store/types.js';
+import { prNumber } from '../ingest/migrationReport.js';
 import { setupWorkflowUrl } from './workflowTemplate.js';
 import { registryFreshnessLine, registryFreshnessOf } from '../ingest/registry.js';
 import { migrationWorkflowPresent } from '../ingest/migration.js';
@@ -72,7 +73,8 @@ td:first-child,th:first-child{padding-left:0}
 .pill.info,.chip{color:var(--grey);background:rgba(116,123,137,.12)}
 .pill.ok,.chip.ok{color:var(--jade);background:rgba(21,128,93,.12)}
 .chip.warn{color:var(--amber);background:rgba(216,137,22,.12)}
-.pill.bad{color:var(--red);background:rgba(176,57,44,.12)}
+.pill.bad,.chip.bad{color:var(--red);background:rgba(176,57,44,.12)}
+ul.plain{margin:6px 0 0;padding-left:18px}ul.plain li{margin:4px 0}
 .bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0 18px}
 .finding{position:relative;padding-left:24px}
 .finding::before{content:"";position:absolute;left:0;top:16px;bottom:16px;width:2px;background:var(--hair)}
@@ -265,23 +267,84 @@ export interface MigrateLinks {
  * workflow in the repository (coverage.migration.workflowPresent); an older
  * report leaves that unknown, so both are offered.
  */
-function migrationCard(present: boolean | null, migrate: MigrateLinks | undefined, patchCount: number): string {
-  if (patchCount === 0 || !migrate) return '';
+const GATE_LABEL = { typeCheck: 'type-check', build: 'build', tests: 'tests', eval: 'eval' } as const;
+const GATE_GLYPH: Record<string, string> = { pass: '✓', fail: '✗', inconclusive: '?', 'not-configured': '—' };
+
+function gatesLine(m: MigrationRecord): string {
+  const g = m.report.gates;
+  if (!g) return '';
+  return (Object.keys(GATE_LABEL) as (keyof typeof GATE_LABEL)[]).map((k) => `${GATE_LABEL[k]} ${GATE_GLYPH[g[k]] ?? '?'}`).join(' · ');
+}
+
+function prLink(m: MigrationRecord): string {
+  return m.prUrl ? `<a href="${esc(m.prUrl)}" target="_blank" rel="noopener">PR ${esc(prNumber(m.prUrl))} ↗</a>` : '';
+}
+
+/**
+ * One line for what mendr-action last reported: the verdict first, then the
+ * evidence behind it. "verified" here means the sandbox gates passed and a PR
+ * exists — never that anything was merged or that behavior was tested unless
+ * an eval ran.
+ */
+function migrationStatus(m: MigrationRecord): string {
+  const when = `${esc(m.receivedAt.slice(0, 16).replace('T', ' '))} from <code>${esc(m.sha.slice(0, 7))}</code>`;
+  const gates = gatesLine(m);
+  switch (m.outcome) {
+    case 'migration-proposed':
+      return `<span class="chip ok">verified</span> ${prLink(m)}${gates ? ` · ${gates}` : ''} · ${when}${m.report.behavioralTested ? '' : ' · <span class="muted">behavior not tested</span>'}`;
+    case 'not-verified':
+      return `<span class="chip warn">not verified — nothing applied, no PR</span>${gates ? ` · ${gates}` : ''} · ${when}`;
+    case 'clean':
+      return `<span class="chip ok">nothing to migrate</span> · ${when}`;
+    default:
+      return `<span class="chip bad">migration run failed — nothing applied</span> · ${when}`;
+  }
+}
+
+function migrationCard(present: boolean | null, migrate: MigrateLinks | undefined, patchCount: number, latest: MigrationRecord | null): string {
+  if (!migrate || (patchCount === 0 && !latest)) return '';
   const add = `<a class="btn" href="${esc(migrate.setupUrl)}" target="_blank" rel="noopener">Add the migration workflow ↗</a>`;
   const run = `<a class="btn" href="${esc(migrate.runUrl)}" target="_blank" rel="noopener">Prepare migration for review ↗</a>`;
   const bar =
-    present === true
-      ? `${run}<span class="muted">opens GitHub's "Run workflow" for this repository — pick the branch and run</span>`
-      : present === false
-        ? `${add}<span class="muted">one time: GitHub's editor opens with the workflow filled in; you read it and commit it. Then run it from the Actions tab.</span>`
-        : `${add}<a class="tlink" href="${esc(migrate.runUrl)}" target="_blank" rel="noopener">Run it on GitHub ↗</a><span class="muted">add it once if you haven't, then run it</span>`;
+    patchCount === 0
+      ? ''
+      : present === true
+        ? `<div class="bar">${run}<span class="muted">opens GitHub's "Run workflow" for this repository — pick the branch and run</span></div>`
+        : present === false
+          ? `<div class="bar">${add}<span class="muted">one time: GitHub's editor opens with the workflow filled in; you read it and commit it. Then run it from the Actions tab.</span></div>`
+          : `<div class="bar">${add}<a class="tlink" href="${esc(migrate.runUrl)}" target="_blank" rel="noopener">Run it on GitHub ↗</a><span class="muted">add it once if you haven't, then run it</span></div>`;
+  const status = latest ? `<div class="part"><div class="label">Latest migration run</div><div>${migrationStatus(latest)}</div></div>` : '';
   return `<div class="card" id="migrate"><div class="label">Prepare migration for review</div>
-<p>Runs in your CI, never here: Mendr verifies every patch-eligible swap on a throwaway copy — type-check, build, your tests — and opens <strong>one pull request</strong> only if it all passes. It never merges and never touches your default branch. The workflow needs <code>contents: write</code> and <code>pull-requests: write</code> for that branch and PR; the App gains nothing.</p>
-<div class="bar">${bar}</div></div>`;
+<p>Runs in your CI, never here: Mendr verifies every patch-eligible swap on a throwaway copy — type-check, build, your tests — and opens <strong>one pull request</strong> only if it all passes. It never merges and never touches your default branch. The workflow needs <code>contents: write</code> and <code>pull-requests: write</code> for that branch and PR, and <code>id-token: write</code> to report the result here (never the diff); the App gains nothing.</p>
+${bar}${status}</div>`;
+}
+
+/**
+ * A resolution is confirmed by evidence, never by an event: a model that was
+ * actionable in the previous run and is absent from THIS run — and only when
+ * this run is a completed scan on a fresh registry, so absence means absence.
+ */
+function resolvedCard(run: RunRecord, previous: RunRecord | null, migration: MigrationRecord | null): string {
+  if (!previous) return '';
+  const completed = run.conclusion === 'no_exposure_in_completed_surfaces' || run.conclusion === 'exposure_detected';
+  if (!completed || registryFreshnessOf(run.report).freshness !== 'fresh') return '';
+  const now = new Set(run.report.investigations.filter((i) => i.decision !== 'monitor').map((i) => `${i.provider}/${i.model}`));
+  const gone = previous.report.investigations.filter((i) => i.decision !== 'monitor' && !now.has(`${i.provider}/${i.model}`));
+  if (!gone.length) return '';
+  const items = gone
+    .map((i) => {
+      const swap = migration?.report.migrations.find((s) => s.from === i.model);
+      const via = swap && migration?.prUrl ? ` — via ${prLink(migration)}` : '';
+      return `<li><code>${esc(i.model)}</code> (${esc(i.provider)}) no longer found${via}</li>`;
+    })
+    .join('');
+  return `<div class="card"><div class="label">Resolved since run ${previous.id}</div>
+<p>Confirmed by this completed scan of <code>${esc(run.sha.slice(0, 7))}</code> against a fresh registry — not by a merge event.</p>
+<ul class="plain">${items}</ul></div>`;
 }
 
 /** One finding, laid out as the five things a reader needs, in order. */
-function findingCard(inv: Inv, repo: Repo, run: RunRecord, webUrl: string, migrateAnchor: boolean): string {
+function findingCard(inv: Inv, repo: Repo, run: RunRecord, webUrl: string, migrateAnchor: boolean, migration: MigrationRecord | null): string {
   const ev = inv.retirementEvidence ?? {};
   const decision = inv.decision;
 
@@ -309,10 +372,14 @@ function findingCard(inv: Inv, repo: Repo, run: RunRecord, webUrl: string, migra
   const prod = usage === 'observed' ? '<span class="chip warn">production traffic observed</span>' : usage === 'not_observed' ? '<span class="chip">not seen in the connected source</span>' : '<span class="chip">production traffic not measured</span>';
   const repoConfirmed = locs.length ? '<span class="chip ok">repository usage confirmed</span>' : '<span class="chip">no repository call site</span>';
 
-  // 4. Migration evidence — verified / unverified / none.
-  const migration = ev.replacement
-    ? `Replacement <code>${esc(ev.replacement)}</code> — <span class="chip ${ev.replacementVerdict === 'verified' ? 'ok' : 'warn'}">${esc(ev.replacementVerdict ?? 'unstamped')}</span>. Evidence only; nothing is applied here.${ev.sourceUrl ? ` <a href="${esc(ev.sourceUrl)}" target="_blank" rel="noopener">provider notice ↗</a>` : ''}`
-    : 'No safe replacement recommended yet — monitor the provider.';
+  // 4. Migration evidence — verified / unverified / none — plus what mendr-action
+  //    last reported for THIS model, if a migration run covered it.
+  const swap = migration?.report.migrations.find((s) => s.from === inv.model);
+  const ran = swap && migration ? `<div style="margin-top:6px">Migration run: ${migrationStatus(migration)}</div>` : '';
+  const migrationEvidence =
+    (ev.replacement
+      ? `Replacement <code>${esc(ev.replacement)}</code> — <span class="chip ${ev.replacementVerdict === 'verified' ? 'ok' : 'warn'}">${esc(ev.replacementVerdict ?? 'unstamped')}</span>. Evidence only; nothing is applied here.${ev.sourceUrl ? ` <a href="${esc(ev.sourceUrl)}" target="_blank" rel="noopener">provider notice ↗</a>` : ''}`
+      : 'No safe replacement recommended yet — monitor the provider.') + ran;
 
   // 5. Next action — the CLI's own wording, so the UI never drifts. A patch-
   //    eligible finding also points at the migration step on this page.
@@ -326,16 +393,23 @@ function findingCard(inv: Inv, repo: Repo, run: RunRecord, webUrl: string, migra
     ${part('Possible cause', cause)}
     ${part('Evidence', evidence + more)}
     ${part('Confidence boundary', `${repoConfirmed} ${prod}`)}
-    ${part('Migration evidence', migration)}
+    ${part('Migration evidence', migrationEvidence)}
     ${part('Next action', next)}
   </div>`;
 }
 
-export function runPage(repo: Repo, run: RunRecord, login: string, opts: { webUrl: string; workflowUrl: string; migrate?: MigrateLinks }): string {
+export function runPage(
+  repo: Repo,
+  run: RunRecord,
+  login: string,
+  opts: { webUrl: string; workflowUrl: string; migrate?: MigrateLinks; migration?: MigrationRecord | null; previous?: RunRecord | null },
+): string {
   const invs = [...run.report.investigations].sort((a, b) => rank(a.decision) - rank(b.decision));
   const actionable = invs.filter((i) => i.decision !== 'monitor');
   const info = invs.filter((i) => i.decision === 'monitor');
-  const migration = migrationCard(migrationWorkflowPresent(run.report), opts.migrate, actionable.filter((i) => i.decision === 'patch').length);
+  const migration =
+    migrationCard(migrationWorkflowPresent(run.report), opts.migrate, actionable.filter((i) => i.decision === 'patch').length, opts.migration ?? null) +
+    resolvedCard(run, opts.previous ?? null, opts.migration ?? null);
 
   // The registry the verdict rests on, and how current it was. A stale registry
   // is why a zero-finding run reads `inconclusive` rather than clean.
@@ -360,8 +434,8 @@ export function runPage(repo: Repo, run: RunRecord, login: string, opts: { webUr
 <div class="bar">${run.checkRunUrl ? `<a class="btn" href="${esc(run.checkRunUrl)}" target="_blank" rel="noopener">Check run on GitHub ↗</a>` : ''}<a class="btn" href="${esc(opts.workflowUrl)}" target="_blank" rel="noopener">Rerun audit ↗</a><a class="tlink" href="/api/runs/${run.id}">Evidence JSON</a></div>`;
 
   const body = actionable.length
-    ? `${header}${migration}<h2>Action needed (${actionable.length})</h2>${actionable.map((i) => findingCard(i, repo, run, opts.webUrl, !!opts.migrate)).join('')}${info.length ? `<h2>Informational (${info.length})</h2><p class="muted">Catalog, documentation or fixture references — not dependencies. No migration action; monitor the provider.</p>${info.map((i) => findingCard(i, repo, run, opts.webUrl, !!opts.migrate)).join('')}` : ''}`
-    : `${header}${quiet}${info.map((i) => findingCard(i, repo, run, opts.webUrl, !!opts.migrate)).join('')}`;
+    ? `${header}${migration}<h2>Action needed (${actionable.length})</h2>${actionable.map((i) => findingCard(i, repo, run, opts.webUrl, !!opts.migrate, opts.migration ?? null)).join('')}${info.length ? `<h2>Informational (${info.length})</h2><p class="muted">Catalog, documentation or fixture references — not dependencies. No migration action; monitor the provider.</p>${info.map((i) => findingCard(i, repo, run, opts.webUrl, !!opts.migrate, opts.migration ?? null)).join('')}` : ''}`
+    : `${header}${migration}${quiet}${info.map((i) => findingCard(i, repo, run, opts.webUrl, !!opts.migrate, opts.migration ?? null)).join('')}`;
 
   return layout(`${repo.fullName} run ${run.id}`, body, { login });
 }

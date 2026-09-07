@@ -102,8 +102,29 @@ function harness(userRepos: Record<string, number> = {}) {
   const install = () => webhook('installation', { action: 'created', installation: INSTALLATION, repositories: [REPO] });
   const ingest = (token: string, body: unknown, headers: Record<string, string> = {}) =>
     app.request('/api/ingest', { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body) });
+  const migrations = (token: string, body: unknown, headers: Record<string, string> = {}) =>
+    app.request('/api/migrations', { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body) });
   const sessionCookie = async () => `${SESSION_COOKIE}=${await sealSession({ userId: 7, login: 'octocat', token: 'user-token', exp: Math.floor(Date.now() / 1000) + 3600 }, config.sessionSecret)}`;
-  return { app, store, gh, config, logs, webhook, install, ingest, sessionCookie };
+  return { app, store, gh, config, logs, webhook, install, ingest, migrations, sessionCookie };
+}
+
+/** What mendr-action would send after a verified migration of the sample report's gpt-4 finding — with a diff the App must drop. */
+function sampleMigration(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    schema: 'mendr-migration-report/v1',
+    outcome: 'migration-proposed',
+    prUrl: 'https://github.com/acme/api/pull/12',
+    sha: 'c'.repeat(40),
+    generatedAt: '2026-09-07T07:00:00Z',
+    verdict: 'verified',
+    gates: { typeCheck: 'pass', build: 'not-configured', tests: 'pass', eval: 'not-configured' },
+    behavioralTested: false,
+    migrations: [{ provider: 'openai', from: 'gpt-4', to: 'gpt-4.1', language: 'ts', sites: 1, files: ['src/client.ts'] }],
+    changedFiles: ['src/client.ts'],
+    notes: ['Behavior was NOT verified.'],
+    diff: 'diff --git a/src/client.ts b/src/client.ts\n-  model: "gpt-4"\n+  model: "gpt-4.1"\n',
+    ...over,
+  };
 }
 
 describe('manifest: least privilege, stated before creation', () => {
@@ -270,6 +291,75 @@ describe('ingest: evidence from the customer CI, proven by OIDC', () => {
     expect(body.checkRun).toBeNull();
     expect(body.checkRunError).toContain('Resource not accessible');
     expect((await h.store.listRuns(REPO.id, 10)).length).toBe(1);
+  });
+});
+
+describe('migrations: what mendr-action did, proven by OIDC', () => {
+  it('needs a valid token and an installed repository', async () => {
+    const h = harness();
+    expect((await h.app.request('/api/migrations', { method: 'POST', body: '{}' })).status).toBe(401);
+    expect((await h.migrations('not-a-jwt', sampleMigration())).status).toBe(401);
+    const res = await h.migrations(await actionsToken(), sampleMigration());
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { install: string | null }).install).toBe('https://github.com/apps/mendr-test/installations/new');
+  });
+
+  it('stores the whitelisted report — never the diff — logs it, and reports back', async () => {
+    const h = harness();
+    await h.install();
+    const res = await h.migrations(await actionsToken(), sampleMigration());
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, migration: { id: 1, outcome: 'migration-proposed', verdict: 'verified', prUrl: 'https://github.com/acme/api/pull/12' } });
+    const stored = await h.store.latestMigration(REPO.id);
+    expect(stored?.report.migrations).toEqual([{ provider: 'openai', from: 'gpt-4', to: 'gpt-4.1', language: 'ts', sites: 1, files: ['src/client.ts'] }]);
+    const json = JSON.stringify(stored);
+    expect(json).not.toContain('diff --git');
+    expect(json).not.toContain('"diff"');
+    const events = (await h.store.listAuditLog()).map((e) => e.event);
+    expect(events).toContain('pr_created');
+  });
+
+  it('refuses a PR url that is not a pull request of this repository on this GitHub', async () => {
+    const h = harness();
+    await h.install();
+    expect((await h.migrations(await actionsToken(), sampleMigration({ prUrl: 'https://github.com/evil/other/pull/1' }))).status).toBe(400);
+    expect((await h.migrations(await actionsToken(), sampleMigration({ prUrl: 'https://gitlab.example/acme/api/pull/1' }))).status).toBe(400);
+    expect(await h.store.latestMigration(REPO.id)).toBeNull();
+  });
+
+  it('is idempotent per workflow run attempt', async () => {
+    const h = harness();
+    await h.install();
+    await h.migrations(await actionsToken(), sampleMigration());
+    await h.migrations(await actionsToken(), sampleMigration({ outcome: 'not-verified', verdict: 'failed', prUrl: null }));
+    const list = await h.store.listMigrations(REPO.id, 10);
+    expect(list.length).toBe(1);
+    expect(list[0]!.outcome).toBe('not-verified');
+    await h.migrations(await actionsToken({ run_attempt: '2' }), sampleMigration());
+    expect((await h.store.listMigrations(REPO.id, 10)).length).toBe(2);
+  });
+
+  it('the run page shows the PR and the verdict on the finding it covers', async () => {
+    const h = harness({ 'acme/api': REPO.id });
+    await h.install();
+    await h.ingest(await actionsToken(), sampleReport());
+    await h.migrations(await actionsToken({ run_id: '500' }), sampleMigration());
+    const page = await h.app.request('/r/acme/api/runs/1', { headers: { cookie: await h.sessionCookie() } });
+    expect(page.status).toBe(200);
+    const html = await page.text();
+    expect(html).toContain('Latest migration run');
+    expect(html).toContain('PR #12 ↗');
+    expect(html).toContain('Migration run:');
+    expect(html).not.toContain('diff --git');
+  });
+
+  it('uninstalling the App purges migration reports along with the findings', async () => {
+    const h = harness();
+    await h.install();
+    await h.migrations(await actionsToken(), sampleMigration());
+    expect(await h.store.latestMigration(REPO.id)).not.toBeNull();
+    await h.webhook('installation', { action: 'deleted', installation: INSTALLATION });
+    expect(await h.store.latestMigration(REPO.id)).toBeNull();
   });
 });
 

@@ -138,7 +138,7 @@ export function setupWorkflowUrl(
 
 export const MENDR_MIGRATE_WORKFLOW_PATH = '.github/workflows/mendr-migrate.yml';
 
-export function migrateWorkflowYaml(opts: { mendrSpec: string }): string {
+export function migrateWorkflowYaml(opts: { mendrSpec: string; appUrl: string }): string {
   const spec = opts.mendrSpec;
   return [
     '# Mendr migration — prepares a human-approved pull request for the retiring AI',
@@ -153,7 +153,9 @@ export function migrateWorkflowYaml(opts: { mendrSpec: string }): string {
     '# Mendr never merges and never touches your default branch. A human reviews.',
     '#',
     '# PERMISSIONS: contents:write to push that branch, pull-requests:write to open',
-    '# the PR. Nothing else — no secrets, no provider key.',
+    '# the PR, and id-token:write to PROVE this run to your Mendr App when it reports',
+    '# the result (outcome, PR url, verdict, gate statuses, the swaps and the file',
+    '# paths they touch — never the diff). No secrets, no provider key.',
     '#',
     '# SUPPLY CHAIN: both refs below pin the same Mendr release; bump them together',
     '# (a 40-char commit SHA is the strictest pin). Never point them at a branch.',
@@ -165,6 +167,7 @@ export function migrateWorkflowYaml(opts: { mendrSpec: string }): string {
     'permissions:',
     '  contents: write',
     '  pull-requests: write',
+    '  id-token: write',
     '',
     'concurrency:',
     '  group: mendr-migrate',
@@ -179,14 +182,15 @@ export function migrateWorkflowYaml(opts: { mendrSpec: string }): string {
     `      - uses: ajitheee/mendr/mendr-action@${spec}`,
     '        with:',
     `          mendr-spec: github:ajitheee/mendr#${spec}`,
+    `          app-url: ${opts.appUrl} # report the result here (never the diff); remove to send nothing`,
     '          # eval-command: npm run eval   # optional: a behavioral gate, run in the sandbox',
     '',
   ].join('\n');
 }
 
 /** The one-click "add the migration workflow" link: GitHub's prefilled new-file editor. */
-export function setupMigrateWorkflowUrl(opts: { webUrl: string; repoFullName: string; defaultBranch: string; mendrSpec: string }): string {
-  return newWorkflowFileUrl(opts.webUrl, opts.repoFullName, opts.defaultBranch, migrateWorkflowYaml({ mendrSpec: opts.mendrSpec }), MENDR_MIGRATE_WORKFLOW_PATH);
+export function setupMigrateWorkflowUrl(opts: { webUrl: string; repoFullName: string; defaultBranch: string; mendrSpec: string; appUrl: string }): string {
+  return newWorkflowFileUrl(opts.webUrl, opts.repoFullName, opts.defaultBranch, migrateWorkflowYaml({ mendrSpec: opts.mendrSpec, appUrl: opts.appUrl }), MENDR_MIGRATE_WORKFLOW_PATH);
 }
 
 /** The Actions page for the migration workflow — GitHub's own "Run workflow" button lives there. */

@@ -42,7 +42,7 @@ exist yet and is listed so the boundary is stated before it is built.
 | `mendr migrate [path]` | Source under `path` and the registry. Copies the repo into temp sandboxes (same exclusions/junction as above) to run **your** `build` script, **your** test command, and an optional `--eval-command`, once without the change and once with it. | stdout (report or `mendr-migration/v1` JSON); with `--patch`, a patch file. **Never the working tree.** Sandbox writes stay inside the throwaway copy. | **Whatever your build/test/eval commands do** — the same boundary as the fix-llm gates. Mendr adds no network of its own. |
 | `mendr verify-registry`, `registry-discover` (maintainer commands) | The registry files in this repository. | Registry files, a PR in this repository. | Provider documentation pages and model-list endpoints. These run in Mendr's own CI against Mendr's own repository, never against yours. |
 | Scaffolded audit workflow (`--install`) | Your repository at the checked-out SHA, inside your GitHub Actions runner. | One tracking issue in your repository (created, updated, closed), nothing else. | The Node download from `npm`/GitHub to install Mendr, and the GitHub API calls the workflow makes to your own repository with `GITHUB_TOKEN`. The scan itself makes none. |
-| `mendr-action` (fix PRs) | Same. | A branch and a pull request in your repository containing the gated diff. | Same as above. |
+| `mendr-action` (fix PRs) | Same. | A branch and a pull request in your repository containing the gated diff. | Same as above. Plus — only when you set `app-url` and grant `id-token: write` — **one POST of the migration result to your Mendr App** (outcome, PR url, verdict, gate statuses, the swaps and the file paths they touch; **never the diff**), proven by the run's OIDC token. A failed POST is a warning, never a failed job. |
 | Mendr GitHub App (`app/`, hosted by Mendr) | The JSON your workflow posts and the claims of the run's OIDC token. Installation webhooks from GitHub. | Installations, repository ids and names, and the sanitized evidence per run in its Postgres. One check run on the commit. | Inbound from GitHub (webhooks) and from your CI (the POST). Outbound only to the GitHub API: an installation token limited to that repository and `checks: write`, the check run, and the signed-in user's repository access for the read side. |
 
 The audit **never** sends: file contents, file names, model ids, findings,
@@ -62,6 +62,7 @@ Every place in the shipped source that can reach the network, with why it exists
 | `src/registry/freshRegistry.ts` (`getBytes`) | The other `fetch`: `GET` of the three public registry-snapshot files, 10-second timeout per file, 8 MB cap, no header or body of yours. Verified before use — signature against a key built into the release, schema version, sha256, rollback floor, then the same entry validation as the bundled file — and any failure falls back to the bundled registry with the reason disclosed. | Only with `--refresh-registry` / `MENDR_REGISTRY_REFRESH=on`; never under `--offline`; never when the build trusts no signing key. |
 | `src/gates/runTests.ts`, `src/gates/runEval.ts` | `execa` runs the repository's own `npm test` or the `--eval-command` you pass, inside the sandbox copy. | Only in `fix-llm` gates. This is your code's network activity, not Mendr's. |
 | `scripts/` (registry maintenance) | Provider docs and model-list fetches. | Mendr's own CI on Mendr's own repository. Not part of the audit and not run in yours. |
+| `mendr-action/scripts/run-mendr.sh` (`report_to_app`) | `curl` of the run's OIDC token from GitHub, then one `POST` of the migration result (built by `build-report.mjs` from a field whitelist — the diff is never in it) to the `app-url` you set. | Only in `mendr-action`, only when `app-url` is set and the job grants `id-token: write`; in your CI. Otherwise nothing is sent. |
 
 Nothing else opens a socket. The runtime dependencies are `commander`,
 `diff`, `execa`, `simple-git`, `ts-morph` and `web-tree-sitter`; none of them
@@ -131,7 +132,7 @@ you run.
 
 ### What the App stores (data inventory)
 
-The App's database has three data tables plus an audit log, and nothing else.
+The App's database has four data tables plus an audit log, and nothing else.
 Every field below is used; none is speculative. Two things are deliberately
 **absent**, and that absence is the point: **no access tokens or credentials of
 any kind, and no source code**.
@@ -164,6 +165,15 @@ tenant boundary).
 | `report` (JSONB) | the sanitized `mendr-audit/v3` document: findings, **file paths, line numbers**, classifications, **redacted ≤7-line snippets**, line hashes | **medium** — paths and short code fragments, already secret-redacted; never whole files | render the finding page and the check-run annotations |
 | `check_run_url` | link to the GitHub check | low | convenience |
 
+**`migrations`** — one row per result `mendr-action` reported after a migration
+run (only when the workflow sets `app-url`).
+
+| Field | What | Sensitivity | Why it is kept |
+|---|---|---|---|
+| `sha`, `ref`, `run_id`, `run_attempt`, `workflow_ref`, `actor` | which commit/run produced it | low | identify the run, dedupe attempts |
+| `received_at`, `generated_at`, `outcome`, `verdict`, `pr_url` | when, what happened (`clean` / `migration-proposed` / `not-verified` / `error`), the sandbox verdict, the PR | low | the finding page's "PR #12 · verified" line |
+| `report` (JSONB) | the whitelisted `mendr-migration-report/v1`: the four gate statuses, the model swaps (`from` → `to`, provider, language, site count) and the **file paths** they touch, capped notes | **medium** — file paths; **never the diff**, which the action strips and the App strips again | render the migration status and confirm a resolution against the next audit |
+
 **`audit_log`** — an append-only record of security-relevant events (section
 5c): `event`, `installation_id`, `repo`, `actor`, and a `detail` object of
 **scalars only** (counts, ids, a conclusion). A sanitizer drops any non-scalar
@@ -182,9 +192,10 @@ before it is written, so the audit log can never hold findings, secrets or code.
 - **Source code** — only the redacted, capped snippets inside `report`; never a
   whole file, never a clone.
 
-The single sensitive field is therefore `report` (paths + redacted snippets). It
-is the target of field-level encryption (below) and of retention/deletion
-(section 5b). `actor` is the only field kept purely for display rather than
+The sensitive fields are therefore the two `report` columns — `runs.report`
+(paths + redacted snippets) and `migrations.report` (the paths a migration
+touches). Both are the target of field-level encryption (below) and of
+retention/deletion (section 5b). `actor` is the only field kept purely for display rather than
 function, and can be dropped by a customer who wants no usernames retained.
 
 ### Encryption at rest
@@ -406,11 +417,15 @@ the changelog will say which and why.
 (`.github/workflows/mendr-migrate.yml`) through GitHub's own editor — you read
 it and commit it, exactly like the audit workflow. It runs `mendr-action` in
 your CI with the permissions listed under *mendr-action* above
-(`contents: write` for its one branch, `pull-requests: write` for its one PR).
-The App's own permissions do not change, and the App never triggers it: you
-run it from the Actions tab. The audit reports whether that file exists
-(`coverage.migration.workflowPresent`) so the App can offer the right step;
-that is the only thing the App knows about it.
+(`contents: write` for its one branch, `pull-requests: write` for its one PR),
+plus `id-token: write` so the action can report its result to the App, proven
+by the run's OIDC token (section 2: outcome, PR url, verdict, gate statuses,
+the swaps and the file paths they touch — never the diff). The App's own
+permissions do not change, and the App never triggers it: you run it from the
+Actions tab. The App knows two things about it: whether the workflow file
+exists (the audit reports `coverage.migration.workflowPresent`), and what the
+action reported. A resolution is confirmed only when a later completed audit on
+a fresh registry no longer finds the model — never from the PR or a merge event.
 
 ---
 

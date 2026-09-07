@@ -16,6 +16,39 @@ set -euo pipefail
 REPORT="$(mktemp)"
 ARTIFACT="mendr-migration.json"
 
+# Optional: report what happened to the customer's Mendr App (MENDR_APP_URL),
+# proven by THIS run's OIDC token — the same pattern as the audit upload. What is
+# sent is the artifact WITHOUT the diff (never code): outcome, PR url, verdict,
+# the gate statuses, the model swaps and the file paths they touch. It needs
+# `id-token: write` in the calling workflow; without it, or without
+# MENDR_APP_URL, nothing is sent. It never fails the job: the PR is the
+# deliverable, the report is a courtesy to the dashboard.
+report_to_app() { # $1 outcome, $2 pr url (may be empty), $3 artifact path (may be empty or missing)
+  [ -n "${MENDR_APP_URL:-}" ] || return 0
+  if [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+    echo "::warning::Mendr: MENDR_APP_URL is set but this job has no 'id-token: write' permission, so the migration result was not reported to the App."
+    return 0
+  fi
+  local body token code
+  body="$(mktemp)"
+  if ! node "$GITHUB_ACTION_PATH/scripts/build-report.mjs" "${3:-}" "$1" "${2:-}" > "$body" 2>/dev/null; then
+    echo "::warning::Mendr: could not build the migration report for the App; nothing sent."
+    return 0
+  fi
+  token="$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=${MENDR_APP_AUDIENCE:-mendr}" 2>/dev/null | jq -r '.value // empty' 2>/dev/null || true)"
+  if [ -z "$token" ]; then
+    echo "::warning::Mendr: could not obtain the GitHub OIDC token; the migration result was not reported to the App."
+    return 0
+  fi
+  code="$(curl -sS -o /dev/null -w '%{http_code}' -X POST "${MENDR_APP_URL%/}/api/migrations" \
+    -H "Authorization: Bearer $token" -H "Content-Type: application/json" --data-binary @"$body" 2>/dev/null || echo 000)"
+  case "$code" in
+    2*) echo "Mendr: migration result ($1) reported to the App." ;;
+    *) echo "::warning::Mendr: the App did not accept the migration report (HTTP $code). The PR, if any, is unaffected." ;;
+  esac
+  return 0
+}
+
 # Human report (for the job summary) and the machine artifact (for the PR body
 # and the apply gate) come from two runs of the same verified migration: the
 # first prints the report, the second applies and emits JSON. Both verify; only
@@ -43,6 +76,7 @@ if [ "$REPORT_STATUS" -ne 0 ] || [ "$WRITE_STATUS" -ne 0 ] || [ ! -s "$ARTIFACT"
   echo "outcome=error" >> "$GITHUB_OUTPUT"
   echo "pr_url=" >> "$GITHUB_OUTPUT"
   echo "Mendr did not complete a migration scan. Leaving any open Mendr PR untouched." >&2
+  report_to_app error "" ""
   exit 1
 fi
 
@@ -60,10 +94,12 @@ if git diff --quiet --exit-code; then
       gh pr close "$old" --comment "Mendr: no deprecated model ids remain; closing." --delete-branch || true
     fi
     echo "Mendr: nothing to migrate. No PR opened."
+    report_to_app clean "" "$ARTIFACT"
   else
     echo "outcome=not-verified" >> "$GITHUB_OUTPUT"
     echo "pr_url=" >> "$GITHUB_OUTPUT"
     echo "Mendr found a migration but could not verify it (verdict: $VERDICT). No PR opened; nothing applied. Any existing Mendr PR is left untouched." >&2
+    report_to_app not-verified "" "$ARTIFACT"
   fi
   exit 0
 fi
@@ -125,12 +161,15 @@ done
 existing=$(gh pr list --head "$MENDR_BRANCH" --state open --json url -q '.[0].url // empty' 2>/dev/null || true)
 if [ -n "${existing:-}" ]; then
   gh pr edit "$existing" --body-file "$BODY"
+  PR_URL="$existing"
   echo "pr_url=$existing" >> "$GITHUB_OUTPUT"
   echo "Updated existing Mendr PR: $existing"
 else
   url=$(gh pr create --base "$BASE" --head "$MENDR_BRANCH" \
     --title "chore(deps): migrate deprecated LLM model ids (Mendr)" \
     --body-file "$BODY" "${LABEL_ARGS[@]}")
+  PR_URL="$url"
   echo "pr_url=$url" >> "$GITHUB_OUTPUT"
   echo "Opened Mendr PR: $url"
 fi
+report_to_app migration-proposed "$PR_URL" "$ARTIFACT"

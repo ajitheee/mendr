@@ -48,6 +48,7 @@ Re-running never stacks new PRs. It keeps the one branch current, and it never m
 | --- | --- | --- |
 | `working-directory` | `.` | where your code lives, if not the repo root |
 | `mendr-spec` | `github:ajitheee/mendr#v0.4.0-alpha` | the CLI that runs in your CI (npm spec once published) |
+| `app-url` | (empty) | your Mendr App URL; when set, the result — outcome, PR url, verdict, gate statuses, swaps and file paths, **never the diff** — is reported there, proven by the run's OIDC token. Grant `id-token: write` in the job; without it nothing is sent and the job still succeeds |
 | `install-command` | auto | override the dependency install step |
 | `node-version` | `22` | Mendr needs Node 22 or newer |
 | `eval-command` | none | a command run in the sandbox as a behavioral gate (e.g. an eval suite); without it the PR says behavior is untested |

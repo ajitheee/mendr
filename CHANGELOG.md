@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### Added — migration results reported back; resolution confirmed by the next audit
+
+- **`mendr-action` reports what it did** (new `app-url` input; the calling
+  workflow grants `id-token: write`): one POST of a `mendr-migration-report/v1`
+  to the App — outcome, PR url, verdict, the four gate statuses, the model swaps
+  and the file paths they touch — proven by the run's OIDC token, exactly like
+  the audit. **Never the diff**: `build-report.mjs` constructs the report from a
+  field whitelist, and the App whitelists again on ingest. A failed POST is a
+  warning; the PR is the deliverable.
+- **The App stores it** (`migrations` table: encrypted `report`, same retention,
+  on-demand deletion and uninstall cleanup as runs; audit-logged as
+  `pr_created` / `migration_prepared`) and refuses a PR url that is not a pull
+  request of that very repository on the GitHub it talks to.
+- **The finding shows it**: "Latest migration run" on the migration card and a
+  "Migration run: PR #12 ↗ · verified · type-check ✓ build — tests ✓ eval —"
+  line on each finding a run covered; not-verified, clean and failed runs say so.
+- **Resolution is confirmed by evidence, never by an event.** A run page names
+  the models that were actionable in the previous run and are absent from this
+  one — with the PR that covered them — but only when this run is a completed
+  scan on a fresh registry. Inconclusive scans, stale registries and reports
+  without freshness claim nothing.
+- The App-generated `mendr-migrate.yml` now grants `id-token: write` and passes
+  `app-url`. The cross-package test `src/migrate/reportToApp.test.ts` runs the
+  real report builder on a real artifact and feeds the App's real validator.
+
 ### Added — "Prepare migration for review"
 
 - A run page with a PATCH ELIGIBLE finding now carries the migration step. The

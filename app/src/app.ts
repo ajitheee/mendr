@@ -10,6 +10,7 @@ import type { ActionsTokenVerifier } from './github/oidc.js';
 import { applyWebhook, verifyWebhookSignature } from './github/webhook.js';
 import { buildCheckRun } from './ingest/checkRun.js';
 import { countDecisions, sanitizeReport, validateReport } from './ingest/validate.js';
+import { validateMigrationReport } from './ingest/migrationReport.js';
 import type { Repo, Store } from './store/types.js';
 import { credentialsPage, errorPage, homePage, installedPage, runPage, runsPage, setupPage, workflowRunsUrl } from './ui/pages.js';
 import { migrateActionsUrl, setupMigrateWorkflowUrl, setupWorkflowUrl } from './ui/workflowTemplate.js';
@@ -222,6 +223,70 @@ export function createApp(deps: AppDeps): Hono {
     return c.json({ ok: true, run: { id: run.id, url: detailsUrl, conclusion: report.conclusion, counts }, checkRun, checkRunError });
   });
 
+  // --- migrations: what mendr-action did, from the customer's own CI run ---------
+  //
+  // The action reports its outcome, the PR url, the verdict, the gate statuses,
+  // the model swaps and the file paths they touch — NEVER the diff — proven by
+  // the run's OIDC token, exactly like the audit. The finding page then shows
+  // "PR #12 · verified". This report never resolves anything by itself: the
+  // next completed audit is what confirms a resolution.
+  app.post('/api/migrations', async (c) => {
+    const m = /^Bearer\s+(\S+)$/i.exec(c.req.header('authorization') ?? '');
+    if (!m) return c.json({ error: 'missing bearer token: send the GitHub Actions OIDC token (permissions: id-token: write)' }, 401);
+    let claims;
+    try {
+      claims = await deps.verifyActionsToken(m[1]!);
+    } catch (e) {
+      return c.json({ error: `invalid GitHub Actions token: ${(e as Error).message}` }, 401);
+    }
+    const repo = await store.getRepo(claims.repositoryId);
+    if (!repo || repo.removedAt) {
+      const installUrl = config.githubAppSlug ? `${config.githubWebUrl}/apps/${config.githubAppSlug}/installations/new` : null;
+      return c.json({ error: `the Mendr GitHub App is not installed on ${claims.repository}`, install: installUrl }, 403);
+    }
+    const inst = await store.getInstallation(repo.installationId);
+    if (!inst || inst.deletedAt) return c.json({ error: 'the installation covering this repository was removed' }, 403);
+    if (inst.suspended) return c.json({ error: 'the installation covering this repository is suspended' }, 403);
+
+    const declared = Number(c.req.header('content-length'));
+    if (Number.isFinite(declared) && declared > config.maxBodyBytes) return c.json({ error: `report exceeds ${config.maxBodyBytes} bytes` }, 413);
+    const v = validateMigrationReport(await c.req.text(), config.maxBodyBytes);
+    if (!v.ok) return c.json({ error: v.message }, v.status);
+    const report = v.report;
+    // A PR link the dashboard will show must be a pull request of THIS repository
+    // on the GitHub this App talks to — never an arbitrary URL from the body.
+    if (report.prUrl && !report.prUrl.startsWith(`${config.githubWebUrl}/${claims.repository}/pull/`)) {
+      return c.json({ error: `prUrl must be a pull request of ${claims.repository}` }, 400);
+    }
+
+    const sha = isSha(report.sha) ? report.sha : claims.sha;
+    const rec = await store.saveMigration({
+      repoId: repo.id,
+      sha,
+      ref: claims.ref,
+      runId: claims.runId,
+      runAttempt: claims.runAttempt,
+      workflowRef: claims.workflowRef,
+      actor: claims.actor,
+      generatedAt: report.generatedAt,
+      outcome: report.outcome,
+      verdict: report.verdict,
+      prUrl: report.prUrl,
+      report,
+    });
+    await store.pruneMigrations(repo.id, config.maxRunsPerRepo);
+    if (config.retentionDays > 0) await store.pruneMigrationsByAge(config.retentionDays);
+    log('migration', { repo: claims.repository, id: rec.id, outcome: report.outcome, verdict: report.verdict, pr: !!report.prUrl });
+    await store.appendAuditLog({
+      event: report.outcome === 'migration-proposed' && report.prUrl ? 'pr_created' : 'migration_prepared',
+      installationId: repo.installationId,
+      repo: claims.repository,
+      actor: claims.actor,
+      detail: { outcome: report.outcome, verdict: report.verdict, pr: !!report.prUrl, swaps: report.migrations.length, sha: sha.slice(0, 7) },
+    });
+    return c.json({ ok: true, migration: { id: rec.id, outcome: report.outcome, verdict: report.verdict, prUrl: report.prUrl } });
+  });
+
   // --- sign-in ------------------------------------------------------------------
 
   app.get('/auth/login', (c) => {
@@ -338,11 +403,17 @@ export function createApp(deps: AppDeps): Hono {
     if (isConfigured(config)) {
       const gh = await github.getRepoAsUser(sess.token, fullName);
       migrate = {
-        setupUrl: setupMigrateWorkflowUrl({ webUrl: config.githubWebUrl, repoFullName: fullName, defaultBranch: gh?.defaultBranch ?? 'main', mendrSpec: config.mendrSpec }),
+        setupUrl: setupMigrateWorkflowUrl({ webUrl: config.githubWebUrl, repoFullName: fullName, defaultBranch: gh?.defaultBranch ?? 'main', mendrSpec: config.mendrSpec, appUrl: config.appUrl }),
         runUrl: migrateActionsUrl(config.githubWebUrl, fullName),
       };
     }
-    return c.html(runPage(repo, run, sess.login, { webUrl: config.githubWebUrl, workflowUrl: workflowRunsUrl(config.githubWebUrl, repo.fullName), migrate }));
+    // What mendr-action last reported for this repo, and the run before this one:
+    // a resolution is only ever claimed by comparing completed scans.
+    const [migration, runs] = await Promise.all([store.latestMigration(repo.id), store.listRuns(repo.id, 50)]);
+    const idx = runs.findIndex((r) => r.id === run.id);
+    const prevSummary = idx >= 0 ? runs[idx + 1] : undefined;
+    const previous = prevSummary ? await store.getRun(prevSummary.id) : null;
+    return c.html(runPage(repo, run, sess.login, { webUrl: config.githubWebUrl, workflowUrl: workflowRunsUrl(config.githubWebUrl, repo.fullName), migrate, migration, previous }));
   });
 
   // Self-service deletion: a signed-in user with access can delete this repo's
@@ -355,9 +426,20 @@ export function createApp(deps: AppDeps): Hono {
     const repo = await accessibleRepo(sess, fullName);
     if (!repo) return c.html(errorPage('Not found', 'No such repository is visible to you here.'), 404);
     const gone = await store.deleteRepoData(repo.id);
-    log('data deleted', { repo: fullName, by: sess.login, runsDeleted: gone.runsDeleted });
-    await store.appendAuditLog({ event: 'data_deleted', installationId: repo.installationId, repo: fullName, actor: sess.login, detail: { runsDeleted: gone.runsDeleted, via: 'self-service' } });
-    return c.html(errorPage('Deleted', `Removed ${gone.runsDeleted} stored run(s) for ${fullName}. Nothing of this repository's findings remains. Re-run the audit to repopulate.`));
+    log('data deleted', { repo: fullName, by: sess.login, runsDeleted: gone.runsDeleted, migrationsDeleted: gone.migrationsDeleted });
+    await store.appendAuditLog({
+      event: 'data_deleted',
+      installationId: repo.installationId,
+      repo: fullName,
+      actor: sess.login,
+      detail: { runsDeleted: gone.runsDeleted, migrationsDeleted: gone.migrationsDeleted, via: 'self-service' },
+    });
+    return c.html(
+      errorPage(
+        'Deleted',
+        `Removed ${gone.runsDeleted} stored run(s) and ${gone.migrationsDeleted} migration report(s) for ${fullName}. Nothing of this repository's findings remains. Re-run the audit to repopulate.`,
+      ),
+    );
   });
 
   // --- the static investigation workspace (site/app) -------------------------------

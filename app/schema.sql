@@ -1,9 +1,12 @@
--- Mendr App storage. Three tables, and none of them holds code.
+-- Mendr App storage. Four data tables plus an audit log, and none of them holds code.
 --
 -- installations: which GitHub accounts installed the App (the tenant boundary).
 -- repos:         which repositories each installation covers (ids, names, privacy).
 -- runs:          the sanitized evidence one CI run sent: findings, paths, line
 --                numbers, classifications, redacted <=7-line snippets, line hashes.
+-- migrations:    what mendr-action reported after a migration run: outcome, PR
+--                url, verdict, gate statuses, model swaps and the file paths they
+--                touch — never the diff.
 --
 -- Every statement is idempotent so the server can apply this file at boot.
 
@@ -47,6 +50,25 @@ CREATE TABLE IF NOT EXISTS runs (
   UNIQUE (repo_id, run_id, run_attempt)
 );
 CREATE INDEX IF NOT EXISTS runs_repo_received ON runs (repo_id, received_at DESC);
+
+CREATE TABLE IF NOT EXISTS migrations (
+  id             BIGSERIAL PRIMARY KEY,
+  repo_id        BIGINT NOT NULL REFERENCES repos(id),
+  sha            TEXT NOT NULL,
+  ref            TEXT NOT NULL,
+  run_id         BIGINT NOT NULL,
+  run_attempt    INTEGER NOT NULL,
+  workflow_ref   TEXT,
+  actor          TEXT,
+  received_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  generated_at   TEXT,
+  outcome        TEXT NOT NULL,
+  verdict        TEXT,
+  pr_url         TEXT,
+  report         JSONB NOT NULL,
+  UNIQUE (repo_id, run_id, run_attempt)
+);
+CREATE INDEX IF NOT EXISTS migrations_repo_received ON migrations (repo_id, received_at DESC);
 
 -- audit_log: an append-only record of security-relevant events. `detail` holds
 -- only scalars (counts, ids, a conclusion) — never findings, secrets or code.

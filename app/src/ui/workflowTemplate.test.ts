@@ -87,15 +87,16 @@ describe('newWorkflowFileUrl / setupWorkflowUrl', () => {
 });
 
 describe('migrateWorkflowYaml / setupMigrateWorkflowUrl — "Prepare migration for review"', () => {
-  const yaml = migrateWorkflowYaml({ mendrSpec: 'v0.3.0-alpha' });
+  const yaml = migrateWorkflowYaml({ mendrSpec: 'v0.3.0-alpha', appUrl: 'https://app.example' });
 
-  it('runs by hand only, with exactly the two write scopes the branch and the PR need', () => {
+  it('runs by hand only, with the two write scopes the branch and the PR need plus id-token to report back', () => {
     expect(yaml).toContain('workflow_dispatch: {}');
     expect(yaml).not.toMatch(/^\s+push:/m);
     expect(yaml).not.toMatch(/^\s+schedule:/m);
-    expect(yaml).toMatch(/permissions:\n  contents: write\n  pull-requests: write\n/);
-    expect(yaml).not.toMatch(/^\s+(issues|actions|id-token|checks): /m);
+    expect(yaml).toMatch(/permissions:\n  contents: write\n  pull-requests: write\n  id-token: write\n/);
+    expect(yaml).not.toMatch(/^\s+(issues|actions|checks): /m);
     expect(yaml).not.toContain('${{ secrets.');
+    expect(yaml).toContain('app-url: https://app.example'); // the result goes to THIS App; never the diff
   });
 
   it('pins the action and the CLI it runs to the same release', () => {
@@ -111,7 +112,7 @@ describe('migrateWorkflowYaml / setupMigrateWorkflowUrl — "Prepare migration f
   });
 
   it('deep-links to the prefilled editor at the migration path, and to the Actions page', () => {
-    const url = setupMigrateWorkflowUrl({ webUrl: 'https://github.com', repoFullName: 'acme/api', defaultBranch: 'trunk', mendrSpec: 'v0.3.0-alpha' });
+    const url = setupMigrateWorkflowUrl({ webUrl: 'https://github.com', repoFullName: 'acme/api', defaultBranch: 'trunk', mendrSpec: 'v0.3.0-alpha', appUrl: 'https://app.example' });
     expect(url.startsWith('https://github.com/acme/api/new/trunk?')).toBe(true);
     expect(url).toContain(`filename=${encodeURIComponent(MENDR_MIGRATE_WORKFLOW_PATH)}`);
     expect(decodeURIComponent(new URL(url).searchParams.get('value')!)).toBe(yaml);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Repo, RunRecord, RunSummary } from '../store/types.js';
+import type { MigrationRecord, Repo, RunRecord, RunSummary } from '../store/types.js';
 import { runPage, runsPage } from './pages.js';
 
 // "Failure must never look resolved": a run that did not conclude must not
@@ -100,5 +100,107 @@ describe('"Prepare migration for review" on the run page', () => {
     const unconfigured = runPage(repo, record('patch', { migration: { workflowPresent: true } }), 'octocat', { webUrl: view.webUrl, workflowUrl: view.workflowUrl });
     expect(unconfigured).not.toContain('id="migrate"');
     expect(unconfigured).not.toContain('Prepare migration for review ↓');
+  });
+
+  const migration = (over: Partial<MigrationRecord> = {}): MigrationRecord => ({
+    id: 3,
+    repoId: 1,
+    sha: 'b'.repeat(40),
+    ref: 'refs/heads/main',
+    runId: 500,
+    runAttempt: 1,
+    workflowRef: null,
+    actor: 'octocat',
+    receivedAt: '2026-09-07T07:00:00.000Z',
+    generatedAt: null,
+    outcome: 'migration-proposed',
+    verdict: 'verified',
+    prUrl: 'https://github.com/acme/api/pull/12',
+    report: {
+      schema: 'mendr-migration-report/v1',
+      outcome: 'migration-proposed',
+      prUrl: 'https://github.com/acme/api/pull/12',
+      sha: 'b'.repeat(40),
+      generatedAt: null,
+      verdict: 'verified',
+      gates: { typeCheck: 'pass', build: 'not-configured', tests: 'pass', eval: 'not-configured' },
+      behavioralTested: false,
+      migrations: [{ provider: 'openai', from: 'gpt-4', to: 'gpt-5.6-sol', language: 'ts', sites: 1, files: ['src/ai.ts'] }],
+      changedFiles: ['src/ai.ts'],
+      notes: [],
+    },
+    ...over,
+  });
+
+  it('shows what mendr-action last reported, on the card and on the finding it covers', () => {
+    const html = runPage(repo, record('patch', { migration: { workflowPresent: true } }), 'octocat', { ...view, migration: migration() });
+    expect(html).toContain('Latest migration run');
+    expect(html).toContain('PR #12 ↗');
+    expect(html).toContain('>verified<');
+    expect(html).toContain('type-check ✓');
+    expect(html).toContain('build —');
+    expect(html).toContain('behavior not tested');
+    expect(html).toContain('Migration run:'); // on the gpt-4 finding itself
+  });
+
+  it('a not-verified run says so and shows no PR', () => {
+    const html = runPage(repo, record('patch'), 'octocat', {
+      ...view,
+      migration: migration({ outcome: 'not-verified', verdict: 'failed', prUrl: null, report: { ...migration().report, outcome: 'not-verified', verdict: 'failed', prUrl: null, gates: { typeCheck: 'pass', build: 'not-configured', tests: 'fail', eval: 'not-configured' } } }),
+    });
+    expect(html).toContain('not verified — nothing applied, no PR');
+    expect(html).toContain('tests ✗');
+    expect(html).not.toContain('PR #12');
+  });
+});
+
+describe('a resolution is confirmed only by a completed scan on a fresh registry', () => {
+  const inv = (model: string, decision: 'patch' | 'monitor' = 'patch') => ({
+    provider: 'openai',
+    model,
+    decision,
+    reason: 'r',
+    nextAction: 'n',
+    locations: { selectors: decision === 'monitor' ? [] : [{ file: 'src/ai.ts', line: 4 }], catalog: [] },
+  });
+  const rec = (id: number, conclusion: string, models: string[], registry: Record<string, unknown> | null): RunRecord =>
+    ({
+      ...run(conclusion, { patch: models.length, review: 0, informational: 0 }),
+      id,
+      report: { schema: 'mendr-audit/v3', conclusion, coverage: registry ? { registry } : {}, investigations: models.map((m) => inv(m)) },
+    }) as RunRecord;
+  const fresh = { providers: ['openai'], freshness: 'fresh', publishedAt: '2026-09-07T00:00:00Z', ageDays: 0, maxAgeDays: 14 };
+  const stale = { ...fresh, freshness: 'stale', reason: 'old' };
+  const view = { webUrl: 'https://github.com', workflowUrl: 'https://github.com/acme/api/actions/workflows/mendr-audit.yml' };
+  const pr: MigrationRecord = {
+    id: 9, repoId: 1, sha: 'b'.repeat(40), ref: 'refs/heads/main', runId: 500, runAttempt: 1, workflowRef: null, actor: null, receivedAt: '2026-09-07T07:00:00.000Z', generatedAt: null,
+    outcome: 'migration-proposed', verdict: 'verified', prUrl: 'https://github.com/acme/api/pull/12',
+    report: { schema: 'mendr-migration-report/v1', outcome: 'migration-proposed', prUrl: 'https://github.com/acme/api/pull/12', sha: null, generatedAt: null, verdict: 'verified', gates: null, behavioralTested: false, migrations: [{ provider: 'openai', from: 'gpt-4', to: 'gpt-5.6-sol', language: 'ts', sites: 1, files: [] }], changedFiles: [], notes: [] },
+  };
+
+  it('names the model that was actionable before and is gone now, with the PR that covered it', () => {
+    const previous = rec(1, 'exposure_detected', ['gpt-4', 'gpt-3.5-turbo'], fresh);
+    const current = rec(2, 'exposure_detected', ['gpt-3.5-turbo'], fresh);
+    const html = runPage(repo, current, 'octocat', { ...view, previous, migration: pr });
+    expect(html).toContain('Resolved since run 1');
+    expect(html).toContain('<code>gpt-4</code> (openai) no longer found — via <a href="https://github.com/acme/api/pull/12"');
+    expect(html).not.toContain('<code>gpt-3.5-turbo</code> (openai) no longer found');
+    expect(html).toContain('not by a merge event');
+  });
+
+  it('claims nothing from an inconclusive scan, a stale registry, or a report without freshness', () => {
+    const previous = rec(1, 'exposure_detected', ['gpt-4'], fresh);
+    expect(runPage(repo, rec(2, 'inconclusive', [], stale), 'octocat', { ...view, previous, migration: pr })).not.toContain('Resolved since');
+    expect(runPage(repo, rec(2, 'exposure_detected', [], stale), 'octocat', { ...view, previous, migration: pr })).not.toContain('Resolved since');
+    expect(runPage(repo, rec(2, 'no_exposure_in_completed_surfaces', [], null), 'octocat', { ...view, previous, migration: pr })).not.toContain('Resolved since');
+    expect(runPage(repo, rec(2, 'no_exposure_in_completed_surfaces', [], fresh), 'octocat', { ...view, previous: null })).not.toContain('Resolved since');
+  });
+
+  it('a clean completed scan on a fresh registry confirms it, even without a migration PR', () => {
+    const previous = rec(1, 'exposure_detected', ['gpt-4'], fresh);
+    const html = runPage(repo, rec(2, 'no_exposure_in_completed_surfaces', [], fresh), 'octocat', { ...view, previous });
+    expect(html).toContain('Resolved since run 1');
+    expect(html).toContain('<code>gpt-4</code> (openai) no longer found</li>');
+    expect(html).toContain('Nothing needs action');
   });
 });

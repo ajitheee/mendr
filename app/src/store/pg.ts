@@ -1,7 +1,21 @@
 import { readFile } from 'node:fs/promises';
 import pg from 'pg';
 import type { AuditReport } from '../ingest/validate.js';
-import type { AuditLogEntry, AuditLogInput, Installation, Repo, RepoInput, RunInput, RunRecord, RunSummary, Store } from './types.js';
+import type { MigrationOutcome, MigrationReport, MigrationVerdict } from '../ingest/migrationReport.js';
+import type {
+  AuditLogEntry,
+  AuditLogInput,
+  Installation,
+  MigrationInput,
+  MigrationRecord,
+  MigrationSummary,
+  Repo,
+  RepoInput,
+  RunInput,
+  RunRecord,
+  RunSummary,
+  Store,
+} from './types.js';
 import { open as openField, sealForStore, type DataKeyring } from './encryption.js';
 import { sanitizeEntry } from './auditLog.js';
 
@@ -49,6 +63,26 @@ function summary(r: Row): RunSummary {
 }
 
 const SUMMARY_COLUMNS = 'id, repo_id, sha, ref, run_id, run_attempt, workflow_ref, actor, received_at, generated_at, conclusion, patch, review, informational, check_run_url';
+
+function migrationSummary(r: Row): MigrationSummary {
+  return {
+    id: n(r.id),
+    repoId: n(r.repo_id),
+    sha: String(r.sha),
+    ref: String(r.ref),
+    runId: n(r.run_id),
+    runAttempt: n(r.run_attempt),
+    workflowRef: r.workflow_ref === null ? null : String(r.workflow_ref),
+    actor: r.actor === null ? null : String(r.actor),
+    receivedAt: iso(r.received_at) ?? new Date().toISOString(),
+    generatedAt: r.generated_at === null ? null : String(r.generated_at),
+    outcome: String(r.outcome) as MigrationOutcome,
+    verdict: r.verdict === null ? null : (String(r.verdict) as MigrationVerdict),
+    prUrl: r.pr_url === null ? null : String(r.pr_url),
+  };
+}
+
+const MIGRATION_SUMMARY_COLUMNS = 'id, repo_id, sha, ref, run_id, run_attempt, workflow_ref, actor, received_at, generated_at, outcome, verdict, pr_url';
 
 export class PgStore implements Store {
   readonly kind = 'postgres' as const;
@@ -173,18 +207,60 @@ export class PgStore implements Store {
     );
   }
 
-  async deleteRepoData(repoId: number): Promise<{ runsDeleted: number }> {
-    const del = await this.pool.query('DELETE FROM runs WHERE repo_id = $1', [repoId]);
-    await this.pool.query('DELETE FROM repos WHERE id = $1', [repoId]);
-    return { runsDeleted: del.rowCount ?? 0 };
+  // --- migrations ---
+
+  async saveMigration(m: MigrationInput): Promise<MigrationRecord> {
+    const { rows } = await this.pool.query(
+      `INSERT INTO migrations (repo_id, sha, ref, run_id, run_attempt, workflow_ref, actor, generated_at, outcome, verdict, pr_url, report)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       ON CONFLICT (repo_id, run_id, run_attempt) DO UPDATE SET sha = EXCLUDED.sha, ref = EXCLUDED.ref, workflow_ref = EXCLUDED.workflow_ref,
+         actor = EXCLUDED.actor, received_at = now(), generated_at = EXCLUDED.generated_at, outcome = EXCLUDED.outcome,
+         verdict = EXCLUDED.verdict, pr_url = EXCLUDED.pr_url, report = EXCLUDED.report
+       RETURNING *`,
+      [m.repoId, m.sha, m.ref, m.runId, m.runAttempt, m.workflowRef, m.actor, m.generatedAt, m.outcome, m.verdict, m.prUrl, JSON.stringify(sealForStore(m.report, this.keyring))],
+    );
+    const row = rows[0] as Row;
+    return { ...migrationSummary(row), report: openField<MigrationReport>(row.report, this.keyring) };
   }
 
-  async deleteInstallationData(installationId: number, at: string): Promise<{ reposDeleted: number; runsDeleted: number }> {
+  async listMigrations(repoId: number, limit: number): Promise<MigrationSummary[]> {
+    const { rows } = await this.pool.query(`SELECT ${MIGRATION_SUMMARY_COLUMNS} FROM migrations WHERE repo_id = $1 ORDER BY received_at DESC, id DESC LIMIT $2`, [repoId, limit]);
+    return rows.map((r) => migrationSummary(r as Row));
+  }
+
+  async latestMigration(repoId: number): Promise<MigrationRecord | null> {
+    const { rows } = await this.pool.query('SELECT * FROM migrations WHERE repo_id = $1 ORDER BY received_at DESC, id DESC LIMIT 1', [repoId]);
+    if (!rows[0]) return null;
+    const row = rows[0] as Row;
+    return { ...migrationSummary(row), report: openField<MigrationReport>(row.report, this.keyring) };
+  }
+
+  async pruneMigrations(repoId: number, keep: number): Promise<void> {
+    await this.pool.query(
+      `DELETE FROM migrations WHERE repo_id = $1 AND id NOT IN (SELECT id FROM migrations WHERE repo_id = $1 ORDER BY received_at DESC, id DESC LIMIT $2)`,
+      [repoId, keep],
+    );
+  }
+
+  async pruneMigrationsByAge(days: number): Promise<number> {
+    const del = await this.pool.query(`DELETE FROM migrations WHERE received_at < now() - ($1 || ' days')::interval`, [String(days)]);
+    return del.rowCount ?? 0;
+  }
+
+  async deleteRepoData(repoId: number): Promise<{ runsDeleted: number; migrationsDeleted: number }> {
+    const del = await this.pool.query('DELETE FROM runs WHERE repo_id = $1', [repoId]);
+    const mig = await this.pool.query('DELETE FROM migrations WHERE repo_id = $1', [repoId]);
+    await this.pool.query('DELETE FROM repos WHERE id = $1', [repoId]);
+    return { runsDeleted: del.rowCount ?? 0, migrationsDeleted: mig.rowCount ?? 0 };
+  }
+
+  async deleteInstallationData(installationId: number, at: string): Promise<{ reposDeleted: number; runsDeleted: number; migrationsDeleted: number }> {
     const runs = await this.pool.query('DELETE FROM runs WHERE repo_id IN (SELECT id FROM repos WHERE installation_id = $1)', [installationId]);
+    const migrations = await this.pool.query('DELETE FROM migrations WHERE repo_id IN (SELECT id FROM repos WHERE installation_id = $1)', [installationId]);
     const repos = await this.pool.query('DELETE FROM repos WHERE installation_id = $1', [installationId]);
     // Keep the installation row as a deletion record (it holds no findings).
     await this.pool.query('UPDATE installations SET deleted_at = $2, updated_at = now() WHERE id = $1', [installationId, at]);
-    return { reposDeleted: repos.rowCount ?? 0, runsDeleted: runs.rowCount ?? 0 };
+    return { reposDeleted: repos.rowCount ?? 0, runsDeleted: runs.rowCount ?? 0, migrationsDeleted: migrations.rowCount ?? 0 };
   }
 
   async pruneRunsByAge(days: number): Promise<number> {

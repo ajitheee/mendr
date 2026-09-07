@@ -47,6 +47,16 @@ inputs:
     description: "Token used to push the branch and open the PR. The default GITHUB_TOKEN is enough."
     required: false
     default: ${{ github.token }}
+  app-url:
+    description: >-
+      Your Mendr App URL (e.g. https://mendr-app.onrender.com). When set, the
+      migration result is reported to it, proven by this run's GitHub OIDC token
+      — the outcome, the PR url, the verdict, the gate statuses, the model swaps
+      and the file paths they touch. Never the diff, never code. The calling
+      workflow must grant `id-token: write`; without it nothing is sent and the
+      job still succeeds. Empty = nothing is sent.
+    required: false
+    default: ""
 
 outputs:
   outcome:
@@ -96,4 +106,5 @@ runs:
         MENDR_BASE: ${{ inputs.base }}
         MENDR_LABELS: ${{ inputs.pr-labels }}
         MENDR_EVAL: ${{ inputs.eval-command }}
+        MENDR_APP_URL: ${{ inputs.app-url }}
       run: bash "$GITHUB_ACTION_PATH/scripts/run-mendr.sh"

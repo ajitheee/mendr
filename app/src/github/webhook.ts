@@ -65,8 +65,14 @@ export async function applyWebhook(store: Store, event: string, payload: unknown
         // Uninstall = remove the customer's stored data: every finding and repo
         // is hard-deleted; the installation row survives as a deletion record.
         const gone = await store.deleteInstallationData(inst.id, now);
-        await store.appendAuditLog({ event: 'installation_removed', installationId: inst.id, repo: null, actor: inst.account?.login ?? null, detail: { reposDeleted: gone.reposDeleted, runsDeleted: gone.runsDeleted } });
-        return `installation ${inst.id} deleted: purged ${gone.reposDeleted} repositories and ${gone.runsDeleted} run(s)`;
+        await store.appendAuditLog({
+          event: 'installation_removed',
+          installationId: inst.id,
+          repo: null,
+          actor: inst.account?.login ?? null,
+          detail: { reposDeleted: gone.reposDeleted, runsDeleted: gone.runsDeleted, migrationsDeleted: gone.migrationsDeleted },
+        });
+        return `installation ${inst.id} deleted: purged ${gone.reposDeleted} repositories, ${gone.runsDeleted} run(s) and ${gone.migrationsDeleted} migration report(s)`;
       }
       default:
         return `ignored: installation.${p.action ?? '?'}`;
@@ -90,10 +96,17 @@ export async function applyWebhook(store: Store, event: string, payload: unknown
     // Access removed = findings deleted: hard-delete each removed repo's runs
     // and the repo row, not a soft-delete that keeps the data around.
     let runsDeleted = 0;
-    for (const r of removed) runsDeleted += (await store.deleteRepoData(r.id)).runsDeleted;
+    let migrationsDeleted = 0;
+    for (const r of removed) {
+      const gone = await store.deleteRepoData(r.id);
+      runsDeleted += gone.runsDeleted;
+      migrationsDeleted += gone.migrationsDeleted;
+    }
     if (added.length) await store.appendAuditLog({ event: 'repos_added', installationId: inst.id, repo: null, actor: inst.account?.login ?? null, detail: { count: added.length } });
-    if (removed.length) await store.appendAuditLog({ event: 'repos_removed', installationId: inst.id, repo: null, actor: inst.account?.login ?? null, detail: { count: removed.length, runsDeleted } });
-    return `installation ${inst.id}: +${added.length} repositories, -${removed.length} (purged ${runsDeleted} run(s))`;
+    if (removed.length) {
+      await store.appendAuditLog({ event: 'repos_removed', installationId: inst.id, repo: null, actor: inst.account?.login ?? null, detail: { count: removed.length, runsDeleted, migrationsDeleted } });
+    }
+    return `installation ${inst.id}: +${added.length} repositories, -${removed.length} (purged ${runsDeleted} run(s), ${migrationsDeleted} migration report(s))`;
   }
 
   return `ignored: ${event}`;

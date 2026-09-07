@@ -1,4 +1,5 @@
 import type { AuditReport, DecisionCounts } from '../ingest/validate.js';
+import type { MigrationOutcome, MigrationReport, MigrationVerdict } from '../ingest/migrationReport.js';
 
 export interface Installation {
   id: number;
@@ -44,6 +45,29 @@ export interface RunRecord extends RunSummary {
 
 export type RunInput = Omit<RunRecord, 'id' | 'receivedAt'>;
 
+/** What mendr-action reported after one migration run — never the diff. */
+export interface MigrationSummary {
+  id: number;
+  repoId: number;
+  sha: string;
+  ref: string;
+  runId: number;
+  runAttempt: number;
+  workflowRef: string | null;
+  actor: string | null;
+  receivedAt: string;
+  generatedAt: string | null;
+  outcome: MigrationOutcome;
+  verdict: MigrationVerdict | null;
+  prUrl: string | null;
+}
+
+export interface MigrationRecord extends MigrationSummary {
+  report: MigrationReport;
+}
+
+export type MigrationInput = Omit<MigrationRecord, 'id' | 'receivedAt'>;
+
 /**
  * What the App remembers. Three things: who installed it, which repositories
  * that covers, and the sanitized evidence each run sent. No code, no user
@@ -68,15 +92,24 @@ export interface Store {
   getRun(id: number): Promise<RunRecord | null>;
   pruneRuns(repoId: number, keep: number): Promise<void>;
   latestRunPerRepo(): Promise<Map<number, RunSummary>>;
+  // --- migrations (what mendr-action reported; never the diff) ---
+  /** Insert, or replace the report with the same (repo, run id, attempt). */
+  saveMigration(m: MigrationInput): Promise<MigrationRecord>;
+  listMigrations(repoId: number, limit: number): Promise<MigrationSummary[]>;
+  /** The newest migration report for a repository, with its sanitized body. */
+  latestMigration(repoId: number): Promise<MigrationRecord | null>;
+  pruneMigrations(repoId: number, keep: number): Promise<void>;
+  /** Delete migration reports older than `days`, across all repos. Retention control. */
+  pruneMigrationsByAge(days: number): Promise<number>;
   // --- retention & deletion (trust: data cleanup) ---
-  /** Hard-delete a repository's stored runs (findings) and the repo row. Returns how many runs went. */
-  deleteRepoData(repoId: number): Promise<{ runsDeleted: number }>;
+  /** Hard-delete a repository's stored runs, migration reports and the repo row. Returns how many went. */
+  deleteRepoData(repoId: number): Promise<{ runsDeleted: number; migrationsDeleted: number }>;
   /**
-   * Hard-delete ALL stored findings and repositories for an installation (App
-   * uninstalled). The installation row is kept, marked deleted, as a deletion
-   * record that holds no findings.
+   * Hard-delete ALL stored findings, migration reports and repositories for an
+   * installation (App uninstalled). The installation row is kept, marked
+   * deleted, as a deletion record that holds no findings.
    */
-  deleteInstallationData(installationId: number, at: string): Promise<{ reposDeleted: number; runsDeleted: number }>;
+  deleteInstallationData(installationId: number, at: string): Promise<{ reposDeleted: number; runsDeleted: number; migrationsDeleted: number }>;
   /** Delete runs older than `days`, across all repos. Returns how many went. Retention control. */
   pruneRunsByAge(days: number): Promise<number>;
   // --- audit log (trust: an append-only record of security-relevant events) ---

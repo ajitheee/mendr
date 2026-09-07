@@ -1,4 +1,17 @@
-import type { AuditLogEntry, AuditLogInput, Installation, Repo, RepoInput, RunInput, RunRecord, RunSummary, Store } from './types.js';
+import type {
+  AuditLogEntry,
+  AuditLogInput,
+  Installation,
+  MigrationInput,
+  MigrationRecord,
+  MigrationSummary,
+  Repo,
+  RepoInput,
+  RunInput,
+  RunRecord,
+  RunSummary,
+  Store,
+} from './types.js';
 import { sanitizeEntry } from './auditLog.js';
 
 /** Development and test store. Everything is lost on restart, by design. */
@@ -8,6 +21,8 @@ export class MemoryStore implements Store {
   private repos = new Map<number, Repo>();
   private runs = new Map<number, RunRecord>();
   private nextRunId = 1;
+  private migrations = new Map<number, MigrationRecord>();
+  private nextMigrationId = 1;
 
   async upsertInstallation(i: Installation): Promise<void> {
     this.installations.set(i.id, { ...i });
@@ -86,7 +101,48 @@ export class MemoryStore implements Store {
     for (const r of this.sorted(repoId).slice(keep)) this.runs.delete(r.id);
   }
 
-  async deleteRepoData(repoId: number): Promise<{ runsDeleted: number }> {
+  // --- migrations ---
+
+  async saveMigration(m: MigrationInput): Promise<MigrationRecord> {
+    const existing = [...this.migrations.values()].find((x) => x.repoId === m.repoId && x.runId === m.runId && x.runAttempt === m.runAttempt);
+    const id = existing?.id ?? this.nextMigrationId++;
+    const record: MigrationRecord = { ...m, id, receivedAt: new Date().toISOString() };
+    this.migrations.set(id, record);
+    return { ...record };
+  }
+
+  private sortedMigrations(repoId: number): MigrationRecord[] {
+    return [...this.migrations.values()].filter((x) => x.repoId === repoId).sort((a, b) => b.receivedAt.localeCompare(a.receivedAt) || b.id - a.id);
+  }
+
+  async listMigrations(repoId: number, limit: number): Promise<MigrationSummary[]> {
+    return this.sortedMigrations(repoId)
+      .slice(0, limit)
+      .map(({ report: _report, ...summary }) => summary);
+  }
+
+  async latestMigration(repoId: number): Promise<MigrationRecord | null> {
+    const m = this.sortedMigrations(repoId)[0];
+    return m ? { ...m } : null;
+  }
+
+  async pruneMigrations(repoId: number, keep: number): Promise<void> {
+    for (const m of this.sortedMigrations(repoId).slice(keep)) this.migrations.delete(m.id);
+  }
+
+  async pruneMigrationsByAge(days: number): Promise<number> {
+    const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
+    let deleted = 0;
+    for (const [id, m] of [...this.migrations]) {
+      if (m.receivedAt < cutoff) {
+        this.migrations.delete(id);
+        deleted++;
+      }
+    }
+    return deleted;
+  }
+
+  async deleteRepoData(repoId: number): Promise<{ runsDeleted: number; migrationsDeleted: number }> {
     let runsDeleted = 0;
     for (const [id, r] of [...this.runs]) {
       if (r.repoId === repoId) {
@@ -94,17 +150,29 @@ export class MemoryStore implements Store {
         runsDeleted++;
       }
     }
+    let migrationsDeleted = 0;
+    for (const [id, m] of [...this.migrations]) {
+      if (m.repoId === repoId) {
+        this.migrations.delete(id);
+        migrationsDeleted++;
+      }
+    }
     this.repos.delete(repoId);
-    return { runsDeleted };
+    return { runsDeleted, migrationsDeleted };
   }
 
-  async deleteInstallationData(installationId: number, at: string): Promise<{ reposDeleted: number; runsDeleted: number }> {
+  async deleteInstallationData(installationId: number, at: string): Promise<{ reposDeleted: number; runsDeleted: number; migrationsDeleted: number }> {
     const repoIds = [...this.repos.values()].filter((r) => r.installationId === installationId).map((r) => r.id);
     let runsDeleted = 0;
-    for (const id of repoIds) runsDeleted += (await this.deleteRepoData(id)).runsDeleted;
+    let migrationsDeleted = 0;
+    for (const id of repoIds) {
+      const gone = await this.deleteRepoData(id);
+      runsDeleted += gone.runsDeleted;
+      migrationsDeleted += gone.migrationsDeleted;
+    }
     const inst = this.installations.get(installationId);
     if (inst) this.installations.set(installationId, { ...inst, deletedAt: at });
-    return { reposDeleted: repoIds.length, runsDeleted };
+    return { reposDeleted: repoIds.length, runsDeleted, migrationsDeleted };
   }
 
   private auditLog: AuditLogEntry[] = [];
