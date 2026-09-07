@@ -15,7 +15,7 @@ name: app-deploy
 on:
   push:
     branches: [main]
-    paths: [app/**, site/app/**, render.yaml]
+    paths: [app/**, render.yaml]
   workflow_dispatch: {}
 
 permissions: {}

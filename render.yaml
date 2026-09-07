@@ -30,8 +30,6 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "22" # a Mendr dep needs Node >= 22
-      - key: UI_DIR
-        value: ../site/app # serve the investigation workspace (repo/site/app)
       # Linked + generated automatically:
       - key: DATABASE_URL
         fromDatabase:
@@ -39,8 +37,9 @@ services:
           property: connectionString
       - key: SESSION_SECRET
         generateValue: true
-      - key: MENDR_CLI_SPEC
-        value: v0.4.1-alpha
+      # The CLI release the generated workflows pin to is compiled into the App
+      # (app/src/config.ts MENDR_CLI_SPEC) and bumped with each release — no
+      # environment variable, so a deployment can never hand out a stale pin.
       # --- set in the Render dashboard (sync:false = not committed) ---
       # 1. After the FIRST deploy, set APP_URL to this service's public URL
       #    (e.g. https://mendr-app.onrender.com), then redeploy.

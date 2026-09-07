@@ -3,14 +3,14 @@
 There are **two separate deployments**, and conflating them is the confusion to
 avoid:
 
-| | What | Where | Has `/setup`? | `/app/` shows |
-|---|---|---|---|---|
-| **Marketing site** | `site/` static HTML | Vercel (`vercel.json`) | No | the paste-JSON demo prototype |
-| **The App** | `app/` — Node + Postgres | a container host (this guide) | **Yes** | the workspace, reading from `/api` |
+| | What | Where | Has `/setup`? |
+|---|---|---|---|
+| **Marketing site** | `site/` static HTML | Vercel (`vercel.json`) | No — its "Connect GitHub" button and its old `/app` URL redirect to the App |
+| **The App** | `app/` — Node + Postgres | a container host (this guide) | **Yes** |
 
-So on the Vercel domain, `/setup` 404s and `/app` is a static demo — that is
-expected. `/setup` and the GitHub-connected workspace live on the **App's own
-domain**, which you deploy below.
+`/setup`, sign-in, the overview and every run page live on the **App's own
+domain**, which you deploy below. (The pre-App paste-JSON prototype that once
+lived at `/app` is gone.)
 
 The App is designed so creating the GitHub App is one click from `/setup`; you
 never hand-craft a manifest or paste a private key into code.
@@ -104,8 +104,10 @@ demo reachable if you like, but make the primary CTA the App.
 
 See [`.env.example`](.env.example). Required in production: `APP_URL`,
 `DATABASE_URL`, `SESSION_SECRET`, `MENDR_DATA_KEY`, and the six `GITHUB_*` values
-from step 2. `MENDR_CLI_SPEC` pins the scanner the scaffolded workflow runs
-(default `v0.4.1-alpha`). Optional: `MENDR_RETENTION_DAYS`, `MAX_RUNS_PER_REPO`.
+from step 2. The scanner release the generated workflows pin to is compiled into
+the App (`MENDR_CLI_SPEC` in `src/config.ts`, bumped with each release) — not an
+environment variable, so a deployment can never hand out a stale pin. Optional:
+`MENDR_RETENTION_DAYS`, `MAX_RUNS_PER_REPO`.
 
 The App warns loudly at boot if `DATABASE_URL` (falls back to in-memory) or
 `MENDR_DATA_KEY` (plaintext storage) is missing — neither is acceptable for a

@@ -33,17 +33,17 @@ telemetry. The full statement is in [TRUST.md](../TRUST.md).
 | `POST /webhooks/github` | Installation webhooks. |
 | `POST /api/ingest` | Evidence from your CI, bearer = Actions OIDC token, audience `mendr`. |
 | `GET /auth/login`, `/auth/callback`, `POST /auth/logout` | Sign in with GitHub. |
-| `GET /api/me`, `/api/repos`, `/api/repos/:owner/:name/runs`, `/api/runs/:id` | JSON for the workspace. |
+| `POST /api/migrations` | What `mendr-action` did, bearer = Actions OIDC token (never the diff). |
+| `GET /api/me`, `/api/repos`, `/api/repos/:owner/:name/runs`, `/api/runs/:id` | JSON, as linked from the run page ("Evidence JSON"). |
 | `GET /`, `/r/:owner/:name`, `/r/:owner/:name/runs/:id` | Overview, run list, run page. |
-| `GET /app/` | The static investigation workspace (`site/app`), when `UI_DIR` is set. |
 
 ## Deploy
 
 **Full step-by-step (deploy → create the GitHub App → connect a repo → test):
 [DEPLOY.md](DEPLOY.md).** It also explains the two-deployment split (this Node +
-Postgres service vs the static marketing site on Vercel), which is why `/setup`
-404s and `/app` shows a demo on the Vercel domain — those routes live here, on
-this service's own domain.
+Postgres service vs the static marketing site on Vercel): `/setup` and every
+signed-in page live here, on this service's own domain; the marketing site's
+"Connect GitHub" button and its old `/app` URL both lead here.
 
 The fastest path is the [Render blueprint](../render.yaml) (Docker + managed
 Postgres, near one-click). The short version:

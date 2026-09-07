@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Changed — the old prototype is gone; the release pin is compiled in; retries everywhere
+
+- **Removed the pre-App paste-JSON prototype and the superseded site drafts.**
+  The App no longer serves `/app/` (it redirects to the overview); `UI_DIR` is
+  gone; `site/` keeps only the landing page, privacy and security. The marketing
+  site's old `/app` URL still redirects to the App.
+- **The scanner release the App pins to is compiled in** (`MENDR_CLI_SPEC` in
+  `app/src/config.ts`, bumped with each release) — no longer an environment
+  variable, so a stale deployment setting can never hand out an older pin than
+  the release the App was built from. Customers pin differently with their own
+  `MENDR_SPEC` repository variable, which every generated workflow reads first.
+- **Retry with backoff** on every GitHub call the App makes (429, secondary
+  rate limits, 5xx, network errors; honoring `Retry-After`) and on the CI-side
+  uploads — the audit workflow's POST and `mendr-action`'s report — so a
+  sleeping free-tier App or a blip does not lose evidence. Both uploads are
+  idempotent per workflow run attempt, so a repeat is safe.
+
 ## 0.4.1-alpha — 2026-09-07
 
 ### Added — migration results reported back; resolution confirmed by the next audit

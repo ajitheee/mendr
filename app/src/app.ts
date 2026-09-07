@@ -1,6 +1,4 @@
 import { randomBytes } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { Hono, type Context } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { isConfigured, type AppConfig } from './config.js';
@@ -328,7 +326,7 @@ export function createApp(deps: AppDeps): Hono {
     return c.redirect('/');
   });
 
-  // --- read API (for the workspace) --------------------------------------------
+  // --- read API (JSON; the run page's "Evidence JSON" link) ------------------------
 
   app.get('/api/me', async (c) => {
     const sess = await session(c);
@@ -442,17 +440,11 @@ export function createApp(deps: AppDeps): Hono {
     );
   });
 
-  // --- the static investigation workspace (site/app) -------------------------------
-
-  app.get('/app', (c) => c.redirect('/app/'));
-  app.get('/app/', async (c) => {
-    if (!config.uiDir) return c.text('UI_DIR is not set; the investigation workspace is not served from this deployment.', 404);
-    try {
-      return c.html(await readFile(join(config.uiDir, 'index.html'), 'utf8'));
-    } catch {
-      return c.text('the investigation workspace file was not found', 404);
-    }
-  });
+  // The pre-App JSON-import prototype ("investigation workspace") used to be served
+  // at /app/. It is gone: the run page is the evidence view. The marketing site
+  // redirects its old /app URL here.
+  app.get('/app', (c) => c.redirect('/'));
+  app.get('/app/', (c) => c.redirect('/'));
 
   return app;
 }

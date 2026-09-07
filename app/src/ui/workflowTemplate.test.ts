@@ -67,6 +67,11 @@ describe('auditWorkflowYaml', () => {
     expect(exit).toBeGreaterThan(post);
     expect(yaml).toContain('if [ -s mendr-audit.json ]; then'); // a usage error (no report) posts nothing
   });
+
+  it('retries the upload so a sleeping App or a blip does not lose evidence (the POST is idempotent per attempt)', () => {
+    expect(yaml).toMatch(/curl -sS --fail-with-body --retry 4 --retry-delay 5 --retry-all-errors --max-time 120 -X POST "\$MENDR_APP_URL\/api\/ingest"/);
+    expect(yaml).toMatch(/TOKEN=\$\(curl -sS --retry 3 --retry-delay 2 --retry-all-errors/);
+  });
 });
 
 describe('newWorkflowFileUrl / setupWorkflowUrl', () => {

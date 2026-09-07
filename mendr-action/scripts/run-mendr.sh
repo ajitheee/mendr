@@ -35,12 +35,14 @@ report_to_app() { # $1 outcome, $2 pr url (may be empty), $3 artifact path (may 
     echo "::warning::Mendr: could not build the migration report for the App; nothing sent."
     return 0
   fi
-  token="$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=${MENDR_APP_AUDIENCE:-mendr}" 2>/dev/null | jq -r '.value // empty' 2>/dev/null || true)"
+  # Retries cover a sleeping (free-tier) App waking up and network blips; the
+  # report is idempotent per workflow run attempt, so a repeat is safe.
+  token="$(curl -sS --retry 3 --retry-delay 2 --retry-all-errors -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=${MENDR_APP_AUDIENCE:-mendr}" 2>/dev/null | jq -r '.value // empty' 2>/dev/null || true)"
   if [ -z "$token" ]; then
     echo "::warning::Mendr: could not obtain the GitHub OIDC token; the migration result was not reported to the App."
     return 0
   fi
-  code="$(curl -sS -o /dev/null -w '%{http_code}' -X POST "${MENDR_APP_URL%/}/api/migrations" \
+  code="$(curl -sS -o /dev/null -w '%{http_code}' --retry 4 --retry-delay 5 --retry-all-errors --max-time 120 -X POST "${MENDR_APP_URL%/}/api/migrations" \
     -H "Authorization: Bearer $token" -H "Content-Type: application/json" --data-binary @"$body" 2>/dev/null || echo 000)"
   case "$code" in
     2*) echo "Mendr: migration result ($1) reported to the App." ;;

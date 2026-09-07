@@ -2,6 +2,7 @@ import type { AppConfig } from '../config.js';
 import type { CheckRunPayload } from '../ingest/checkRun.js';
 import { redactSecrets } from '../redact.js';
 import { appJwt } from './appAuth.js';
+import { withRetry } from './retry.js';
 
 export interface ManifestCredentials {
   id: number;
@@ -48,11 +49,36 @@ export class GitHubApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    /** How long GitHub asked us to wait (Retry-After / rate-limit reset), when it said. */
+    public readonly retryAfterMs?: number,
   ) {
     super(message);
     this.name = 'GitHubApiError';
   }
 }
+
+/**
+ * Worth another try: a network/timeout error (not a GitHub answer at all), a
+ * 429, a secondary-rate-limit 403, or a 5xx. A 4xx that means "no" (404, 401,
+ * 403 without a rate-limit message, 422) is final.
+ */
+export function isRetryableGitHubError(e: unknown): boolean {
+  if (!(e instanceof GitHubApiError)) return true;
+  if (e.status === 429 || e.status >= 500) return true;
+  return e.status === 403 && /rate limit/i.test(e.message);
+}
+
+/** The wait GitHub asked for, from Retry-After (seconds) or a rate-limit reset (epoch seconds). */
+export function retryAfterFromHeaders(headers: Headers, now: number = Date.now()): number | undefined {
+  const ra = headers.get('retry-after');
+  if (ra && /^\d+$/.test(ra.trim())) return Number(ra.trim()) * 1000;
+  const remaining = headers.get('x-ratelimit-remaining');
+  const reset = headers.get('x-ratelimit-reset');
+  if (remaining === '0' && reset && /^\d+$/.test(reset.trim())) return Math.max(0, Number(reset.trim()) * 1000 - now);
+  return undefined;
+}
+
+export const GITHUB_RETRY_ATTEMPTS = 3;
 
 export function createGitHubApi(cfg: ApiConfig): GitHubApi {
   const tokens = new Map<string, { token: string; expiresAt: number }>();
@@ -64,24 +90,33 @@ export function createGitHubApi(cfg: ApiConfig): GitHubApi {
     ...(auth ? { Authorization: auth } : {}),
   });
 
+  // Every call is retried on transient failure (isRetryableGitHubError), honoring
+  // GitHub's own Retry-After when it sends one. The check-run POST is included:
+  // a 5xx or a dropped connection almost always means nothing was created, and
+  // a rare duplicate check run is far cheaper than lost evidence.
   async function call(url: string, init: RequestInit, auth?: string): Promise<{ status: number; json: unknown }> {
-    const res = await fetch(url, {
-      ...init,
-      headers: { ...baseHeaders(auth), ...((init.headers as Record<string, string> | undefined) ?? {}) },
-      signal: AbortSignal.timeout(30_000),
-    });
-    const text = await res.text();
-    let json: unknown = null;
-    try {
-      json = text ? JSON.parse(text) : null;
-    } catch {
-      json = null;
-    }
-    if (!res.ok) {
-      const detail = json && typeof json === 'object' && typeof (json as { message?: unknown }).message === 'string' ? (json as { message: string }).message : text.slice(0, 200);
-      throw new GitHubApiError(res.status, `GitHub ${res.status} for ${init.method ?? 'GET'} ${new URL(url).pathname}: ${redactSecrets(detail)}`);
-    }
-    return { status: res.status, json };
+    return withRetry(
+      async () => {
+        const res = await fetch(url, {
+          ...init,
+          headers: { ...baseHeaders(auth), ...((init.headers as Record<string, string> | undefined) ?? {}) },
+          signal: AbortSignal.timeout(30_000),
+        });
+        const text = await res.text();
+        let json: unknown = null;
+        try {
+          json = text ? JSON.parse(text) : null;
+        } catch {
+          json = null;
+        }
+        if (!res.ok) {
+          const detail = json && typeof json === 'object' && typeof (json as { message?: unknown }).message === 'string' ? (json as { message: string }).message : text.slice(0, 200);
+          throw new GitHubApiError(res.status, `GitHub ${res.status} for ${init.method ?? 'GET'} ${new URL(url).pathname}: ${redactSecrets(detail)}`, retryAfterFromHeaders(res.headers));
+        }
+        return { status: res.status, json };
+      },
+      { attempts: GITHUB_RETRY_ATTEMPTS, isRetryable: isRetryableGitHubError, retryAfterMs: (e) => (e instanceof GitHubApiError ? e.retryAfterMs : undefined) },
+    );
   }
 
   async function installationToken(installationId: number, repoId: number): Promise<string> {

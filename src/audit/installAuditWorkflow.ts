@@ -280,9 +280,9 @@ jobs:
 #        env:
 #          MENDR_APP_URL: \${{ vars.MENDR_APP_URL }}
 #        run: |
-#          TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \\
+#          TOKEN=$(curl -sS --retry 3 --retry-delay 2 --retry-all-errors -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \\
 #            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=mendr" | jq -r .value)
-#          curl -sS --fail-with-body -X POST "$MENDR_APP_URL/api/ingest" \\
+#          curl -sS --fail-with-body --retry 4 --retry-delay 5 --retry-all-errors --max-time 120 -X POST "$MENDR_APP_URL/api/ingest" \\
 #            -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \\
 #            --data-binary @"$RUNNER_TEMP/mendr-audit.json"
 #

@@ -2,7 +2,7 @@
   "name": "mendr-app",
   "version": "0.1.0-alpha",
   "private": true,
-  "description": "Mendr GitHub App: receives audit evidence from your own CI run, writes a check run, serves the investigation workspace. Never clones or stores code.",
+  "description": "Mendr GitHub App: receives audit evidence and migration results from your own CI run, writes a check run, shows findings. Never clones or stores code.",
   "type": "module",
   "engines": {
     "node": ">=22"

@@ -440,11 +440,10 @@ a fresh registry no longer finds the model — never from the PR or a merge even
   guard.
 - **Releases are unsigned.** Tags are annotated and immutable by policy, not
   by cryptography. See section 9.
-- **The hosted workspace is partial.** The GitHub App stores evidence and
-  shows a run page and the evidence JSON; the three-panel investigation view is
-  still the static page at `site/app/`, which runs in your browser from JSON you
-  paste. Wiring the two together is the next step and adds no new data flow:
-  section 4 is the contract.
+- **The hosted App is the only evidence view.** It shows the run page (the
+  five-part findings), migration results and the evidence JSON. The pre-App
+  paste-JSON prototype that once lived at `/app` has been removed; its old URL on
+  the marketing site redirects to the App.
 - **Coverage is by language.** Model references in files Mendr cannot parse are
   counted as unanalyzed and reported as such. They are not silently clean.
 

@@ -1,5 +1,15 @@
 import { randomBytes } from 'node:crypto';
 
+/**
+ * The Mendr CLI release the App's generated workflows pin to. Bumped with each
+ * release (see REGISTRY-FRESHNESS.md → Release checklist). Deliberately NOT an
+ * environment variable: a stale deployment setting once kept the App handing
+ * out an older pin than the release it was built from. A customer who wants a
+ * different pin sets the MENDR_SPEC repository variable, which every generated
+ * workflow reads first.
+ */
+export const MENDR_CLI_SPEC = 'v0.4.1-alpha';
+
 export interface AppConfig {
   /** Public base URL, no trailing slash. Webhooks and OAuth redirects come here. */
   appUrl: string;
@@ -24,9 +34,7 @@ export interface AppConfig {
   databaseUrl: string | null;
   maxBodyBytes: number;
   maxRunsPerRepo: number;
-  /** Directory holding the static investigation workspace (site/app). */
-  uiDir: string | null;
-  /** The Mendr CLI ref the scaffolded audit workflow pins to (a tag or commit SHA). */
+  /** The Mendr CLI release the generated workflows pin to (MENDR_CLI_SPEC, release-coupled). */
   mendrSpec: string;
   /** Field-level encryption keyring for stored reports (MENDR_DATA_KEY); null = plaintext (dev). */
   dataKey: string | null;
@@ -84,8 +92,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     databaseUrl: opt(env.DATABASE_URL),
     maxBodyBytes: int(env.MAX_BODY_BYTES, 2 * 1024 * 1024),
     maxRunsPerRepo: int(env.MAX_RUNS_PER_REPO, 100),
-    uiDir: opt(env.UI_DIR),
-    mendrSpec: opt(env.MENDR_CLI_SPEC) ?? 'v0.4.1-alpha',
+    mendrSpec: MENDR_CLI_SPEC,
     dataKey: opt(env.MENDR_DATA_KEY),
     retentionDays: Math.max(0, Math.floor(Number(env.MENDR_RETENTION_DAYS) || 0)),
   };
