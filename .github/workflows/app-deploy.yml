@@ -1,0 +1,54 @@
+# Deploy the Mendr App on Render whenever a push to main touches it.
+#
+# Render normally auto-deploys through its own GitHub integration. This is the
+# belt to that brace, added after a day when several App pushes never reached
+# Render: when a RENDER_DEPLOY_HOOK_URL repository secret exists (Render →
+# mendr-app → Settings → Deploy Hook), a push that changes the App, its static
+# workspace or its blueprint calls the hook, which deploys the latest commit.
+# `workflow_dispatch` lets anyone with repo access deploy on demand
+# (`gh workflow run app-deploy.yml`).
+#
+# Without the secret the job skips cleanly and Render's own auto-deploy is the
+# only path. The hook URL is a secret because anyone holding it can deploy.
+name: app-deploy
+
+on:
+  push:
+    branches: [main]
+    paths: [app/**, site/app/**, render.yaml]
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: app-deploy
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    steps:
+      - id: check
+        env:
+          HAS_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL != '' }}
+        run: |
+          echo "enabled=$HAS_HOOK" >> "$GITHUB_OUTPUT"
+          if [ "$HAS_HOOK" != "true" ]; then
+            echo "::notice::app-deploy: RENDER_DEPLOY_HOOK_URL is not configured; relying on Render's own auto-deploy."
+          fi
+
+  deploy:
+    needs: gate
+    if: ${{ needs.gate.outputs.enabled == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger the Render deploy of the latest commit
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          code=$(curl -sS -o /tmp/render-response -w '%{http_code}' -X POST "$HOOK")
+          echo "Render responded HTTP $code"
+          cat /tmp/render-response; echo
+          case "$code" in 2*) ;; *) echo "::error::deploy hook call failed"; exit 1 ;; esac
