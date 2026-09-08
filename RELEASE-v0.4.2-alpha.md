@@ -21,8 +21,10 @@ changing what the evidence says.**
 (500 ms base, ±25 % jitter, 30 s cap) and honours `Retry-After` — a check-run
 write no longer fails on the first hiccup, and a failed write still never loses
 the evidence. The generated audit and migration workflows and `mendr-action`'s
-report POST use `curl --retry 5 --retry-all-errors --max-time 120`, so a
-sleeping free-tier App or a blip does not lose a report. Both uploads are
+report POST retry the OIDC token fetch (`curl --retry 3 --retry-delay 2
+--retry-all-errors`) and the upload itself (`--retry 4 --retry-delay 5
+--retry-all-errors --max-time 120`), so a sleeping free-tier App or a blip does
+not lose a report. Both uploads are
 idempotent per workflow run attempt, so a repeat is safe.
 
 **The overview: last completed scan vs latest attempt, and a monitoring
@@ -57,8 +59,8 @@ variable on the host can never pin customers to an old release.
 - **New connections:** nothing to do. The App generates `v0.4.2-alpha` workflows.
 - **Repositories connected earlier:** set the repository variable
   `MENDR_SPEC=v0.4.2-alpha`. To get the retrying uploads, take the current
-  workflow from the App's one-click setup (or add `--retry 5 --retry-all-errors
-  --max-time 120` to the two `curl` steps by hand).
+  workflow from the App's one-click setup (or add `--retry 4 --retry-delay 5
+  --retry-all-errors --max-time 120` to the upload `curl` by hand).
 - **`mendr-action`:** `uses: ajitheee/mendr/mendr-action@v0.4.2-alpha`.
 - **Local CLI:** `npx github:ajitheee/mendr#v0.4.2-alpha audit . --refresh-registry`.
 
