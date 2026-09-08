@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.2-alpha — 2026-09-07
 
 ### Changed — the old prototype is gone; the release pin is compiled in; retries everywhere
 
