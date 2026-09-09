@@ -232,7 +232,7 @@ export function homePage(input: { config: AppConfig; configured: boolean; login:
       .join('')}</tbody></table></div>
 <p class="muted" style="font-size:.9rem;margin-top:12px">Connected repositories are scanned on every push and pull request, and daily at 06:37 UTC, by the generated workflow. A repository with no run for more than a day is marked quiet — check that its workflow is enabled.</p>`;
   }
-  const body = `${setup}<p class="lede">Connect a repository and Mendr keeps its retiring-AI-model findings current here, with a <em>Mendr audit</em> check on every commit. The scan runs in your own CI; the App never clones or stores your code. <a href="https://github.com/ajitheee/mendr/blob/main/TRUST.md">What leaves your infrastructure</a>.</p>${install}<h2>Repositories</h2>${list}`;
+  const body = `${setup}<p class="lede">Connect a repository once and everything else happens here: Mendr keeps its retiring-AI-model findings current, you approve a migration on the finding, your own CI verifies it and opens the pull request, and you watch it happen and see what changes — without opening GitHub. The scan and the migration run in your CI; the App never clones, reads or stores your code. <a href="https://github.com/ajitheee/mendr/blob/main/TRUST.md">What leaves your infrastructure</a>.</p>${install}<h2>Repositories</h2>${list}`;
   return layout('overview', body, { login });
 }
 
@@ -262,8 +262,10 @@ export function credentialsPage(c: ManifestCredentials): string {
 }
 
 export function installedPage(_config: AppConfig): string {
-  const body = `<div class="card"><strong>Installed.</strong> One step left to connect a repository: add the audit workflow.</div>
-<p>On the overview, each installed repository has a <strong>Set up the audit</strong> button. It opens GitHub's own new-file editor with the workflow filled in — you read it and commit it. The App writes nothing to your repo; the scan runs in your CI and sends only findings here.</p>
+  const body = `<div class="card"><strong>Installed.</strong> One step left to connect a repository: commit the one workflow file.</div>
+<p>On the overview, each installed repository has a <strong>Set up the audit</strong> button. It opens GitHub's own new-file editor with the file filled in — you read it and commit it, once. The App writes nothing to your repository.</p>
+<p>From then on everything happens here. The file's <em>audit</em> job scans in your CI on every push, daily, and on demand, and sends only the sanitized findings. When a finding shows a retiring model, you <strong>approve the migration</strong> on it; the file's <em>migrate</em> job verifies the swap on a throwaway copy — type-check, build, your tests — opens the pull request, and streams each step and the change itself back to the finding. Mendr never touches your default branch and merges only if you choose that when you approve.</p>
+<p class="muted">Optional, for instant starts: grant the App <em>Actions: write</em> (it can then start your migration workflow the moment you approve; it still cannot read your code). Without it, the workflow's own schedule carries approvals out.</p>
 <p><a class="btn" href="/">Go to the overview</a></p>`;
   return layout('installed', body);
 }
