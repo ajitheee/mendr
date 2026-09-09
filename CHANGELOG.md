@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.5-alpha — 2026-09-09
 
 - **`mendr migrate` plans against the same fresh, signed registry as the audit.**
   New `--refresh-registry` (or `MENDR_REGISTRY_REFRESH=on`, which the generated
