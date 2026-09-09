@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.3-alpha — 2026-09-08
 
 - **Approve a migration in Mendr; your CI carries it out.** Every patch-eligible
   finding gets an **Approve migration to X** button with a choice: open a pull
