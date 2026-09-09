@@ -41,15 +41,30 @@ describe('validateMigrationReport', () => {
       migrations: [{ provider: 'openai', from: 'gpt-4', to: 'gpt-5.6-sol', language: 'ts', sites: 2, files: ['src/ai.ts', 'src/summarize.ts'] }],
       changedFiles: ['src/ai.ts', 'src/summarize.ts'],
       notes: ['Behavior was not verified.'],
+      diff: null,
     });
   });
 
-  it('drops the diff and every unknown key — code never gets stored', () => {
-    const r = ok(validateMigrationReport(JSON.stringify(full({ diff: 'diff --git a/x b/x\n-model: "gpt-4"\n+model: "gpt-5.6-sol"', applied: ['x'], extra: { nested: true } })), 1_000_000));
+  it('keeps the swap\'s diff — only when it is shaped like one — and drops every unknown key', () => {
+    const diff = 'diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-model: "gpt-4"\n+model: "gpt-5.6-sol"';
+    const r = ok(validateMigrationReport(JSON.stringify(full({ diff, applied: ['x'], extra: { nested: true } })), 1_000_000));
+    expect(r.diff).toBe(diff);
     const json = JSON.stringify(r);
-    expect(json).not.toContain('diff --git');
     expect(json).not.toContain('applied');
     expect(json).not.toContain('nested');
+    // a file's contents dressed up as "diff" are not kept
+    expect(ok(validateMigrationReport(JSON.stringify(full({ diff: 'export const key = "sk-live";\n' })), 1_000_000)).diff).toBeNull();
+    expect(ok(validateMigrationReport(JSON.stringify(full({ diff: '' })), 1_000_000)).diff).toBeNull();
+    expect(ok(validateMigrationReport(JSON.stringify(full({ diff: 42 })), 1_000_000)).diff).toBeNull();
+  });
+
+  it('redacts secrets in the diff and caps it with a visible mark', () => {
+    const leaky = 'diff --git a/x b/x\n+  apiKey: "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789"\n';
+    expect(ok(validateMigrationReport(JSON.stringify(full({ diff: leaky })), 1_000_000)).diff).not.toContain('sk-proj-abcdefghijklmnopqrstuvwxyz0123456789');
+    const huge = `diff --git a/x b/x\n${'+x\n'.repeat(60_000)}`;
+    const capped = ok(validateMigrationReport(JSON.stringify(full({ diff: huge })), 10_000_000)).diff ?? '';
+    expect(capped.length).toBeLessThan(101_000);
+    expect(capped.endsWith('… (truncated by Mendr at 100000 characters)')).toBe(true);
   });
 
   it('redacts secrets and caps text in the fields it keeps', () => {

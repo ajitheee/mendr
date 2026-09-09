@@ -3107,9 +3107,22 @@ program
         },
         readerTieBack: { proven: anyReaderProven },
         // Seen from inside the repo (the App cannot look): does the migration
-        // workflow exist? Decides which "Prepare migration for review" step the
-        // App offers — add it, or run it.
-        migration: { workflowPresent: existsSync(join(resolved, '.github', 'workflows', 'mendr-migrate.yml')) },
+        // workflow exist, and in which file? Its own mendr-migrate.yml, or the
+        // migrate job of the App's one-click mendr-audit.yml (marked by the
+        // action's approval-gated input). The App offers Approve on a finding
+        // only when one exists, and starts that file when a person approves.
+        migration: (() => {
+          const workflows = join(resolved, '.github', 'workflows');
+          let workflowFile: string | null = existsSync(join(workflows, 'mendr-migrate.yml')) ? 'mendr-migrate.yml' : null;
+          if (!workflowFile && existsSync(join(workflows, 'mendr-audit.yml'))) {
+            try {
+              if (readFileSync(join(workflows, 'mendr-audit.yml'), 'utf8').includes('approval-gated')) workflowFile = 'mendr-audit.yml';
+            } catch {
+              // unreadable: treat as absent
+            }
+          }
+          return { workflowPresent: workflowFile !== null, workflowFile };
+        })(),
       };
       // The verdict turns on real EXPOSURE. Informational catalog / documentation
       // / fixture references are reported, but never produce exposure_detected.

@@ -53,11 +53,20 @@ inputs:
       Your Mendr App URL (e.g. https://mendr-app.onrender.com). When set, the
       migration result is reported to it, proven by this run's GitHub OIDC token
       — the outcome, the PR url, the verdict, the gate statuses, the model swaps
-      and the file paths they touch. Never the diff, never code. The calling
+      and the file paths they touch, and (see `send-diff`) the diff of the swap
+      itself so the finding shows what changes. Never whole files. The calling
       workflow must grant `id-token: write`; without it nothing is sent and the
       job still succeeds. Empty = nothing is sent.
     required: false
     default: ""
+  send-diff:
+    description: >-
+      "true" (default) = include the unified diff of the model-id swap in the
+      report to your App, so the person who approved can see the change on the
+      finding without opening GitHub (the App redacts secrets and caps it).
+      "false" = report everything except the diff.
+    required: false
+    default: "true"
   approval-gated:
     description: >-
       "true" = carry out ONLY the migrations a person approved in your Mendr App
@@ -166,6 +175,7 @@ runs:
         MENDR_LABELS: ${{ inputs.pr-labels }}
         MENDR_EVAL: ${{ inputs.eval-command }}
         MENDR_APP_URL: ${{ inputs.app-url }}
+        MENDR_SEND_DIFF: ${{ inputs.send-diff }}
         MENDR_ONLY: ${{ steps.gate.outputs.only }}
         MENDR_APPROVAL_IDS: ${{ steps.gate.outputs.ids }}
         MENDR_MODE: ${{ steps.gate.outputs.mode }}

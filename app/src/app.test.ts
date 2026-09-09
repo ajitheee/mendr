@@ -308,19 +308,52 @@ describe('migrations: what mendr-action did, proven by OIDC', () => {
     expect(((await res.json()) as { install: string | null }).install).toBe('https://github.com/apps/mendr-test/installations/new');
   });
 
-  it('stores the whitelisted report — never the diff — logs it, and reports back', async () => {
-    const h = harness();
+  it('stores the whitelisted report with the change itself — redacted and capped, never whole files — logs it, and reports back', async () => {
+    const h = harness({ 'acme/api': REPO.id });
     await h.install();
-    const res = await h.migrations(await actionsToken(), sampleMigration());
+    const diff = 'diff --git a/src/client.ts b/src/client.ts\n--- a/src/client.ts\n+++ b/src/client.ts\n@@ -3,2 +3,2 @@\n-  model: "gpt-4",\n+  model: "gpt-4.1",\n+  apiKey: "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789",\n';
+    const res = await h.migrations(await actionsToken(), sampleMigration({ diff }));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, migration: { id: 1, outcome: 'migration-proposed', verdict: 'verified', prUrl: 'https://github.com/acme/api/pull/12' }, approvals: [] });
     const stored = await h.store.latestMigration(REPO.id);
     expect(stored?.report.migrations).toEqual([{ provider: 'openai', from: 'gpt-4', to: 'gpt-4.1', language: 'ts', sites: 1, files: ['src/client.ts'] }]);
-    const json = JSON.stringify(stored);
-    expect(json).not.toContain('diff --git');
-    expect(json).not.toContain('"diff"');
+    expect(stored?.report.diff).toContain('+  model: "gpt-4.1",');
+    expect(stored?.report.diff).not.toContain('sk-proj-abcdefghijklmnopqrstuvwxyz0123456789'); // redacted again here
     const events = (await h.store.listAuditLog()).map((e) => e.event);
     expect(events).toContain('pr_created');
+    // and the finding shows what changes, without leaving the App
+    await h.ingest(await actionsToken(), sampleReport());
+    const html = await (await h.app.request('/r/acme/api/runs/1', { headers: { cookie: await h.sessionCookie() } })).text();
+    expect(html).toContain('What changes in <code>src/client.ts</code>');
+    expect(html).toContain('<span class="add">+  model: &quot;gpt-4.1&quot;,</span>');
+    expect(html).not.toContain('sk-proj-abcdefghijklmnopqrstuvwxyz0123456789');
+  });
+
+  it('keeps only a real diff, capped with a visible mark; the action can withhold it', async () => {
+    const h = harness();
+    await h.install();
+    await h.migrations(await actionsToken({ run_id: '1' }), sampleMigration({ diff: 'const secret = "not a diff at all";' }));
+    expect((await h.store.latestMigration(REPO.id))?.report.diff).toBeNull();
+    await h.migrations(await actionsToken({ run_id: '2' }), sampleMigration({ diff: `diff --git a/x b/x\n${'+'.repeat(120_000)}` }));
+    const big = (await h.store.latestMigration(REPO.id))?.report.diff ?? '';
+    expect(big.length).toBeLessThan(101_000);
+    expect(big).toContain('truncated by Mendr');
+    await h.migrations(await actionsToken({ run_id: '3' }), sampleMigration({ diff: undefined }));
+    expect((await h.store.latestMigration(REPO.id))?.report.diff).toBeNull();
+  });
+
+  it('learns from the audit which file carries the migration job, and starts that one on approval', async () => {
+    const h = harness({ 'acme/api': REPO.id });
+    await h.install();
+    await h.ingest(await actionsToken(), sampleReport({ coverage: { migration: { workflowPresent: true, workflowFile: 'mendr-audit.yml' } } }));
+    expect((await h.store.getRepo(REPO.id))?.migrateWorkflow).toBe('mendr-audit.yml');
+    const cookie = await h.sessionCookie();
+    await h.app.request('/r/acme/api/approve', {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ provider: 'openai', model: 'gpt-4', replacement: 'gpt-4.1', back: '/r/acme/api/runs/1' }).toString(),
+    });
+    expect(h.gh.dispatches.map((d) => d.workflowFile)).toEqual(['mendr-audit.yml']);
   });
 
   it('refuses a PR url that is not a pull request of this repository on this GitHub', async () => {
@@ -354,7 +387,7 @@ describe('migrations: what mendr-action did, proven by OIDC', () => {
     expect(html).toContain('Latest migration run');
     expect(html).toContain('PR #12 ↗');
     expect(html).toContain('Migration run:');
-    expect(html).not.toContain('diff --git');
+    expect(html).toContain('What changes in <code>src/client.ts</code>'); // the change itself, shown here
   });
 
   it('uninstalling the App purges migration reports along with the findings', async () => {

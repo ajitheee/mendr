@@ -418,6 +418,10 @@ export class PgStore implements Store {
     await this.pool.query('UPDATE repos SET migrate_seen_at = $2, migrate_workflow = COALESCE($3, migrate_workflow) WHERE id = $1', [repoId, at, workflowFile]);
   }
 
+  async setMigrateWorkflow(repoId: number, workflowFile: string): Promise<void> {
+    await this.pool.query('UPDATE repos SET migrate_workflow = $2 WHERE id = $1', [repoId, workflowFile]);
+  }
+
   async deleteRepoData(repoId: number): Promise<RepoDeletion> {
     const del = await this.pool.query('DELETE FROM runs WHERE repo_id = $1', [repoId]);
     const mig = await this.pool.query('DELETE FROM migrations WHERE repo_id = $1', [repoId]);

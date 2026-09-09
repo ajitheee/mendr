@@ -1,10 +1,16 @@
 #!/usr/bin/env node
 // Build the mendr-migration-report/v1 that mendr-action sends to the customer's
-// Mendr App: the migration artifact WITHOUT the diff — never code — plus the
-// outcome and the PR url. Built by whitelisting fields, so nothing rides along.
+// Mendr App: the outcome, the PR url, and from the migration artifact the
+// verdict, gates, swaps and file paths — plus, unless MENDR_SEND_DIFF=false, the
+// unified diff of the swap itself so the finding can show what changes (the
+// change, never whole files; the App redacts and caps it again). Built by
+// whitelisting fields, so nothing else rides along.
 //
 //   node build-report.mjs <artifact.json or ''> <outcome> <pr_url or ''>
 import { readFileSync } from 'node:fs';
+
+const MAX_DIFF_CHARS = 200_000;
+const sendDiff = process.env.MENDR_SEND_DIFF !== 'false';
 
 const [artifactPath, outcome, prUrl] = process.argv.slice(2);
 let a = null;
@@ -39,5 +45,6 @@ const report = {
       : [],
   changedFiles: a ? list(a.changedFiles) : [],
   notes: a ? list(a.notes) : [],
+  diff: sendDiff && a && str(a.diff) ? a.diff.slice(0, MAX_DIFF_CHARS) : null,
 };
 process.stdout.write(JSON.stringify(report));

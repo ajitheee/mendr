@@ -6,7 +6,8 @@
 --                   numbers, classifications, redacted <=7-line snippets, line hashes.
 -- migrations:       what mendr-action reported after a migration run: outcome, PR
 --                   url, verdict, gate statuses, model swaps and the file paths they
---                   touch — never the diff.
+--                   touch, and the redacted, capped diff of the swap for display —
+--                   never whole files.
 -- acknowledgements: a person's decision about one finding — "seen; X owns it" —
 --                   keyed by repository and model so it follows the finding across
 --                   runs. Names and a short note only; never the finding itself.

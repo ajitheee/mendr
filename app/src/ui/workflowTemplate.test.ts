@@ -12,15 +12,36 @@ import {
 
 const OPTS = { appUrl: 'https://app.example', audience: 'mendr', mendrSpec: 'v0.3.0-alpha', defaultBranch: 'trunk' };
 
-describe('auditWorkflowYaml', () => {
+describe('auditWorkflowYaml — one file, two jobs', () => {
   const yaml = auditWorkflowYaml(OPTS);
+  const auditJob = yaml.slice(yaml.indexOf('\n  audit:'), yaml.indexOf('\n  migrate:'));
+  const migrateJob = yaml.slice(yaml.indexOf('\n  migrate:'));
 
-  it('is least-privilege: contents:read + id-token:write, no write scopes or secrets', () => {
-    expect(yaml).toContain('contents: read');
-    expect(yaml).toContain('id-token: write');
-    expect(yaml).not.toMatch(/^\s+contents: write/m);
-    expect(yaml).not.toMatch(/^\s+pull-requests: write/m);
+  it('the audit job is least-privilege: contents:read + id-token:write, no write scopes; no secrets anywhere', () => {
+    expect(auditJob).toMatch(/permissions:\n\s+contents: read\n\s+id-token: write\n/);
+    expect(auditJob).not.toMatch(/^\s+contents: write/m);
+    expect(auditJob).not.toMatch(/^\s+pull-requests: write/m);
+    expect(yaml).not.toMatch(/^permissions:/m); // scopes are per job, never workflow-wide
     expect(yaml).not.toContain('${{ secrets.'); // no repository secret is read
+  });
+
+  it('the migrate job carries out approvals: its own write scopes, approval-gated, never on a push or pull request', () => {
+    expect(migrateJob).toMatch(/permissions:\n\s+contents: write\n\s+pull-requests: write\n\s+id-token: write\n/);
+    expect(migrateJob).toContain("if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && github.event.schedule == '17 * * * *')");
+    expect(migrateJob).toContain('uses: ajitheee/mendr/mendr-action@v0.3.0-alpha');
+    expect(migrateJob).toContain('mendr-spec: github:ajitheee/mendr#v0.3.0-alpha');
+    expect(migrateJob).toContain("approval-gated: 'true'");
+    expect(migrateJob).toContain('approval: ${{ inputs.approval }}');
+    expect(migrateJob).toContain('app-url: https://app.example');
+    // and the audit job never runs on the approvals schedule
+    expect(auditJob).toContain("if: github.event_name != 'schedule' || github.event.schedule == '37 6 * * *'");
+  });
+
+  it('checks for approvals less often on a private repository', () => {
+    const priv = auditWorkflowYaml({ ...OPTS, private: true });
+    expect(priv).toMatch(/- cron: '17 \*\/3 \* \* \*'/);
+    expect(priv).toContain("github.event.schedule == '17 */3 * * *'");
+    expect(priv).not.toContain("'17 * * * *'");
   });
 
   it('sends only the audit JSON to this App, proven by OIDC (no shared secret)', () => {
@@ -41,10 +62,10 @@ describe('auditWorkflowYaml', () => {
   it('runs on a daily schedule as well as push/PR/manual, so an idle repo still re-scans', () => {
     // The daily run is what catches a newly announced retirement when no code
     // has changed. Off-the-hour, because GitHub throttles :00 schedules.
-    expect(yaml).toMatch(/^\s+schedule:\n\s+- cron: '\d{1,2} \d{1,2} \* \* \*'/m);
+    expect(yaml).toMatch(/^\s+schedule:\n\s+- cron: '37 6 \* \* \*'.*\n\s+- cron: '17 \* \* \* \*'/m);
     expect(yaml).not.toMatch(/cron: '0 /); // never on the hour
     expect(yaml).toContain('pull_request: {}');
-    expect(yaml).toContain('workflow_dispatch: {}');
+    expect(yaml).toMatch(/^\s+workflow_dispatch:\n\s+inputs:\n\s+approval:/m);
   });
 
   it('turns the signed registry refresh on VISIBLY (an env var an older pinned release ignores)', () => {

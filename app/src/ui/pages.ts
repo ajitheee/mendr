@@ -96,6 +96,14 @@ ul.plain{margin:6px 0 0;padding-left:18px}ul.plain li{margin:4px 0}
 .timeline{list-style:none;padding:0;margin:8px 0 0;display:grid;gap:3px}
 .timeline li{font-size:.9rem}
 .timeline .t{font-family:var(--mono);font-size:.72rem;color:var(--grey);margin-right:8px}
+.diff{margin-top:8px}
+.diff summary{cursor:pointer;font-size:.9rem}
+.diff pre{font-family:var(--mono);font-size:.78rem;line-height:1.5;background:var(--data);border:1px solid var(--hair);border-radius:8px;padding:12px 14px;overflow:auto;max-height:440px;margin:8px 0 0;white-space:pre}
+.diff .file{display:block;font-weight:600;color:var(--carbon);margin-top:10px}
+.diff .meta{display:block;color:var(--grey)}
+.diff .hunk{display:block;color:var(--cobalt)}
+.diff .add{display:block;color:var(--jade);background:rgba(21,128,93,.09)}
+.diff .del{display:block;color:var(--red);background:rgba(176,57,44,.09)}
 .foot{max-width:var(--maxw);margin:0 auto;padding:22px clamp(18px,4vw,40px) 40px;border-top:1px solid var(--hair);display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;font-family:var(--mono);font-size:.74rem;color:var(--grey)}
 .foot .fl{display:flex;gap:20px;flex-wrap:wrap}.foot a{color:var(--grey)}.foot a:hover{color:var(--carbon);text-decoration:none}
 `;
@@ -173,7 +181,7 @@ function monitoringChip(latest: RunSummary | null, now: Date): string {
 const ATTEMPT_LABEL: Record<string, string> = { inconclusive: 'inconclusive', audit_failed: 'audit failed' };
 
 /** The one-click "add the audit workflow" link for a repo, or '' when the App is unconfigured. */
-function setupLink(config: AppConfig, fullName: string, defaultBranch: string): string {
+function setupLink(config: AppConfig, fullName: string, defaultBranch: string, isPrivate: boolean): string {
   if (!isConfigured(config)) return '';
   const url = setupWorkflowUrl({
     webUrl: config.githubWebUrl,
@@ -182,6 +190,7 @@ function setupLink(config: AppConfig, fullName: string, defaultBranch: string): 
     audience: config.oidcAudience,
     mendrSpec: config.mendrSpec,
     defaultBranch,
+    private: isPrivate,
   });
   return `<a class="btn" href="${esc(url)}" target="_blank" rel="noopener">Set up the audit</a>`;
 }
@@ -212,7 +221,7 @@ export function homePage(input: { config: AppConfig; configured: boolean; login:
             : '';
         // A repo with no run yet is not connected: its first audit needs the
         // workflow, so offer the one-click setup instead of "no run received".
-        const when = latestCompleted ? runLink(latestCompleted) + attempt : latest ? `<span class="muted">none yet</span>${attempt}` : setupLink(config, repo.fullName, defaultBranch);
+        const when = latestCompleted ? runLink(latestCompleted) + attempt : latest ? `<span class="muted">none yet</span>${attempt}` : setupLink(config, repo.fullName, defaultBranch, repo.private);
         const result = latestCompleted
           ? pill(latestCompleted.counts, latestCompleted.conclusion)
           : latest
@@ -364,6 +373,51 @@ function migrationStatus(m: MigrationRecord): string {
   }
 }
 
+/** A unified diff split per file, so a finding can show just the files its swap touches. */
+export function diffSections(diff: string): { file: string; text: string }[] {
+  const out: { file: string; text: string }[] = [];
+  for (const chunk of diff.split(/^(?=diff --git )/m)) {
+    if (!chunk.trim()) continue;
+    const m = /^diff --git a\/(\S+) b\//.exec(chunk);
+    out.push({ file: m ? m[1]! : '', text: chunk.replace(/\n$/, '') });
+  }
+  return out;
+}
+
+function diffHtml(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => {
+      const cls = line.startsWith('diff --git')
+        ? 'file'
+        : line.startsWith('+++') || line.startsWith('---') || line.startsWith('index ')
+          ? 'meta'
+          : line.startsWith('@@')
+            ? 'hunk'
+            : line.startsWith('+')
+              ? 'add'
+              : line.startsWith('-')
+                ? 'del'
+                : '';
+      return cls ? `<span class="${cls}">${esc(line)}</span>` : esc(line);
+    })
+    .join('\n');
+}
+
+/**
+ * "What changes": the diff the customer's CI sent for display — the change
+ * itself, redacted and capped by the App — never applied from here. With
+ * `files`, only the sections touching those files (a finding's own swap).
+ */
+function diffBlock(m: MigrationRecord, files?: string[]): string {
+  if (!m.report.diff) return '';
+  const sections = diffSections(m.report.diff);
+  const shown = files?.length ? sections.filter((s) => files.includes(s.file)) : sections;
+  if (!shown.length) return '';
+  const label = shown.length === 1 && shown[0]!.file ? `What changes in <code>${esc(shown[0]!.file)}</code>` : `What changes (${shown.length} files)`;
+  return `<details class="diff" open><summary>${label} <span class="muted">— sent by your CI for display; nothing is applied here</span></summary><pre>${shown.map((s) => diffHtml(s.text)).join('\n')}</pre></details>`;
+}
+
 /** The "Migration" card: is the repository's migration workflow listening, and what did it last do. */
 function migrationCard(ctx: CardContext, patchCount: number): string {
   const { migrate, migration, migrateSeenAt, workflowPresent } = ctx;
@@ -375,7 +429,7 @@ function migrationCard(ctx: CardContext, patchCount: number): string {
       : workflowPresent === false
         ? `<span class="chip warn">migration workflow not added yet</span><a class="btn" href="${esc(migrate.setupUrl)}" target="_blank" rel="noopener">Add it once ↗</a><span class="muted">GitHub's editor opens with the workflow filled in — read it and commit it</span>`
         : `<span class="chip">migration workflow not seen yet</span><a class="tlink" href="${esc(migrate.setupUrl)}" target="_blank" rel="noopener">add it if you haven't ↗</a>`;
-  const status = migration ? `<div class="part"><div class="label">Latest migration run</div><div>${migrationStatus(migration)}</div></div>` : '';
+  const status = migration ? `<div class="part"><div class="label">Latest migration run</div><div>${migrationStatus(migration)}${diffBlock(migration)}</div></div>` : '';
   return `<div class="card" id="migrate"><div class="label">Migration</div>
 <p>Approve a migration on a finding below and your own CI carries it out: Mendr verifies the swap on a throwaway copy — type-check, build, your tests — and opens <strong>one pull request</strong> only if it all passes. It never touches your default branch, and merges only if you choose that when you approve. The App gains no access to your code: it records your decision and what your CI reports back.</p>
 <div class="bar">${listening}</div>${status}</div>`;
@@ -516,7 +570,7 @@ function findingCard(inv: Inv, ctx: CardContext): string {
   //    last reported for THIS model, and the decision: approve here, your CI does
   //    the work. Nothing is ever applied from this page.
   const swap = migration?.report.migrations.find((s) => s.from === inv.model);
-  const ran = swap && migration ? `<div style="margin-top:6px">Migration run: ${migrationStatus(migration)}</div>` : '';
+  const ran = swap && migration ? `<div style="margin-top:6px">Migration run: ${migrationStatus(migration)}${diffBlock(migration, swap.files)}</div>` : '';
   const evidenceLine = ev.replacement
     ? `Replacement <code>${esc(ev.replacement)}</code> — <span class="chip ${ev.replacementVerdict === 'verified' ? 'ok' : 'warn'}">${esc(ev.replacementVerdict ?? 'unstamped')}</span>.${ev.sourceUrl ? ` <a href="${esc(ev.sourceUrl)}" target="_blank" rel="noopener">provider notice ↗</a>` : ''}`
     : 'No safe replacement recommended yet — monitor the provider.';

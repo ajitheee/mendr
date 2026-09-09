@@ -74,6 +74,11 @@ export class MemoryStore implements Store {
     if (r) this.repos.set(repoId, { ...r, migrateSeenAt: at, migrateWorkflow: workflowFile ?? r.migrateWorkflow });
   }
 
+  async setMigrateWorkflow(repoId: number, workflowFile: string): Promise<void> {
+    const r = this.repos.get(repoId);
+    if (r) this.repos.set(repoId, { ...r, migrateWorkflow: workflowFile });
+  }
+
   async removeRepos(installationId: number, repoIds: number[], at: string): Promise<void> {
     for (const id of repoIds) {
       const r = this.repos.get(id);

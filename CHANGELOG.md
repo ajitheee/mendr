@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+- **See the change on the finding.** `mendr-action` now sends the unified diff
+  of the model-id swap with its report (`send-diff`, default on; the change
+  itself, never whole files), the App keeps only something shaped like a diff,
+  redacts it and caps it at 100 000 characters with a visible mark, and the
+  finding shows "What changes in `src/client.ts`" — the migration card shows
+  the whole change. Nothing is applied from the App. TRUST.md §2 and the data
+  inventory say exactly this.
+- **One file connects a repository.** The one-click setup now writes a single
+  `mendr-audit.yml` with two jobs: `audit` (every push and pull request, daily,
+  on demand; `contents: read` + `id-token: write`) and `migrate` (the approvals
+  schedule — hourly on a public repository, every three hours on a private one
+  — and the App's `workflow_dispatch`; `contents: write` + `pull-requests:
+  write` + `id-token: write`, `approval-gated`). Scopes are per job, never
+  workflow-wide. The separate `mendr-migrate.yml` keeps working for
+  repositories that have it.
+- **The scanner names the migration workflow file.**
+  `coverage.migration.workflowFile` says whether approvals live in
+  `mendr-migrate.yml` or in the two-job `mendr-audit.yml`; the App remembers it
+  and starts that file when a person approves.
+
 ## 0.4.3-alpha — 2026-09-08
 
 - **Approve a migration in Mendr; your CI carries it out.** Every patch-eligible

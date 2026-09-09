@@ -61,7 +61,8 @@ Re-running never stacks new PRs. It keeps the one branch current, and it never m
 | --- | --- | --- |
 | `working-directory` | `.` | where your code lives, if not the repo root |
 | `mendr-spec` | `github:ajitheee/mendr#v0.4.3-alpha` | the CLI that runs in your CI (npm spec once published) |
-| `app-url` | (empty) | your Mendr App URL; when set, the result — outcome, PR url, verdict, gate statuses, swaps and file paths, **never the diff** — is reported there, proven by the run's OIDC token. Grant `id-token: write` in the job; without it nothing is sent and the job still succeeds |
+| `app-url` | (empty) | your Mendr App URL; when set, the result — outcome, PR url, verdict, gate statuses, swaps and file paths, and the diff of the swap itself (see `send-diff`), **never whole files** — is reported there, proven by the run's OIDC token. Grant `id-token: write` in the job; without it nothing is sent and the job still succeeds |
+| `send-diff` | `true` | include the unified diff of the model-id swap in the report, so the person who approved sees the change on the finding without opening GitHub (the App redacts secrets and caps it). `false` = everything except the diff |
 | `approval-gated` | `false` | `true` = carry out only the migrations a person approved in your Mendr App (needs `app-url` and `id-token: write`): ask the App, claim them, migrate exactly those models (`mendr migrate --only`), stream each step back to the finding, and enable GitHub's auto-merge only when the approval asked for it. Nothing approved = nothing done, in seconds, before any dependency install |
 | `approval` | (empty) | the approval id the App passed when it started the workflow (`workflow_dispatch`); informational — every queued approval is picked up regardless |
 | `install-command` | auto | override the dependency install step |

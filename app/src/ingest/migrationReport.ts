@@ -1,13 +1,15 @@
 import { redactSecrets } from '../redact.js';
 
 // The second document the App accepts: what mendr-action DID, sent from the
-// customer's own CI run (schema mendr-migration-report/v1). It is the migration
-// artifact WITHOUT the diff — outcome, PR url, verdict, the four gate statuses,
-// the model swaps and the file paths they touch. Never code.
+// customer's own CI run (schema mendr-migration-report/v1): outcome, PR url,
+// verdict, the four gate statuses, the model swaps and the file paths they
+// touch, and — unless the action was told not to send it — the unified diff of
+// the swap itself, so the finding can show what changes. The diff is the
+// change, never whole files; it is redacted and capped here again.
 //
 // Unlike the audit report, this one is WHITELISTED field by field: anything not
 // named here is dropped, every string is redacted and capped, every list is
-// capped. The action strips the diff before sending; this strips it again.
+// capped.
 
 export const MIGRATION_REPORT_SCHEMA = 'mendr-migration-report/v1';
 export const MIGRATION_OUTCOMES = ['clean', 'migration-proposed', 'not-verified', 'error'] as const;
@@ -21,6 +23,8 @@ export const MAX_MIGRATIONS = 100;
 export const MAX_FILES = 200;
 export const MAX_NOTES = 20;
 export const MAX_TEXT_CHARS = 400;
+/** The diff of a model-id swap is a few lines per site; this cap is generous and keeps a report bounded. */
+export const MAX_DIFF_CHARS = 100_000;
 
 export interface MigrationGates {
   typeCheck: GateStatus;
@@ -51,6 +55,12 @@ export interface MigrationReport {
   migrations: MigrationSwap[];
   changedFiles: string[];
   notes: string[];
+  /**
+   * The unified diff of the swap — the change itself, for display on the
+   * finding. Redacted and capped; null when the action withheld it (`send-diff:
+   * 'false'`), nothing changed, or what arrived was not a diff.
+   */
+  diff: string | null;
 }
 
 export type MigrationValidation = { ok: true; report: MigrationReport } | { ok: false; status: 400 | 413; message: string };
@@ -78,6 +88,14 @@ function texts(v: unknown, max: number): string[] {
 
 function oneOf<T extends readonly string[]>(v: unknown, allowed: T): T[number] | null {
   return typeof v === 'string' && (allowed as readonly string[]).includes(v) ? (v as T[number]) : null;
+}
+
+/** Only a unified diff is kept — something that starts like one — redacted, and capped with a visible mark. */
+function diffText(v: unknown): string | null {
+  if (typeof v !== 'string' || !v.trim()) return null;
+  if (!/^(diff --git |--- |\+\+\+ |Index: )/m.test(v.slice(0, 400))) return null;
+  const capped = v.length > MAX_DIFF_CHARS ? `${v.slice(0, MAX_DIFF_CHARS)}\n… (truncated by Mendr at ${MAX_DIFF_CHARS} characters)` : v;
+  return redactSecrets(capped);
 }
 
 const PR_URL = /^https:\/\/[^/\s]+\/[^/\s]+\/[^/\s]+\/pull\/\d+$/;
@@ -147,6 +165,7 @@ export function validateMigrationReport(raw: string, maxBytes: number): Migratio
       migrations,
       changedFiles: texts(parsed.changedFiles, MAX_FILES),
       notes: texts(parsed.notes, MAX_NOTES),
+      diff: diffText(parsed.diff),
     },
   };
 }

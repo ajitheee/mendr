@@ -9,6 +9,7 @@ import { applyWebhook, verifyWebhookSignature } from './github/webhook.js';
 import { buildCheckRun } from './ingest/checkRun.js';
 import { countDecisions, sanitizeReport, validateReport } from './ingest/validate.js';
 import { prNumber, validateMigrationReport } from './ingest/migrationReport.js';
+import { migrationWorkflowFile } from './ingest/migration.js';
 import { redactSecrets } from './redact.js';
 import { APPROVAL_MODES, APPROVAL_STAGES, approvalVersion, type Approval, type ApprovalMode, type ApprovalStage, type Repo, type Store } from './store/types.js';
 import { credentialsPage, errorPage, homePage, installedPage, runPage, runsPage, setupPage, workflowRunsUrl } from './ui/pages.js';
@@ -200,6 +201,10 @@ export function createApp(deps: AppDeps): Hono {
     });
     await store.pruneRuns(repo.id, config.maxRunsPerRepo);
     if (config.retentionDays > 0) await store.pruneRunsByAge(config.retentionDays);
+    // The scanner can see .github/workflows; the App cannot. Remember which file
+    // carries the migration job, so an approval starts the right workflow.
+    const migrateFile = migrationWorkflowFile(report);
+    if (migrateFile) await store.setMigrateWorkflow(repo.id, migrateFile);
 
     const detailsUrl = `${config.appUrl}/r/${claims.repository}/runs/${run.id}`;
     let checkRun: string | null = null;
@@ -227,10 +232,11 @@ export function createApp(deps: AppDeps): Hono {
   // --- migrations: what mendr-action did, from the customer's own CI run ---------
   //
   // The action reports its outcome, the PR url, the verdict, the gate statuses,
-  // the model swaps and the file paths they touch — NEVER the diff — proven by
-  // the run's OIDC token, exactly like the audit. The finding page then shows
-  // "PR #12 · verified". This report never resolves anything by itself: the
-  // next completed audit is what confirms a resolution.
+  // the model swaps and the file paths they touch, and (unless told not to) the
+  // diff of the swap itself — redacted and capped, for display, never whole
+  // files — proven by the run's OIDC token, exactly like the audit. The finding
+  // page then shows "PR #12 · verified" and what changes. This report never
+  // resolves anything by itself: the next completed audit confirms a resolution.
   app.post('/api/migrations', async (c) => {
     const m = /^Bearer\s+(\S+)$/i.exec(c.req.header('authorization') ?? '');
     if (!m) return c.json({ error: 'missing bearer token: send the GitHub Actions OIDC token (permissions: id-token: write)' }, 401);
@@ -560,6 +566,7 @@ export function createApp(deps: AppDeps): Hono {
         audience: config.oidcAudience,
         mendrSpec: config.mendrSpec,
         defaultBranch: gh?.defaultBranch ?? 'main',
+        private: repo.private,
       });
     }
     return c.html(runsPage(repo, runs, sess.login, setupUrl));

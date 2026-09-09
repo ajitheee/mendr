@@ -18,9 +18,10 @@ ARTIFACT="mendr-migration.json"
 
 # Optional: report what happened to the customer's Mendr App (MENDR_APP_URL),
 # proven by THIS run's OIDC token — the same pattern as the audit upload. What is
-# sent is the artifact WITHOUT the diff (never code): outcome, PR url, verdict,
-# the gate statuses, the model swaps and the file paths they touch. It needs
-# `id-token: write` in the calling workflow; without it, or without
+# sent: outcome, PR url, verdict, the gate statuses, the model swaps and the file
+# paths they touch, and (unless MENDR_SEND_DIFF=false) the unified diff of the
+# swap so the finding can show what changes — the change, never whole files. It
+# needs `id-token: write` in the calling workflow; without it, or without
 # MENDR_APP_URL, nothing is sent. It never fails the job: the PR is the
 # deliverable, the report is a courtesy to the dashboard.
 report_to_app() { # $1 outcome, $2 pr url (may be empty), $3 artifact path (may be empty or missing)

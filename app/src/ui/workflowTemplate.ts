@@ -18,58 +18,89 @@ export interface WorkflowTemplateOptions {
   mendrSpec: string;
   /** The repo's default branch, so the push trigger matches. */
   defaultBranch: string;
+  /** Private repos pay for Actions minutes, so their approvals check runs less often. */
+  private?: boolean;
+}
+
+/** The approvals-check schedule: hourly where minutes are free, every three hours where they are not. */
+export function approvalsCron(isPrivate: boolean | undefined): string {
+  return isPrivate ? '17 */3 * * *' : '17 * * * *';
 }
 
 /**
- * The App-connected audit workflow: scan in the customer's CI, send only the
- * JSON here over an OIDC-proven request. Built line-by-line (not a template
- * literal) so GitHub `${{ … }}` expressions stay literal.
+ * The one file that connects a repository: two jobs. `audit` scans in the
+ * customer's CI and sends only the JSON here over an OIDC-proven request;
+ * `migrate` carries out the migrations a person approved in the App. Built
+ * line-by-line (not a template literal) so GitHub `${{ … }}` expressions stay
+ * literal.
  */
 export function auditWorkflowYaml(opts: WorkflowTemplateOptions): string {
   const branch = opts.defaultBranch || 'main';
+  const cron = approvalsCron(opts.private);
   return [
-    '# Mendr audit — sends this repository\'s retiring-AI-model findings to your Mendr App.',
+    '# Mendr — keeps this repository\'s retiring-AI-model findings current in your Mendr',
+    '# App, and carries out the migrations you approve there. Two jobs, one file.',
     '#',
-    '# The scan runs HERE, in your CI. Only the sanitized JSON (findings, paths, line',
-    '# numbers, classifications, redacted snippets, hashes) is sent — never your code.',
-    '# It is authenticated by THIS run\'s GitHub OIDC token, so there is no secret to store.',
+    '# AUDIT (every push, every pull request, daily, and on demand): the scan runs HERE,',
+    '# in your CI. Only the sanitized JSON (findings, paths, line numbers,',
+    '# classifications, redacted snippets, hashes) is sent — never your code. It is',
+    '# authenticated by THIS run\'s GitHub OIDC token, so there is no secret to store.',
+    '# The daily run catches a newly announced retirement when no code has changed.',
+    '# (GitHub pauses schedules on a public repo with no activity for 60 days —',
+    '# re-enable it from the Actions tab.)',
     '#',
-    '# It runs on every push and pull request AND once a day, so a newly announced',
-    '# retirement is caught even when no code has changed. (GitHub pauses schedules on',
-    '# a public repo with no activity for 60 days — re-enable it from the Actions tab.)',
+    '# MIGRATE (on a schedule, and at once when the App starts it): asks the App what a',
+    '# person approved on a finding, verifies each approved swap on a throwaway copy —',
+    '# a baseline-relative type-check and build, plus YOUR test suite — applies it ONLY',
+    '# if the verdict is `verified`, pushes ONE stable branch (mendr/deprecated-model-ids),',
+    '# opens or updates ONE pull request, and reports each step back to the finding.',
+    '# Nothing approved = nothing done, in seconds. Mendr never touches your default',
+    '# branch; it enables GitHub\'s auto-merge only if you chose that when you approved.',
+    '# Starting it at once needs the App\'s optional "Actions: write" permission;',
+    '# without it, the schedule alone carries approvals out.',
     '#',
-    '# NETWORK: besides fetching the pinned Mendr release (npx) and sending the JSON',
-    '# to your App, the scan makes ONE outbound GET of public, signed registry files',
-    '# from github.com (MENDR_REGISTRY_REFRESH) so it audits against current retirement',
-    '# knowledge, not the knowledge of the day the release was cut. Nothing about this',
-    '# repository is sent by that request. Remove the variable to stay fully offline —',
-    '# a registry older than 14 days then makes a zero-finding result inconclusive.',
+    '# NETWORK: besides fetching the pinned Mendr release (npx) and talking to your App,',
+    '# the scan makes ONE outbound GET of public, signed registry files from github.com',
+    '# (MENDR_REGISTRY_REFRESH) so it audits against current retirement knowledge, not',
+    '# the knowledge of the day the release was cut. Nothing about this repository is',
+    '# sent by that request. Remove the variable to stay fully offline — a registry',
+    '# older than 14 days then makes a zero-finding result inconclusive.',
+    '#',
+    '# PERMISSIONS are per job: the audit reads the code and proves itself to the App',
+    '# (contents:read, id-token:write); the migration also pushes its one branch and',
+    '# opens its one PR (contents:write, pull-requests:write). No secrets.',
     '#',
     '# SUPPLY CHAIN: pinned to a Mendr ref via the MENDR_SPEC repo variable (a tag, or a',
     '# 40-char commit SHA for the strictest pin). Never point it at a branch.',
-    'name: mendr audit',
+    'name: mendr',
     '',
     'on:',
     '  schedule:',
-    "    - cron: '37 6 * * *' # daily, off-the-hour (GitHub throttles :00 crons)",
+    "    - cron: '37 6 * * *' # daily audit, off-the-hour (GitHub throttles :00 crons)",
+    `    - cron: '${cron}' # carries out approvals made in the App${opts.private ? ' (every three hours on a private repo; hourly costs ~24 min/day)' : ' (hourly; free on a public repo)'}`,
     '  push:',
     `    branches: [${branch}]`,
     '  pull_request: {}',
-    '  workflow_dispatch: {}',
-    '',
-    '# Least privilege: read the code to scan it, and id-token to PROVE this run to',
-    '# your Mendr App. No contents:write, no pull-requests:write, no secrets.',
-    'permissions:',
-    '  contents: read',
-    '  id-token: write',
-    '',
-    'concurrency:',
-    '  group: mendr-audit',
-    '  cancel-in-progress: false',
+    '  workflow_dispatch:',
+    '    inputs:',
+    '      approval:',
+    "        description: 'Mendr approval id (the App sets this when it starts the migration)'",
+    '        required: false',
+    "        default: ''",
     '',
     'jobs:',
     '  audit:',
+    '    # Every push, pull request, the daily schedule and a manual run — not the approvals check.',
+    "    if: github.event_name != 'schedule' || github.event.schedule == '37 6 * * *'",
     '    runs-on: ubuntu-latest',
+    '    # Least privilege: read the code to scan it, and id-token to PROVE this run to',
+    '    # your Mendr App. No contents:write, no pull-requests:write, no secrets.',
+    '    permissions:',
+    '      contents: read',
+    '      id-token: write',
+    '    concurrency:',
+    '      group: mendr-audit-${{ github.ref }}',
+    '      cancel-in-progress: false',
     '    steps:',
     '      - uses: actions/checkout@v4',
     '        with:',
@@ -104,6 +135,28 @@ export function auditWorkflowYaml(opts: WorkflowTemplateOptions): string {
     '              --data-binary @mendr-audit.json',
     '          fi',
     '          exit $MENDR_STATUS',
+    '',
+    '  migrate:',
+    '    # The approvals schedule, and whenever the App starts this workflow — never on a push or pull request.',
+    `    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && github.event.schedule == '${cron}')`,
+    '    runs-on: ubuntu-latest',
+    '    permissions:',
+    '      contents: write',
+    '      pull-requests: write',
+    '      id-token: write',
+    '    concurrency:',
+    '      group: mendr-migrate',
+    '      cancel-in-progress: false',
+    '    steps:',
+    '      - uses: actions/checkout@v4',
+    '',
+    `      - uses: ajitheee/mendr/mendr-action@${opts.mendrSpec}`,
+    '        with:',
+    `          mendr-spec: github:ajitheee/mendr#${opts.mendrSpec}`,
+    `          app-url: ${opts.appUrl}`,
+    "          approval-gated: 'true' # only what a person approved in the App; nothing approved = nothing done",
+    '          approval: ${{ inputs.approval }}',
+    '          # eval-command: npm run eval   # optional: a behavioral gate, run in the sandbox',
     '',
   ].join('\n');
 }
@@ -148,7 +201,7 @@ export function migrateWorkflowYaml(opts: { mendrSpec: string; appUrl: string; p
   // A public repo's Actions minutes are free, so it checks hourly. A private
   // repo pays about a minute per check; every three hours keeps that modest,
   // and an approval made in the App still starts at once when Mendr may start it.
-  const cron = opts.private ? '17 */3 * * *' : '17 * * * *';
+  const cron = approvalsCron(opts.private);
   return [
     '# Mendr migration — carries out the migrations you approve in your Mendr App.',
     '#',

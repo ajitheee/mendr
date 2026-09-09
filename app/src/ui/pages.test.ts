@@ -217,11 +217,12 @@ describe('approving a migration on the run page', () => {
       migrations: [{ provider: 'openai', from: 'gpt-4', to: 'gpt-5.6-sol', language: 'ts', sites: 1, files: ['src/ai.ts'] }],
       changedFiles: ['src/ai.ts'],
       notes: [],
+      diff: 'diff --git a/src/ai.ts b/src/ai.ts\n--- a/src/ai.ts\n+++ b/src/ai.ts\n@@ -4 +4 @@\n-  model: "gpt-4",\n+  model: "gpt-5.6-sol",\ndiff --git a/src/other.ts b/src/other.ts\n--- a/src/other.ts\n+++ b/src/other.ts\n@@ -1 +1 @@\n-const x = 1;\n+const x = 2;\n',
     },
     ...over,
   });
 
-  it('shows what mendr-action last reported, on the card and on the finding it covers', () => {
+  it('shows what mendr-action last reported, on the card and on the finding it covers — including what changes', () => {
     const html = runPage(repo, record('patch', { migration: { workflowPresent: true } }), 'octocat', { ...view, migration: migration() });
     expect(html).toContain('Latest migration run');
     expect(html).toContain('PR #12 ↗');
@@ -230,6 +231,11 @@ describe('approving a migration on the run page', () => {
     expect(html).toContain('build —');
     expect(html).toContain('behavior not tested');
     expect(html).toContain('Migration run:'); // on the gpt-4 finding itself
+    expect(html).toContain('What changes (2 files)'); // the whole change, on the card
+    expect(html).toContain('What changes in <code>src/ai.ts</code>'); // just its own file, on the finding
+    expect(html).toContain('<span class="del">-  model: &quot;gpt-4&quot;,</span>');
+    expect(html).toContain('<span class="add">+  model: &quot;gpt-5.6-sol&quot;,</span>');
+    expect(html).toContain('nothing is applied here');
   });
 
   it('a not-verified run says so and shows no PR', () => {

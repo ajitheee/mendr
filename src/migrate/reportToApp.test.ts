@@ -10,7 +10,8 @@ import { MIGRATION_SCHEMA, type MigrationResult } from './migrate.js';
 // mendr-action/scripts/build-report.mjs from the REAL migration artifact this
 // package emits, and consumed by the App's REAL validator. This wires the three
 // together so a field rename on any side fails here, not in a customer's CI —
-// and proves the diff (code) never leaves the runner.
+// and proves exactly what leaves the runner: the swap's diff for display (unless
+// withheld), never the CLI's internals.
 
 import { validateMigrationReport } from '../../app/src/ingest/migrationReport.js';
 
@@ -46,8 +47,8 @@ function artifact(): MigrationResult {
   };
 }
 
-function build(artifactPath: string, outcome: string, prUrl: string): unknown {
-  const out = execFileSync(process.execPath, [BUILDER, artifactPath, outcome, prUrl], { encoding: 'utf8' });
+function build(artifactPath: string, outcome: string, prUrl: string, env: Record<string, string> = {}): unknown {
+  const out = execFileSync(process.execPath, [BUILDER, artifactPath, outcome, prUrl], { encoding: 'utf8', env: { ...process.env, ...env } });
   return JSON.parse(out);
 }
 
@@ -73,17 +74,28 @@ describe('mendr-action → App migration report', () => {
     });
   });
 
-  it('never includes the diff — no code leaves the runner', () => {
+  it('carries the swap\'s diff for display — and the App keeps it as a diff — but never the CLI\'s internals', () => {
     const dir = mkdtempSync(join(tmpdir(), 'mendr-report-'));
     created.push(dir);
     const path = join(dir, 'mendr-migration.json');
     writeFileSync(path, JSON.stringify(artifact()));
     const raw = JSON.stringify(build(path, 'migration-proposed', ''));
-    expect(raw).not.toContain('diff --git');
-    expect(raw).not.toContain('model: "gpt-4"');
-    expect(raw).not.toContain('"diff"');
+    expect(raw).toContain('diff --git a/src/ai.ts');
     expect(raw).not.toContain('"applied"');
     expect(raw).not.toContain('"prReady"');
+    const v = validateMigrationReport(raw, 1_000_000);
+    expect(v.ok && v.report.diff).toContain('+  model: "gpt-5.6-sol",');
+  });
+
+  it('withholds the diff when the workflow says send-diff: false', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mendr-report-'));
+    created.push(dir);
+    const path = join(dir, 'mendr-migration.json');
+    writeFileSync(path, JSON.stringify(artifact()));
+    const raw = JSON.stringify(build(path, 'migration-proposed', '', { MENDR_SEND_DIFF: 'false' }));
+    expect(raw).not.toContain('diff --git');
+    expect(raw).not.toContain('model: "gpt-4"');
+    expect(raw).toContain('"diff":null');
   });
 
   it('reports an error outcome even with no artifact at all', () => {

@@ -223,6 +223,8 @@ export interface Store {
   cancelApproval(id: number, event: ApprovalEvent): Promise<boolean>;
   /** The repo's migration workflow just asked for approvals: it is listening, and this is its file. */
   markMigrateSeen(repoId: number, at: string, workflowFile: string | null): Promise<void>;
+  /** The audit saw which file carries the migration job (coverage.migration.workflowFile). */
+  setMigrateWorkflow(repoId: number, workflowFile: string): Promise<void>;
   // --- retention & deletion (trust: data cleanup) ---
   /** Hard-delete a repository's stored runs, migration reports, acknowledgements and the repo row. Returns how many went. */
   deleteRepoData(repoId: number): Promise<RepoDeletion>;
