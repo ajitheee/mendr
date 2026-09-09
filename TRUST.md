@@ -20,7 +20,7 @@ exist yet and is listed so the boundary is stated before it is built.
 | The default `mendr audit` makes zero outbound network calls. | The test suite runs the audit under a Node preload that makes every network primitive throw (`scripts/no-network.cjs`, `src/audit/noNetwork.test.ts`). The audit must still exit 0 with a valid report on every build. A control test proves the preload bites. |
 | You can enforce it yourself. | `mendr audit . --offline` or `MENDR_OFFLINE=1` installs the same guard inside the process. Any attempt to open a socket, resolve a name or call `fetch` fails loudly and names the operation. |
 | Mendr has no backend, no account, no telemetry. | There is nothing to send to. The only outbound call in the source is the optional provider usage read (section 3), which goes to the provider you name, with a key you supply, from your machine. |
-| The GitHub App cannot read your code. | Its manifest requests `checks: write` and `metadata: read` only. It accepts one document (`mendr audit --json`), re-redacts every string and re-caps every snippet server-side, and stores nothing else. Tested against a GitHub-shaped fake in `app/src/app.test.ts`. |
+| The GitHub App cannot read your code. | Its manifest requests `checks: write` and `metadata: read` only. It accepts one document (`mendr audit --json`), re-redacts every string and re-caps every snippet server-side, and stores nothing else. The one optional addition is `actions: write`, which lets it *start* your migration workflow the moment you approve a migration — still no contents, no clone, no file reads. Tested against a GitHub-shaped fake in `app/src/app.test.ts`. |
 | Nothing edits your files unless you ask. | `fix-llm` prints a diff by default; `--write` is an explicit flag. `audit` never writes source. `--install` writes one workflow file you can read before committing. |
 | Secrets do not leak through Mendr's own output. | Everything that could be published (the GitHub issue body, JSON snippets) passes through the same redaction (section 6). This is best-effort pattern matching and section 8 says what it does not cover. |
 
@@ -42,7 +42,7 @@ exist yet and is listed so the boundary is stated before it is built.
 | `mendr migrate [path]` | Source under `path` and the registry. Copies the repo into temp sandboxes (same exclusions/junction as above) to run **your** `build` script, **your** test command, and an optional `--eval-command`, once without the change and once with it. | stdout (report or `mendr-migration/v1` JSON); with `--patch`, a patch file. **Never the working tree.** Sandbox writes stay inside the throwaway copy. | **Whatever your build/test/eval commands do** — the same boundary as the fix-llm gates. Mendr adds no network of its own. |
 | `mendr verify-registry`, `registry-discover` (maintainer commands) | The registry files in this repository. | Registry files, a PR in this repository. | Provider documentation pages and model-list endpoints. These run in Mendr's own CI against Mendr's own repository, never against yours. |
 | Scaffolded audit workflow (`--install`) | Your repository at the checked-out SHA, inside your GitHub Actions runner. | One tracking issue in your repository (created, updated, closed), nothing else. | The Node download from `npm`/GitHub to install Mendr, and the GitHub API calls the workflow makes to your own repository with `GITHUB_TOKEN`. The scan itself makes none. |
-| `mendr-action` (fix PRs) | Same. | A branch and a pull request in your repository containing the gated diff. | Same as above. Plus — only when you set `app-url` and grant `id-token: write` — **one POST of the migration result to your Mendr App** (outcome, PR url, verdict, gate statuses, the swaps and the file paths they touch; **never the diff**), proven by the run's OIDC token. A failed POST is a warning, never a failed job. |
+| `mendr-action` (fix PRs) | Same. | A branch and a pull request in your repository containing the gated diff. | Same as above. Plus — only when you set `app-url` and grant `id-token: write` — **one POST of the migration result to your Mendr App** (outcome, PR url, verdict, gate statuses, the swaps and the file paths they touch; **never the diff**), proven by the run's OIDC token. A failed POST is a warning, never a failed job. With `approval-gated`, also to your App: one GET (what a person approved), one POST (claim it) and one short POST per stage of progress (a stage name and a redacted line such as the files a swap touches or a PR number — never code). |
 | Mendr GitHub App (`app/`, hosted by Mendr) | The JSON your workflow posts and the claims of the run's OIDC token. Installation webhooks from GitHub. | Installations, repository ids and names, and the sanitized evidence per run in its Postgres. One check run on the commit. | Inbound from GitHub (webhooks) and from your CI (the POST). Outbound only to the GitHub API: an installation token limited to that repository and `checks: write`, the check run, and the signed-in user's repository access for the read side. |
 
 The audit **never** sends: file contents, file names, model ids, findings,
@@ -132,7 +132,7 @@ you run.
 
 ### What the App stores (data inventory)
 
-The App's database has five data tables plus an audit log, and nothing else.
+The App's database has six data tables plus an audit log, and nothing else.
 Every field below is used; none is speculative. Two things are deliberately
 **absent**, and that absence is the point: **no access tokens or credentials of
 any kind, and no source code**.
@@ -187,6 +187,20 @@ fresh registry can — and the App writes nothing to GitHub for it.
 | `owner` | who owns the follow-up — a login, a team or a name, as typed | low–medium (free text, ≤ 80 chars, escaped on render) | shown on the finding |
 | `note` | a short note, as typed | **medium** — free text a person chose to write (≤ 400 chars, escaped on render); kept out of the audit log | shown on the finding |
 | `created_at`, `cleared_at` | lifecycle | low | at most one active row per finding |
+
+**`approvals`** — one row per decision, made in the App, to migrate one
+finding. The App records it; the repository's own migration workflow asks for
+it (proven by its OIDC token), claims it, carries it out in the customer's CI
+and streams its progress back. The App never touches the repository: with the
+optional `actions: write` it may *start* that workflow, and that is all.
+
+| Field | What | Sensitivity | Why it is kept |
+|---|---|---|---|
+| `provider`, `model`, `replacement` | which finding, and the registry's recommended replacement at the time | low (model names) | what exactly was approved |
+| `mode` | `pr` (open a pull request for review) or `auto-merge` (also enable GitHub's auto-merge on it) | low | the CI honours it |
+| `approved_by` | the GitHub login that approved — from the session, never the form | low–medium (a username) | the record *is* the decision |
+| `status`, `created_at`, `dispatched_at`, `started_at`, `finished_at`, `run_id`, `migration_id`, `outcome` | queued → running → done / failed, or cancelled; which CI run took it and which report closed it | low | the finding shows where it stands |
+| `events` (JSONB) | the progress timeline the CI run streamed: a stage, a time and a short line (which files a swap touches, a PR number) | low–medium — file paths; every line is redacted and capped, and it is **never code** | the live status on the finding |
 
 **`audit_log`** — an append-only record of security-relevant events (section
 5c): `event`, `installation_id`, `repo`, `actor`, and a `detail` object of
@@ -406,8 +420,12 @@ permissions:
   pull-requests: write # open the PR
 ```
 
-It opens a PR; it does not merge one. Branch protection and required reviews
-stay yours. Use the read-only workflow first if you do not want this.
+It opens a PR. It never merges one itself; when an approval made in the App
+asked for "merge when checks pass", it enables GitHub's own auto-merge on that
+PR, which still obeys your branch protection and required checks. With
+`approval-gated` it does nothing at all until a person has approved a specific
+model in the App, and then migrates only that model. Use the read-only workflow
+first if you do not want this.
 
 ### Mendr GitHub App (`app/`)
 
@@ -430,19 +448,25 @@ You can see a repository's evidence only if the App is installed on it and
 GitHub confirms you can access it. If a scope is ever added, this section and
 the changelog will say which and why.
 
-**"Prepare migration for review"** hands you a second workflow file
-(`.github/workflows/mendr-migrate.yml`) through GitHub's own editor — you read
-it and commit it, exactly like the audit workflow. It runs `mendr-action` in
-your CI with the permissions listed under *mendr-action* above
-(`contents: write` for its one branch, `pull-requests: write` for its one PR),
-plus `id-token: write` so the action can report its result to the App, proven
-by the run's OIDC token (section 2: outcome, PR url, verdict, gate statuses,
-the swaps and the file paths they touch — never the diff). The App's own
-permissions do not change, and the App never triggers it: you run it from the
-Actions tab. The App knows two things about it: whether the workflow file
-exists (the audit reports `coverage.migration.workflowPresent`), and what the
-action reported. A resolution is confirmed only when a later completed audit on
-a fresh registry no longer finds the model — never from the PR or a merge event.
+**Approving a migration** happens in the App, on the finding; the work happens
+in your CI. A second workflow file (`.github/workflows/mendr-migrate.yml`,
+handed to you through GitHub's own editor exactly like the audit workflow — you
+read it and commit it) runs `mendr-action` with `approval-gated` on a schedule:
+it asks the App what a person approved, claims it, migrates only those models
+with the permissions listed under *mendr-action* above (`contents: write` for
+its one branch, `pull-requests: write` for its one PR), streams its progress and
+reports the result — all proven by the run's OIDC token (section 2). The App's
+own permissions do not change for any of this. One optional permission exists:
+`actions: write`, which lets the App **start** that workflow the moment you
+approve instead of waiting for its next scheduled check. It is not code access
+— `actions: write` covers starting and cancelling workflow runs — and the App
+requests it per call, scoped to the one repository, only when you click
+Approve; without it nothing is lost, the schedule picks the approval up. The
+App knows three things about the workflow: whether the file exists (the audit
+reports `coverage.migration.workflowPresent`), when it last asked for approvals
+(`repos.migrate_seen_at`), and what the action reported. A resolution is still
+confirmed only when a later completed audit on a fresh registry no longer finds
+the model — never from the PR or a merge event.
 
 ---
 

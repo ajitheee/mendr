@@ -41,6 +41,13 @@ export interface GitHubApi {
   getViewer(token: string): Promise<{ id: number; login: string }>;
   /** Can this user see this repository? Null means no (or it does not exist). */
   getRepoAsUser(token: string, fullName: string): Promise<UserRepo | null>;
+  /**
+   * Start the customer's own migration workflow (workflow_dispatch) on a branch.
+   * Needs the OPTIONAL `actions: write` permission — which is not code access;
+   * without it GitHub refuses and the approval waits for that workflow's own
+   * hourly check instead. Still no contents, no clone, no file reads.
+   */
+  dispatchWorkflow(installationId: number, repoFullName: string, repoId: number, workflowFile: string, ref: string, inputs: Record<string, string>): Promise<void>;
 }
 
 type ApiConfig = Pick<AppConfig, 'githubApiUrl' | 'githubWebUrl' | 'githubAppId' | 'githubPrivateKey' | 'githubClientId' | 'githubClientSecret'>;
@@ -119,8 +126,11 @@ export function createGitHubApi(cfg: ApiConfig): GitHubApi {
     );
   }
 
-  async function installationToken(installationId: number, repoId: number): Promise<string> {
-    const key = `${installationId}:${repoId}`;
+  async function installationToken(installationId: number, repoId: number, permissions: Record<string, string> = { checks: 'write' }): Promise<string> {
+    const key = `${installationId}:${repoId}:${Object.entries(permissions)
+      .map(([k, v]) => `${k}=${v}`)
+      .sort()
+      .join(',')}`;
     const cached = tokens.get(key);
     if (cached && cached.expiresAt - 60_000 > Date.now()) return cached.token;
     if (!cfg.githubAppId || !cfg.githubPrivateKey) throw new GitHubApiError(503, 'the App is not configured (GITHUB_APP_ID / GITHUB_PRIVATE_KEY)');
@@ -131,7 +141,7 @@ export function createGitHubApi(cfg: ApiConfig): GitHubApi {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // Least privilege per call: one repository, one permission.
-        body: JSON.stringify({ repository_ids: [repoId], permissions: { checks: 'write' } }),
+        body: JSON.stringify({ repository_ids: [repoId], permissions }),
       },
       `Bearer ${jwt}`,
     );
@@ -192,6 +202,19 @@ export function createGitHubApi(cfg: ApiConfig): GitHubApi {
         if (e instanceof GitHubApiError && (e.status === 404 || e.status === 403 || e.status === 401)) return null;
         throw e;
       }
+    },
+
+    // Start the customer's own migration workflow on their default branch. This
+    // is the one optional permission (actions: write, which is not code access);
+    // when the App was never granted it, GitHub answers 422 to the token request
+    // and the approval simply waits for that workflow's own hourly check.
+    async dispatchWorkflow(installationId, repoFullName, repoId, workflowFile, ref, inputs) {
+      const token = await installationToken(installationId, repoId, { actions: 'write' });
+      await call(
+        `${cfg.githubApiUrl}/repos/${repoFullName}/actions/workflows/${encodeURIComponent(workflowFile)}/dispatches`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ref, inputs }) },
+        `Bearer ${token}`,
+      );
     },
   };
 }

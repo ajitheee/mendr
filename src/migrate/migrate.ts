@@ -103,6 +103,23 @@ export interface MigrateOptions {
    * drift-checked (fix/atomicWrite).
    */
   write?: boolean;
+  /**
+   * Migrate ONLY these models — `provider/model` or bare model ids, as a person
+   * approved them in the Mendr App. Every other retiring model is left exactly
+   * as it is. Empty or absent = every verified swap, as before.
+   */
+  only?: string[];
+}
+
+/**
+ * The registry restricted to the named model-id entries. Param-transform
+ * entries are kept: they are coupled to the model a swap moves TO, and only
+ * apply when that swap happens.
+ */
+export function restrictRegistry(registry: LlmRegistry, only: string[] | undefined): LlmRegistry {
+  const wanted = new Set((only ?? []).map((s) => s.trim().toLowerCase()).filter(Boolean));
+  if (!wanted.size) return registry;
+  return registry.filter((e) => e.kind !== 'model_id' || wanted.has(`${e.provider}/${e.deprecated}`.toLowerCase()) || wanted.has(e.deprecated.toLowerCase()));
 }
 
 interface PlannedMigration {
@@ -225,7 +242,9 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
     sha: opts.sha ?? null,
   };
 
-  const planned = await plan(repoPath, registry);
+  const only = (opts.only ?? []).map((s) => s.trim()).filter(Boolean);
+  const onlyNote = only.length ? [`Restricted to ${only.join(', ')} (--only); every other retiring model was left untouched.`] : [];
+  const planned = await plan(repoPath, restrictRegistry(registry, only));
 
   if (planned.patchedFiles.length === 0) {
     return {
@@ -243,7 +262,7 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
         verdict: 'no_migration',
       },
       prReady: false,
-      notes: ['No verified Tier-A migration was found. Nothing to apply and nothing to verify.'],
+      notes: [...onlyNote, 'No verified Tier-A migration was found. Nothing to apply and nothing to verify.'],
     };
   }
 
@@ -264,6 +283,7 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
       },
       prReady: false,
       notes: [
+        ...onlyNote,
         'Verification was skipped (--skip-verify): the diff is shown but NOTHING was proven. Do not open a PR from this run.',
         ...(opts.write ? ['--write was ignored: nothing is applied without verification.'] : []),
       ],
@@ -288,7 +308,7 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
   const verdict = computeVerdict(typeCheck, build, tests, evalOut);
   const prReady = verdict === 'verified';
 
-  const notes: string[] = [];
+  const notes: string[] = [...onlyNote];
   if (!behavioralTested) {
     notes.push(
       'Behavior was NOT verified: the sandbox proves the migration builds and existing tests pass, not that the replacement model matches the old one on quality, latency, cost or response shape. Pass --eval-command to test behavior, and review the swap either way.',

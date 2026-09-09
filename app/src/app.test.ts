@@ -6,7 +6,7 @@ import { sealSession, SESSION_COOKIE } from './auth/session.js';
 import { loadConfig, type AppConfig } from './config.js';
 import type { CheckRunPayload } from './ingest/checkRun.js';
 import { sampleReport } from '../test/sampleReport.js';
-import type { GitHubApi } from './github/api.js';
+import { GitHubApiError, type GitHubApi } from './github/api.js';
 import { createActionsVerifier } from './github/oidc.js';
 import { MemoryStore } from './store/memory.js';
 
@@ -53,7 +53,11 @@ async function actionsToken(extra: Partial<JWTPayload> = {}): Promise<string> {
 
 function fakeGitHub(userRepos: Record<string, number> = {}) {
   const checkRuns: { installationId: number; fullName: string; repoId: number; payload: CheckRunPayload }[] = [];
+  const dispatches: { installationId: number; fullName: string; repoId: number; workflowFile: string; ref: string; inputs: Record<string, string> }[] = [];
   const api: GitHubApi = {
+    async dispatchWorkflow(installationId, fullName, repoId, workflowFile, ref, inputs) {
+      dispatches.push({ installationId, fullName, repoId, workflowFile, ref, inputs });
+    },
     async createCheckRun(installationId, fullName, repoId, payload) {
       checkRuns.push({ installationId, fullName, repoId, payload });
       return { id: checkRuns.length, html_url: `https://github.com/${fullName}/runs/${checkRuns.length}` };
@@ -72,7 +76,7 @@ function fakeGitHub(userRepos: Record<string, number> = {}) {
       return id ? { id, fullName, private: true, defaultBranch: 'main' } : null;
     },
   };
-  return { api, checkRuns };
+  return { api, checkRuns, dispatches };
 }
 
 function harness(userRepos: Record<string, number> = {}) {
@@ -309,7 +313,7 @@ describe('migrations: what mendr-action did, proven by OIDC', () => {
     await h.install();
     const res = await h.migrations(await actionsToken(), sampleMigration());
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, migration: { id: 1, outcome: 'migration-proposed', verdict: 'verified', prUrl: 'https://github.com/acme/api/pull/12' } });
+    expect(await res.json()).toEqual({ ok: true, migration: { id: 1, outcome: 'migration-proposed', verdict: 'verified', prUrl: 'https://github.com/acme/api/pull/12' }, approvals: [] });
     const stored = await h.store.latestMigration(REPO.id);
     expect(stored?.report.migrations).toEqual([{ provider: 'openai', from: 'gpt-4', to: 'gpt-4.1', language: 'ts', sites: 1, files: ['src/client.ts'] }]);
     const json = JSON.stringify(stored);
@@ -453,6 +457,154 @@ describe('acknowledgement: who owns a finding', () => {
   });
 });
 
+describe('approvals: decided in Mendr, carried out by the customer\'s own CI', () => {
+  const post = (h: ReturnType<typeof harness>, path: string, fields: Record<string, string>, cookie?: string) =>
+    h.app.request(path, {
+      method: 'POST',
+      headers: { ...(cookie ? { cookie } : {}), 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(fields).toString(),
+    });
+  // What the CI run does, proven by its OIDC token.
+  const ci = (h: ReturnType<typeof harness>, path: string, token: string, body?: unknown) =>
+    h.app.request(path, { method: body ? 'POST' : 'GET', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  const finding = { provider: 'openai', model: 'gpt-4', replacement: 'gpt-4.1', back: '/r/acme/api/runs/1' };
+  const MIGRATE_REF = 'acme/api/.github/workflows/mendr-migrate.yml@refs/heads/main';
+
+  async function approved(mode: 'pr' | 'auto-merge' = 'pr') {
+    const h = harness({ 'acme/api': REPO.id });
+    await h.install();
+    await h.ingest(await actionsToken(), sampleReport());
+    const cookie = await h.sessionCookie();
+    const res = await post(h, '/r/acme/api/approve', { ...finding, mode }, cookie);
+    return { h, cookie, res };
+  }
+
+  it('Approve starts the workflow at once when the App may, and the finding shows it in flight', async () => {
+    const { h, cookie, res } = await approved();
+    expect(res.status).toBe(303);
+    expect(res.headers.get('location')).toBe('/r/acme/api/runs/1');
+    expect(h.gh.dispatches).toEqual([{ installationId: INSTALLATION.id, fullName: 'acme/api', repoId: REPO.id, workflowFile: 'mendr-migrate.yml', ref: 'main', inputs: { approval: '1' } }]);
+    const a = await h.store.getApproval(1);
+    expect(a).toMatchObject({ status: 'queued', approvedBy: 'octocat', mode: 'pr', replacement: 'gpt-4.1' }); // approvedBy from the session, never the form
+    expect(a?.dispatchedAt).toBeTruthy();
+    expect(a?.events.map((e) => e.stage)).toEqual(['dispatched']);
+    const html = await (await h.app.request('/r/acme/api/runs/1', { headers: { cookie } })).text();
+    expect(html).toContain('Approved by <strong>octocat</strong>');
+    expect(html).toContain('>queued<');
+    expect(html).toContain('data-approval="1"');
+    expect(html).toContain('Cancel</button>');
+    expect(html).not.toContain('Approve migration to gpt-4.1</button>');
+    expect((await h.store.listAuditLog()).some((e) => e.event === 'migration_approved' && e.actor === 'octocat')).toBe(true);
+  });
+
+  it('without Actions: write the approval waits for the workflow\'s hourly check — and says so', async () => {
+    const h = harness({ 'acme/api': REPO.id });
+    await h.install();
+    await h.ingest(await actionsToken(), sampleReport());
+    h.gh.api.dispatchWorkflow = async () => {
+      throw new GitHubApiError(403, 'GitHub 403 for POST /repos/acme/api/actions/workflows/mendr-migrate.yml/dispatches: Resource not accessible by integration');
+    };
+    const cookie = await h.sessionCookie();
+    expect((await post(h, '/r/acme/api/approve', finding, cookie)).status).toBe(303);
+    const a = await h.store.getApproval(1);
+    expect(a?.status).toBe('queued');
+    expect(a?.dispatchedAt).toBeNull();
+    expect(a?.events[0]?.detail).toContain('Actions: write');
+    const html = await (await h.app.request('/r/acme/api/runs/1', { headers: { cookie } })).text();
+    expect(html).toContain('within the hour');
+  });
+
+  it('the CI carries it out: list → claim → progress → the report closes it as done; the live status agrees', async () => {
+    const { h, cookie } = await approved('auto-merge');
+    const token = await actionsToken({ run_id: '700', workflow_ref: MIGRATE_REF });
+    const listed = (await (await ci(h, '/api/approvals', token)).json()) as { approvals: unknown[] };
+    expect(listed.approvals).toEqual([{ id: 1, provider: 'openai', model: 'gpt-4', replacement: 'gpt-4.1', mode: 'auto-merge' }]);
+    const repo = await h.store.getRepo(REPO.id);
+    expect(repo?.migrateWorkflow).toBe('mendr-migrate.yml'); // learned from the OIDC workflow_ref claim
+    expect(repo?.migrateSeenAt).toBeTruthy();
+
+    const claimed = (await (await ci(h, '/api/approvals/claim', token, { ids: [1, 999] })).json()) as { claimed: { id: number }[] };
+    expect(claimed.claimed.map((c) => c.id)).toEqual([1]);
+    expect((await h.store.getApproval(1))?.status).toBe('running');
+    expect((await ci(h, '/api/approvals', token)).status).toBe(200);
+    expect(((await (await ci(h, '/api/approvals', token)).json()) as { approvals: unknown[] }).approvals).toEqual([]); // no longer queued
+
+    expect((await ci(h, '/api/approvals/1/events', token, { stage: 'verifying', detail: 'type-check, build, tests on a throwaway copy sk-proj-abcdefghijklmnopqrstuvwxyz0123456789' })).status).toBe(200);
+    expect((await ci(h, '/api/approvals/1/events', token, { stage: 'bogus' })).status).toBe(400);
+    expect((await ci(h, '/api/approvals/999/events', token, { stage: 'verifying' })).status).toBe(404);
+    let a = await h.store.getApproval(1);
+    expect(a?.events.map((e) => e.stage)).toEqual(['dispatched', 'claimed', 'verifying']);
+    expect(a?.events[2]?.detail).not.toContain('sk-proj-abcdefghijklmnopqrstuvwxyz0123456789'); // redacted, like everything else
+
+    const live = (await (await h.app.request('/api/approvals/1', { headers: { cookie } })).json()) as { status: string; version: string };
+    expect(live).toMatchObject({ status: 'running', version: 'running:3' });
+    let html = await (await h.app.request('/r/acme/api/runs/1', { headers: { cookie } })).text();
+    expect(html).toContain('>running<');
+    expect(html).toContain('verifying on a throwaway copy');
+    expect(html).not.toContain('Cancel</button>'); // too late to cancel
+
+    // The report from the same run closes it — from what it says, not from an event.
+    const rep = await h.migrations(token, sampleMigration());
+    expect(((await rep.json()) as { approvals: number[] }).approvals).toEqual([1]);
+    a = await h.store.getApproval(1);
+    expect(a).toMatchObject({ status: 'done', migrationId: 1, outcome: 'migration-proposed' });
+    html = await (await h.app.request('/r/acme/api/runs/1', { headers: { cookie } })).text();
+    expect(html).toContain('>done<');
+    expect(html).toContain('pull request #12 open');
+    expect(html).toContain('migration workflow active');
+  });
+
+  it('a run that could not verify closes the approval as failed and offers the decision again', async () => {
+    const { h, cookie } = await approved();
+    const token = await actionsToken({ run_id: '701', workflow_ref: MIGRATE_REF });
+    await ci(h, '/api/approvals/claim', token, { ids: [1] });
+    await h.migrations(token, sampleMigration({ outcome: 'not-verified', prUrl: '', verdict: 'failed', gates: { typeCheck: 'pass', build: 'pass', tests: 'fail', eval: 'not-configured' } }));
+    expect((await h.store.getApproval(1))?.status).toBe('failed');
+    const html = await (await h.app.request('/r/acme/api/runs/1', { headers: { cookie } })).text();
+    expect(html).toContain('Earlier approval by octocat');
+    expect(html).toContain('>failed<');
+    expect(html).toContain('Approve migration to gpt-4.1</button>');
+  });
+
+  it('a queued approval can be cancelled, a running one cannot, and approving twice keeps one in flight', async () => {
+    const { h, cookie } = await approved();
+    expect((await post(h, '/r/acme/api/approve', finding, cookie)).status).toBe(303);
+    expect((await h.store.listApprovals(REPO.id, 10)).length).toBe(1);
+    expect((await post(h, '/r/acme/api/approve/cancel', { id: '1', back: '/r/acme/api/runs/1' }, cookie)).status).toBe(303);
+    expect((await h.store.getApproval(1))?.status).toBe('cancelled');
+    expect((await h.store.listAuditLog()).some((e) => e.event === 'approval_cancelled')).toBe(true);
+    // approve again → #2, claim it, then cancelling does nothing
+    await post(h, '/r/acme/api/approve', finding, cookie);
+    const token = await actionsToken({ run_id: '702', workflow_ref: MIGRATE_REF });
+    await ci(h, '/api/approvals/claim', token, { ids: [2] });
+    await post(h, '/r/acme/api/approve/cancel', { id: '2', back: '/' }, cookie);
+    expect((await h.store.getApproval(2))?.status).toBe('running');
+  });
+
+  it('needs sign-in, access and a named finding; the CI endpoints need a valid token for an installed repository', async () => {
+    const h = harness({ 'acme/api': REPO.id });
+    await h.install();
+    expect((await post(h, '/r/acme/api/approve', finding)).status).toBe(302);
+    const noAccess = harness();
+    await noAccess.install();
+    expect((await post(noAccess, '/r/acme/api/approve', finding, await noAccess.sessionCookie())).status).toBe(404);
+    expect((await post(h, '/r/acme/api/approve', { back: '/' }, await h.sessionCookie())).status).toBe(400);
+    expect((await h.app.request('/api/approvals')).status).toBe(401);
+    expect((await h.app.request('/api/approvals/1')).status).toBe(401);
+    const token = await actionsToken({ run_id: '703' });
+    expect((await ci(h, '/api/approvals/claim', token, { ids: 'nope' })).status).toBe(400);
+    const uninstalled = harness();
+    expect((await ci(uninstalled, '/api/approvals', token)).status).toBe(403);
+  });
+
+  it('is purged with the repository\'s data', async () => {
+    const { h, cookie } = await approved();
+    const res = await h.app.request('/r/acme/api/delete', { method: 'POST', headers: { cookie } });
+    expect(await res.text()).toContain('1 approval(s)');
+    expect(await h.store.getApproval(1)).toBeNull();
+  });
+});
+
 describe('reading evidence requires sign-in AND GitHub access to the repository', () => {
   it('anonymous callers get 401 from the API and a sign-in redirect from pages', async () => {
     const h = harness();
@@ -485,7 +637,7 @@ describe('reading evidence requires sign-in AND GitHub access to the repository'
     expect(html).toContain('Possible cause');
     expect(html).toContain('Evidence');
     expect(html).toContain('Confidence boundary');
-    expect(html).toContain('Migration evidence');
+    expect(html).toContain('lbl">Migration<');
     expect(html).toContain('Next action');
     // never overclaims the cause without runtime evidence
     expect(html).toContain('production traffic not measured');

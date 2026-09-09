@@ -2,6 +2,9 @@ import {
   COMPLETED_CONCLUSIONS,
   type Acknowledgement,
   type AcknowledgementInput,
+  type Approval,
+  type ApprovalEvent,
+  type ApprovalInput,
   type AuditLogEntry,
   type AuditLogInput,
   type Installation,
@@ -29,6 +32,8 @@ export class MemoryStore implements Store {
   private nextMigrationId = 1;
   private acknowledgements = new Map<number, Acknowledgement>();
   private nextAcknowledgementId = 1;
+  private approvals = new Map<number, Approval>();
+  private nextApprovalId = 1;
 
   async upsertInstallation(i: Installation): Promise<void> {
     this.installations.set(i.id, { ...i });
@@ -50,7 +55,23 @@ export class MemoryStore implements Store {
   }
 
   async upsertRepos(installationId: number, repos: RepoInput[]): Promise<void> {
-    for (const r of repos) this.repos.set(r.id, { id: r.id, installationId, fullName: r.fullName, private: r.private, removedAt: null });
+    for (const r of repos) {
+      const prev = this.repos.get(r.id);
+      this.repos.set(r.id, {
+        id: r.id,
+        installationId,
+        fullName: r.fullName,
+        private: r.private,
+        removedAt: null,
+        migrateSeenAt: prev?.migrateSeenAt ?? null,
+        migrateWorkflow: prev?.migrateWorkflow ?? null,
+      });
+    }
+  }
+
+  async markMigrateSeen(repoId: number, at: string, workflowFile: string | null): Promise<void> {
+    const r = this.repos.get(repoId);
+    if (r) this.repos.set(repoId, { ...r, migrateSeenAt: at, migrateWorkflow: workflowFile ?? r.migrateWorkflow });
   }
 
   async removeRepos(installationId: number, repoIds: number[], at: string): Promise<void> {
@@ -176,7 +197,99 @@ export class MemoryStore implements Store {
     return out;
   }
 
+  // --- approvals ---
+
+  async createApproval(a: ApprovalInput): Promise<Approval> {
+    const record: Approval = {
+      ...a,
+      id: this.nextApprovalId++,
+      createdAt: new Date().toISOString(),
+      status: 'queued',
+      dispatchedAt: null,
+      startedAt: null,
+      finishedAt: null,
+      runId: null,
+      migrationId: null,
+      outcome: null,
+      events: [],
+    };
+    this.approvals.set(record.id, record);
+    return structuredClone(record);
+  }
+
+  async getApproval(id: number): Promise<Approval | null> {
+    const a = this.approvals.get(id);
+    return a ? structuredClone(a) : null;
+  }
+
+  private sortedApprovals(repoId: number): Approval[] {
+    return [...this.approvals.values()].filter((a) => a.repoId === repoId).sort((a, b) => b.id - a.id);
+  }
+
+  async activeApprovals(repoId: number): Promise<Map<string, Approval>> {
+    const out = new Map<string, Approval>();
+    for (const a of this.sortedApprovals(repoId)) {
+      if (a.status !== 'queued' && a.status !== 'running') continue;
+      const key = `${a.provider}/${a.model}`;
+      if (!out.has(key)) out.set(key, structuredClone(a));
+    }
+    return out;
+  }
+
+  async listApprovals(repoId: number, limit: number): Promise<Approval[]> {
+    return this.sortedApprovals(repoId)
+      .slice(0, limit)
+      .map((a) => structuredClone(a));
+  }
+
+  async claimApprovals(repoId: number, ids: number[], runId: number, event: ApprovalEvent): Promise<Approval[]> {
+    const claimed: Approval[] = [];
+    for (const id of ids) {
+      const a = this.approvals.get(id);
+      if (!a || a.repoId !== repoId || a.status !== 'queued') continue;
+      const next: Approval = { ...a, status: 'running', startedAt: event.at, runId, events: [...a.events, event] };
+      this.approvals.set(id, next);
+      claimed.push(structuredClone(next));
+    }
+    return claimed;
+  }
+
+  async appendApprovalEvent(id: number, event: ApprovalEvent): Promise<void> {
+    const a = this.approvals.get(id);
+    if (a) this.approvals.set(id, { ...a, events: [...a.events, event] });
+  }
+
+  async markApprovalDispatched(id: number, event: ApprovalEvent): Promise<void> {
+    const a = this.approvals.get(id);
+    if (a) this.approvals.set(id, { ...a, dispatchedAt: event.at, events: [...a.events, event] });
+  }
+
+  async finishApprovals(repoId: number, runId: number, migrationId: number, outcome: string, event: ApprovalEvent): Promise<Approval[]> {
+    const closed: Approval[] = [];
+    for (const [id, a] of this.approvals) {
+      if (a.repoId !== repoId || a.runId !== runId || (a.status !== 'queued' && a.status !== 'running')) continue;
+      const next: Approval = { ...a, status: event.stage === 'failed' ? 'failed' : 'done', finishedAt: event.at, migrationId, outcome, events: [...a.events, event] };
+      this.approvals.set(id, next);
+      closed.push(structuredClone(next));
+    }
+    return closed;
+  }
+
+  async cancelApproval(id: number, event: ApprovalEvent): Promise<boolean> {
+    const a = this.approvals.get(id);
+    if (!a || a.status !== 'queued') return false;
+    this.approvals.set(id, { ...a, status: 'cancelled', finishedAt: event.at, events: [...a.events, event] });
+    return true;
+  }
+
   async deleteRepoData(repoId: number): Promise<RepoDeletion> {
+    let approvalsDeleted = 0;
+    for (const [id, a] of [...this.approvals]) {
+      if (a.repoId === repoId) {
+        this.approvals.delete(id);
+        approvalsDeleted++;
+      }
+    }
     let runsDeleted = 0;
     for (const [id, r] of [...this.runs]) {
       if (r.repoId === repoId) {
@@ -199,17 +312,18 @@ export class MemoryStore implements Store {
       }
     }
     this.repos.delete(repoId);
-    return { runsDeleted, migrationsDeleted, acknowledgementsDeleted };
+    return { runsDeleted, migrationsDeleted, acknowledgementsDeleted, approvalsDeleted };
   }
 
   async deleteInstallationData(installationId: number, at: string): Promise<RepoDeletion & { reposDeleted: number }> {
     const repoIds = [...this.repos.values()].filter((r) => r.installationId === installationId).map((r) => r.id);
-    const total: RepoDeletion = { runsDeleted: 0, migrationsDeleted: 0, acknowledgementsDeleted: 0 };
+    const total: RepoDeletion = { runsDeleted: 0, migrationsDeleted: 0, acknowledgementsDeleted: 0, approvalsDeleted: 0 };
     for (const id of repoIds) {
       const gone = await this.deleteRepoData(id);
       total.runsDeleted += gone.runsDeleted;
       total.migrationsDeleted += gone.migrationsDeleted;
       total.acknowledgementsDeleted += gone.acknowledgementsDeleted;
+      total.approvalsDeleted += gone.approvalsDeleted;
     }
     const inst = this.installations.get(installationId);
     if (inst) this.installations.set(installationId, { ...inst, deletedAt: at });

@@ -24,3 +24,8 @@ jobs:
         # with:
         #   working-directory: packages/api   # if your code isn't at the repo root
         #   node-version: "22"
+
+# Prefer to approve each migration in your Mendr App first? Let the App generate
+# `.github/workflows/mendr-migrate.yml` for the repository instead: it sets
+# `app-url`, `approval-gated: 'true'` and a schedule, so a run does nothing until
+# a person approves a finding in the App, and then migrates exactly that model.

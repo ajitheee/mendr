@@ -72,7 +72,7 @@ export async function applyWebhook(store: Store, event: string, payload: unknown
           actor: inst.account?.login ?? null,
           detail: { ...gone },
         });
-        return `installation ${inst.id} deleted: purged ${gone.reposDeleted} repositories, ${gone.runsDeleted} run(s), ${gone.migrationsDeleted} migration report(s) and ${gone.acknowledgementsDeleted} acknowledgement(s)`;
+        return `installation ${inst.id} deleted: purged ${gone.reposDeleted} repositories, ${gone.runsDeleted} run(s), ${gone.migrationsDeleted} migration report(s), ${gone.acknowledgementsDeleted} acknowledgement(s) and ${gone.approvalsDeleted} approval(s)`;
       }
       default:
         return `ignored: installation.${p.action ?? '?'}`;
@@ -98,11 +98,13 @@ export async function applyWebhook(store: Store, event: string, payload: unknown
     let runsDeleted = 0;
     let migrationsDeleted = 0;
     let acknowledgementsDeleted = 0;
+    let approvalsDeleted = 0;
     for (const r of removed) {
       const gone = await store.deleteRepoData(r.id);
       runsDeleted += gone.runsDeleted;
       migrationsDeleted += gone.migrationsDeleted;
       acknowledgementsDeleted += gone.acknowledgementsDeleted;
+      approvalsDeleted += gone.approvalsDeleted;
     }
     if (added.length) await store.appendAuditLog({ event: 'repos_added', installationId: inst.id, repo: null, actor: inst.account?.login ?? null, detail: { count: added.length } });
     if (removed.length) {
@@ -111,10 +113,10 @@ export async function applyWebhook(store: Store, event: string, payload: unknown
         installationId: inst.id,
         repo: null,
         actor: inst.account?.login ?? null,
-        detail: { count: removed.length, runsDeleted, migrationsDeleted, acknowledgementsDeleted },
+        detail: { count: removed.length, runsDeleted, migrationsDeleted, acknowledgementsDeleted, approvalsDeleted },
       });
     }
-    return `installation ${inst.id}: +${added.length} repositories, -${removed.length} (purged ${runsDeleted} run(s), ${migrationsDeleted} migration report(s), ${acknowledgementsDeleted} acknowledgement(s))`;
+    return `installation ${inst.id}: +${added.length} repositories, -${removed.length} (purged ${runsDeleted} run(s), ${migrationsDeleted} migration report(s), ${acknowledgementsDeleted} acknowledgement(s), ${approvalsDeleted} approval(s))`;
   }
 
   return `ignored: ${event}`;

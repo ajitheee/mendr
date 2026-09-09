@@ -3257,10 +3257,11 @@ program
   .option('--eval-command <cmd>', 'run YOUR evaluation in the sandbox as a behavioral gate')
   .option('--sha <sha>', 'the commit being migrated (recorded in the artifact)')
   .option('--skip-verify', 'plan + diff only — prove nothing (do not open a PR from this)')
+  .option('--only <models>', 'migrate only these models — comma-separated provider/model or model ids (what a person approved in your Mendr App); everything else is left untouched')
   .action(
     async (
       repoPath: string,
-      opts: { json?: boolean; patch?: string; write?: boolean; evalCommand?: string; sha?: string; skipVerify?: boolean },
+      opts: { json?: boolean; patch?: string; write?: boolean; evalCommand?: string; sha?: string; skipVerify?: boolean; only?: string },
     ) => {
       if (/^(https?:\/\/|git@)/i.test(repoPath)) {
         console.error(
@@ -3276,6 +3277,7 @@ program
         evalCommand: opts.evalCommand,
         skipVerify: opts.skipVerify,
         write: opts.write,
+        only: opts.only ? opts.only.split(',').map((s) => s.trim()).filter(Boolean) : undefined,
       });
 
       if (opts.patch) {

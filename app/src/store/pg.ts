@@ -6,6 +6,11 @@ import {
   COMPLETED_CONCLUSIONS,
   type Acknowledgement,
   type AcknowledgementInput,
+  type Approval,
+  type ApprovalEvent,
+  type ApprovalInput,
+  type ApprovalMode,
+  type ApprovalStatus,
   type AuditLogEntry,
   type AuditLogInput,
   type Installation,
@@ -45,7 +50,37 @@ function installation(r: Row): Installation {
 }
 
 function repo(r: Row): Repo {
-  return { id: n(r.id), installationId: n(r.installation_id), fullName: String(r.full_name), private: !!r.private, removedAt: iso(r.removed_at) };
+  return {
+    id: n(r.id),
+    installationId: n(r.installation_id),
+    fullName: String(r.full_name),
+    private: !!r.private,
+    removedAt: iso(r.removed_at),
+    migrateSeenAt: iso(r.migrate_seen_at),
+    migrateWorkflow: r.migrate_workflow === null || r.migrate_workflow === undefined ? null : String(r.migrate_workflow),
+  };
+}
+
+function approval(r: Row): Approval {
+  const events = Array.isArray(r.events) ? (r.events as ApprovalEvent[]) : [];
+  return {
+    id: n(r.id),
+    repoId: n(r.repo_id),
+    provider: String(r.provider),
+    model: String(r.model),
+    replacement: r.replacement === null ? null : String(r.replacement),
+    mode: String(r.mode) as ApprovalMode,
+    approvedBy: String(r.approved_by),
+    createdAt: iso(r.created_at) ?? new Date().toISOString(),
+    status: String(r.status) as ApprovalStatus,
+    dispatchedAt: iso(r.dispatched_at),
+    startedAt: iso(r.started_at),
+    finishedAt: iso(r.finished_at),
+    runId: r.run_id === null ? null : n(r.run_id),
+    migrationId: r.migration_id === null ? null : n(r.migration_id),
+    outcome: r.outcome === null ? null : String(r.outcome),
+    events,
+  };
 }
 
 function summary(r: Row): RunSummary {
@@ -308,22 +343,105 @@ export class PgStore implements Store {
     return out;
   }
 
+  // --- approvals ---
+
+  async createApproval(a: ApprovalInput): Promise<Approval> {
+    const { rows } = await this.pool.query('INSERT INTO approvals (repo_id, provider, model, replacement, mode, approved_by) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *', [
+      a.repoId,
+      a.provider,
+      a.model,
+      a.replacement,
+      a.mode,
+      a.approvedBy,
+    ]);
+    return approval(rows[0] as Row);
+  }
+
+  async getApproval(id: number): Promise<Approval | null> {
+    const { rows } = await this.pool.query('SELECT * FROM approvals WHERE id = $1', [id]);
+    return rows[0] ? approval(rows[0] as Row) : null;
+  }
+
+  async activeApprovals(repoId: number): Promise<Map<string, Approval>> {
+    const { rows } = await this.pool.query(`SELECT * FROM approvals WHERE repo_id = $1 AND status IN ('queued', 'running') ORDER BY id DESC`, [repoId]);
+    const out = new Map<string, Approval>();
+    for (const r of rows) {
+      const a = approval(r as Row);
+      const key = `${a.provider}/${a.model}`;
+      if (!out.has(key)) out.set(key, a);
+    }
+    return out;
+  }
+
+  async listApprovals(repoId: number, limit: number): Promise<Approval[]> {
+    const { rows } = await this.pool.query('SELECT * FROM approvals WHERE repo_id = $1 ORDER BY id DESC LIMIT $2', [repoId, limit]);
+    return rows.map((r) => approval(r as Row));
+  }
+
+  async claimApprovals(repoId: number, ids: number[], runId: number, event: ApprovalEvent): Promise<Approval[]> {
+    if (!ids.length) return [];
+    const { rows } = await this.pool.query(
+      `UPDATE approvals SET status = 'running', started_at = $3, run_id = $4, events = events || $5::jsonb
+       WHERE repo_id = $1 AND id = ANY($2::bigint[]) AND status = 'queued' RETURNING *`,
+      [repoId, ids, event.at, runId, JSON.stringify([event])],
+    );
+    return rows.map((r) => approval(r as Row));
+  }
+
+  async appendApprovalEvent(id: number, event: ApprovalEvent): Promise<void> {
+    await this.pool.query('UPDATE approvals SET events = events || $2::jsonb WHERE id = $1', [id, JSON.stringify([event])]);
+  }
+
+  async markApprovalDispatched(id: number, event: ApprovalEvent): Promise<void> {
+    await this.pool.query('UPDATE approvals SET dispatched_at = $2, events = events || $3::jsonb WHERE id = $1', [id, event.at, JSON.stringify([event])]);
+  }
+
+  async finishApprovals(repoId: number, runId: number, migrationId: number, outcome: string, event: ApprovalEvent): Promise<Approval[]> {
+    const { rows } = await this.pool.query(
+      `UPDATE approvals SET status = $5, finished_at = $6, migration_id = $3, outcome = $4, events = events || $7::jsonb
+       WHERE repo_id = $1 AND run_id = $2 AND status IN ('queued', 'running') RETURNING *`,
+      [repoId, runId, migrationId, outcome, event.stage === 'failed' ? 'failed' : 'done', event.at, JSON.stringify([event])],
+    );
+    return rows.map((r) => approval(r as Row));
+  }
+
+  async cancelApproval(id: number, event: ApprovalEvent): Promise<boolean> {
+    const res = await this.pool.query(`UPDATE approvals SET status = 'cancelled', finished_at = $2, events = events || $3::jsonb WHERE id = $1 AND status = 'queued'`, [
+      id,
+      event.at,
+      JSON.stringify([event]),
+    ]);
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  async markMigrateSeen(repoId: number, at: string, workflowFile: string | null): Promise<void> {
+    await this.pool.query('UPDATE repos SET migrate_seen_at = $2, migrate_workflow = COALESCE($3, migrate_workflow) WHERE id = $1', [repoId, at, workflowFile]);
+  }
+
   async deleteRepoData(repoId: number): Promise<RepoDeletion> {
     const del = await this.pool.query('DELETE FROM runs WHERE repo_id = $1', [repoId]);
     const mig = await this.pool.query('DELETE FROM migrations WHERE repo_id = $1', [repoId]);
     const ack = await this.pool.query('DELETE FROM acknowledgements WHERE repo_id = $1', [repoId]);
+    const apr = await this.pool.query('DELETE FROM approvals WHERE repo_id = $1', [repoId]);
     await this.pool.query('DELETE FROM repos WHERE id = $1', [repoId]);
-    return { runsDeleted: del.rowCount ?? 0, migrationsDeleted: mig.rowCount ?? 0, acknowledgementsDeleted: ack.rowCount ?? 0 };
+    return { runsDeleted: del.rowCount ?? 0, migrationsDeleted: mig.rowCount ?? 0, acknowledgementsDeleted: ack.rowCount ?? 0, approvalsDeleted: apr.rowCount ?? 0 };
   }
 
   async deleteInstallationData(installationId: number, at: string): Promise<RepoDeletion & { reposDeleted: number }> {
     const runs = await this.pool.query('DELETE FROM runs WHERE repo_id IN (SELECT id FROM repos WHERE installation_id = $1)', [installationId]);
     const migrations = await this.pool.query('DELETE FROM migrations WHERE repo_id IN (SELECT id FROM repos WHERE installation_id = $1)', [installationId]);
     const acks = await this.pool.query('DELETE FROM acknowledgements WHERE repo_id IN (SELECT id FROM repos WHERE installation_id = $1)', [installationId]);
+    const approvals = await this.pool.query('DELETE FROM approvals WHERE repo_id IN (SELECT id FROM repos WHERE installation_id = $1)', [installationId]);
     const repos = await this.pool.query('DELETE FROM repos WHERE installation_id = $1', [installationId]);
     // Keep the installation row as a deletion record (it holds no findings).
     await this.pool.query('UPDATE installations SET deleted_at = $2, updated_at = now() WHERE id = $1', [installationId, at]);
-    return { reposDeleted: repos.rowCount ?? 0, runsDeleted: runs.rowCount ?? 0, migrationsDeleted: migrations.rowCount ?? 0, acknowledgementsDeleted: acks.rowCount ?? 0 };
+    return {
+      reposDeleted: repos.rowCount ?? 0,
+      runsDeleted: runs.rowCount ?? 0,
+      migrationsDeleted: migrations.rowCount ?? 0,
+      acknowledgementsDeleted: acks.rowCount ?? 0,
+      approvalsDeleted: approvals.rowCount ?? 0,
+    };
   }
 
   async pruneRunsByAge(days: number): Promise<number> {

@@ -4,7 +4,8 @@ description: >-
   migration in an isolated sandbox (a baseline-relative type-check and build plus
   YOUR test suite, and an optional eval), and open one idempotent, human-approved
   pull request — only when the migration verifies. Mendr runs entirely inside
-  YOUR CI runner, never edits your default branch, and never merges.
+  YOUR CI runner and never edits your default branch. With `approval-gated`, it
+  carries out exactly the migrations a person approved in your Mendr App.
 author: "Mendr"
 branding:
   icon: "git-pull-request"
@@ -57,6 +58,20 @@ inputs:
       job still succeeds. Empty = nothing is sent.
     required: false
     default: ""
+  approval-gated:
+    description: >-
+      "true" = carry out ONLY the migrations a person approved in your Mendr App
+      (needs `app-url` and `id-token: write`): the run asks the App what is
+      approved, claims it, migrates exactly those models, streams its progress
+      to the App and, if the approval asked for it, enables auto-merge on the PR.
+      When nothing is approved the run ends in seconds and touches nothing.
+      "false" (default) = migrate every verified swap, as before.
+    required: false
+    default: "false"
+  approval:
+    description: "The approval id the Mendr App passed when it started this workflow (workflow_dispatch input). Informational; every queued approval is picked up regardless."
+    required: false
+    default: ""
 
 outputs:
   outcome:
@@ -64,21 +79,64 @@ outputs:
       clean (nothing to migrate) | migration-proposed (a verified migration is in
       the PR) | not-verified (a migration exists but did not verify; nothing
       applied, no PR) | error (Mendr never completed a scan; the job fails red and
-      no existing PR is touched)
+      no existing PR is touched) | empty when approval-gated and nothing was approved
     value: ${{ steps.mendr.outputs.outcome }}
   pr-url:
     description: "URL of the opened/updated PR (empty unless a verified migration was proposed)."
     value: ${{ steps.mendr.outputs.pr_url }}
+  approvals:
+    description: "Comma-separated ids of the App approvals this run carried out (approval-gated only)."
+    value: ${{ steps.gate.outputs.ids }}
 
 runs:
   using: "composite"
   steps:
+    # Ask the customer's Mendr App what a person approved, and claim it. Runs
+    # BEFORE any dependency install so an hourly check with nothing approved
+    # costs seconds. Proven by this run's OIDC token, like every call to the App.
+    - name: Check the Mendr App for approved migrations
+      id: gate
+      if: ${{ inputs.approval-gated == 'true' }}
+      shell: bash
+      env:
+        MENDR_APP_URL: ${{ inputs.app-url }}
+        MENDR_APPROVAL_HINT: ${{ inputs.approval }}
+      run: |
+        set -euo pipefail
+        if [ -z "${MENDR_APP_URL:-}" ]; then echo "::error::Mendr: approval-gated needs app-url."; exit 1; fi
+        if [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+          echo "::error::Mendr: approval-gated needs 'id-token: write' in the calling workflow."; exit 1
+        fi
+        token="$(curl -sS --retry 3 --retry-delay 2 --retry-all-errors -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=mendr" | jq -r .value)"
+        app="${MENDR_APP_URL%/}"
+        list="$(curl -sS --fail-with-body --retry 4 --retry-delay 5 --retry-all-errors --max-time 60 -H "Authorization: Bearer $token" "$app/api/approvals")"
+        ids="$(echo "$list" | jq -r '[.approvals[].id] | map(tostring) | join(",")')"
+        if [ -z "$ids" ]; then
+          echo "proceed=false" >> "$GITHUB_OUTPUT"
+          echo "Mendr: nothing is approved in the App for this repository${MENDR_APPROVAL_HINT:+ (hint: $MENDR_APPROVAL_HINT)}; nothing to do."
+          exit 0
+        fi
+        claimed="$(curl -sS --fail-with-body --retry 4 --retry-delay 5 --retry-all-errors --max-time 60 -X POST -H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+          --data-binary "$(echo "$list" | jq -c '{ids: [.approvals[].id]}')" "$app/api/approvals/claim")"
+        cids="$(echo "$claimed" | jq -r '[.claimed[].id] | map(tostring) | join(",")')"
+        if [ -z "$cids" ]; then
+          echo "proceed=false" >> "$GITHUB_OUTPUT"
+          echo "Mendr: another run already took these approvals; nothing to do."
+          exit 0
+        fi
+        only="$(echo "$claimed" | jq -r '[.claimed[] | "\(.provider)/\(.model)"] | join(",")')"
+        mode="$(echo "$claimed" | jq -r 'if ([.claimed[].mode] | all(. == "auto-merge")) then "auto-merge" else "pr" end')"
+        { echo "proceed=true"; echo "ids=$cids"; echo "only=$only"; echo "mode=$mode"; } >> "$GITHUB_OUTPUT"
+        echo "Mendr: carrying out approval(s) $cids — $only ($mode)."
+
     - name: Set up Node.js
+      if: ${{ inputs.approval-gated != 'true' || steps.gate.outputs.proceed == 'true' }}
       uses: actions/setup-node@v4
       with:
         node-version: ${{ inputs.node-version }}
 
     - name: Install target-repo dependencies (enables Mendr's test gate)
+      if: ${{ inputs.approval-gated != 'true' || steps.gate.outputs.proceed == 'true' }}
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: |
@@ -97,6 +155,7 @@ runs:
 
     - name: Run Mendr and open a PR
       id: mendr
+      if: ${{ inputs.approval-gated != 'true' || steps.gate.outputs.proceed == 'true' }}
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
@@ -107,4 +166,7 @@ runs:
         MENDR_LABELS: ${{ inputs.pr-labels }}
         MENDR_EVAL: ${{ inputs.eval-command }}
         MENDR_APP_URL: ${{ inputs.app-url }}
+        MENDR_ONLY: ${{ steps.gate.outputs.only }}
+        MENDR_APPROVAL_IDS: ${{ steps.gate.outputs.ids }}
+        MENDR_MODE: ${{ steps.gate.outputs.mode }}
       run: bash "$GITHUB_ACTION_PATH/scripts/run-mendr.sh"

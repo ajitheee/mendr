@@ -1,4 +1,4 @@
--- Mendr App storage. Five data tables plus an audit log, and none of them holds code.
+-- Mendr App storage. Six data tables plus an audit log, and none of them holds code.
 --
 -- installations:    which GitHub accounts installed the App (the tenant boundary).
 -- repos:            which repositories each installation covers (ids, names, privacy).
@@ -10,6 +10,10 @@
 -- acknowledgements: a person's decision about one finding — "seen; X owns it" —
 --                   keyed by repository and model so it follows the finding across
 --                   runs. Names and a short note only; never the finding itself.
+-- approvals:        a person's decision, made in the App, to migrate one finding.
+--                   The customer's own CI picks it up (proven by OIDC), runs the
+--                   verified migration for exactly that model, streams progress
+--                   and reports the result. The App never touches the repository.
 --
 -- Every statement is idempotent so the server can apply this file at boot.
 
@@ -32,6 +36,11 @@ CREATE TABLE IF NOT EXISTS repos (
 );
 CREATE INDEX IF NOT EXISTS repos_full_name ON repos (full_name);
 CREATE INDEX IF NOT EXISTS repos_installation ON repos (installation_id);
+-- When the repository's migration workflow last asked the App for approvals,
+-- and which workflow file it was (from the run's OIDC workflow_ref claim): the
+-- proof that approvals made here will be carried out, and where to send a start.
+ALTER TABLE repos ADD COLUMN IF NOT EXISTS migrate_seen_at TIMESTAMPTZ;
+ALTER TABLE repos ADD COLUMN IF NOT EXISTS migrate_workflow TEXT;
 
 CREATE TABLE IF NOT EXISTS runs (
   id             BIGSERIAL PRIMARY KEY,
@@ -89,6 +98,30 @@ CREATE TABLE IF NOT EXISTS acknowledgements (
   cleared_by      TEXT
 );
 CREATE INDEX IF NOT EXISTS acknowledgements_repo_active ON acknowledgements (repo_id) WHERE cleared_at IS NULL;
+
+-- approvals: queued → running (claimed by a CI run) → done | failed, or
+-- cancelled while still queued. `events` is the progress timeline the CI run
+-- streams: stage, time, a short redacted detail — never code.
+CREATE TABLE IF NOT EXISTS approvals (
+  id            BIGSERIAL PRIMARY KEY,
+  repo_id       BIGINT NOT NULL REFERENCES repos(id),
+  provider      TEXT NOT NULL,
+  model         TEXT NOT NULL,
+  replacement   TEXT,
+  mode          TEXT NOT NULL DEFAULT 'pr',
+  approved_by   TEXT NOT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  status        TEXT NOT NULL DEFAULT 'queued',
+  dispatched_at TIMESTAMPTZ,
+  started_at    TIMESTAMPTZ,
+  finished_at   TIMESTAMPTZ,
+  run_id        BIGINT,
+  migration_id  BIGINT,
+  outcome       TEXT,
+  events        JSONB NOT NULL DEFAULT '[]'::jsonb
+);
+CREATE INDEX IF NOT EXISTS approvals_repo_status ON approvals (repo_id, status);
+CREATE INDEX IF NOT EXISTS approvals_repo_run ON approvals (repo_id, run_id);
 
 -- audit_log: an append-only record of security-relevant events. `detail` holds
 -- only scalars (counts, ids, a conclusion) — never findings, secrets or code.

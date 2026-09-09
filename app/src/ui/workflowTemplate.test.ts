@@ -91,17 +91,26 @@ describe('newWorkflowFileUrl / setupWorkflowUrl', () => {
   });
 });
 
-describe('migrateWorkflowYaml / setupMigrateWorkflowUrl — "Prepare migration for review"', () => {
+describe('migrateWorkflowYaml / setupMigrateWorkflowUrl — carrying out approvals made in the App', () => {
   const yaml = migrateWorkflowYaml({ mendrSpec: 'v0.3.0-alpha', appUrl: 'https://app.example' });
 
-  it('runs by hand only, with the two write scopes the branch and the PR need plus id-token to report back', () => {
-    expect(yaml).toContain('workflow_dispatch: {}');
+  it('runs on a schedule and when the App starts it — never on push — with the two write scopes the branch and the PR need plus id-token', () => {
+    expect(yaml).toMatch(/^\s+schedule:\n\s+- cron: '17 \* \* \* \*'/m); // hourly on a public repo
+    expect(yaml).toMatch(/^\s+workflow_dispatch:\n\s+inputs:\n\s+approval:/m);
     expect(yaml).not.toMatch(/^\s+push:/m);
-    expect(yaml).not.toMatch(/^\s+schedule:/m);
+    expect(yaml).not.toMatch(/^\s+pull_request:/m);
     expect(yaml).toMatch(/permissions:\n  contents: write\n  pull-requests: write\n  id-token: write\n/);
     expect(yaml).not.toMatch(/^\s+(issues|actions|checks): /m);
     expect(yaml).not.toContain('${{ secrets.');
-    expect(yaml).toContain('app-url: https://app.example'); // the result goes to THIS App; never the diff
+    expect(yaml).toContain('app-url: https://app.example'); // approvals come from, and progress goes to, THIS App
+    expect(yaml).toContain("approval-gated: 'true'"); // only what a person approved
+    expect(yaml).toContain('approval: ${{ inputs.approval }}');
+  });
+
+  it('checks less often on a private repository, where every check costs Actions minutes', () => {
+    const priv = migrateWorkflowYaml({ mendrSpec: 'v0.3.0-alpha', appUrl: 'https://app.example', private: true });
+    expect(priv).toMatch(/- cron: '17 \*\/3 \* \* \*'/);
+    expect(priv).toContain('every three hours on a private repo');
   });
 
   it('pins the action and the CLI it runs to the same release', () => {
@@ -111,9 +120,10 @@ describe('migrateWorkflowYaml / setupMigrateWorkflowUrl — "Prepare migration f
   });
 
   it('says what it does and does not do, in the file the customer commits', () => {
-    expect(yaml).toMatch(/never merges/);
     expect(yaml).toMatch(/never touches your default branch/);
+    expect(yaml).toMatch(/auto-merge only if you chose that when you approved/);
     expect(yaml).toMatch(/ONLY if the verdict is `verified`/);
+    expect(yaml).toMatch(/nothing approved ends in seconds/);
   });
 
   it('deep-links to the prefilled editor at the migration path, and to the Actions page', () => {

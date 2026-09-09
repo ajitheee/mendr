@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+- **Approve a migration in Mendr; your CI carries it out.** Every patch-eligible
+  finding gets an **Approve migration to X** button with a choice: open a pull
+  request for review, or open it and enable GitHub's auto-merge when checks
+  pass. The App records the approval (a new `approvals` table; the approving
+  login comes from the session), starts the repository's migration workflow at
+  once when it has been granted the optional `actions: write` (not code
+  access), and otherwise lets that workflow's own schedule pick it up. The
+  workflow asks the App what is approved (`GET /api/approvals`), claims it
+  (`POST /api/approvals/claim`), runs `mendr migrate --only <the approved
+  models>`, streams each step (`POST /api/approvals/:id/events`: verifying,
+  verified, applying, branch pushed, pull request open) and the migration
+  report closes the approval as done or failed — from what the CI said, never
+  from an event. The finding shows the status and timeline live and refreshes
+  itself while it runs; a queued approval can be cancelled. The App gains no
+  access to the repository.
+- **`mendr-action` gains `approval-gated`** (with `approval`): when set, a run
+  asks the App for approvals before installing anything and ends in seconds
+  when there are none; it migrates exactly the approved models, posts progress,
+  and enables auto-merge when the approval asked for it. The generated
+  `mendr-migrate.yml` sets it, runs on a schedule (hourly on a public repo,
+  every three hours on a private one) and accepts the App's `workflow_dispatch`.
+- **`mendr migrate --only <provider/model,...>`** restricts a migration to the
+  named models; everything else is left untouched.
+
 ## 0.4.2-alpha — 2026-09-07
 
 ### Changed — the old prototype is gone; the release pin is compiled in; retries everywhere

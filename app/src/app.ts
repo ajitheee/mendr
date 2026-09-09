@@ -3,15 +3,16 @@ import { Hono, type Context } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { isConfigured, type AppConfig } from './config.js';
 import { openSession, sealSession, SESSION_COOKIE, SESSION_MAX_AGE_SECONDS, type Session } from './auth/session.js';
-import type { GitHubApi } from './github/api.js';
+import { GitHubApiError, type GitHubApi } from './github/api.js';
 import type { ActionsTokenVerifier } from './github/oidc.js';
 import { applyWebhook, verifyWebhookSignature } from './github/webhook.js';
 import { buildCheckRun } from './ingest/checkRun.js';
 import { countDecisions, sanitizeReport, validateReport } from './ingest/validate.js';
-import { validateMigrationReport } from './ingest/migrationReport.js';
-import type { Repo, Store } from './store/types.js';
+import { prNumber, validateMigrationReport } from './ingest/migrationReport.js';
+import { redactSecrets } from './redact.js';
+import { APPROVAL_MODES, APPROVAL_STAGES, approvalVersion, type Approval, type ApprovalMode, type ApprovalStage, type Repo, type Store } from './store/types.js';
 import { credentialsPage, errorPage, homePage, installedPage, runPage, runsPage, setupPage, workflowRunsUrl } from './ui/pages.js';
-import { migrateActionsUrl, setupMigrateWorkflowUrl, setupWorkflowUrl } from './ui/workflowTemplate.js';
+import { MENDR_MIGRATE_WORKFLOW_PATH, migrateActionsUrl, setupMigrateWorkflowUrl, setupWorkflowUrl } from './ui/workflowTemplate.js';
 
 export interface AppDeps {
   config: AppConfig;
@@ -276,7 +277,21 @@ export function createApp(deps: AppDeps): Hono {
     });
     await store.pruneMigrations(repo.id, config.maxRunsPerRepo);
     if (config.retentionDays > 0) await store.pruneMigrationsByAge(config.retentionDays);
-    log('migration', { repo: claims.repository, id: rec.id, outcome: report.outcome, verdict: report.verdict, pr: !!report.prUrl });
+    // Close whatever approval this CI run carried out — from what it reported, never from an event.
+    const finished = report.outcome === 'migration-proposed' || report.outcome === 'clean';
+    const closed = await store.finishApprovals(repo.id, claims.runId, rec.id, report.outcome, {
+      at: now().toISOString(),
+      stage: finished ? 'done' : 'failed',
+      detail:
+        report.outcome === 'migration-proposed'
+          ? `pull request ${report.prUrl ? prNumber(report.prUrl) : ''} open · ${report.verdict ?? 'verified'}`.replace(/\s+/g, ' ')
+          : report.outcome === 'clean'
+            ? 'nothing left to migrate'
+            : report.outcome === 'not-verified'
+              ? 'not verified — nothing applied, no pull request'
+              : 'the migration run failed — nothing applied',
+    });
+    log('migration', { repo: claims.repository, id: rec.id, outcome: report.outcome, verdict: report.verdict, pr: !!report.prUrl, approvals: closed.length });
     await store.appendAuditLog({
       event: report.outcome === 'migration-proposed' && report.prUrl ? 'pr_created' : 'migration_prepared',
       installationId: repo.installationId,
@@ -284,7 +299,168 @@ export function createApp(deps: AppDeps): Hono {
       actor: claims.actor,
       detail: { outcome: report.outcome, verdict: report.verdict, pr: !!report.prUrl, swaps: report.migrations.length, sha: sha.slice(0, 7) },
     });
-    return c.json({ ok: true, migration: { id: rec.id, outcome: report.outcome, verdict: report.verdict, prUrl: report.prUrl } });
+    return c.json({ ok: true, migration: { id: rec.id, outcome: report.outcome, verdict: report.verdict, prUrl: report.prUrl }, approvals: closed.map((a) => a.id) });
+  });
+
+  // --- approvals: decided here, carried out by the customer's own CI ------------
+  //
+  // An approval is a person's decision on a finding: migrate this model, open a
+  // PR (and, if they chose it, merge it when checks pass). The App records it
+  // and, when it holds the OPTIONAL `actions: write`, starts the repository's
+  // migration workflow at once; otherwise that workflow's own hourly check
+  // finds it. Either way the work — verify on a throwaway copy, push one
+  // branch, open one PR — happens in the customer's CI with the workflow's
+  // token. The App never touches the repository; it records the decision and
+  // what the CI streams back, proven by the run's OIDC token like everything else.
+
+  type CiCaller = { claims: Awaited<ReturnType<ActionsTokenVerifier>>; repo: Repo };
+  const ciCaller = async (c: Context): Promise<CiCaller | Response> => {
+    const m = /^Bearer\s+(\S+)$/i.exec(c.req.header('authorization') ?? '');
+    if (!m) return c.json({ error: 'missing bearer token: send the GitHub Actions OIDC token (permissions: id-token: write)' }, 401);
+    let claims: CiCaller['claims'];
+    try {
+      claims = await deps.verifyActionsToken(m[1]!);
+    } catch (e) {
+      return c.json({ error: `invalid GitHub Actions token: ${(e as Error).message}` }, 401);
+    }
+    const repo = await store.getRepo(claims.repositoryId);
+    if (!repo || repo.removedAt) return c.json({ error: `the Mendr GitHub App is not installed on ${claims.repository}` }, 403);
+    const inst = await store.getInstallation(repo.installationId);
+    if (!inst || inst.deletedAt || inst.suspended) return c.json({ error: 'the installation covering this repository is not active' }, 403);
+    return { claims, repo };
+  };
+
+  /** `mendr-migrate.yml` from an OIDC workflow_ref claim such as `acme/api/.github/workflows/mendr-migrate.yml@refs/heads/main`. */
+  const workflowFileOf = (workflowRef: string | null): string | null => {
+    const m = workflowRef ? /\.github\/workflows\/([^@/]+)@/.exec(workflowRef) : null;
+    return m ? m[1]! : null;
+  };
+
+  const brief = (a: Approval) => ({ id: a.id, provider: a.provider, model: a.model, replacement: a.replacement, mode: a.mode });
+
+  // The migration workflow asks: is anything approved for me? (Marks it as listening.)
+  app.get('/api/approvals', async (c) => {
+    const ci = await ciCaller(c);
+    if (ci instanceof Response) return ci;
+    await store.markMigrateSeen(ci.repo.id, now().toISOString(), workflowFileOf(ci.claims.workflowRef));
+    const queued = [...(await store.activeApprovals(ci.repo.id)).values()].filter((a) => a.status === 'queued');
+    return c.json({ ok: true, approvals: queued.map(brief) });
+  });
+
+  // The workflow takes the approvals it is about to carry out.
+  app.post('/api/approvals/claim', async (c) => {
+    const ci = await ciCaller(c);
+    if (ci instanceof Response) return ci;
+    const body = (await c.req.json().catch(() => null)) as { ids?: unknown } | null;
+    const ids = Array.isArray(body?.ids) ? body.ids.filter((x): x is number => Number.isInteger(x) && (x as number) > 0).slice(0, 100) : [];
+    if (!ids.length) return c.json({ error: 'ids must be a non-empty array of approval ids' }, 400);
+    const at = now().toISOString();
+    await store.markMigrateSeen(ci.repo.id, at, workflowFileOf(ci.claims.workflowRef));
+    const claimed = await store.claimApprovals(ci.repo.id, ids, ci.claims.runId, { at, stage: 'claimed', detail: `picked up by your CI (run ${ci.claims.runId})` });
+    return c.json({ ok: true, claimed: claimed.map(brief) });
+  });
+
+  // Progress, one stage at a time, with a short redacted line — never code.
+  app.post('/api/approvals/:id/events', async (c) => {
+    const ci = await ciCaller(c);
+    if (ci instanceof Response) return ci;
+    const approval = await store.getApproval(Number(c.req.param('id')));
+    if (!approval || approval.repoId !== ci.repo.id) return c.json({ error: 'no such approval for this repository' }, 404);
+    const body = (await c.req.json().catch(() => null)) as { stage?: unknown; detail?: unknown } | null;
+    const stage = typeof body?.stage === 'string' && (APPROVAL_STAGES as readonly string[]).includes(body.stage) ? (body.stage as ApprovalStage) : null;
+    if (!stage) return c.json({ error: `stage must be one of ${APPROVAL_STAGES.join(', ')}` }, 400);
+    const detail = typeof body?.detail === 'string' && body.detail.trim() ? redactSecrets(body.detail.trim().slice(0, 400)) : null;
+    await store.appendApprovalEvent(approval.id, { at: now().toISOString(), stage, detail });
+    return c.json({ ok: true });
+  });
+
+  // The finding page polls this while an approval is in flight (same sign-in and access as the page).
+  app.get('/api/approvals/:id', async (c) => {
+    const sess = await session(c);
+    if (!sess) return c.json({ error: 'sign in' }, 401);
+    const approval = await store.getApproval(Number(c.req.param('id')));
+    const repo = approval ? await store.getRepo(approval.repoId) : null;
+    if (!approval || !repo || !(await accessibleRepo(sess, repo.fullName))) return c.json({ error: 'not found' }, 404);
+    return c.json({ ...brief(approval), status: approval.status, version: approvalVersion(approval), migrationId: approval.migrationId, outcome: approval.outcome, events: approval.events });
+  });
+
+  const approveForm = async (c: Context): Promise<{ provider: string; model: string; replacement: string | null; mode: ApprovalMode; back: string } | null> => {
+    const form = await c.req.parseBody();
+    const field = (key: string, max: number): string => {
+      const v = form[key];
+      return typeof v === 'string' ? v.trim().slice(0, max) : '';
+    };
+    const provider = field('provider', 64);
+    const model = field('model', 128);
+    if (!provider || !model) return null;
+    const modeRaw = field('mode', 16);
+    const mode: ApprovalMode = (APPROVAL_MODES as readonly string[]).includes(modeRaw) ? (modeRaw as ApprovalMode) : 'pr';
+    return { provider, model, replacement: field('replacement', 128) || null, mode, back: safeNext(field('back', 300)) };
+  };
+
+  const dispatchRefusal = (e: unknown): string => {
+    if (e instanceof GitHubApiError) {
+      if (e.status === 404) return 'no migration workflow was found in the repository — add it once (see the Migration card) and its hourly check will pick this up';
+      if (e.status === 403 || e.status === 422) return 'Mendr may not start workflows here yet (grant the App "Actions: write" for instant starts); your CI picks it up on its next hourly check';
+      return `GitHub answered ${e.status}; your CI picks it up on its next hourly check`;
+    }
+    return 'your CI picks it up on its next hourly check';
+  };
+
+  app.post('/r/:owner/:name/approve', async (c) => {
+    const fullName = `${c.req.param('owner')}/${c.req.param('name')}`;
+    const sess = await session(c);
+    if (!sess) return c.redirect(`/auth/login?next=${encodeURIComponent(`/r/${fullName}`)}`);
+    const repo = await accessibleRepo(sess, fullName);
+    if (!repo) return c.html(errorPage('Not found', 'No such repository is visible to you here.'), 404);
+    const f = await approveForm(c);
+    if (!f) return c.html(errorPage('Bad request', 'An approval names the provider and model of the finding it is about.'), 400);
+    const key = `${f.provider}/${f.model}`;
+    // One in flight per finding: a second click while it runs changes nothing.
+    if ((await store.activeApprovals(repo.id)).has(key)) return c.redirect(f.back, 303);
+    const approval = await store.createApproval({ repoId: repo.id, provider: f.provider, model: f.model, replacement: f.replacement, mode: f.mode, approvedBy: sess.login });
+    const at = now().toISOString();
+    let dispatched = false;
+    let why = 'your CI picks it up on its next hourly check';
+    if (isConfigured(config)) {
+      const gh = await github.getRepoAsUser(sess.token, fullName);
+      const file = repo.migrateWorkflow ?? MENDR_MIGRATE_WORKFLOW_PATH.split('/').pop()!;
+      try {
+        await github.dispatchWorkflow(repo.installationId, fullName, repo.id, file, gh?.defaultBranch ?? 'main', { approval: String(approval.id) });
+        dispatched = true;
+      } catch (e) {
+        why = dispatchRefusal(e);
+      }
+    }
+    if (dispatched) await store.markApprovalDispatched(approval.id, { at, stage: 'dispatched', detail: 'Mendr started your migration workflow' });
+    else await store.appendApprovalEvent(approval.id, { at, stage: 'queued', detail: why });
+    log('migration approved', { repo: fullName, by: sess.login, model: key, mode: f.mode, dispatched });
+    await store.appendAuditLog({
+      event: 'migration_approved',
+      installationId: repo.installationId,
+      repo: fullName,
+      actor: sess.login,
+      detail: { approval: approval.id, provider: f.provider, model: f.model, replacement: f.replacement, mode: f.mode, dispatched },
+    });
+    return c.redirect(f.back, 303);
+  });
+
+  app.post('/r/:owner/:name/approve/cancel', async (c) => {
+    const fullName = `${c.req.param('owner')}/${c.req.param('name')}`;
+    const sess = await session(c);
+    if (!sess) return c.redirect(`/auth/login?next=${encodeURIComponent(`/r/${fullName}`)}`);
+    const repo = await accessibleRepo(sess, fullName);
+    if (!repo) return c.html(errorPage('Not found', 'No such repository is visible to you here.'), 404);
+    const form = await c.req.parseBody();
+    const id = Number(form.id);
+    const back = safeNext(typeof form.back === 'string' ? form.back : '/');
+    const approval = Number.isInteger(id) ? await store.getApproval(id) : null;
+    if (!approval || approval.repoId !== repo.id) return c.html(errorPage('Not found', 'No such approval is visible to you here.'), 404);
+    const cancelled = await store.cancelApproval(id, { at: now().toISOString(), stage: 'cancelled', detail: `cancelled by ${sess.login}` });
+    if (cancelled) {
+      await store.appendAuditLog({ event: 'approval_cancelled', installationId: repo.installationId, repo: fullName, actor: sess.login, detail: { approval: id, provider: approval.provider, model: approval.model } });
+    }
+    return c.redirect(back, 303);
   });
 
   // --- sign-in ------------------------------------------------------------------
@@ -403,17 +579,40 @@ export function createApp(deps: AppDeps): Hono {
     if (isConfigured(config)) {
       const gh = await github.getRepoAsUser(sess.token, fullName);
       migrate = {
-        setupUrl: setupMigrateWorkflowUrl({ webUrl: config.githubWebUrl, repoFullName: fullName, defaultBranch: gh?.defaultBranch ?? 'main', mendrSpec: config.mendrSpec, appUrl: config.appUrl }),
+        setupUrl: setupMigrateWorkflowUrl({ webUrl: config.githubWebUrl, repoFullName: fullName, defaultBranch: gh?.defaultBranch ?? 'main', mendrSpec: config.mendrSpec, appUrl: config.appUrl, private: repo.private }),
         runUrl: migrateActionsUrl(config.githubWebUrl, fullName),
       };
     }
     // What mendr-action last reported for this repo, and the run before this one:
     // a resolution is only ever claimed by comparing completed scans.
-    const [migration, runs, acks] = await Promise.all([store.latestMigration(repo.id), store.listRuns(repo.id, 50), store.activeAcknowledgements(repo.id)]);
+    const [migration, runs, acks, approvalList] = await Promise.all([
+      store.latestMigration(repo.id),
+      store.listRuns(repo.id, 50),
+      store.activeAcknowledgements(repo.id),
+      store.listApprovals(repo.id, 100),
+    ]);
+    // The latest approval per finding, whatever its status: in flight, done, failed or cancelled are all shown, never hidden.
+    const approvals = new Map<string, Approval>();
+    for (const a of approvalList) {
+      const key = `${a.provider}/${a.model}`;
+      if (!approvals.has(key)) approvals.set(key, a);
+    }
     const idx = runs.findIndex((r) => r.id === run.id);
     const prevSummary = idx >= 0 ? runs[idx + 1] : undefined;
     const previous = prevSummary ? await store.getRun(prevSummary.id) : null;
-    return c.html(runPage(repo, run, sess.login, { webUrl: config.githubWebUrl, workflowUrl: workflowRunsUrl(config.githubWebUrl, repo.fullName), migrate, migration, previous, acks }));
+    return c.html(
+      runPage(repo, run, sess.login, {
+        webUrl: config.githubWebUrl,
+        workflowUrl: workflowRunsUrl(config.githubWebUrl, repo.fullName),
+        migrate,
+        migration,
+        previous,
+        acks,
+        approvals,
+        migrateSeenAt: repo.migrateSeenAt,
+        now: now(),
+      }),
+    );
   });
 
   // Acknowledgement: a signed-in person with access says "seen — X owns this".
@@ -483,7 +682,7 @@ export function createApp(deps: AppDeps): Hono {
     return c.html(
       errorPage(
         'Deleted',
-        `Removed ${gone.runsDeleted} stored run(s), ${gone.migrationsDeleted} migration report(s) and ${gone.acknowledgementsDeleted} acknowledgement(s) for ${fullName}. Nothing of this repository's findings remains. Re-run the audit to repopulate.`,
+        `Removed ${gone.runsDeleted} stored run(s), ${gone.migrationsDeleted} migration report(s), ${gone.acknowledgementsDeleted} acknowledgement(s) and ${gone.approvalsDeleted} approval(s) for ${fullName}. Nothing of this repository's findings remains. Re-run the audit to repopulate.`,
       ),
     );
   });

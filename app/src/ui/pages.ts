@@ -1,6 +1,6 @@
 import { isConfigured, type AppConfig } from '../config.js';
 import type { ManifestCredentials } from '../github/api.js';
-import type { Acknowledgement, MigrationRecord, Repo, RunRecord, RunSummary } from '../store/types.js';
+import { approvalVersion, type Acknowledgement, type Approval, type MigrationRecord, type Repo, type RunRecord, type RunSummary } from '../store/types.js';
 import { prNumber } from '../ingest/migrationReport.js';
 import { setupWorkflowUrl } from './workflowTemplate.js';
 import { registryFreshnessLine, registryFreshnessOf } from '../ingest/registry.js';
@@ -90,6 +90,12 @@ ul.plain{margin:6px 0 0;padding-left:18px}ul.plain li{margin:4px 0}
 .ackform input{font-family:var(--sans);font-size:.9rem;padding:9px 11px;border:1px solid var(--hair);border-radius:2px;background:var(--data);color:var(--carbon);min-width:200px}
 .ackform input:focus{outline:2px solid var(--cobalt);outline-offset:1px}
 .ackclear{display:inline;margin-left:6px}
+.approve{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:6px}
+.approve select{font-family:var(--sans);font-size:.9rem;padding:9px 11px;border:1px solid var(--hair);border-radius:2px;background:var(--data);color:var(--carbon)}
+.approve select:focus{outline:2px solid var(--cobalt);outline-offset:1px}
+.timeline{list-style:none;padding:0;margin:8px 0 0;display:grid;gap:3px}
+.timeline li{font-size:.9rem}
+.timeline .t{font-family:var(--mono);font-size:.72rem;color:var(--grey);margin-right:8px}
 .foot{max-width:var(--maxw);margin:0 auto;padding:22px clamp(18px,4vw,40px) 40px;border-top:1px solid var(--hair);display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;font-family:var(--mono);font-size:.74rem;color:var(--grey)}
 .foot .fl{display:flex;gap:20px;flex-wrap:wrap}.foot a{color:var(--grey)}.foot a:hover{color:var(--carbon);text-decoration:none}
 `;
@@ -297,19 +303,33 @@ export function workflowRunsUrl(webUrl: string, fullName: string): string {
   return `${webUrl.replace(/\/+$/, '')}/${fullName}/actions/workflows/mendr-audit.yml`;
 }
 
-/** Links for "Prepare migration for review": the one-click workflow, and its Actions page. */
+/** Links for the migration workflow: the one-time add (GitHub's prefilled editor) and its Actions page. */
 export interface MigrateLinks {
   setupUrl: string;
   runUrl: string;
 }
 
 /**
- * "Prepare migration for review". The work runs in the customer's CI, never
- * here: the App only hands over the workflow and points at GitHub's own "Run
- * workflow" button. Which step to offer depends on whether the scanner saw the
- * workflow in the repository (coverage.migration.workflowPresent); an older
- * report leaves that unknown, so both are offered.
+ * Everything a finding card needs, gathered once per page: the run and repo,
+ * what mendr-action last reported, who acknowledged what, the latest approval
+ * per finding, and whether the repository's migration workflow is listening.
  */
+export interface CardContext {
+  repo: Repo;
+  run: RunRecord;
+  webUrl: string;
+  migrate: MigrateLinks | undefined;
+  migration: MigrationRecord | null;
+  acks: Map<string, Acknowledgement> | undefined;
+  /** The latest approval per `${provider}/${model}`, whatever its status. */
+  approvals: Map<string, Approval> | undefined;
+  /** When the repo's migration workflow last asked for approvals (null: never). */
+  migrateSeenAt: string | null;
+  /** What the scanner saw in .github/workflows (null: an older report). */
+  workflowPresent: boolean | null;
+  now: Date;
+}
+
 const GATE_LABEL = { typeCheck: 'type-check', build: 'build', tests: 'tests', eval: 'eval' } as const;
 const GATE_GLYPH: Record<string, string> = { pass: '✓', fail: '✗', inconclusive: '?', 'not-configured': '—' };
 
@@ -344,22 +364,73 @@ function migrationStatus(m: MigrationRecord): string {
   }
 }
 
-function migrationCard(present: boolean | null, migrate: MigrateLinks | undefined, patchCount: number, latest: MigrationRecord | null): string {
-  if (!migrate || (patchCount === 0 && !latest)) return '';
-  const add = `<a class="btn" href="${esc(migrate.setupUrl)}" target="_blank" rel="noopener">Add the migration workflow ↗</a>`;
-  const run = `<a class="btn" href="${esc(migrate.runUrl)}" target="_blank" rel="noopener">Prepare migration for review ↗</a>`;
-  const bar =
-    patchCount === 0
-      ? ''
-      : present === true
-        ? `<div class="bar">${run}<span class="muted">opens GitHub's "Run workflow" for this repository — pick the branch and run</span></div>`
-        : present === false
-          ? `<div class="bar">${add}<span class="muted">one time: GitHub's editor opens with the workflow filled in; you read it and commit it. Then run it from the Actions tab.</span></div>`
-          : `<div class="bar">${add}<a class="tlink" href="${esc(migrate.runUrl)}" target="_blank" rel="noopener">Run it on GitHub ↗</a><span class="muted">add it once if you haven't, then run it</span></div>`;
-  const status = latest ? `<div class="part"><div class="label">Latest migration run</div><div>${migrationStatus(latest)}</div></div>` : '';
-  return `<div class="card" id="migrate"><div class="label">Prepare migration for review</div>
-<p>Runs in your CI, never here: Mendr verifies every patch-eligible swap on a throwaway copy — type-check, build, your tests — and opens <strong>one pull request</strong> only if it all passes. It never merges and never touches your default branch. The workflow needs <code>contents: write</code> and <code>pull-requests: write</code> for that branch and PR, and <code>id-token: write</code> to report the result here (never the diff); the App gains nothing.</p>
-${bar}${status}</div>`;
+/** The "Migration" card: is the repository's migration workflow listening, and what did it last do. */
+function migrationCard(ctx: CardContext, patchCount: number): string {
+  const { migrate, migration, migrateSeenAt, workflowPresent } = ctx;
+  if (!migrate || (patchCount === 0 && !migration)) return '';
+  const listening = migrateSeenAt
+    ? `<span class="chip ok">migration workflow active</span><span class="muted">last checked for approvals ${esc(ago(migrateSeenAt, ctx.now))}</span>`
+    : workflowPresent === true
+      ? `<span class="chip ok">migration workflow present</span><span class="muted">it checks for your approvals hourly, and at once when Mendr may start it</span>`
+      : workflowPresent === false
+        ? `<span class="chip warn">migration workflow not added yet</span><a class="btn" href="${esc(migrate.setupUrl)}" target="_blank" rel="noopener">Add it once ↗</a><span class="muted">GitHub's editor opens with the workflow filled in — read it and commit it</span>`
+        : `<span class="chip">migration workflow not seen yet</span><a class="tlink" href="${esc(migrate.setupUrl)}" target="_blank" rel="noopener">add it if you haven't ↗</a>`;
+  const status = migration ? `<div class="part"><div class="label">Latest migration run</div><div>${migrationStatus(migration)}</div></div>` : '';
+  return `<div class="card" id="migrate"><div class="label">Migration</div>
+<p>Approve a migration on a finding below and your own CI carries it out: Mendr verifies the swap on a throwaway copy — type-check, build, your tests — and opens <strong>one pull request</strong> only if it all passes. It never touches your default branch, and merges only if you choose that when you approve. The App gains no access to your code: it records your decision and what your CI reports back.</p>
+<div class="bar">${listening}</div>${status}</div>`;
+}
+
+const STAGE_LABEL: Record<string, string> = {
+  queued: 'queued',
+  dispatched: 'workflow started',
+  claimed: 'picked up by your CI',
+  verifying: 'verifying on a throwaway copy',
+  verified: 'verified',
+  'not-verified': 'not verified — nothing applied',
+  applying: 'applying the swap',
+  pushed: 'branch pushed',
+  pr: 'pull request open',
+  done: 'done',
+  failed: 'failed',
+  cancelled: 'cancelled',
+};
+
+/** The decision on a patch-eligible finding: the Approve form, or the approval's status and timeline. */
+function approvalPart(inv: Inv, ctx: CardContext, approval: Approval | null, back: string, replacement: string): string {
+  const repoName = esc(ctx.repo.fullName);
+  const inFlight = !!approval && (approval.status === 'queued' || approval.status === 'running');
+  if (approval && (inFlight || approval.status === 'done')) {
+    const last = approval.events[approval.events.length - 1];
+    const head =
+      approval.status === 'queued'
+        ? `<span class="chip warn">queued</span> <span class="muted">${approval.dispatchedAt ? 'workflow started — waiting for your CI to pick it up' : 'starts when your CI next checks (within the hour)'}</span>`
+        : approval.status === 'running'
+          ? `<span class="chip warn">running</span> <span class="muted">${esc(STAGE_LABEL[last?.stage ?? 'claimed'] ?? '')}</span>`
+          : `<span class="chip ok">done</span> <span class="muted">${esc(last?.detail ?? '')}</span>`;
+    const events = approval.events
+      .map((e) => `<li><span class="t">${esc(e.at.slice(11, 16))}</span>${esc(STAGE_LABEL[e.stage] ?? e.stage)}${e.detail ? ` <span class="muted">— ${esc(e.detail)}</span>` : ''}</li>`)
+      .join('');
+    const cancel =
+      approval.status === 'queued'
+        ? `<form method="post" action="/r/${repoName}/approve/cancel" class="ackclear"><input type="hidden" name="id" value="${approval.id}"><input type="hidden" name="back" value="${esc(back)}"><button class="linkbtn" type="submit">Cancel</button></form>`
+        : '';
+    const mode = approval.mode === 'auto-merge' ? 'pull request, merged when checks pass' : 'pull request for review';
+    return `<div data-approval="${approval.id}" data-version="${esc(approvalVersion(approval))}">Approved by <strong>${esc(approval.approvedBy)}</strong> on ${esc(approval.createdAt.slice(0, 16).replace('T', ' '))} · ${esc(mode)}${approval.replacement ? ` · to <code>${esc(approval.replacement)}</code>` : ''} · ${head}${cancel}<ol class="timeline">${events}</ol></div>`;
+  }
+  // Failed or cancelled earlier, or never approved: offer the decision, with the
+  // earlier outcome stated — never hidden.
+  const lastDetail = approval?.events[approval.events.length - 1]?.detail;
+  const earlier = approval
+    ? `<div class="muted" style="margin-bottom:6px">Earlier approval by ${esc(approval.approvedBy)} on ${esc(approval.createdAt.slice(0, 10))}: <span class="chip${approval.status === 'failed' ? ' bad' : ''}">${esc(approval.status)}</span>${lastDetail ? ` — ${esc(lastDetail)}` : ''}</div>`
+    : '';
+  if (!ctx.migrate) return earlier;
+  const listening = !!ctx.migrateSeenAt || ctx.workflowPresent !== false;
+  if (!listening) {
+    return `${earlier}<div class="muted">To approve migrations from here, <a class="tlink" href="${esc(ctx.migrate.setupUrl)}" target="_blank" rel="noopener">add the migration workflow once ↗</a> — GitHub's editor opens with it filled in; read it and commit it. It then checks for your approvals hourly.</div>`;
+  }
+  const hidden = `<input type="hidden" name="provider" value="${esc(inv.provider)}"><input type="hidden" name="model" value="${esc(inv.model)}"><input type="hidden" name="replacement" value="${esc(replacement)}"><input type="hidden" name="back" value="${esc(back)}">`;
+  return `${earlier}<form method="post" action="/r/${repoName}/approve" class="approve">${hidden}<select name="mode" aria-label="What to do once the migration verifies"><option value="pr">open a pull request for review</option><option value="auto-merge">open a pull request and merge it when checks pass</option></select><button class="btn" type="submit">Approve migration to ${esc(replacement)}</button></form><div class="muted">Your CI verifies the swap on a throwaway copy — type-check, build, your tests — and opens the pull request only if it all passes. Mendr never touches your default branch.</div>`;
 }
 
 /**
@@ -390,11 +461,32 @@ function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
+/**
+ * While an approval is in flight the page keeps itself current: every 5 s it
+ * asks the App for the approval's version (status + event count, over the same
+ * signed-in session) and reloads once it changes. Plain script, no library.
+ */
+const LIVE_SCRIPT = [
+  '<script>(function(){',
+  "var live=[].slice.call(document.querySelectorAll('[data-approval]')).filter(function(e){return /^(queued|running):/.test(e.getAttribute('data-version')||'')});",
+  'if(!live.length)return;',
+  'function tick(){Promise.all(live.map(function(e){',
+  "return fetch('/api/approvals/'+e.getAttribute('data-approval'),{credentials:'same-origin'}).then(function(r){return r.ok?r.json():null})",
+  ".then(function(j){return !!j&&j.version!==e.getAttribute('data-version')}).catch(function(){return false})",
+  '})).then(function(changed){if(changed.some(Boolean))location.reload();else setTimeout(tick,5000)})}',
+  'setTimeout(tick,5000)})()</script>',
+].join('');
+
 /** One finding, laid out as the six things a reader needs, in order. */
-function findingCard(inv: Inv, repo: Repo, run: RunRecord, webUrl: string, migrateAnchor: boolean, migration: MigrationRecord | null, ack: Acknowledgement | null): string {
+function findingCard(inv: Inv, ctx: CardContext): string {
+  const { repo, run, webUrl, migration } = ctx;
+  const key = `${inv.provider}/${inv.model}`;
+  const ack = ctx.acks?.get(key) ?? null;
+  const approval = ctx.approvals?.get(key) ?? null;
   const ev = inv.retirementEvidence ?? {};
   const decision = inv.decision;
   const anchor = `f-${slug(`${inv.provider}-${inv.model}`)}`;
+  const back = `/r/${repo.fullName}/runs/${run.id}#${anchor}`;
 
   // 1. Possible cause — never "the cause": only runtime evidence could prove that.
   const deadline = ev.shutdownDate
@@ -420,26 +512,24 @@ function findingCard(inv: Inv, repo: Repo, run: RunRecord, webUrl: string, migra
   const prod = usage === 'observed' ? '<span class="chip warn">production traffic observed</span>' : usage === 'not_observed' ? '<span class="chip">not seen in the connected source</span>' : '<span class="chip">production traffic not measured</span>';
   const repoConfirmed = locs.length ? '<span class="chip ok">repository usage confirmed</span>' : '<span class="chip">no repository call site</span>';
 
-  // 4. Migration evidence — verified / unverified / none — plus what mendr-action
-  //    last reported for THIS model, if a migration run covered it.
+  // 4. Migration — the evidence (replacement and its verdict), what mendr-action
+  //    last reported for THIS model, and the decision: approve here, your CI does
+  //    the work. Nothing is ever applied from this page.
   const swap = migration?.report.migrations.find((s) => s.from === inv.model);
   const ran = swap && migration ? `<div style="margin-top:6px">Migration run: ${migrationStatus(migration)}</div>` : '';
-  const migrationEvidence =
-    (ev.replacement
-      ? `Replacement <code>${esc(ev.replacement)}</code> — <span class="chip ${ev.replacementVerdict === 'verified' ? 'ok' : 'warn'}">${esc(ev.replacementVerdict ?? 'unstamped')}</span>. Evidence only; nothing is applied here.${ev.sourceUrl ? ` <a href="${esc(ev.sourceUrl)}" target="_blank" rel="noopener">provider notice ↗</a>` : ''}`
-      : 'No safe replacement recommended yet — monitor the provider.') + ran;
+  const evidenceLine = ev.replacement
+    ? `Replacement <code>${esc(ev.replacement)}</code> — <span class="chip ${ev.replacementVerdict === 'verified' ? 'ok' : 'warn'}">${esc(ev.replacementVerdict ?? 'unstamped')}</span>.${ev.sourceUrl ? ` <a href="${esc(ev.sourceUrl)}" target="_blank" rel="noopener">provider notice ↗</a>` : ''}`
+    : 'No safe replacement recommended yet — monitor the provider.';
+  const decide = decision === 'patch' && ev.replacement ? approvalPart(inv, ctx, approval, back, ev.replacement) : '';
+  const migrationPart = evidenceLine + ran + (decide ? `<div style="margin-top:8px">${decide}</div>` : '');
 
-  // 5. Next action — the CLI's own wording, so the UI never drifts. A patch-
-  //    eligible finding also points at the migration step on this page.
-  const next =
-    esc(inv.nextAction ?? inv.reason ?? '') +
-    (decision === 'patch' && migrateAnchor ? ' <a class="tlink" href="#migrate">Prepare migration for review ↓</a>' : '');
+  // 5. Next action — the CLI's own wording, so the UI never drifts.
+  const next = esc(inv.nextAction ?? inv.reason ?? '');
 
   // 6. Ownership — who has seen this and who owns the follow-up. A note ABOUT
   //    the finding, keyed by repo + model so it follows the finding across runs.
   //    It never moves the status — only a completed scan can — and clearing it
   //    is one click. The acknowledging login comes from the session, not the form.
-  const back = `/r/${repo.fullName}/runs/${run.id}#${anchor}`;
   const hidden = `<input type="hidden" name="provider" value="${esc(inv.provider)}"><input type="hidden" name="model" value="${esc(inv.model)}"><input type="hidden" name="back" value="${esc(back)}">`;
   const ownership = ack
     ? `<span class="chip ok">acknowledged</span> Acknowledged by <strong>${esc(ack.acknowledgedBy)}</strong> on ${esc(ack.createdAt.slice(0, 10))}${ack.owner ? ` · owner <strong>${esc(ack.owner)}</strong>` : ''}${ack.note ? ` · <span class="muted">“${esc(ack.note)}”</span>` : ''} · <form method="post" action="/r/${esc(repo.fullName)}/ack/clear" class="ackclear">${hidden}<button class="linkbtn" type="submit">Clear</button></form>`
@@ -451,25 +541,43 @@ function findingCard(inv: Inv, repo: Repo, run: RunRecord, webUrl: string, migra
     ${part('Possible cause', cause)}
     ${part('Evidence', evidence + more)}
     ${part('Confidence boundary', `${repoConfirmed} ${prod}`)}
-    ${part('Migration evidence', migrationEvidence)}
+    ${part('Migration', migrationPart)}
     ${part('Next action', next)}
     ${part('Ownership', ownership)}
   </div>`;
 }
 
-export function runPage(
-  repo: Repo,
-  run: RunRecord,
-  login: string,
-  opts: { webUrl: string; workflowUrl: string; migrate?: MigrateLinks; migration?: MigrationRecord | null; previous?: RunRecord | null; acks?: Map<string, Acknowledgement> },
-): string {
+export interface RunPageOptions {
+  webUrl: string;
+  workflowUrl: string;
+  migrate?: MigrateLinks;
+  migration?: MigrationRecord | null;
+  previous?: RunRecord | null;
+  acks?: Map<string, Acknowledgement>;
+  /** The latest approval per `${provider}/${model}`, whatever its status. */
+  approvals?: Map<string, Approval>;
+  migrateSeenAt?: string | null;
+  now?: Date;
+}
+
+export function runPage(repo: Repo, run: RunRecord, login: string, opts: RunPageOptions): string {
   const invs = [...run.report.investigations].sort((a, b) => rank(a.decision) - rank(b.decision));
-  const card = (i: Inv): string => findingCard(i, repo, run, opts.webUrl, !!opts.migrate, opts.migration ?? null, opts.acks?.get(`${i.provider}/${i.model}`) ?? null);
+  const ctx: CardContext = {
+    repo,
+    run,
+    webUrl: opts.webUrl,
+    migrate: opts.migrate,
+    migration: opts.migration ?? null,
+    acks: opts.acks,
+    approvals: opts.approvals,
+    migrateSeenAt: opts.migrateSeenAt ?? null,
+    workflowPresent: migrationWorkflowPresent(run.report),
+    now: opts.now ?? new Date(),
+  };
+  const card = (i: Inv): string => findingCard(i, ctx);
   const actionable = invs.filter((i) => i.decision !== 'monitor');
   const info = invs.filter((i) => i.decision === 'monitor');
-  const migration =
-    migrationCard(migrationWorkflowPresent(run.report), opts.migrate, actionable.filter((i) => i.decision === 'patch').length, opts.migration ?? null) +
-    resolvedCard(run, opts.previous ?? null, opts.migration ?? null);
+  const migration = migrationCard(ctx, actionable.filter((i) => i.decision === 'patch').length) + resolvedCard(run, opts.previous ?? null, opts.migration ?? null);
 
   // The registry the verdict rests on, and how current it was. A stale registry
   // is why a zero-finding run reads `inconclusive` rather than clean.
@@ -497,7 +605,7 @@ export function runPage(
     ? `${header}${migration}<h2>Action needed (${actionable.length})</h2>${actionable.map(card).join('')}${info.length ? `<h2>Informational (${info.length})</h2><p class="muted">Catalog, documentation or fixture references — not dependencies. No migration action; monitor the provider.</p>${info.map(card).join('')}` : ''}`
     : `${header}${migration}${quiet}${info.map(card).join('')}`;
 
-  return layout(`${repo.fullName} run ${run.id}`, body, { login });
+  return layout(`${repo.fullName} run ${run.id}`, body + LIVE_SCRIPT, { login });
 }
 
 function rank(d: string): number {

@@ -34,6 +34,19 @@ That's the whole setup. It runs every Monday and whenever you trigger it by hand
 
 Want the read-only version first? `npx github:ajitheee/mendr#v0.4.2-alpha audit . --install` scaffolds a workflow that keeps one tracking issue current and changes no code — `contents: read`, `issues: write`, nothing else. This action is the step after that: it opens the verified migration as a PR.
 
+## approvals from your Mendr App
+
+With `app-url` set and `approval-gated: 'true'`, a run does nothing until a
+person has approved a migration on a finding in your Mendr App. Then it
+migrates exactly those models, streams each step back to the finding (verifying
+→ verified → applying → branch pushed → pull request open), opens the PR, and
+enables GitHub's auto-merge only if the approval asked for it. A run with
+nothing approved ends in seconds. The App generates this workflow for you —
+hourly on a public repository, every three hours on a private one, plus
+`workflow_dispatch` so the App can start it at once when it has been granted
+`actions: write` (not code access). Everything still happens in your CI with
+your token; the App only records the decision and what your CI reports.
+
 ## what it does on each run
 
 1. Installs your repo's dependencies (auto-detected from your lockfile) so the build and test gates can actually run.
@@ -49,6 +62,8 @@ Re-running never stacks new PRs. It keeps the one branch current, and it never m
 | `working-directory` | `.` | where your code lives, if not the repo root |
 | `mendr-spec` | `github:ajitheee/mendr#v0.4.2-alpha` | the CLI that runs in your CI (npm spec once published) |
 | `app-url` | (empty) | your Mendr App URL; when set, the result — outcome, PR url, verdict, gate statuses, swaps and file paths, **never the diff** — is reported there, proven by the run's OIDC token. Grant `id-token: write` in the job; without it nothing is sent and the job still succeeds |
+| `approval-gated` | `false` | `true` = carry out only the migrations a person approved in your Mendr App (needs `app-url` and `id-token: write`): ask the App, claim them, migrate exactly those models (`mendr migrate --only`), stream each step back to the finding, and enable GitHub's auto-merge only when the approval asked for it. Nothing approved = nothing done, in seconds, before any dependency install |
+| `approval` | (empty) | the approval id the App passed when it started the workflow (`workflow_dispatch`); informational — every queued approval is picked up regardless |
 | `install-command` | auto | override the dependency install step |
 | `node-version` | `22` | Mendr needs Node 22 or newer |
 | `eval-command` | none | a command run in the sandbox as a behavioral gate (e.g. an eval suite); without it the PR says behavior is untested |

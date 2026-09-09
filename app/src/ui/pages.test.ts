@@ -6,7 +6,7 @@ import { homePage, runPage, runsPage, type RepoRow } from './pages.js';
 // "Failure must never look resolved": a run that did not conclude must not
 // wear the green "nothing found" pill anywhere a reader scans for status.
 
-const repo: Repo = { id: 1, installationId: 1, fullName: 'acme/api', private: false, removedAt: null };
+const repo: Repo = { id: 1, installationId: 1, fullName: 'acme/api', private: false, removedAt: null, migrateSeenAt: null, migrateWorkflow: null };
 
 function run(conclusion: string, counts = { patch: 0, review: 0, informational: 0 }): RunSummary {
   return {
@@ -108,7 +108,7 @@ describe('overview: the last completed scan vs the latest attempt, and whether m
   });
 });
 
-describe('"Prepare migration for review" on the run page', () => {
+describe('approving a migration on the run page', () => {
   type Decision = 'patch' | 'review' | 'monitor';
   const investigation = (decision: Decision) => ({
     provider: 'openai',
@@ -116,6 +116,7 @@ describe('"Prepare migration for review" on the run page', () => {
     decision,
     reason: 'gpt-4 retires 2026-10-23',
     nextAction: 'Prepare the migration to gpt-5.6-sol.',
+    retirementEvidence: { status: 'deprecated', shutdownDate: '2026-10-23', daysUntil: 45, replacement: 'gpt-5.6-sol', replacementVerdict: 'verified' },
     locations: { selectors: decision === 'monitor' ? [] : [{ file: 'src/ai.ts', line: 4 }], catalog: decision === 'monitor' ? [{ file: 'docs/m.md', line: 1 }] : [] },
   });
   const record = (decision: Decision, coverage: Record<string, unknown> = {}): RunRecord =>
@@ -129,26 +130,57 @@ describe('"Prepare migration for review" on the run page', () => {
     migrate: { setupUrl: 'https://github.com/acme/api/new/main?filename=x', runUrl: 'https://github.com/acme/api/actions/workflows/mendr-migrate.yml' },
   };
 
-  it('offers the one-click workflow when the scanner saw none in the repo', () => {
+  const APPROVE = 'Approve migration to gpt-5.6-sol</button>';
+
+  it('when the scanner saw no migration workflow: the one-time add, and no Approve button yet', () => {
     const html = runPage(repo, record('patch', { migration: { workflowPresent: false } }), 'octocat', view);
-    expect(html).toContain('Add the migration workflow ↗');
+    expect(html).toContain('migration workflow not added yet');
+    expect(html).toContain('Add it once ↗');
     expect(html).toContain(view.migrate.setupUrl.replace(/&/g, '&amp;'));
-    expect(html).not.toContain('Prepare migration for review ↗');
-    expect(html).toContain('Prepare migration for review ↓'); // the finding points at the step
-    expect(html).toContain('never merges');
+    expect(html).toContain('add the migration workflow once ↗'); // on the finding itself
+    expect(html).not.toContain(APPROVE);
+    expect(html).toContain('never touches your default branch');
   });
 
-  it('offers "Run workflow" once the workflow exists', () => {
+  it('once the workflow exists: the Approve button with both modes', () => {
     const html = runPage(repo, record('patch', { migration: { workflowPresent: true } }), 'octocat', view);
-    expect(html).toContain('Prepare migration for review ↗');
-    expect(html).toContain(view.migrate.runUrl);
-    expect(html).not.toContain('Add the migration workflow ↗');
+    expect(html).toContain('migration workflow present');
+    expect(html).toContain(APPROVE);
+    expect(html).toContain('<option value="pr">');
+    expect(html).toContain('<option value="auto-merge">');
+    expect(html).not.toContain('Add it once');
   });
 
-  it('offers both when the report predates the field (older scanner)', () => {
+  it('when the report predates the field (older scanner): Approve is offered, and the add link stays available', () => {
     const html = runPage(repo, record('patch'), 'octocat', view);
-    expect(html).toContain('Add the migration workflow ↗');
-    expect(html).toContain('Run it on GitHub ↗');
+    expect(html).toContain('migration workflow not seen yet');
+    expect(html).toContain("add it if you haven't ↗");
+    expect(html).toContain(APPROVE);
+  });
+
+  it('once the workflow has asked for approvals, it reads active — whatever the scanner saw', () => {
+    const html = runPage(repo, record('patch', { migration: { workflowPresent: false } }), 'octocat', { ...view, migrateSeenAt: '2026-09-08T11:40:00.000Z', now: new Date('2026-09-08T12:00:00Z') });
+    expect(html).toContain('migration workflow active');
+    expect(html).toContain('last checked for approvals just now');
+    expect(html).toContain(APPROVE);
+  });
+
+  it('an in-flight approval shows its status and timeline in place of the button; a done one shows done', () => {
+    const base = { id: 9, repoId: 1, provider: 'openai', model: 'gpt-4', replacement: 'gpt-5.6-sol', mode: 'pr' as const, approvedBy: 'octocat', createdAt: '2026-09-08T11:00:00.000Z', startedAt: null, finishedAt: null, runId: null, migrationId: null, outcome: null };
+    const queued = { ...base, status: 'queued' as const, dispatchedAt: '2026-09-08T11:00:01.000Z', events: [{ at: '2026-09-08T11:00:01.000Z', stage: 'dispatched' as const, detail: 'Mendr started your migration workflow' }] };
+    let html = runPage(repo, record('patch', { migration: { workflowPresent: true } }), 'octocat', { ...view, approvals: new Map([['openai/gpt-4', queued]]) });
+    expect(html).toContain('Approved by <strong>octocat</strong>');
+    expect(html).toContain('>queued<');
+    expect(html).toContain('workflow started');
+    expect(html).toContain('data-approval="9"');
+    expect(html).toContain('Cancel</button>');
+    expect(html).not.toContain(APPROVE);
+    const done = { ...queued, status: 'done' as const, finishedAt: '2026-09-08T11:09:00.000Z', migrationId: 3, outcome: 'migration-proposed', events: [...queued.events, { at: '2026-09-08T11:09:00.000Z', stage: 'done' as const, detail: 'pull request #12 open · verified' }] };
+    html = runPage(repo, record('patch', { migration: { workflowPresent: true } }), 'octocat', { ...view, approvals: new Map([['openai/gpt-4', done]]) });
+    expect(html).toContain('>done<');
+    expect(html).toContain('pull request #12 open');
+    expect(html).not.toContain('Cancel</button>');
+    expect(html).not.toContain(APPROVE);
   });
 
   it('is absent when nothing is patch eligible, and when the App is unconfigured', () => {
@@ -156,7 +188,7 @@ describe('"Prepare migration for review" on the run page', () => {
     expect(runPage(repo, record('monitor'), 'octocat', view)).not.toContain('id="migrate"');
     const unconfigured = runPage(repo, record('patch', { migration: { workflowPresent: true } }), 'octocat', { webUrl: view.webUrl, workflowUrl: view.workflowUrl });
     expect(unconfigured).not.toContain('id="migrate"');
-    expect(unconfigured).not.toContain('Prepare migration for review ↓');
+    expect(unconfigured).not.toContain(APPROVE);
   });
 
   const migration = (over: Partial<MigrationRecord> = {}): MigrationRecord => ({

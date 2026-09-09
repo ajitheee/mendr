@@ -131,40 +131,58 @@ export function setupWorkflowUrl(
 
 // --- the migration workflow ---------------------------------------------------
 //
-// "Prepare migration for review" hands the customer a SECOND workflow, run by
-// hand from the Actions tab: mendr-action verifies every patch-eligible swap in
-// THEIR CI (a baseline-relative type-check and build, plus their tests) and
-// opens ONE human-approved pull request only when it verifies. The App writes
-// nothing and gains no permission — the branch push and the PR happen with the
+// The SECOND workflow a repository gets. It carries out the migrations a person
+// approved in the App: every hour (and at once, when the App may start it) it
+// asks the App what is approved, claims it, and runs mendr-action for exactly
+// those models in THEIR CI — a baseline-relative type-check and build, plus
+// their tests, on a throwaway copy — then pushes ONE branch and opens ONE pull
+// request, streaming its progress back to the finding. When nothing is
+// approved the run ends in seconds. The App writes nothing to the repository
+// and gains no permission — the branch push and the PR happen with the
 // workflow's own token, exactly as the action's published example does.
 
 export const MENDR_MIGRATE_WORKFLOW_PATH = '.github/workflows/mendr-migrate.yml';
 
-export function migrateWorkflowYaml(opts: { mendrSpec: string; appUrl: string }): string {
+export function migrateWorkflowYaml(opts: { mendrSpec: string; appUrl: string; private?: boolean }): string {
   const spec = opts.mendrSpec;
+  // A public repo's Actions minutes are free, so it checks hourly. A private
+  // repo pays about a minute per check; every three hours keeps that modest,
+  // and an approval made in the App still starts at once when Mendr may start it.
+  const cron = opts.private ? '17 */3 * * *' : '17 * * * *';
   return [
-    '# Mendr migration — prepares a human-approved pull request for the retiring AI',
-    '# model ids this repository calls. Run it from the Actions tab ("Run workflow")',
-    '# after the Mendr audit shows a PATCH ELIGIBLE finding.',
+    '# Mendr migration — carries out the migrations you approve in your Mendr App.',
     '#',
-    '# Everything happens in THIS runner: `mendr migrate . --write` verifies each swap',
-    '# on a throwaway copy — a baseline-relative type-check and build, plus YOUR test',
-    '# suite — and applies it ONLY if the verdict is `verified`. Then it pushes ONE',
-    '# stable branch (mendr/deprecated-model-ids) and opens or updates ONE pull',
-    '# request. When verification fails nothing is applied and no PR is opened.',
-    '# Mendr never merges and never touches your default branch. A human reviews.',
+    '# Approve a finding in the App and this workflow does the work, HERE, in your CI:',
+    '# it asks the App what you approved, verifies each approved swap on a throwaway',
+    '# copy — a baseline-relative type-check and build, plus YOUR test suite — applies',
+    '# it ONLY if the verdict is `verified`, pushes ONE stable branch',
+    '# (mendr/deprecated-model-ids) and opens or updates ONE pull request, reporting',
+    '# each step back to the finding. When verification fails nothing is applied and',
+    '# no PR is opened. Mendr never touches your default branch; it enables GitHub\'s',
+    '# auto-merge only if you chose that when you approved.',
+    '#',
+    '# It checks for approvals on a schedule and whenever the App starts it (that needs',
+    "# the App's optional \"Actions: write\" permission; without it, the schedule alone",
+    '# picks approvals up). A check with nothing approved ends in seconds.',
     '#',
     '# PERMISSIONS: contents:write to push that branch, pull-requests:write to open',
-    '# the PR, and id-token:write to PROVE this run to your Mendr App when it reports',
-    '# the result (outcome, PR url, verdict, gate statuses, the swaps and the file',
-    '# paths they touch — never the diff). No secrets, no provider key.',
+    '# the PR, and id-token:write to PROVE this run to your Mendr App when it asks for',
+    '# approvals and reports the result (outcome, PR url, verdict, gate statuses, the',
+    '# swaps and the file paths they touch). No secrets, no provider key.',
     '#',
     '# SUPPLY CHAIN: both refs below pin the same Mendr release; bump them together',
     '# (a 40-char commit SHA is the strictest pin). Never point them at a branch.',
     'name: mendr migrate',
     '',
     'on:',
-    '  workflow_dispatch: {}',
+    '  schedule:',
+    `    - cron: '${cron}' # carries out approvals made in the App${opts.private ? ' (every three hours on a private repo; hourly costs ~24 min/day)' : ' (hourly; free on a public repo)'}`,
+    '  workflow_dispatch:',
+    '    inputs:',
+    '      approval:',
+    "        description: 'Mendr approval id (the App sets this when it starts the workflow)'",
+    '        required: false',
+    "        default: ''",
     '',
     'permissions:',
     '  contents: write',
@@ -184,15 +202,17 @@ export function migrateWorkflowYaml(opts: { mendrSpec: string; appUrl: string })
     `      - uses: ajitheee/mendr/mendr-action@${spec}`,
     '        with:',
     `          mendr-spec: github:ajitheee/mendr#${spec}`,
-    `          app-url: ${opts.appUrl} # report the result here (never the diff); remove to send nothing`,
+    `          app-url: ${opts.appUrl}`,
+    "          approval-gated: 'true' # only what a person approved in the App; nothing approved = nothing done",
+    '          approval: ${{ inputs.approval }}',
     '          # eval-command: npm run eval   # optional: a behavioral gate, run in the sandbox',
     '',
   ].join('\n');
 }
 
 /** The one-click "add the migration workflow" link: GitHub's prefilled new-file editor. */
-export function setupMigrateWorkflowUrl(opts: { webUrl: string; repoFullName: string; defaultBranch: string; mendrSpec: string; appUrl: string }): string {
-  return newWorkflowFileUrl(opts.webUrl, opts.repoFullName, opts.defaultBranch, migrateWorkflowYaml({ mendrSpec: opts.mendrSpec, appUrl: opts.appUrl }), MENDR_MIGRATE_WORKFLOW_PATH);
+export function setupMigrateWorkflowUrl(opts: { webUrl: string; repoFullName: string; defaultBranch: string; mendrSpec: string; appUrl: string; private?: boolean }): string {
+  return newWorkflowFileUrl(opts.webUrl, opts.repoFullName, opts.defaultBranch, migrateWorkflowYaml({ mendrSpec: opts.mendrSpec, appUrl: opts.appUrl, private: opts.private }), MENDR_MIGRATE_WORKFLOW_PATH);
 }
 
 /** The Actions page for the migration workflow — GitHub's own "Run workflow" button lives there. */

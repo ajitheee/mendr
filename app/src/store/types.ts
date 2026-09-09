@@ -15,6 +15,10 @@ export interface Repo {
   fullName: string;
   private: boolean;
   removedAt: string | null;
+  /** When the repo's migration workflow last asked the App for approvals — proof it is listening. */
+  migrateSeenAt: string | null;
+  /** That workflow's file name (from the OIDC workflow_ref claim), where a start is sent. */
+  migrateWorkflow: string | null;
 }
 
 export interface RepoInput {
@@ -94,11 +98,66 @@ export interface Acknowledgement {
 
 export type AcknowledgementInput = Pick<Acknowledgement, 'repoId' | 'provider' | 'model' | 'acknowledgedBy' | 'owner' | 'note'>;
 
+/** What to do once the migration verifies: open a PR for review, or open it and merge when checks pass. */
+export const APPROVAL_MODES = ['pr', 'auto-merge'] as const;
+export type ApprovalMode = (typeof APPROVAL_MODES)[number];
+export const APPROVAL_STATUSES = ['queued', 'running', 'done', 'failed', 'cancelled'] as const;
+export type ApprovalStatus = (typeof APPROVAL_STATUSES)[number];
+/** The stages a CI run streams while it carries an approval out (plus the App's own bookkeeping stages). */
+export const APPROVAL_STAGES = ['queued', 'dispatched', 'claimed', 'verifying', 'verified', 'not-verified', 'applying', 'pushed', 'pr', 'done', 'failed', 'cancelled'] as const;
+export type ApprovalStage = (typeof APPROVAL_STAGES)[number];
+
+export interface ApprovalEvent {
+  at: string;
+  stage: ApprovalStage;
+  /** A short, redacted, capped line — never code. */
+  detail: string | null;
+}
+
+/**
+ * A person's decision, made in the App, to migrate one finding. The customer's
+ * own CI claims it (proven by OIDC), runs the verified migration for exactly
+ * that model, streams progress here and reports the result. The App never
+ * touches the repository: it records the decision and what the CI says.
+ */
+export interface Approval {
+  id: number;
+  repoId: number;
+  provider: string;
+  model: string;
+  /** The replacement the registry recommended when it was approved (informational). */
+  replacement: string | null;
+  mode: ApprovalMode;
+  /** The GitHub login that approved (from the session, never the form). */
+  approvedBy: string;
+  createdAt: string;
+  status: ApprovalStatus;
+  /** When the App started the workflow itself (only with the optional actions:write). */
+  dispatchedAt: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  /** The Actions run that claimed it. */
+  runId: number | null;
+  /** The migration report that closed it. */
+  migrationId: number | null;
+  /** The report's outcome that closed it. */
+  outcome: string | null;
+  events: ApprovalEvent[];
+}
+
+export type ApprovalInput = Pick<Approval, 'repoId' | 'provider' | 'model' | 'replacement' | 'mode' | 'approvedBy'>;
+
+/** Changes whenever an approval's visible state changes — the page polls it to know when to refresh. */
+export function approvalVersion(a: Approval): string {
+  return `${a.status}:${a.events.length}`;
+}
+
 /** What deletion removed, by kind — reported to the user and to the audit log. */
 export interface RepoDeletion {
   runsDeleted: number;
   migrationsDeleted: number;
   acknowledgementsDeleted: number;
+  approvalsDeleted: number;
 }
 
 /**
@@ -145,6 +204,25 @@ export interface Store {
   clearAcknowledgement(repoId: number, provider: string, model: string, clearedBy: string): Promise<boolean>;
   /** The active acknowledgements of a repository, keyed by `${provider}/${model}`. */
   activeAcknowledgements(repoId: number): Promise<Map<string, Acknowledgement>>;
+  // --- approvals (decided here; carried out by the customer's own CI) ---
+  createApproval(a: ApprovalInput): Promise<Approval>;
+  getApproval(id: number): Promise<Approval | null>;
+  /** Queued and running approvals of a repository, keyed by `${provider}/${model}` (newest wins). */
+  activeApprovals(repoId: number): Promise<Map<string, Approval>>;
+  /** Newest first. */
+  listApprovals(repoId: number, limit: number): Promise<Approval[]>;
+  /** Queued → running for these ids of this repository, recording the CI run that took them. Returns what was claimed. */
+  claimApprovals(repoId: number, ids: number[], runId: number, event: ApprovalEvent): Promise<Approval[]>;
+  /** Append a progress event. Never changes the status. */
+  appendApprovalEvent(id: number, event: ApprovalEvent): Promise<void>;
+  /** The App started the workflow itself. */
+  markApprovalDispatched(id: number, event: ApprovalEvent): Promise<void>;
+  /** Close whatever this CI run claimed, from the migration report it sent. Returns what was closed. */
+  finishApprovals(repoId: number, runId: number, migrationId: number, outcome: string, event: ApprovalEvent): Promise<Approval[]>;
+  /** Queued → cancelled. Returns whether it was still queued. */
+  cancelApproval(id: number, event: ApprovalEvent): Promise<boolean>;
+  /** The repo's migration workflow just asked for approvals: it is listening, and this is its file. */
+  markMigrateSeen(repoId: number, at: string, workflowFile: string | null): Promise<void>;
   // --- retention & deletion (trust: data cleanup) ---
   /** Hard-delete a repository's stored runs, migration reports, acknowledgements and the repo row. Returns how many went. */
   deleteRepoData(repoId: number): Promise<RepoDeletion>;
@@ -174,7 +252,8 @@ export type AuditEvent =
   | 'data_deleted'
   | 'finding_acknowledged'
   | 'acknowledgement_cleared'
-  // Emitted once their features land (the Action opens PRs):
+  | 'migration_approved'
+  | 'approval_cancelled'
   | 'migration_prepared'
   | 'pr_created';
 

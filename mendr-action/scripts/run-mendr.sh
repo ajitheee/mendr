@@ -51,15 +51,42 @@ report_to_app() { # $1 outcome, $2 pr url (may be empty), $3 artifact path (may 
   return 0
 }
 
+# Progress for the approval(s) this run carries out (MENDR_APPROVAL_IDS, set by
+# the action's approval gate): one short line per stage, proven by the OIDC
+# token, so the person who approved can watch it happen in the App. Best effort
+# — a failed post never fails the job, and nothing here is code.
+post_event() { # $1 stage, $2 detail (optional)
+  [ -n "${MENDR_APPROVAL_IDS:-}" ] && [ -n "${MENDR_APP_URL:-}" ] || return 0
+  [ -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ] && [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || return 0
+  local token payload id
+  token="$(curl -sS --retry 2 --retry-delay 2 --retry-all-errors -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=${MENDR_APP_AUDIENCE:-mendr}" 2>/dev/null | jq -r '.value // empty' 2>/dev/null || true)"
+  [ -n "$token" ] || return 0
+  payload="$(jq -cn --arg s "$1" --arg d "${2:-}" '{stage: $s} + (if ($d | length) > 0 then {detail: $d} else {} end)')"
+  IFS=',' read -ra ids <<< "$MENDR_APPROVAL_IDS"
+  for id in "${ids[@]}"; do
+    id="$(echo "$id" | xargs)"
+    [ -n "$id" ] || continue
+    curl -sS -o /dev/null --max-time 30 -X POST "${MENDR_APP_URL%/}/api/approvals/$id/events" \
+      -H "Authorization: Bearer $token" -H "Content-Type: application/json" --data-binary "$payload" 2>/dev/null || true
+  done
+  return 0
+}
+
+# Approval-gated runs migrate exactly the approved models (MENDR_ONLY, e.g.
+# "openai/gpt-4,google/gemini-1.5-pro"); everything else is left alone.
+ONLY_ARGS=()
+[ -n "${MENDR_ONLY:-}" ] && ONLY_ARGS=(--only "$MENDR_ONLY")
+
 # Human report (for the job summary) and the machine artifact (for the PR body
 # and the apply gate) come from two runs of the same verified migration: the
 # first prints the report, the second applies and emits JSON. Both verify; only
 # the second writes. Capture exit status EXPLICITLY — a nonzero exit means Mendr
 # never completed a scan (bad path/spec), which must NEVER be reported as clean.
+post_event verifying "type-check, build and your tests on a throwaway copy"
 set +e
-npx --yes "$MENDR_SPEC" migrate . ${MENDR_EVAL:+--eval-command "$MENDR_EVAL"} >"$REPORT" 2>&1
+npx --yes "$MENDR_SPEC" migrate . "${ONLY_ARGS[@]}" ${MENDR_EVAL:+--eval-command "$MENDR_EVAL"} >"$REPORT" 2>&1
 REPORT_STATUS=$?
-npx --yes "$MENDR_SPEC" migrate . --write --json ${MENDR_EVAL:+--eval-command "$MENDR_EVAL"} >"$ARTIFACT" 2>/dev/null
+npx --yes "$MENDR_SPEC" migrate . --write --json "${ONLY_ARGS[@]}" ${MENDR_EVAL:+--eval-command "$MENDR_EVAL"} >"$ARTIFACT" 2>/dev/null
 WRITE_STATUS=$?
 set -e
 cat "$REPORT"
@@ -83,6 +110,12 @@ if [ "$REPORT_STATUS" -ne 0 ] || [ "$WRITE_STATUS" -ne 0 ] || [ ! -s "$ARTIFACT"
 fi
 
 VERDICT="$(jq -r '.verification.verdict' "$ARTIFACT")"
+GATES="$(jq -r '.verification | "type-check \(.typeCheck.status) · build \(.build.status) · tests \(.tests.status) · eval \(.eval.status)"' "$ARTIFACT" 2>/dev/null || echo '')"
+case "$VERDICT" in
+  verified) post_event verified "$GATES" ;;
+  no_migration) ;;
+  *) post_event not-verified "$VERDICT · $GATES" ;;
+esac
 
 # Did the verified migration actually change a tracked file?
 if git diff --quiet --exit-code; then
@@ -113,12 +146,14 @@ MARKER="<!-- mendr-bot:llm-migration -->"
 
 git config user.name  "mendr-bot"
 git config user.email "mendr-bot@users.noreply.github.com"
+post_event applying "$(jq -r '[.migrations[] | "\(.from) → \(.to) in \(.files | join(", "))"] | join("; ")' "$ARTIFACT" 2>/dev/null || echo '')"
 # Move the applied changes onto the stable bot branch (rebuilt from HEAD each run
 # so the PR stays current), commit, and force-update it. Force is safe: this
 # branch is owned entirely by Mendr.
 git checkout -B "$MENDR_BRANCH"
 git commit -am "chore(deps): migrate deprecated LLM model ids (Mendr)"
 git push --force origin "$MENDR_BRANCH"
+post_event pushed "$MENDR_BRANCH"
 
 # Build the PR body from the migration ARTIFACT, not from scraped stdout, so the
 # reviewer sees exactly the swaps and the gate outcomes Mendr verified.
@@ -173,5 +208,20 @@ else
   PR_URL="$url"
   echo "pr_url=$url" >> "$GITHUB_OUTPUT"
   echo "Opened Mendr PR: $url"
+fi
+post_event pr "$PR_URL"
+
+# An approval that asked for "merge when checks pass" enables GitHub's own
+# auto-merge on the PR — still the customer's token, still their branch rules.
+# Mendr itself never merges. If the repository does not allow auto-merge, say
+# so and leave the PR open for a person.
+if [ "${MENDR_MODE:-pr}" = "auto-merge" ]; then
+  if gh pr merge "$PR_URL" --auto --squash >/dev/null 2>&1; then
+    echo "Mendr: auto-merge enabled on $PR_URL — it merges when the repository's checks pass."
+    post_event pr "auto-merge enabled: merges when the repository's checks pass"
+  else
+    echo "::warning::Mendr: could not enable auto-merge on $PR_URL (the repository may not allow it, or it has no required checks). The PR is open for review."
+    post_event pr "auto-merge could not be enabled here — merge on GitHub when ready"
+  fi
 fi
 report_to_app migration-proposed "$PR_URL" "$ARTIFACT"
