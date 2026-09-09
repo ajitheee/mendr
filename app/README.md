@@ -4,7 +4,10 @@ The hosted half of Mendr, kept deliberately small. Your CI runs `mendr audit`
 on your own runner; this service receives the JSON that run produces, proves
 where it came from, stores the evidence, and writes a **Mendr audit** check on
 the commit. It never clones a repository and cannot read one: the App asks
-GitHub for `checks: write` and `metadata: read` only.
+GitHub for `checks: write` and `metadata: read` only. One permission is
+optional — `actions: write` — which lets it start your migration workflow the
+moment a person approves a migration; that is starting and cancelling workflow
+runs, nothing else (no contents, no pull requests, no code).
 
 Status: alpha. It is exercised end to end by tests against a GitHub-shaped
 fake (`src/app.test.ts`); the first real installation is a human step below.

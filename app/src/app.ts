@@ -11,7 +11,7 @@ import { countDecisions, sanitizeReport, validateReport } from './ingest/validat
 import { prNumber, validateMigrationReport } from './ingest/migrationReport.js';
 import { migrationWorkflowFile } from './ingest/migration.js';
 import { redactSecrets } from './redact.js';
-import { APPROVAL_MODES, APPROVAL_STAGES, approvalVersion, type Approval, type ApprovalMode, type ApprovalStage, type Repo, type Store } from './store/types.js';
+import { APPROVAL_STAGES, approvalVersion, type Approval, type ApprovalMode, type ApprovalStage, type Repo, type Store } from './store/types.js';
 import { credentialsPage, errorPage, homePage, installedPage, runPage, runsPage, setupPage, workflowRunsUrl } from './ui/pages.js';
 import { MENDR_MIGRATE_WORKFLOW_PATH, migrateActionsUrl, setupMigrateWorkflowUrl, setupWorkflowUrl } from './ui/workflowTemplate.js';
 
@@ -84,7 +84,13 @@ export function createApp(deps: AppDeps): Hono {
 
   // --- status ---------------------------------------------------------------
 
-  app.get('/healthz', (c) => c.json({ ok: true, configured: isConfigured(config), store: store.kind }));
+  // Health, plus proof of encryption at rest from the outside: is a data key
+  // configured, how many stored reports are sealed vs plaintext, and does the
+  // newest sealed one open with the current key. Counts and a verdict — never data.
+  app.get('/healthz', async (c) => {
+    const enc = await store.encryptionStatus();
+    return c.json({ ok: true, configured: isConfigured(config), store: store.kind, encryption: { enabled: !!config.dataKey, ...enc } });
+  });
 
   app.get('/', async (c) => {
     const sess = await session(c);
@@ -399,8 +405,9 @@ export function createApp(deps: AppDeps): Hono {
     const provider = field('provider', 64);
     const model = field('model', 128);
     if (!provider || !model) return null;
-    const modeRaw = field('mode', 16);
-    const mode: ApprovalMode = (APPROVAL_MODES as readonly string[]).includes(modeRaw) ? (modeRaw as ApprovalMode) : 'pr';
+    // Auto-merge is offered only when the operator enabled it (off in the beta);
+    // anything else — including a hand-crafted form — is a pull request for review.
+    const mode: ApprovalMode = config.autoMerge && field('mode', 16) === 'auto-merge' ? 'auto-merge' : 'pr';
     return { provider, model, replacement: field('replacement', 128) || null, mode, back: safeNext(field('back', 300)) };
   };
 
@@ -618,6 +625,7 @@ export function createApp(deps: AppDeps): Hono {
         approvals,
         migrateSeenAt: repo.migrateSeenAt,
         now: now(),
+        autoMerge: config.autoMerge,
       }),
     );
   });

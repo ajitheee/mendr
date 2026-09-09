@@ -13,6 +13,7 @@ import {
   type ApprovalStatus,
   type AuditLogEntry,
   type AuditLogInput,
+  type EncryptionStatus,
   type Installation,
   type MigrationInput,
   type MigrationRecord,
@@ -416,6 +417,30 @@ export class PgStore implements Store {
 
   async markMigrateSeen(repoId: number, at: string, workflowFile: string | null): Promise<void> {
     await this.pool.query('UPDATE repos SET migrate_seen_at = $2, migrate_workflow = COALESCE($3, migrate_workflow) WHERE id = $1', [repoId, at, workflowFile]);
+  }
+
+  // A sealed report is a JSON envelope with an `enc` key (encryption.ts); a
+  // plaintext one is the report itself, which has none. Counting the key is
+  // proof enough from the outside, and it never touches the contents.
+  async encryptionStatus(): Promise<EncryptionStatus> {
+    const count = async (table: 'runs' | 'migrations'): Promise<{ sealed: number; plain: number }> => {
+      const { rows } = await this.pool.query(`SELECT count(*) FILTER (WHERE report ? 'enc') AS sealed, count(*) FILTER (WHERE NOT (report ? 'enc')) AS plain FROM ${table}`);
+      const r = (rows[0] ?? {}) as Row;
+      return { sealed: n(r.sealed ?? 0), plain: n(r.plain ?? 0) };
+    };
+    const runs = await count('runs');
+    const migrations = await count('migrations');
+    let decrypt: EncryptionStatus['decrypt'] = 'none';
+    const { rows } = await this.pool.query(`SELECT report FROM runs WHERE report ? 'enc' ORDER BY id DESC LIMIT 1`);
+    if (rows[0]) {
+      try {
+        openField((rows[0] as Row).report, this.keyring);
+        decrypt = 'ok';
+      } catch {
+        decrypt = 'failed';
+      }
+    }
+    return { sealedRuns: runs.sealed, plaintextRuns: runs.plain, sealedMigrations: migrations.sealed, plaintextMigrations: migrations.plain, decrypt };
   }
 
   async setMigrateWorkflow(repoId: number, workflowFile: string): Promise<void> {

@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+- **Auto-merge is off in the public beta.** The "open a pull request and merge
+  it when checks pass" choice now sits behind the operator flag
+  `MENDR_AUTO_MERGE` (default off): the option is gone from the Approve form, the
+  server records a pull request for review whatever a form says, and every
+  place that said "merges only if you choose that" now says "never merges — a
+  person reviews the pull request". It returns as an advanced opt-in after
+  partner validation.
+- **Encryption at rest, provable from the outside.** `GET /healthz` gains
+  `encryption`: whether a data key is configured, how many stored reports are
+  sealed vs plaintext, and whether the newest sealed report opens with the
+  current key (`ok` / `failed` / `none`). Counts and a verdict — never data.
+- **Launch copy.** The site headline is "Stop AI model retirements before they
+  break production." with the supporting line "Connect GitHub once. Mendr
+  continuously monitors your AI dependencies, explains the risk, and prepares a
+  validated migration pull request for human approval." The security page and
+  the App README explain the optional `actions: write` exactly (start or cancel
+  workflow runs, nothing else), and the security page says how to report a
+  vulnerability privately.
+
 ## 0.4.5-alpha — 2026-09-09
 
 - **`mendr migrate` plans against the same fresh, signed registry as the audit.**

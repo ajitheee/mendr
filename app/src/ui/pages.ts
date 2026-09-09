@@ -264,7 +264,7 @@ export function credentialsPage(c: ManifestCredentials): string {
 export function installedPage(_config: AppConfig): string {
   const body = `<div class="card"><strong>Installed.</strong> One step left to connect a repository: commit the one workflow file.</div>
 <p>On the overview, each installed repository has a <strong>Set up the audit</strong> button. It opens GitHub's own new-file editor with the file filled in — you read it and commit it, once. The App writes nothing to your repository.</p>
-<p>From then on everything happens here. The file's <em>audit</em> job scans in your CI on every push, daily, and on demand, and sends only the sanitized findings. When a finding shows a retiring model, you <strong>approve the migration</strong> on it; the file's <em>migrate</em> job verifies the swap on a throwaway copy — type-check, build, your tests — opens the pull request, and streams each step and the change itself back to the finding. Mendr never touches your default branch and merges only if you choose that when you approve.</p>
+<p>From then on everything happens here. The file's <em>audit</em> job scans in your CI on every push, daily, and on demand, and sends only the sanitized findings. When a finding shows a retiring model, you <strong>approve the migration</strong> on it; the file's <em>migrate</em> job verifies the swap on a throwaway copy — type-check, build, your tests — opens the pull request, and streams each step and the change itself back to the finding. Mendr never touches your default branch and never merges — a person reviews the pull request.</p>
 <p class="muted">Optional, for instant starts: grant the App <em>Actions: write</em> (it can then start your migration workflow the moment you approve; it still cannot read your code). Without it, the workflow's own schedule carries approvals out.</p>
 <p><a class="btn" href="/">Go to the overview</a></p>`;
   return layout('installed', body);
@@ -339,6 +339,8 @@ export interface CardContext {
   /** What the scanner saw in .github/workflows (null: an older report). */
   workflowPresent: boolean | null;
   now: Date;
+  /** Offer "merge when checks pass" on Approve (MENDR_AUTO_MERGE); off in the beta. */
+  autoMerge: boolean;
 }
 
 const GATE_LABEL = { typeCheck: 'type-check', build: 'build', tests: 'tests', eval: 'eval' } as const;
@@ -437,7 +439,7 @@ function migrationCard(ctx: CardContext, patchCount: number): string {
         : `<span class="chip">migration workflow not seen yet</span><a class="tlink" href="${esc(migrate.setupUrl)}" target="_blank" rel="noopener">add it if you haven't ↗</a>`;
   const status = migration ? `<div class="part"><div class="label">Latest migration run</div><div>${migrationStatus(migration)}${diffBlock(migration)}</div></div>` : '';
   return `<div class="card" id="migrate"><div class="label">Migration</div>
-<p>Approve a migration on a finding below and your own CI carries it out: Mendr verifies the swap on a throwaway copy — type-check, build, your tests — and opens <strong>one pull request</strong> only if it all passes. It never touches your default branch, and merges only if you choose that when you approve. The App gains no access to your code: it records your decision and what your CI reports back.</p>
+<p>Approve a migration on a finding below and your own CI carries it out: Mendr verifies the swap on a throwaway copy — type-check, build, your tests — and opens <strong>one pull request</strong> only if it all passes. ${ctx.autoMerge ? 'It never touches your default branch, and merges only if you choose that when you approve.' : 'It never touches your default branch and never merges — a person reviews the pull request.'} The App gains no access to your code: it records your decision and what your CI reports back.</p>
 <div class="bar">${listening}</div>${status}</div>`;
 }
 
@@ -490,7 +492,12 @@ function approvalPart(inv: Inv, ctx: CardContext, approval: Approval | null, bac
     return `${earlier}<div class="muted">To approve migrations from here, <a class="tlink" href="${esc(ctx.migrate.setupUrl)}" target="_blank" rel="noopener">add the migration workflow once ↗</a> — GitHub's editor opens with it filled in; read it and commit it. It then checks for your approvals hourly.</div>`;
   }
   const hidden = `<input type="hidden" name="provider" value="${esc(inv.provider)}"><input type="hidden" name="model" value="${esc(inv.model)}"><input type="hidden" name="replacement" value="${esc(replacement)}"><input type="hidden" name="back" value="${esc(back)}">`;
-  return `${earlier}<form method="post" action="/r/${repoName}/approve" class="approve">${hidden}<select name="mode" aria-label="What to do once the migration verifies"><option value="pr">open a pull request for review</option><option value="auto-merge">open a pull request and merge it when checks pass</option></select><button class="btn" type="submit">Approve migration to ${esc(replacement)}</button></form><div class="muted">Your CI verifies the swap on a throwaway copy — type-check, build, your tests — and opens the pull request only if it all passes. Mendr never touches your default branch.</div>`;
+  // The merge-when-checks-pass choice exists only when the operator enabled it
+  // (off in the beta); otherwise the decision is always a pull request for review.
+  const modeField = ctx.autoMerge
+    ? '<select name="mode" aria-label="What to do once the migration verifies"><option value="pr">open a pull request for review</option><option value="auto-merge">open a pull request and merge it when checks pass</option></select>'
+    : '<input type="hidden" name="mode" value="pr">';
+  return `${earlier}<form method="post" action="/r/${repoName}/approve" class="approve">${hidden}${modeField}<button class="btn" type="submit">Approve migration to ${esc(replacement)}</button></form><div class="muted">Your CI verifies the swap on a throwaway copy — type-check, build, your tests — and opens the pull request only if it all passes. Mendr never touches your default branch and never merges.</div>`;
 }
 
 /**
@@ -618,6 +625,7 @@ export interface RunPageOptions {
   approvals?: Map<string, Approval>;
   migrateSeenAt?: string | null;
   now?: Date;
+  autoMerge?: boolean;
 }
 
 export function runPage(repo: Repo, run: RunRecord, login: string, opts: RunPageOptions): string {
@@ -633,6 +641,7 @@ export function runPage(repo: Repo, run: RunRecord, login: string, opts: RunPage
     migrateSeenAt: opts.migrateSeenAt ?? null,
     workflowPresent: migrationWorkflowPresent(run.report),
     now: opts.now ?? new Date(),
+    autoMerge: opts.autoMerge === true,
   };
   const card = (i: Inv): string => findingCard(i, ctx);
   const actionable = invs.filter((i) => i.decision !== 'monitor');

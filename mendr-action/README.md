@@ -40,7 +40,7 @@ With `app-url` set and `approval-gated: 'true'`, a run does nothing until a
 person has approved a migration on a finding in your Mendr App. Then it
 migrates exactly those models, streams each step back to the finding (verifying
 → verified → applying → branch pushed → pull request open), opens the PR, and
-enables GitHub's auto-merge only if the approval asked for it. A run with
+enables GitHub's auto-merge only if the approval asked for it (the App offers that choice only when its operator enabled it; it is off in the public beta). A run with
 nothing approved ends in seconds. The App generates this workflow for you —
 hourly on a public repository, every three hours on a private one, plus
 `workflow_dispatch` so the App can start it at once when it has been granted

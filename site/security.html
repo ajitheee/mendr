@@ -38,14 +38,18 @@
 
   <h2>What runs where</h2>
   <p>The scanner runs <strong>inside your GitHub Actions</strong>, on your runner. Mendr's hosted App never clones or reads your code — it holds <code>checks: write</code> and <code>metadata: read</code> only, and receives just the findings your CI chooses to send.</p>
+  <p>One permission is optional: <code>actions: write</code>. Grant it and clicking Approve on a finding starts your migration workflow at once; without it, that workflow's own schedule carries approvals out within hours. The permission lets the App start or cancel workflow runs in your repository and nothing more — no contents, no pull requests, no code. The migration itself always runs in your CI with your workflow's token; the App never touches your default branch and never merges.</p>
 
   <h2>Enforced in code, not just promised</h2>
   <ul>
     <li><span class="k">Nothing uploaded by default.</span> The audit makes no network calls; a build-time test runs it under a preload that makes every network primitive throw, and it must still pass. Run it yourself with <code>--offline</code>.</li>
     <li><span class="k">Secrets redacted.</span> Everything that could leave — the tracking-issue body and every stored snippet — passes through the same secret redaction, tested on every build.</li>
     <li><span class="k">No stored credentials.</span> No GitHub tokens or provider keys are stored; findings are encrypted at rest with a key kept outside the database. A code test fails if a credential-shaped column is ever added.</li>
-    <li><span class="k">Least privilege.</span> The scaffolded workflow asks for <code>contents: read</code> + <code>issues: write</code>; the App asks for <code>checks: write</code> + <code>metadata: read</code>. Nothing modifies your default branch; nothing merges.</li>
+    <li><span class="k">Least privilege.</span> The scaffolded workflow asks for <code>contents: read</code> + <code>issues: write</code>; the App asks for <code>checks: write</code> + <code>metadata: read</code> (plus the optional <code>actions: write</code>, which only starts workflows). Nothing modifies your default branch; nothing merges.</li>
   </ul>
+
+  <h2>Reporting a vulnerability</h2>
+  <p>Report a security issue privately through GitHub's <a href="https://github.com/ajitheee/mendr/security/advisories/new">private vulnerability reporting</a> for the Mendr repository, and please keep anything sensitive out of public issues. Every report is acknowledged.</p>
 
   <h2>Your data, your control</h2>
   <p>Uninstalling the App, removing a repository, or clicking "Delete stored data" removes your findings. Retention can age them out automatically. See <a href="/privacy.html">Privacy</a>.</p>

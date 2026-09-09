@@ -40,6 +40,12 @@ export interface AppConfig {
   dataKey: string | null;
   /** Delete runs older than this many days (MENDR_RETENTION_DAYS); 0 = keep (bounded by MAX_RUNS_PER_REPO). */
   retentionDays: number;
+  /**
+   * Offer "open a pull request and merge it when checks pass" on Approve
+   * (MENDR_AUTO_MERGE). OFF in the public beta: Mendr promises never to merge,
+   * and the option comes back as an advanced opt-in only after partner validation.
+   */
+  autoMerge: boolean;
 }
 
 function int(v: string | undefined, fallback: number): number {
@@ -95,6 +101,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     mendrSpec: MENDR_CLI_SPEC,
     dataKey: opt(env.MENDR_DATA_KEY),
     retentionDays: Math.max(0, Math.floor(Number(env.MENDR_RETENTION_DAYS) || 0)),
+    autoMerge: /^(on|1|true|yes)$/i.test((env.MENDR_AUTO_MERGE ?? '').trim()),
   };
 }
 

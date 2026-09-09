@@ -72,7 +72,8 @@ inputs:
       "true" = carry out ONLY the migrations a person approved in your Mendr App
       (needs `app-url` and `id-token: write`): the run asks the App what is
       approved, claims it, migrates exactly those models, streams its progress
-      to the App and, if the approval asked for it, enables auto-merge on the PR.
+      to the App and, if the approval asked for it, enables auto-merge on the PR
+      (a choice the App offers only when its operator enabled it; off in the beta).
       When nothing is approved the run ends in seconds and touches nothing.
       "false" (default) = migrate every verified swap, as before.
     required: false

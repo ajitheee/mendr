@@ -142,13 +142,21 @@ describe('approving a migration on the run page', () => {
     expect(html).toContain('never touches your default branch');
   });
 
-  it('once the workflow exists: the Approve button with both modes', () => {
+  it('once the workflow exists: the Approve button — always a pull request for review in the beta', () => {
     const html = runPage(repo, record('patch', { migration: { workflowPresent: true } }), 'octocat', view);
     expect(html).toContain('migration workflow present');
     expect(html).toContain(APPROVE);
+    expect(html).toContain('<input type="hidden" name="mode" value="pr">');
+    expect(html).not.toContain('<option value="auto-merge">');
+    expect(html).toContain('never merges');
+    expect(html).not.toContain('Add it once');
+  });
+
+  it('the merge-when-checks-pass choice appears only when the operator enabled it', () => {
+    const html = runPage(repo, record('patch', { migration: { workflowPresent: true } }), 'octocat', { ...view, autoMerge: true });
     expect(html).toContain('<option value="pr">');
     expect(html).toContain('<option value="auto-merge">');
-    expect(html).not.toContain('Add it once');
+    expect(html).not.toContain('<input type="hidden" name="mode" value="pr">');
   });
 
   it('when the report predates the field (older scanner): Approve is offered, and the add link stays available', () => {

@@ -197,7 +197,7 @@ optional `actions: write` it may *start* that workflow, and that is all.
 | Field | What | Sensitivity | Why it is kept |
 |---|---|---|---|
 | `provider`, `model`, `replacement` | which finding, and the registry's recommended replacement at the time | low (model names) | what exactly was approved |
-| `mode` | `pr` (open a pull request for review) or `auto-merge` (also enable GitHub's auto-merge on it) | low | the CI honours it |
+| `mode` | `pr` (open a pull request for review) or `auto-merge` (also enable GitHub's auto-merge on it). The App offers `auto-merge` only when its operator sets `MENDR_AUTO_MERGE`; it is **off in the public beta**, and the server records `pr` for anything else | low | the CI honours it |
 | `approved_by` | the GitHub login that approved — from the session, never the form | low–medium (a username) | the record *is* the decision |
 | `status`, `created_at`, `dispatched_at`, `started_at`, `finished_at`, `run_id`, `migration_id`, `outcome` | queued → running → done / failed, or cancelled; which CI run took it and which report closed it | low | the finding shows where it stands |
 | `events` (JSONB) | the progress timeline the CI run streamed: a stage, a time and a short line (which files a swap touches, a PR number) | low–medium — file paths; every line is redacted and capped, and it is **never code** | the live status on the finding |
@@ -230,6 +230,12 @@ into the App: both are capped, escaped on render, and deleted with the
 repository's data (on demand or on uninstall).
 
 ### Encryption at rest
+
+`GET /healthz` proves this from the outside: `encryption.enabled` (is a data key
+configured), how many stored reports are sealed vs plaintext, and `decrypt`
+(does the newest sealed report open with the current key — `ok`, `failed` for a
+key mismatch, or `none` when nothing sealed is stored). Counts and a verdict,
+never data.
 
 Two layers, because one is not enough:
 
@@ -420,9 +426,11 @@ permissions:
   pull-requests: write # open the PR
 ```
 
-It opens a PR. It never merges one itself; when an approval made in the App
-asked for "merge when checks pass", it enables GitHub's own auto-merge on that
-PR, which still obeys your branch protection and required checks. With
+It opens a PR. It never merges one itself. A "merge when checks pass" choice
+exists behind the operator flag `MENDR_AUTO_MERGE` and is **off in the public
+beta**; when an operator enables it and an approval asks for it, the action
+enables GitHub's own auto-merge on that PR, which still obeys your branch
+protection and required checks. With
 `approval-gated` it does nothing at all until a person has approved a specific
 model in the App, and then migrates only that model. Use the read-only workflow
 first if you do not want this.

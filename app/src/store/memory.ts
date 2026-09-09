@@ -7,6 +7,7 @@ import {
   type ApprovalInput,
   type AuditLogEntry,
   type AuditLogInput,
+  type EncryptionStatus,
   type Installation,
   type MigrationInput,
   type MigrationRecord,
@@ -72,6 +73,11 @@ export class MemoryStore implements Store {
   async markMigrateSeen(repoId: number, at: string, workflowFile: string | null): Promise<void> {
     const r = this.repos.get(repoId);
     if (r) this.repos.set(repoId, { ...r, migrateSeenAt: at, migrateWorkflow: workflowFile ?? r.migrateWorkflow });
+  }
+
+  /** The memory store never seals anything (development and tests only). */
+  async encryptionStatus(): Promise<EncryptionStatus> {
+    return { sealedRuns: 0, plaintextRuns: this.runs.size, sealedMigrations: 0, plaintextMigrations: this.migrations.size, decrypt: 'none' };
   }
 
   async setMigrateWorkflow(repoId: number, workflowFile: string): Promise<void> {

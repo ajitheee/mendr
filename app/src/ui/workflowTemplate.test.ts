@@ -142,7 +142,7 @@ describe('migrateWorkflowYaml / setupMigrateWorkflowUrl — carrying out approva
 
   it('says what it does and does not do, in the file the customer commits', () => {
     expect(yaml).toMatch(/never touches your default branch/);
-    expect(yaml).toMatch(/auto-merge only if you chose that when you approved/);
+    expect(yaml).toMatch(/never merges/);
     expect(yaml).toMatch(/ONLY if the verdict is `verified`/);
     expect(yaml).toMatch(/nothing approved ends in seconds/);
   });

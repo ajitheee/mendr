@@ -79,7 +79,7 @@ function fakeGitHub(userRepos: Record<string, number> = {}) {
   return { api, checkRuns, dispatches };
 }
 
-function harness(userRepos: Record<string, number> = {}) {
+function harness(userRepos: Record<string, number> = {}, over: Partial<AppConfig> = {}) {
   const config: AppConfig = {
     ...loadConfig({}),
     appUrl: 'https://app.example',
@@ -90,6 +90,7 @@ function harness(userRepos: Record<string, number> = {}) {
     githubClientId: 'Iv1.test',
     githubClientSecret: 'cs_test',
     sessionSecret: 'a-session-secret-that-is-long-enough',
+    ...over,
   };
   const store = new MemoryStore();
   const gh = fakeGitHub(userRepos);
@@ -503,8 +504,8 @@ describe('approvals: decided in Mendr, carried out by the customer\'s own CI', (
   const finding = { provider: 'openai', model: 'gpt-4', replacement: 'gpt-4.1', back: '/r/acme/api/runs/1' };
   const MIGRATE_REF = 'acme/api/.github/workflows/mendr-migrate.yml@refs/heads/main';
 
-  async function approved(mode: 'pr' | 'auto-merge' = 'pr') {
-    const h = harness({ 'acme/api': REPO.id });
+  async function approved(mode: 'pr' | 'auto-merge' = 'pr', over: Partial<AppConfig> = {}) {
+    const h = harness({ 'acme/api': REPO.id }, over);
     await h.install();
     await h.ingest(await actionsToken(), sampleReport());
     const cookie = await h.sessionCookie();
@@ -548,7 +549,7 @@ describe('approvals: decided in Mendr, carried out by the customer\'s own CI', (
   });
 
   it('the CI carries it out: list → claim → progress → the report closes it as done; the live status agrees', async () => {
-    const { h, cookie } = await approved('auto-merge');
+    const { h, cookie } = await approved('auto-merge', { autoMerge: true }); // the operator enabled the merge option
     const token = await actionsToken({ run_id: '700', workflow_ref: MIGRATE_REF });
     const listed = (await (await ci(h, '/api/approvals', token)).json()) as { approvals: unknown[] };
     expect(listed.approvals).toEqual([{ id: 1, provider: 'openai', model: 'gpt-4', replacement: 'gpt-4.1', mode: 'auto-merge' }]);
@@ -585,6 +586,21 @@ describe('approvals: decided in Mendr, carried out by the customer\'s own CI', (
     expect(html).toContain('>done<');
     expect(html).toContain('pull request #12 open');
     expect(html).toContain('migration workflow active');
+  });
+
+  it('auto-merge is refused unless the operator enabled it — every beta approval is a pull request for review', async () => {
+    const { h, cookie } = await approved('auto-merge');
+    expect((await h.store.getApproval(1))?.mode).toBe('pr');
+    const html = await (await h.app.request('/r/acme/api/runs/1', { headers: { cookie } })).text();
+    expect(html).toContain('pull request for review');
+    expect(html).not.toContain('<option value="auto-merge">');
+  });
+
+  it('/healthz proves encryption at rest from the outside — counts and a verdict, never data', async () => {
+    const h = harness();
+    const body = (await (await h.app.request('/healthz')).json()) as { ok: boolean; encryption: Record<string, unknown> };
+    expect(body.ok).toBe(true);
+    expect(body.encryption).toEqual({ enabled: false, sealedRuns: 0, plaintextRuns: 0, sealedMigrations: 0, plaintextMigrations: 0, decrypt: 'none' });
   });
 
   it('a run that could not verify closes the approval as failed and offers the decision again', async () => {

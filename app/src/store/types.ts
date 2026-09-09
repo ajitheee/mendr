@@ -152,6 +152,16 @@ export function approvalVersion(a: Approval): string {
   return `${a.status}:${a.events.length}`;
 }
 
+/** Proof of encryption at rest, from the outside: counts and a verdict, never data. */
+export interface EncryptionStatus {
+  sealedRuns: number;
+  plaintextRuns: number;
+  sealedMigrations: number;
+  plaintextMigrations: number;
+  /** ok = the newest sealed report opens with the current key; failed = it does not (key mismatch); none = nothing sealed is stored. */
+  decrypt: 'ok' | 'failed' | 'none';
+}
+
 /** What deletion removed, by kind — reported to the user and to the audit log. */
 export interface RepoDeletion {
   runsDeleted: number;
@@ -223,6 +233,9 @@ export interface Store {
   cancelApproval(id: number, event: ApprovalEvent): Promise<boolean>;
   /** The repo's migration workflow just asked for approvals: it is listening, and this is its file. */
   markMigrateSeen(repoId: number, at: string, workflowFile: string | null): Promise<void>;
+  // --- operations (trust: prove encryption at rest from the outside) ---
+  /** How many stored reports are sealed vs plaintext, and whether the newest sealed one opens with the current key. Counts only — never data. */
+  encryptionStatus(): Promise<EncryptionStatus>;
   /** The audit saw which file carries the migration job (coverage.migration.workflowFile). */
   setMigrateWorkflow(repoId: number, workflowFile: string): Promise<void>;
   // --- retention & deletion (trust: data cleanup) ---
