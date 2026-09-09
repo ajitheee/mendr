@@ -4,6 +4,8 @@
 
 One command scans TypeScript, TSX, JavaScript, Python and config files, joins a dated retirement registry for OpenAI, Anthropic and Google, and tells you what breaks, where, and by when. No API key. Nothing is changed.
 
+**Beta partner?** Start with [BETA-ONBOARDING.md](BETA-ONBOARDING.md): connect in five minutes, what you will see, what leaves your CI, troubleshooting.
+
 ```sh
 npx github:ajitheee/mendr#v0.4.5-alpha audit .
 ```

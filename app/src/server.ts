@@ -15,6 +15,12 @@ const keyring = loadKeyring(config.dataKey);
 const store = config.databaseUrl ? await createPgStore(config.databaseUrl, keyring) : new MemoryStore();
 if (!config.databaseUrl) console.warn('DATABASE_URL is not set: using the in-memory store. Runs vanish on restart. Development only.');
 if (config.databaseUrl && !keyring) console.warn('MENDR_DATA_KEY is not set: stored reports are NOT field-encrypted at rest. Set it in production.');
+// A key set after data already existed: seal what is still plaintext, so
+// "encrypted at rest" holds for every row, not only the ones stored from now on.
+if (keyring) {
+  const sealed = await store.sealPlaintextReports();
+  if (sealed.runs || sealed.migrations) console.log(`sealed ${sealed.runs} run report(s) and ${sealed.migrations} migration report(s) that were stored in plaintext`);
+}
 if (config.sessionGenerated) console.warn('SESSION_SECRET is not set: a random one was generated; every restart signs everyone out.');
 
 const keys = config.oidcJwksFile ? createLocalJWKSet(JSON.parse(readFileSync(config.oidcJwksFile, 'utf8'))) : remoteActionsJwks(config.oidcIssuer);

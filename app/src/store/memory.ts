@@ -75,6 +75,10 @@ export class MemoryStore implements Store {
     if (r) this.repos.set(repoId, { ...r, migrateSeenAt: at, migrateWorkflow: workflowFile ?? r.migrateWorkflow });
   }
 
+  async sealPlaintextReports(): Promise<{ runs: number; migrations: number }> {
+    return { runs: 0, migrations: 0 };
+  }
+
   /** The memory store never seals anything (development and tests only). */
   async encryptionStatus(): Promise<EncryptionStatus> {
     return { sealedRuns: 0, plaintextRuns: this.runs.size, sealedMigrations: 0, plaintextMigrations: this.migrations.size, decrypt: 'none' };

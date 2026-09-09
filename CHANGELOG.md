@@ -13,6 +13,10 @@
   `encryption`: whether a data key is configured, how many stored reports are
   sealed vs plaintext, and whether the newest sealed report opens with the
   current key (`ok` / `failed` / `none`). Counts and a verdict — never data.
+  A key set after data already existed seals the plaintext rows at the next
+  boot, so encryption at rest holds for every row.
+- **Beta onboarding.** `BETA-ONBOARDING.md`: connect in five minutes, what you
+  will see, what leaves your CI, troubleshooting, what the beta measures.
 - **Launch copy.** The site headline is "Stop AI model retirements before they
   break production." with the supporting line "Connect GitHub once. Mendr
   continuously monitors your AI dependencies, explains the risk, and prepares a

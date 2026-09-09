@@ -236,6 +236,12 @@ export interface Store {
   // --- operations (trust: prove encryption at rest from the outside) ---
   /** How many stored reports are sealed vs plaintext, and whether the newest sealed one opens with the current key. Counts only — never data. */
   encryptionStatus(): Promise<EncryptionStatus>;
+  /**
+   * Seal every report stored in plaintext with the current key (a key set after
+   * data already existed). Run at boot; returns how many were sealed. A store
+   * without a key, or without plaintext rows, does nothing.
+   */
+  sealPlaintextReports(): Promise<{ runs: number; migrations: number }>;
   /** The audit saw which file carries the migration job (coverage.migration.workflowFile). */
   setMigrateWorkflow(repoId: number, workflowFile: string): Promise<void>;
   // --- retention & deletion (trust: data cleanup) ---

@@ -419,6 +419,23 @@ export class PgStore implements Store {
     await this.pool.query('UPDATE repos SET migrate_seen_at = $2, migrate_workflow = COALESCE($3, migrate_workflow) WHERE id = $1', [repoId, at, workflowFile]);
   }
 
+  // A key that arrives after data already exists must not leave the old rows
+  // in plaintext: seal them, one row at a time, with the primary key.
+  async sealPlaintextReports(): Promise<{ runs: number; migrations: number }> {
+    if (!this.keyring) return { runs: 0, migrations: 0 };
+    const seal = async (table: 'runs' | 'migrations'): Promise<number> => {
+      const { rows } = await this.pool.query(`SELECT id, report FROM ${table} WHERE NOT (report ? 'enc') ORDER BY id`);
+      let sealed = 0;
+      for (const r of rows) {
+        const row = r as Row;
+        await this.pool.query(`UPDATE ${table} SET report = $2 WHERE id = $1 AND NOT (report ? 'enc')`, [n(row.id), JSON.stringify(sealForStore(row.report, this.keyring))]);
+        sealed++;
+      }
+      return sealed;
+    };
+    return { runs: await seal('runs'), migrations: await seal('migrations') };
+  }
+
   // A sealed report is a JSON envelope with an `enc` key (encryption.ts); a
   // plaintext one is the report itself, which has none. Counting the key is
   // proof enough from the outside, and it never touches the contents.

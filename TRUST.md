@@ -235,7 +235,8 @@ repository's data (on demand or on uninstall).
 configured), how many stored reports are sealed vs plaintext, and `decrypt`
 (does the newest sealed report open with the current key — `ok`, `failed` for a
 key mismatch, or `none` when nothing sealed is stored). Counts and a verdict,
-never data.
+never data. A key set after data already existed seals the plaintext rows at the
+next boot, so `plaintextRuns` reads 0 once the key is in place.
 
 Two layers, because one is not enough:
 
