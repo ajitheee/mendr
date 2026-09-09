@@ -157,6 +157,8 @@ export function auditWorkflowYaml(opts: WorkflowTemplateOptions): string {
     "          approval-gated: 'true' # only what a person approved in the App; nothing approved = nothing done",
     '          approval: ${{ inputs.approval }}',
     '          # eval-command: npm run eval   # optional: a behavioral gate, run in the sandbox',
+    '        env:',
+    "          MENDR_REGISTRY_REFRESH: 'on' # plan against the latest signed registry snapshot (one GET of public files from github.com; nothing sent)",
     '',
   ].join('\n');
 }
@@ -259,6 +261,8 @@ export function migrateWorkflowYaml(opts: { mendrSpec: string; appUrl: string; p
     "          approval-gated: 'true' # only what a person approved in the App; nothing approved = nothing done",
     '          approval: ${{ inputs.approval }}',
     '          # eval-command: npm run eval   # optional: a behavioral gate, run in the sandbox',
+    '        env:',
+    "          MENDR_REGISTRY_REFRESH: 'on' # plan against the latest signed registry snapshot (one GET of public files from github.com; nothing sent)",
     '',
   ].join('\n');
 }

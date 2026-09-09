@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **`mendr migrate` plans against the same fresh, signed registry as the audit.**
+  New `--refresh-registry` (or `MENDR_REGISTRY_REFRESH=on`, which the generated
+  migration workflow now sets on the `mendr-action` step): one signed GET of
+  public registry files, nothing sent, `--offline` wins. The artifact and the
+  human report record which registry the plan used (`registry`: source, version,
+  published date, age, freshness); a stale registry is called out in the notes —
+  a newer retirement or replacement may exist. `mendr-action` passes the
+  provenance to the App, which whitelists it and shows it on the migration
+  status line ("registry 2026-09-09 · fresh").
+
 ## 0.4.4-alpha — 2026-09-09
 
 - **See the change on the finding.** `mendr-action` now sends the unified diff

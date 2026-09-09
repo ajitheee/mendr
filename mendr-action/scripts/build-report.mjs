@@ -45,6 +45,17 @@ const report = {
       : [],
   changedFiles: a ? list(a.changedFiles) : [],
   notes: a ? list(a.notes) : [],
+  registry:
+    a && a.registry && typeof a.registry === 'object'
+      ? {
+          source: str(a.registry.source),
+          version: str(a.registry.version),
+          publishedAt: str(a.registry.publishedAt),
+          ageDays: Number.isFinite(a.registry.ageDays) ? a.registry.ageDays : -1,
+          maxAgeDays: Number.isFinite(a.registry.maxAgeDays) ? a.registry.maxAgeDays : 0,
+          freshness: str(a.registry.freshness),
+        }
+      : null,
   diff: sendDiff && a && str(a.diff) ? a.diff.slice(0, MAX_DIFF_CHARS) : null,
 };
 process.stdout.write(JSON.stringify(report));

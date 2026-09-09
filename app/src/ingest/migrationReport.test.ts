@@ -42,7 +42,19 @@ describe('validateMigrationReport', () => {
       changedFiles: ['src/ai.ts', 'src/summarize.ts'],
       notes: ['Behavior was not verified.'],
       diff: null,
+      registry: null,
     });
+  });
+
+  it('keeps the registry provenance field by field, and drops a malformed one whole', () => {
+    const registry = { source: 'snapshot', version: 'sha256:0123456789abcdef', publishedAt: '2026-09-09T04:00:00Z', ageDays: 0.44, maxAgeDays: 14, freshness: 'fresh', extra: 'dropped' };
+    const r = ok(validateMigrationReport(JSON.stringify(full({ registry })), 1_000_000));
+    expect(r.registry).toEqual({ source: 'snapshot', version: 'sha256:0123456789abcdef', publishedAt: '2026-09-09T04:00:00Z', ageDays: 0.4, maxAgeDays: 14, freshness: 'fresh' });
+    expect(ok(validateMigrationReport(JSON.stringify(full({ registry: { ...registry, source: 'internet' } })), 1_000_000)).registry).toBeNull();
+    expect(ok(validateMigrationReport(JSON.stringify(full({ registry: { ...registry, freshness: 'fresh-ish' } })), 1_000_000)).registry).toBeNull();
+    expect(ok(validateMigrationReport(JSON.stringify(full({ registry: 'sha256:abc' })), 1_000_000)).registry).toBeNull();
+    const unknownAge = ok(validateMigrationReport(JSON.stringify(full({ registry: { ...registry, source: 'file', publishedAt: null, ageDays: 'n/a', freshness: 'stale' } })), 1_000_000)).registry;
+    expect(unknownAge).toMatchObject({ source: 'file', publishedAt: null, ageDays: -1, freshness: 'stale' });
   });
 
   it('keeps the swap\'s diff — only when it is shaped like one — and drops every unknown key', () => {

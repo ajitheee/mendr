@@ -66,6 +66,11 @@ function registryDir(sign: { publishedAt: string } | null): { file: string; keys
   return { file, keysFile };
 }
 
+async function migrate(args: string[], env: Record<string, string> = {}) {
+  const r = await execa('tsx', ['src/cli.ts', 'migrate', ...args], { cwd: MENDR_ROOT, reject: false, env: { ...process.env, MENDR_UNICODE: '1', ...env } });
+  return { exitCode: r.exitCode ?? 0, stdout: r.stdout, stderr: r.stderr };
+}
+
 async function audit(args: string[], env: Record<string, string> = {}) {
   const r = await execa('tsx', ['src/cli.ts', 'audit', ...args], { cwd: MENDR_ROOT, reject: false, env: { ...process.env, MENDR_UNICODE: '1', ...env } });
   return { exitCode: r.exitCode ?? 0, stdout: r.stdout, stderr: r.stderr };
@@ -132,5 +137,32 @@ describe('registry freshness through the real CLI', () => {
     const j = await audit([cleanRepo(), '--json', '--refresh-registry', '--offline'], { MENDR_REGISTRY_TRUSTED_KEYS_FILE: keysFile, MENDR_REGISTRY_MAX_AGE_DAYS: '100000' });
     expect(j.exitCode).toBe(0);
     expect(JSON.parse(j.stdout).coverage.registry.refresh.error).toMatch(/offline/);
+  }, 180_000);
+});
+
+describe('migrate plans against the same freshness-graded registry as the audit', () => {
+  it('an operator registry of unknown age is recorded as STALE in the artifact and said in the notes', async () => {
+    const { file } = registryDir(null);
+    const repo = exposedRepo();
+    writeFileSync(join(repo, 'package.json'), '{"name":"t"}');
+    const j = await migrate([repo, '--skip-verify', '--json'], { MENDR_REGISTRY_FILE: file });
+    expect(j.exitCode).toBe(0);
+    const artifact = JSON.parse(j.stdout);
+    expect(artifact.migrated).toBe(true);
+    expect(artifact.registry).toMatchObject({ source: 'file', publishedAt: null, ageDays: -1, freshness: 'stale' });
+    expect(artifact.notes.some((n: string) => /STALE: a newer retirement or replacement may exist/.test(n))).toBe(true);
+  }, 180_000);
+
+  it('a registry proven fresh by a signature the run trusts is recorded as FRESH, and the human report says which one', async () => {
+    const { file, keysFile } = registryDir({ publishedAt: new Date().toISOString() });
+    const repo = exposedRepo();
+    writeFileSync(join(repo, 'package.json'), '{"name":"t"}');
+    const j = await migrate([repo, '--skip-verify', '--json'], { MENDR_REGISTRY_FILE: file, MENDR_REGISTRY_TRUSTED_KEYS_FILE: keysFile });
+    expect(j.exitCode).toBe(0);
+    const artifact = JSON.parse(j.stdout);
+    expect(artifact.registry).toMatchObject({ source: 'file', freshness: 'fresh' });
+    expect(artifact.notes.some((n: string) => /STALE/.test(n))).toBe(false);
+    const h = await migrate([repo, '--skip-verify'], { MENDR_REGISTRY_FILE: file, MENDR_REGISTRY_TRUSTED_KEYS_FILE: keysFile });
+    expect(h.stdout).toMatch(/^Registry: file sha256:[0-9a-f]{16} published \d{4}-\d{2}-\d{2} — FRESH/m);
   }, 180_000);
 });

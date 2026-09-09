@@ -26,6 +26,13 @@ function gateRow(label: string, g: GateOutcome): string {
 
 export function renderMigrationReport(r: MigrationResult): string[] {
   const lines: string[] = ['mendr migrate (preview)', ''];
+  if (r.registry) {
+    const age = r.registry.ageDays < 0 ? 'age unknown' : `${r.registry.ageDays} days old`;
+    lines.push(
+      `Registry: ${r.registry.source} ${r.registry.version}${r.registry.publishedAt ? ` published ${r.registry.publishedAt.slice(0, 10)}` : ''} — ${r.registry.freshness.toUpperCase()} (${age}, max ${r.registry.maxAgeDays})`,
+      '',
+    );
+  }
 
   if (!r.migrated) {
     lines.push(VERDICT_LINE.no_migration);

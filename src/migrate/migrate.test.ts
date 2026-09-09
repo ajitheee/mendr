@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { LlmRegistry } from '../types.js';
 import { autoApplyVerification } from '../usage/llmRegistry.js';
-import { computeVerdict, runMigration, type GateOutcome } from './migrate.js';
+import { computeVerdict, runMigration, type GateOutcome, type MigrationRegistryInfo } from './migrate.js';
+import { renderMigrationReport } from './report.js';
 
 const REG: LlmRegistry = [
   { provider: 'openai', kind: 'model_id', deprecated: 'gpt-4', replacement: 'gpt-5.6-sol', status: 'deprecated', shutdownDate: '2026-10-23', verification: autoApplyVerification() },
@@ -131,5 +132,37 @@ describe('runMigration — sandbox verification with real build/test scripts', (
     const r = await runMigration(dir, REG, { write: true, skipVerify: true });
     expect(r.applied).toEqual([]);
     expect(require('node:fs').readFileSync(join(dir, 'client.ts'), 'utf8')).toContain('"gpt-4"');
+  });
+});
+
+describe('the registry the plan used rides in the artifact, and a stale one is called out', () => {
+  const stale: MigrationRegistryInfo = { source: 'bundled', version: 'sha256:0123456789abcdef', publishedAt: '2026-08-01T00:00:00Z', ageDays: 39, maxAgeDays: 14, freshness: 'stale' };
+  const fresh: MigrationRegistryInfo = { ...stale, source: 'snapshot', publishedAt: '2026-09-09T04:00:00Z', ageDays: 0.4, freshness: 'fresh' };
+
+  it('records the provenance and adds the STALE note, in the human report too', async () => {
+    const dir = repo({ 'client.ts': CALL, 'package.json': '{"name":"t"}' });
+    const r = await runMigration(dir, REG, { skipVerify: true, registry: stale });
+    expect(r.registry).toEqual(stale);
+    expect(r.notes.some((n) => /STALE: a newer retirement or replacement may exist/.test(n))).toBe(true);
+    const text = renderMigrationReport(r).join('\n');
+    expect(text).toContain('Registry: bundled sha256:0123456789abcdef published 2026-08-01 — STALE (39 days old, max 14)');
+  });
+
+  it('a fresh registry is recorded without a warning; no registry given = nothing claimed', async () => {
+    const dir = repo({ 'client.ts': CALL, 'package.json': '{"name":"t"}' });
+    const r = await runMigration(dir, REG, { skipVerify: true, registry: fresh });
+    expect(r.registry).toEqual(fresh);
+    expect(r.notes.some((n) => /STALE/.test(n))).toBe(false);
+    const none = await runMigration(dir, REG, { skipVerify: true });
+    expect(none.registry).toBeUndefined();
+    expect(renderMigrationReport(none).join('\n')).not.toContain('Registry:');
+  });
+
+  it('a clean repo still states a stale registry — absence of a migration is not proof either', async () => {
+    const dir = repo({ 'a.ts': 'export const x = 1;\n', 'package.json': '{"name":"t"}' });
+    const r = await runMigration(dir, REG, { skipVerify: true, registry: stale });
+    expect(r.migrated).toBe(false);
+    expect(r.registry).toEqual(stale);
+    expect(r.notes.some((n) => /STALE/.test(n))).toBe(true);
   });
 });

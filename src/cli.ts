@@ -3271,10 +3271,15 @@ program
   .option('--sha <sha>', 'the commit being migrated (recorded in the artifact)')
   .option('--skip-verify', 'plan + diff only — prove nothing (do not open a PR from this)')
   .option('--only <models>', 'migrate only these models — comma-separated provider/model or model ids (what a person approved in your Mendr App); everything else is left untouched')
+  .option(
+    '--refresh-registry',
+    'plan against the latest signed registry snapshot: one GET of public files from github.com, verified against a key built into this release, nothing sent. ' +
+      'Same as MENDR_REGISTRY_REFRESH=on, which the generated migration workflow sets. Without it the bundled registry is used and its age is stated.',
+  )
   .action(
     async (
       repoPath: string,
-      opts: { json?: boolean; patch?: string; write?: boolean; evalCommand?: string; sha?: string; skipVerify?: boolean; only?: string },
+      opts: { json?: boolean; patch?: string; write?: boolean; evalCommand?: string; sha?: string; skipVerify?: boolean; only?: string; refreshRegistry?: boolean },
     ) => {
       if (/^(https?:\/\/|git@)/i.test(repoPath)) {
         console.error(
@@ -3284,13 +3289,21 @@ program
         process.exit(2);
       }
       const resolved = resolveRepoOrExit(repoPath);
-      const registry = loadLlmRegistry();
+      // The same freshness-graded registry the audit uses, so an approved
+      // migration is planned against current retirement knowledge — not the
+      // knowledge of the day this release was cut. --offline always wins.
+      const { registry, freshness } = await loadRegistryWithFreshness({ now: new Date(), offline: isOffline(), refresh: opts.refreshRegistry ? true : undefined });
+      if (freshness.refresh.requested && !freshness.refresh.ok) {
+        console.error(`mendr: registry refresh not applied — ${freshness.refresh.error ?? 'unknown reason'}`);
+      }
+      const cov = coverageFieldsOf(freshness);
       const result = await runMigration(resolved, registry, {
         sha: opts.sha ?? process.env.GITHUB_SHA ?? null,
         evalCommand: opts.evalCommand,
         skipVerify: opts.skipVerify,
         write: opts.write,
         only: opts.only ? opts.only.split(',').map((s) => s.trim()).filter(Boolean) : undefined,
+        registry: { source: cov.source, version: cov.version, publishedAt: cov.publishedAt, ageDays: cov.ageDays, maxAgeDays: cov.maxAgeDays, freshness: cov.freshness },
       });
 
       if (opts.patch) {

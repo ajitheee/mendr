@@ -363,11 +363,15 @@ function prLink(m: MigrationRecord): string {
 function migrationStatus(m: MigrationRecord): string {
   const when = `${esc(m.receivedAt.slice(0, 16).replace('T', ' '))} from <code>${esc(m.sha.slice(0, 7))}</code>`;
   const gates = gatesLine(m);
+  // Which registry the swap was planned against, and how current it was — a
+  // stale one means a newer retirement or replacement may exist.
+  const r = m.report.registry;
+  const reg = r ? ` · <span class="chip ${r.freshness === 'fresh' ? 'ok' : 'warn'}">registry ${esc(r.publishedAt ? r.publishedAt.slice(0, 10) : 'undated')} · ${esc(r.freshness)}</span>` : '';
   switch (m.outcome) {
     case 'migration-proposed':
-      return `<span class="chip ok">verified</span> ${prLink(m)}${gates ? ` · ${gates}` : ''} · ${when}${m.report.behavioralTested ? '' : ' · <span class="muted">behavior not tested</span>'}`;
+      return `<span class="chip ok">verified</span> ${prLink(m)}${gates ? ` · ${gates}` : ''}${reg} · ${when}${m.report.behavioralTested ? '' : ' · <span class="muted">behavior not tested</span>'}`;
     case 'not-verified':
-      return `<span class="chip warn">not verified — nothing applied, no PR</span>${gates ? ` · ${gates}` : ''} · ${when}`;
+      return `<span class="chip warn">not verified — nothing applied, no PR</span>${gates ? ` · ${gates}` : ''}${reg} · ${when}`;
     case 'clean':
       return `<span class="chip ok">nothing to migrate</span> · ${when}`;
     default:

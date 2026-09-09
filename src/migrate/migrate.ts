@@ -68,6 +68,17 @@ export interface MigrationVerification {
   verdict: MigrationVerdict;
 }
 
+/** Which registry the migration was planned against, and how current it was. */
+export interface MigrationRegistryInfo {
+  source: 'snapshot' | 'file' | 'bundled';
+  version: string;
+  publishedAt: string | null;
+  /** Days old at planning time; -1 = unknown. */
+  ageDays: number;
+  maxAgeDays: number;
+  freshness: 'fresh' | 'stale';
+}
+
 export interface MigrationResult {
   schema: typeof MIGRATION_SCHEMA;
   generatedBy: 'mendr';
@@ -89,6 +100,8 @@ export interface MigrationResult {
    * Only ever non-empty when the verdict is `verified`. Absent without `--write`.
    */
   applied?: string[];
+  /** Which registry the plan used and how current it was (absent when the caller did not say). */
+  registry?: MigrationRegistryInfo;
 }
 
 export interface MigrateOptions {
@@ -109,6 +122,8 @@ export interface MigrateOptions {
    * as it is. Empty or absent = every verified swap, as before.
    */
   only?: string[];
+  /** Provenance of the registry the plan uses (from the fresh-registry loader); recorded in the artifact. */
+  registry?: MigrationRegistryInfo;
 }
 
 /**
@@ -232,6 +247,15 @@ export function computeVerdict(typeCheck: GateOutcome, build: GateOutcome, tests
  * Plan and (unless skipped) verify a migration in a sandbox. Never writes the
  * working tree.
  */
+/** A stale registry is said out loud: a newer retirement or replacement may exist. */
+function registryNote(info: MigrationRegistryInfo | undefined): string[] {
+  if (!info || info.freshness === 'fresh') return [];
+  const age = info.ageDays < 0 ? 'of unknown age' : `${info.ageDays} days old (max ${info.maxAgeDays})`;
+  return [
+    `The registry this plan used (${info.source}) is ${age} — STALE: a newer retirement or replacement may exist. Run with --refresh-registry (or MENDR_REGISTRY_REFRESH=on) to plan against the latest signed snapshot.`,
+  ];
+}
+
 export async function runMigration(repoPath: string, registry: LlmRegistry, opts: MigrateOptions = {}): Promise<MigrationResult> {
   const now = new Date();
   const base = {
@@ -240,7 +264,9 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
     repo: basename(repoPath),
     generatedAt: now.toISOString(),
     sha: opts.sha ?? null,
+    ...(opts.registry ? { registry: opts.registry } : {}),
   };
+  const registryNotes = registryNote(opts.registry);
 
   const only = (opts.only ?? []).map((s) => s.trim()).filter(Boolean);
   const onlyNote = only.length ? [`Restricted to ${only.join(', ')} (--only); every other retiring model was left untouched.`] : [];
@@ -262,7 +288,7 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
         verdict: 'no_migration',
       },
       prReady: false,
-      notes: [...onlyNote, 'No verified Tier-A migration was found. Nothing to apply and nothing to verify.'],
+      notes: [...onlyNote, 'No verified Tier-A migration was found. Nothing to apply and nothing to verify.', ...registryNotes],
     };
   }
 
@@ -286,6 +312,7 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
         ...onlyNote,
         'Verification was skipped (--skip-verify): the diff is shown but NOTHING was proven. Do not open a PR from this run.',
         ...(opts.write ? ['--write was ignored: nothing is applied without verification.'] : []),
+        ...registryNotes,
       ],
       ...(opts.write ? { applied: [] as string[] } : {}),
     };
@@ -325,6 +352,7 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
     );
   }
   if (verdict === 'verified') notes.push('This migration is a reviewed PR candidate. Mendr never merges; a human approves.');
+  notes.push(...registryNotes);
 
   // --- apply, ONLY when verified (--write) -----------------------------------
   let applied: string[] | undefined;

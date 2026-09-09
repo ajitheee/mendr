@@ -33,6 +33,17 @@ export interface MigrationGates {
   eval: GateStatus;
 }
 
+/** Which registry the migration was planned against, and how current it was. */
+export interface MigrationRegistryInfo {
+  source: 'snapshot' | 'file' | 'bundled';
+  version: string;
+  publishedAt: string | null;
+  /** Days old at planning time; -1 = unknown. */
+  ageDays: number;
+  maxAgeDays: number;
+  freshness: 'fresh' | 'stale';
+}
+
 export interface MigrationSwap {
   provider: string;
   from: string;
@@ -61,6 +72,8 @@ export interface MigrationReport {
    * 'false'`), nothing changed, or what arrived was not a diff.
    */
   diff: string | null;
+  /** Which registry the migration was planned against (null: an older action did not say). */
+  registry?: MigrationRegistryInfo | null;
 }
 
 export type MigrationValidation = { ok: true; report: MigrationReport } | { ok: false; status: 400 | 413; message: string };
@@ -88,6 +101,18 @@ function texts(v: unknown, max: number): string[] {
 
 function oneOf<T extends readonly string[]>(v: unknown, allowed: T): T[number] | null {
   return typeof v === 'string' && (allowed as readonly string[]).includes(v) ? (v as T[number]) : null;
+}
+
+/** The registry provenance, field by field; anything malformed is dropped whole. */
+function registryInfo(v: unknown): MigrationRegistryInfo | null {
+  if (!isRecord(v)) return null;
+  const source = oneOf(v.source, ['snapshot', 'file', 'bundled'] as const);
+  const freshness = oneOf(v.freshness, ['fresh', 'stale'] as const);
+  const version = text(v.version);
+  if (!source || !freshness || !version) return null;
+  const num = (x: unknown, fallback: number): number => (typeof x === 'number' && Number.isFinite(x) ? Math.round(x * 10) / 10 : fallback);
+  const publishedAt = typeof v.publishedAt === 'string' && !Number.isNaN(Date.parse(v.publishedAt)) ? v.publishedAt : null;
+  return { source, version, publishedAt, ageDays: num(v.ageDays, -1), maxAgeDays: num(v.maxAgeDays, 0), freshness };
 }
 
 /** Only a unified diff is kept — something that starts like one — redacted, and capped with a visible mark. */
@@ -166,6 +191,7 @@ export function validateMigrationReport(raw: string, maxBytes: number): Migratio
       changedFiles: texts(parsed.changedFiles, MAX_FILES),
       notes: texts(parsed.notes, MAX_NOTES),
       diff: diffText(parsed.diff),
+      registry: registryInfo(parsed.registry),
     },
   };
 }
