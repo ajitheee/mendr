@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.4-alpha — 2026-09-09
 
 - **See the change on the finding.** `mendr-action` now sends the unified diff
   of the model-id swap with its report (`send-diff`, default on; the change
