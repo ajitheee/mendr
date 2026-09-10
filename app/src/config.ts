@@ -8,7 +8,7 @@ import { randomBytes } from 'node:crypto';
  * different pin sets the MENDR_SPEC repository variable, which every generated
  * workflow reads first.
  */
-export const MENDR_CLI_SPEC = 'v0.4.6-alpha';
+export const MENDR_CLI_SPEC = 'v0.4.7-alpha';
 
 export interface AppConfig {
   /** Public base URL, no trailing slash. Webhooks and OAuth redirects come here. */

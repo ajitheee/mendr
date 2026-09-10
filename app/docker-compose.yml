@@ -47,7 +47,7 @@ services:
       # Dev secrets — replace for anything beyond local testing.
       SESSION_SECRET: ${SESSION_SECRET:-local-dev-session-secret-change-me-please}
       MENDR_DATA_KEY: ${MENDR_DATA_KEY:-}
-      MENDR_CLI_SPEC: ${MENDR_CLI_SPEC:-v0.4.6-alpha}
+      MENDR_CLI_SPEC: ${MENDR_CLI_SPEC:-v0.4.7-alpha}
       # The six GITHUB_* values from APP_URL/setup go here once you have them.
       GITHUB_APP_ID: ${GITHUB_APP_ID:-}
       GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}

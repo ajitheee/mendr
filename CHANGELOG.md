@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.7-alpha — 2026-09-10
 
 - **A refused pull request is reported, never silent.** GitHub's default
   repository setting forbids Actions from creating pull requests. When that
