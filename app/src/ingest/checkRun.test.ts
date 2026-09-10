@@ -38,7 +38,8 @@ describe('buildCheckRun', () => {
     // Informational references get no annotation: no migration action.
     expect(cr.output.annotations.some((a) => a.path.startsWith('docs/'))).toBe(false);
     expect(cr.output.summary).toContain('**gpt-4** (openai) — PATCH ELIGIBLE (deprecated, shutdown 2026-10-23)');
-    expect(cr.output.summary).toContain('Next action: run mendr fix-llm');
+    expect(cr.output.summary).toContain(`Next action: approve the migration in your Mendr App — ${opts.detailsUrl}`); // App users act in Mendr, not on the command line
+    expect(cr.output.summary).not.toContain('run mendr fix-llm');
     expect(cr.output.summary).toContain('1 informational reference');
     expect(cr.output.text).toContain('No code was cloned or stored by Mendr');
   });

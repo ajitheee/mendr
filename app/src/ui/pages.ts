@@ -285,11 +285,11 @@ export function runsPage(repo: Repo, runs: RunSummary[], login: string, setupUrl
   const rows = runs
     .map(
       (r) =>
-        `<tr><td><a href="/r/${esc(repo.fullName)}/runs/${r.id}">${esc(r.receivedAt.slice(0, 19).replace('T', ' '))}</a></td><td><span class="muted">${esc(r.ref.replace(/^refs\/heads\//, ''))}</span> @ <code>${esc(r.sha.slice(0, 7))}</code></td><td>${pill(r.counts, r.conclusion)}</td><td>${r.checkRunUrl ? `<a href="${esc(r.checkRunUrl)}">check</a>` : '<span class="muted">no check</span>'}</td></tr>`,
+        `<tr><td><a href="/r/${esc(repo.fullName)}/runs/${r.id}">${esc(r.receivedAt.slice(0, 19).replace('T', ' '))}</a></td><td><span class="muted">${esc(r.ref.replace(/^refs\/heads\//, ''))}</span> @ <code>${esc(r.sha.slice(0, 7))}</code></td><td>${pill(r.counts, r.conclusion)}</td><td><a class="tlink" href="/r/${esc(repo.fullName)}/runs/${r.id}">${r.counts.patch + r.counts.review > 0 ? 'Open findings →' : 'Open run →'}</a></td><td>${r.checkRunUrl ? `<a href="${esc(r.checkRunUrl)}" target="_blank" rel="noopener">GitHub check ↗</a>` : '<span class="muted">no check</span>'}</td></tr>`,
     )
     .join('');
   const del = `<h2>Stored data</h2><p class="muted">Delete every stored run for this repository now. Uninstalling the App does this automatically; this is the same, on demand.</p><form method="post" action="/r/${esc(repo.fullName)}/delete" onsubmit="return confirm('Delete all stored findings for ${esc(repo.fullName)}? This cannot be undone.')"><button type="submit" class="btn danger">Delete stored data</button></form>`;
-  const body = `<h2>${esc(repo.fullName)}</h2><div class="tbl"><table><thead><tr><th>Received</th><th>Commit</th><th>Result</th><th>Check run</th></tr></thead><tbody>${rows}</tbody></table></div>${del}`;
+  const body = `<h2>${esc(repo.fullName)}</h2><div class="tbl"><table><thead><tr><th>Received</th><th>Commit</th><th>Result</th><th>Findings</th><th>Check run</th></tr></thead><tbody>${rows}</tbody></table></div>${del}`;
   return layout(repo.fullName, body, { login });
 }
 

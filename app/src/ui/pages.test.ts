@@ -50,6 +50,13 @@ describe('run pills never let a non-conclusion look clean', () => {
     expect(html).toContain('nothing found');
     expect(html).not.toContain('>inconclusive<');
   });
+
+  it('every run row has an obvious way in — "Open findings" when something needs action — and the GitHub check is labelled as such', () => {
+    const html = runsPage(repo, [run('exposure_detected', { patch: 1, review: 0, informational: 0 }), run('no_exposure_in_completed_surfaces')], 'octocat');
+    expect(html).toContain('Open findings →');
+    expect(html).toContain('Open run →');
+    expect(html).not.toContain('>check<');
+  });
 });
 
 describe('overview: the last completed scan vs the latest attempt, and whether monitoring is alive', () => {

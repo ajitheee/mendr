@@ -82,6 +82,11 @@ export function titleFor(report: AuditReport): string {
   return report.conclusion === 'inconclusive' ? `Inconclusive · ${base}` : base;
 }
 
+/** The scanner speaks command-line; the check on the commit speaks App: the fix is approved in Mendr, not run by hand. */
+function appWording(reason: string): string {
+  return reason.replace(/fix-llm can rewrite it to ([^\s.]+)/g, 'Mendr can migrate it to $1 once you approve in your Mendr App');
+}
+
 export function buildCheckRun(report: AuditReport, opts: { sha: string; detailsUrl: string; externalId: string }): CheckRunPayload {
   const counts = countDecisions(report);
   const actionable = report.investigations.filter((i) => i.decision === 'patch' || i.decision === 'review');
@@ -114,7 +119,9 @@ export function buildCheckRun(report: AuditReport, opts: { sha: string; detailsU
   summaryLines.push('');
   const shown = actionable.slice(0, 20);
   for (const inv of shown) {
-    const next = inv.nextAction ? ` Next action: ${inv.nextAction}` : '';
+    // App users act in Mendr, not on the command line: a patch-eligible finding
+    // points at the run page where Approve lives; other decisions keep the CLI's wording.
+    const next = inv.decision === 'patch' ? ` Next action: approve the migration in your Mendr App — ${opts.detailsUrl}` : inv.nextAction ? ` Next action: ${inv.nextAction}` : '';
     summaryLines.push(`- **${inv.model}** (${inv.provider}) — ${LABEL[inv.decision]}${retirement(inv)}.${next}`);
   }
   if (actionable.length > shown.length) summaryLines.push(`- … and ${actionable.length - shown.length} more in the run.`);
@@ -136,7 +143,7 @@ export function buildCheckRun(report: AuditReport, opts: { sha: string; detailsU
         end_line: loc.line,
         annotation_level: level(inv, loc),
         title: `Mendr: ${inv.model} ${LABEL[inv.decision]}`,
-        message: `${inv.model} (${inv.provider}): ${loc.reason ?? inv.reason ?? LABEL[inv.decision]}`,
+        message: `${inv.model} (${inv.provider}): ${appWording(loc.reason ?? inv.reason ?? LABEL[inv.decision])}`,
       });
     }
   }
