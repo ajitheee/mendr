@@ -208,6 +208,13 @@ describe('approving a migration on the run page', () => {
     html = runPage(repo, record('patch', { migration: { workflowPresent: true } }), 'octocat', { ...view, approvals: new Map([['openai/gpt-4', done]]), migration: migration() });
     expect(html).toContain('Review and merge <a'); // the App's next step, not the command line's
     expect(html).not.toContain('mendr fix-llm');
+    // The same finding in a scan received AFTER the approval finished: the decision is open again, the earlier one stated.
+    const later = { ...record('patch', { migration: { workflowPresent: true } }), receivedAt: '2026-09-08T12:00:00.000Z' } as RunRecord;
+    html = runPage(repo, later, 'octocat', { ...view, approvals: new Map([['openai/gpt-4', done]]), migration: migration() });
+    expect(html).toContain(APPROVE);
+    expect(html).toContain('Earlier approval by octocat');
+    expect(html).toContain('Approve the migration above.');
+    expect(html).not.toContain('Review and merge <a');
   });
 
   it('is absent when nothing is patch eligible, and when the App is unconfigured', () => {

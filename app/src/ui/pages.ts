@@ -478,7 +478,11 @@ const STAGE_LABEL: Record<string, string> = {
 function approvalPart(inv: Inv, ctx: CardContext, approval: Approval | null, back: string, replacement: string): string {
   const repoName = esc(ctx.repo.fullName);
   const inFlight = !!approval && (approval.status === 'queued' || approval.status === 'running');
-  if (approval && (inFlight || approval.status === 'done')) {
+  // A finished approval belongs to the scans up to its completion. When the same
+  // finding shows up in a LATER scan (a regression, a revert), the decision is
+  // open again — with the earlier approval stated below the button, never hidden.
+  const doneForThisRun = !!approval && approval.status === 'done' && !approvalSuperseded(approval, ctx.run);
+  if (approval && (inFlight || doneForThisRun)) {
     const last = approval.events[approval.events.length - 1];
     const head =
       approval.status === 'queued'
@@ -561,6 +565,11 @@ const LIVE_SCRIPT = [
   'setTimeout(tick,5000)})()</script>',
 ].join('');
 
+/** The finding came back in a scan received after this approval finished: that approval is history for this run. */
+function approvalSuperseded(approval: Approval, run: RunRecord): boolean {
+  return approval.status === 'done' && !!approval.finishedAt && run.receivedAt > approval.finishedAt;
+}
+
 /** What to do next about a patch-eligible finding, in the App's terms. */
 function nextActionForPatch(approval: Approval | null, migration: MigrationRecord | null, swap: { to: string } | undefined): string {
   if (approval && (approval.status === 'queued' || approval.status === 'running')) {
@@ -624,7 +633,7 @@ function findingCard(inv: Inv, ctx: CardContext): string {
   // 5. Next action — for a patch-eligible finding, what the person does next in
   //    Mendr's terms (approve / wait / merge), not the command line's; other
   //    decisions keep the scanner's own wording so the UI never drifts.
-  const next = decision === 'patch' && ev.replacement ? nextActionForPatch(approval, migration, swap) : esc(inv.nextAction ?? inv.reason ?? '');
+  const next = decision === 'patch' && ev.replacement ? nextActionForPatch(approval && approvalSuperseded(approval, run) ? null : approval, migration, swap) : esc(inv.nextAction ?? inv.reason ?? '');
 
   // 6. Ownership — who has seen this and who owns the follow-up. A note ABOUT
   //    the finding, keyed by repo + model so it follows the finding across runs.
