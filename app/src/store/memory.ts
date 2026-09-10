@@ -292,7 +292,7 @@ export class MemoryStore implements Store {
 
   async cancelApproval(id: number, event: ApprovalEvent): Promise<boolean> {
     const a = this.approvals.get(id);
-    if (!a || a.status !== 'queued') return false;
+    if (!a || (a.status !== 'queued' && a.status !== 'running')) return false;
     this.approvals.set(id, { ...a, status: 'cancelled', finishedAt: event.at, events: [...a.events, event] });
     return true;
   }

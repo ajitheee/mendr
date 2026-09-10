@@ -407,7 +407,7 @@ export class PgStore implements Store {
   }
 
   async cancelApproval(id: number, event: ApprovalEvent): Promise<boolean> {
-    const res = await this.pool.query(`UPDATE approvals SET status = 'cancelled', finished_at = $2, events = events || $3::jsonb WHERE id = $1 AND status = 'queued'`, [
+    const res = await this.pool.query(`UPDATE approvals SET status = 'cancelled', finished_at = $2, events = events || $3::jsonb WHERE id = $1 AND status IN ('queued', 'running')`, [
       id,
       event.at,
       JSON.stringify([event]),

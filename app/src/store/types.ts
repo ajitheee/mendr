@@ -229,7 +229,7 @@ export interface Store {
   markApprovalDispatched(id: number, event: ApprovalEvent): Promise<void>;
   /** Close whatever this CI run claimed, from the migration report it sent. Returns what was closed. */
   finishApprovals(repoId: number, runId: number, migrationId: number, outcome: string, event: ApprovalEvent): Promise<Approval[]>;
-  /** Queued → cancelled. Returns whether it was still queued. */
+  /** Queued or running → cancelled (a CI run already in flight may still finish; its report then closes nothing). Returns whether it was open. */
   cancelApproval(id: number, event: ApprovalEvent): Promise<boolean>;
   /** The repo's migration workflow just asked for approvals: it is listening, and this is its file. */
   markMigrateSeen(repoId: number, at: string, workflowFile: string | null): Promise<void>;

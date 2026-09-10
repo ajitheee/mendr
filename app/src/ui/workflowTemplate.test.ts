@@ -40,7 +40,8 @@ describe('auditWorkflowYaml — one short file, two jobs, each calling a reusabl
   it('is short enough for GitHub\'s prefilled editor (the full two-job file was 9.6 KB and was refused)', () => {
     const url = setupWorkflowUrl({ ...OPTS, webUrl: 'https://github.com', repoFullName: 'acme/some-longer-repository-name', mendrSpec: 'v0.10.12-alpha', private: true });
     expect(Buffer.byteLength(url)).toBeLessThan(6000); // GitHub refuses around 8 KB; keep a margin
-    expect(Buffer.byteLength(yaml)).toBeLessThan(3500);
+    expect(Buffer.byteLength(yaml)).toBeLessThan(3800);
+    expect(yaml).toContain('Allow GitHub Actions to create and approve pull requests'); // the one setting a partner must flip
   });
 
   it('the audit job is least-privilege: contents:read + id-token:write, no write scopes; no secrets anywhere', () => {

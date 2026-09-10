@@ -24,7 +24,7 @@ ARTIFACT="mendr-migration.json"
 # needs `id-token: write` in the calling workflow; without it, or without
 # MENDR_APP_URL, nothing is sent. It never fails the job: the PR is the
 # deliverable, the report is a courtesy to the dashboard.
-report_to_app() { # $1 outcome, $2 pr url (may be empty), $3 artifact path (may be empty or missing)
+report_to_app() { # $1 outcome, $2 pr url (may be empty), $3 artifact path (may be empty or missing), $4 branch (may be empty)
   [ -n "${MENDR_APP_URL:-}" ] || return 0
   if [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
     echo "::warning::Mendr: MENDR_APP_URL is set but this job has no 'id-token: write' permission, so the migration result was not reported to the App."
@@ -32,7 +32,7 @@ report_to_app() { # $1 outcome, $2 pr url (may be empty), $3 artifact path (may 
   fi
   local body token code
   body="$(mktemp)"
-  if ! node "$GITHUB_ACTION_PATH/scripts/build-report.mjs" "${3:-}" "$1" "${2:-}" > "$body" 2>/dev/null; then
+  if ! node "$GITHUB_ACTION_PATH/scripts/build-report.mjs" "${3:-}" "$1" "${2:-}" "${4:-}" > "$body" 2>/dev/null; then
     echo "::warning::Mendr: could not build the migration report for the App; nothing sent."
     return 0
   fi
@@ -72,6 +72,18 @@ post_event() { # $1 stage, $2 detail (optional)
   done
   return 0
 }
+
+# Whatever else goes wrong from here on, the App must hear about it: a run that
+# dies silently leaves the person who approved staring at "running". The trap
+# reports `error` and names the step; the PR step below has its own, more
+# specific handling.
+on_unexpected_error() {
+  local rc=$? cmd="$BASH_COMMAND"
+  post_event failed "the migration run stopped unexpectedly at: ${cmd:0:120} (exit $rc)"
+  report_to_app error "" "${ARTIFACT:-}"
+  exit "$rc"
+}
+trap on_unexpected_error ERR
 
 # Approval-gated runs migrate exactly the approved models (MENDR_ONLY, e.g.
 # "openai/gpt-4,google/gemini-1.5-pro"); everything else is left alone.
@@ -203,9 +215,30 @@ if [ -n "${existing:-}" ]; then
   echo "pr_url=$existing" >> "$GITHUB_OUTPUT"
   echo "Updated existing Mendr PR: $existing"
 else
+  # The one thing a repository setting can refuse: "GitHub Actions is not
+  # permitted to create or approve pull requests" (Settings → Actions → General).
+  # The verified change is already on the branch, so say exactly that — to the
+  # log, to the job summary and to the App — and fail the job, but never silently.
+  set +e
   url=$(gh pr create --base "$BASE" --head "$MENDR_BRANCH" \
     --title "chore(deps): migrate deprecated LLM model ids (Mendr)" \
-    --body-file "$BODY" "${LABEL_ARGS[@]}")
+    --body-file "$BODY" "${LABEL_ARGS[@]}" 2>&1)
+  pr_rc=$?
+  set -e
+  if [ "$pr_rc" -ne 0 ]; then
+    trap - ERR
+    echo "outcome=pr-blocked" >> "$GITHUB_OUTPUT"
+    echo "pr_url=" >> "$GITHUB_OUTPUT"
+    NEW_PR_URL="$(gh repo view --json url -q .url)/pull/new/$MENDR_BRANCH"
+    echo "::error::Mendr: the verified migration is on branch $MENDR_BRANCH, but GitHub refused to open the pull request from Actions: ${url}. Enable Settings → Actions → General → 'Allow GitHub Actions to create and approve pull requests' and approve again, or open it yourself: $NEW_PR_URL"
+    {
+      echo
+      echo "> **Pull request blocked by a repository setting.** The verified change is on \`$MENDR_BRANCH\`. Enable *Settings → Actions → General → Allow GitHub Actions to create and approve pull requests*, then approve again — or open it yourself: $NEW_PR_URL"
+    } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+    post_event failed "verified and pushed to $MENDR_BRANCH, but GitHub refused to open the pull request from Actions (repository setting) — open it by hand or enable 'Allow GitHub Actions to create and approve pull requests'"
+    report_to_app pr-blocked "" "$ARTIFACT" "$MENDR_BRANCH"
+    exit 1
+  fi
   PR_URL="$url"
   echo "pr_url=$url" >> "$GITHUB_OUTPUT"
   echo "Opened Mendr PR: $url"
@@ -225,4 +258,4 @@ if [ "${MENDR_MODE:-pr}" = "auto-merge" ]; then
     post_event pr "auto-merge could not be enabled here — merge on GitHub when ready"
   fi
 fi
-report_to_app migration-proposed "$PR_URL" "$ARTIFACT"
+report_to_app migration-proposed "$PR_URL" "$ARTIFACT" "$MENDR_BRANCH"

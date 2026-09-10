@@ -6,13 +6,13 @@
 // change, never whole files; the App redacts and caps it again). Built by
 // whitelisting fields, so nothing else rides along.
 //
-//   node build-report.mjs <artifact.json or ''> <outcome> <pr_url or ''>
+//   node build-report.mjs <artifact.json or ''> <outcome> <pr_url or ''> [branch]
 import { readFileSync } from 'node:fs';
 
 const MAX_DIFF_CHARS = 200_000;
 const sendDiff = process.env.MENDR_SEND_DIFF !== 'false';
 
-const [artifactPath, outcome, prUrl] = process.argv.slice(2);
+const [artifactPath, outcome, prUrl, branch] = process.argv.slice(2);
 let a = null;
 try {
   if (artifactPath) a = JSON.parse(readFileSync(artifactPath, 'utf8'));
@@ -30,6 +30,7 @@ const report = {
   schema: 'mendr-migration-report/v1',
   outcome: str(outcome) ?? 'error',
   prUrl: str(prUrl),
+  branch: str(branch),
   sha: a ? str(a.sha) : null,
   generatedAt: a ? str(a.generatedAt) : null,
   verdict: verification ? str(verification.verdict) : null,

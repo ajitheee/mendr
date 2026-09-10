@@ -12,7 +12,7 @@ import { redactSecrets } from '../redact.js';
 // capped.
 
 export const MIGRATION_REPORT_SCHEMA = 'mendr-migration-report/v1';
-export const MIGRATION_OUTCOMES = ['clean', 'migration-proposed', 'not-verified', 'error'] as const;
+export const MIGRATION_OUTCOMES = ['clean', 'migration-proposed', 'pr-blocked', 'not-verified', 'error'] as const;
 export type MigrationOutcome = (typeof MIGRATION_OUTCOMES)[number];
 export const MIGRATION_VERDICTS = ['verified', 'failed', 'inconclusive', 'no_migration'] as const;
 export type MigrationVerdict = (typeof MIGRATION_VERDICTS)[number];
@@ -58,6 +58,8 @@ export interface MigrationReport {
   outcome: MigrationOutcome;
   /** The PR mendr-action opened or updated; null unless a verified migration was proposed. */
   prUrl: string | null;
+  /** The branch the verified change was pushed to (so a blocked pull request can be opened by hand). */
+  branch?: string | null;
   sha: string | null;
   generatedAt: string | null;
   verdict: MigrationVerdict | null;
@@ -182,6 +184,7 @@ export function validateMigrationReport(raw: string, maxBytes: number): Migratio
       schema: MIGRATION_REPORT_SCHEMA,
       outcome,
       prUrl,
+      branch: typeof parsed.branch === 'string' && /^[A-Za-z0-9._\/-]{1,120}$/.test(parsed.branch) ? parsed.branch : null,
       sha,
       generatedAt,
       verdict,

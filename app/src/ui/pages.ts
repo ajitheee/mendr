@@ -265,6 +265,7 @@ export function installedPage(_config: AppConfig): string {
   const body = `<div class="card"><strong>Installed.</strong> One step left to connect a repository: commit the one workflow file.</div>
 <p>On the overview, each installed repository has a <strong>Set up the audit</strong> button. It opens GitHub's own new-file editor with the file filled in — you read it and commit it, once. The App writes nothing to your repository.</p>
 <p>From then on everything happens here. The file's <em>audit</em> job scans in your CI on every push, daily, and on demand, and sends only the sanitized findings. When a finding shows a retiring model, you <strong>approve the migration</strong> on it; the file's <em>migrate</em> job verifies the swap on a throwaway copy — type-check, build, your tests — opens the pull request, and streams each step and the change itself back to the finding. Mendr never touches your default branch and never merges — a person reviews the pull request.</p>
+<p><strong>One repository setting</strong> lets the migration open its pull request: <em>Settings → Actions → General → Allow GitHub Actions to create and approve pull requests</em>. Without it the verified change still lands on a branch and the finding tells you.</p>
 <p class="muted">Optional, for instant starts: grant the App <em>Actions: write</em> (it can then start your migration workflow the moment you approve; it still cannot read your code). Without it, the workflow's own schedule carries approvals out.</p>
 <p><a class="btn" href="/">Go to the overview</a></p>`;
   return layout('installed', body);
@@ -362,7 +363,7 @@ function prLink(m: MigrationRecord): string {
  * exists — never that anything was merged or that behavior was tested unless
  * an eval ran.
  */
-function migrationStatus(m: MigrationRecord): string {
+function migrationStatus(m: MigrationRecord, webUrl = 'https://github.com', repoFullName = ''): string {
   const when = `${esc(m.receivedAt.slice(0, 16).replace('T', ' '))} from <code>${esc(m.sha.slice(0, 7))}</code>`;
   const gates = gatesLine(m);
   // Which registry the swap was planned against, and how current it was — a
@@ -374,6 +375,12 @@ function migrationStatus(m: MigrationRecord): string {
       return `<span class="chip ok">verified</span> ${prLink(m)}${gates ? ` · ${gates}` : ''}${reg} · ${when}${m.report.behavioralTested ? '' : ' · <span class="muted">behavior not tested</span>'}`;
     case 'not-verified':
       return `<span class="chip warn">not verified — nothing applied, no PR</span>${gates ? ` · ${gates}` : ''}${reg} · ${when}`;
+    case 'pr-blocked': {
+      // The verified change is on the branch; GitHub's default setting refused the
+      // pull request. Say which setting, and link the pull request the person can open.
+      const open = m.report.branch && repoFullName ? ` <a href="${esc(`${webUrl}/${repoFullName}/pull/new/${m.report.branch}`)}" target="_blank" rel="noopener">open the pull request yourself ↗</a>` : '';
+      return `<span class="chip warn">verified and pushed — pull request blocked by a repository setting</span>${gates ? ` · ${gates}` : ''}${reg} · ${when}<div class="muted">GitHub does not let Actions open pull requests here. Enable <em>Settings → Actions → General → Allow GitHub Actions to create and approve pull requests</em> and approve again, or${open || ' open the pull request from the branch yourself'}.</div>`;
+    }
     case 'clean':
       return `<span class="chip ok">nothing to migrate</span> · ${when}`;
     default:
@@ -437,7 +444,7 @@ function migrationCard(ctx: CardContext, patchCount: number): string {
       : workflowPresent === false
         ? `<span class="chip warn">migration workflow not added yet</span><a class="btn" href="${esc(migrate.setupUrl)}" target="_blank" rel="noopener">Add it once ↗</a><span class="muted">GitHub's editor opens with the workflow filled in — read it and commit it</span>`
         : `<span class="chip">migration workflow not seen yet</span><a class="tlink" href="${esc(migrate.setupUrl)}" target="_blank" rel="noopener">add it if you haven't ↗</a>`;
-  const status = migration ? `<div class="part"><div class="label">Latest migration run</div><div>${migrationStatus(migration)}${diffBlock(migration)}</div></div>` : '';
+  const status = migration ? `<div class="part"><div class="label">Latest migration run</div><div>${migrationStatus(migration, ctx.webUrl, ctx.repo.fullName)}${diffBlock(migration)}</div></div>` : '';
   return `<div class="card" id="migrate"><div class="label">Migration</div>
 <p>Approve a migration on a finding below and your own CI carries it out: Mendr verifies the swap on a throwaway copy — type-check, build, your tests — and opens <strong>one pull request</strong> only if it all passes. ${ctx.autoMerge ? 'It never touches your default branch, and merges only if you choose that when you approve.' : 'It never touches your default branch and never merges — a person reviews the pull request.'} The App gains no access to your code: it records your decision and what your CI reports back.</p>
 <div class="bar">${listening}</div>${status}</div>`;
@@ -473,10 +480,11 @@ function approvalPart(inv: Inv, ctx: CardContext, approval: Approval | null, bac
     const events = approval.events
       .map((e) => `<li><span class="t">${esc(e.at.slice(11, 16))}</span>${esc(STAGE_LABEL[e.stage] ?? e.stage)}${e.detail ? ` <span class="muted">— ${esc(e.detail)}</span>` : ''}</li>`)
       .join('');
-    const cancel =
-      approval.status === 'queued'
-        ? `<form method="post" action="/r/${repoName}/approve/cancel" class="ackclear"><input type="hidden" name="id" value="${approval.id}"><input type="hidden" name="back" value="${esc(back)}"><button class="linkbtn" type="submit">Cancel</button></form>`
-        : '';
+    // Queued or running can be cancelled: a run that died without reporting
+    // (a refused pull request, a killed job) must not leave the finding stuck.
+    const cancel = inFlight
+      ? `<form method="post" action="/r/${repoName}/approve/cancel" class="ackclear"><input type="hidden" name="id" value="${approval.id}"><input type="hidden" name="back" value="${esc(back)}"><button class="linkbtn" type="submit">Cancel</button></form>`
+      : '';
     const mode = approval.mode === 'auto-merge' ? 'pull request, merged when checks pass' : 'pull request for review';
     return `<div data-approval="${approval.id}" data-version="${esc(approvalVersion(approval))}">Approved by <strong>${esc(approval.approvedBy)}</strong> on ${esc(approval.createdAt.slice(0, 16).replace('T', ' '))} · ${esc(mode)}${approval.replacement ? ` · to <code>${esc(approval.replacement)}</code>` : ''} · ${head}${cancel}<ol class="timeline">${events}</ol></div>`;
   }
@@ -583,7 +591,7 @@ function findingCard(inv: Inv, ctx: CardContext): string {
   //    last reported for THIS model, and the decision: approve here, your CI does
   //    the work. Nothing is ever applied from this page.
   const swap = migration?.report.migrations.find((s) => s.from === inv.model);
-  const ran = swap && migration ? `<div style="margin-top:6px">Migration run: ${migrationStatus(migration)}${diffBlock(migration, swap.files)}</div>` : '';
+  const ran = swap && migration ? `<div style="margin-top:6px">Migration run: ${migrationStatus(migration, webUrl, repo.fullName)}${diffBlock(migration, swap.files)}</div>` : '';
   const evidenceLine = ev.replacement
     ? `Replacement <code>${esc(ev.replacement)}</code> — <span class="chip ${ev.replacementVerdict === 'verified' ? 'ok' : 'warn'}">${esc(ev.replacementVerdict ?? 'unstamped')}</span>.${ev.sourceUrl ? ` <a href="${esc(ev.sourceUrl)}" target="_blank" rel="noopener">provider notice ↗</a>` : ''}`
     : 'No safe replacement recommended yet — monitor the provider.';

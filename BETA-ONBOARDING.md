@@ -22,6 +22,9 @@ off, and how to get your data out.
 3. Back on the overview, click **Set up the audit** next to the repository.
    GitHub's own editor opens with one workflow file filled in
    (`.github/workflows/mendr-audit.yml`). Read it, commit it.
+   One repository setting lets the migration open its pull request later:
+   Settings → Actions → General → **Allow GitHub Actions to create and approve
+   pull requests**. Do it now; it takes ten seconds.
 4. The first scan runs within about two minutes. The overview shows the result;
    the commit gets a **Mendr audit** check.
 
@@ -74,6 +77,7 @@ the App purges everything. Full detail: [TRUST.md](TRUST.md).
 | No scan for more than a day ("quiet") | GitHub paused the schedule (it does so on public repositories with no activity for 60 days), or the workflow was disabled | Actions tab → the `mendr audit` workflow → Enable. Any push also triggers a scan. |
 | An approval stays `queued` | No migration workflow is listening, or the App may not start workflows | The run page's Migration card says which. Add the workflow file once if missing; grant `Actions: read and write` for instant starts, or wait for the schedule. |
 | Migration `not verified — nothing applied` | Your tests or build failed on the throwaway copy with the swap applied | Open the workflow run log in Actions; the gate that failed is named. Nothing was changed anywhere. |
+| "GitHub Actions is not permitted to create or approve pull requests" — verified, branch pushed, no PR | A repository setting (GitHub's default) | Settings → Actions → General → tick **Allow GitHub Actions to create and approve pull requests** → Save. Then cancel the approval on the finding and approve again, or open the pull request from the branch yourself (the finding links to it). |
 | No pull request although verification passed | Branch protection blocks the workflow's push, or `contents: write` / `pull-requests: write` was removed from the migrate job | Check the run log; restore the job's permissions from the generated file. |
 | A finding you fixed still shows | Only a **completed** scan against a fresh registry confirms a resolution | Wait for the next scan (or push). The run page will show "Resolved since run N". |
 | You want the data gone | — | Repository page → **Delete stored data**, or uninstall the App. Both are immediate. |

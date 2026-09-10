@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- **A refused pull request is reported, never silent.** GitHub's default
+  repository setting forbids Actions from creating pull requests. When that
+  refuses the PR, the action now reports `pr-blocked` (the verified change is
+  on the branch), the job summary and the finding say exactly which setting to
+  flip (Settings → Actions → General → Allow GitHub Actions to create and
+  approve pull requests) with a link to open the pull request by hand, and the
+  approval closes with that truth instead of staying "running" forever. Any
+  other unexpected failure after the verdict is reported as `error` with the
+  step it died at. The generated workflow, the installed page and
+  BETA-ONBOARDING.md name the setting up front.
+- **Cancel a running approval.** A run that died without reporting no longer
+  blocks the finding: Cancel works while running too, and the person can
+  approve again.
+
 ## 0.4.6-alpha — 2026-09-10
 
 - **One-click connect works again — a short caller file.** GitHub refuses a

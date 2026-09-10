@@ -33,6 +33,7 @@ describe('validateMigrationReport', () => {
       schema: MIGRATION_REPORT_SCHEMA,
       outcome: 'migration-proposed',
       prUrl: 'https://github.com/acme/api/pull/12',
+      branch: null,
       sha: SHA,
       generatedAt: '2026-09-07T07:00:00Z',
       verdict: 'verified',

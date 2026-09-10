@@ -299,7 +299,9 @@ export function createApp(deps: AppDeps): Hono {
           ? `pull request ${report.prUrl ? prNumber(report.prUrl) : ''} open · ${report.verdict ?? 'verified'}`.replace(/\s+/g, ' ')
           : report.outcome === 'clean'
             ? 'nothing left to migrate'
-            : report.outcome === 'not-verified'
+            : report.outcome === 'pr-blocked'
+              ? `verified and pushed${report.branch ? ` to ${report.branch}` : ''}, but GitHub refused to open the pull request from Actions (repository setting) — enable "Allow GitHub Actions to create and approve pull requests" and approve again, or open it yourself`
+              : report.outcome === 'not-verified'
               ? 'not verified — nothing applied, no pull request'
               : 'the migration run failed — nothing applied',
     });

@@ -575,7 +575,7 @@ describe('approvals: decided in Mendr, carried out by the customer\'s own CI', (
     let html = await (await h.app.request('/r/acme/api/runs/1', { headers: { cookie } })).text();
     expect(html).toContain('>running<');
     expect(html).toContain('verifying on a throwaway copy');
-    expect(html).not.toContain('Cancel</button>'); // too late to cancel
+    expect(html).toContain('Cancel</button>'); // a run that dies without reporting must not block the finding: cancel stays available while running
 
     // The report from the same run closes it — from what it says, not from an event.
     const rep = await h.migrations(token, sampleMigration());
@@ -615,7 +615,7 @@ describe('approvals: decided in Mendr, carried out by the customer\'s own CI', (
     expect(html).toContain('Approve migration to gpt-4.1</button>');
   });
 
-  it('a queued approval can be cancelled, a running one cannot, and approving twice keeps one in flight', async () => {
+  it('a queued or running approval can be cancelled (a stuck run must not block the finding), and approving twice keeps one in flight', async () => {
     const { h, cookie } = await approved();
     expect((await post(h, '/r/acme/api/approve', finding, cookie)).status).toBe(303);
     expect((await h.store.listApprovals(REPO.id, 10)).length).toBe(1);
@@ -627,7 +627,9 @@ describe('approvals: decided in Mendr, carried out by the customer\'s own CI', (
     const token = await actionsToken({ run_id: '702', workflow_ref: MIGRATE_REF });
     await ci(h, '/api/approvals/claim', token, { ids: [2] });
     await post(h, '/r/acme/api/approve/cancel', { id: '2', back: '/' }, cookie);
-    expect((await h.store.getApproval(2))?.status).toBe('running');
+    expect((await h.store.getApproval(2))?.status).toBe('cancelled'); // the CI run died without reporting; the person moves on
+    expect((await post(h, '/r/acme/api/approve', finding, cookie)).status).toBe(303);
+    expect((await h.store.getApproval(3))?.status).toBe('queued'); // and can approve again
   });
 
   it('needs sign-in, access and a named finding; the CI endpoints need a valid token for an installed repository', async () => {

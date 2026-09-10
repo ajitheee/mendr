@@ -87,9 +87,12 @@ outputs:
   outcome:
     description: >-
       clean (nothing to migrate) | migration-proposed (a verified migration is in
-      the PR) | not-verified (a migration exists but did not verify; nothing
-      applied, no PR) | error (Mendr never completed a scan; the job fails red and
-      no existing PR is touched) | empty when approval-gated and nothing was approved
+      the PR) | pr-blocked (verified and pushed to the branch, but the repository
+      does not allow Actions to create pull requests — enable it under Settings →
+      Actions → General, or open the PR by hand; the job fails red) | not-verified
+      (a migration exists but did not verify; nothing applied, no PR) | error
+      (Mendr never completed a scan; the job fails red and no existing PR is
+      touched) | empty when approval-gated and nothing was approved
     value: ${{ steps.mendr.outputs.outcome }}
   pr-url:
     description: "URL of the opened/updated PR (empty unless a verified migration was proposed)."

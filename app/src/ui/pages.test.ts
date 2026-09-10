@@ -255,6 +255,15 @@ describe('approving a migration on the run page', () => {
     expect(html).toContain('tests ✗');
     expect(html).not.toContain('PR #12');
   });
+
+  it('a pull request blocked by the repository setting says which setting, and links the pull request to open by hand', () => {
+    const blocked = migration({ outcome: 'pr-blocked', prUrl: null, report: { ...migration().report, outcome: 'pr-blocked', prUrl: null, branch: 'mendr/deprecated-model-ids' } });
+    const html = runPage(repo, record('patch', { migration: { workflowPresent: true } }), 'octocat', { ...view, migration: blocked });
+    expect(html).toContain('pull request blocked by a repository setting');
+    expect(html).toContain('Allow GitHub Actions to create and approve pull requests');
+    expect(html).toContain('https://github.com/acme/api/pull/new/mendr/deprecated-model-ids');
+    expect(html).not.toContain('PR #12');
+  });
 });
 
 describe('a resolution is confirmed only by a completed scan on a fresh registry', () => {
