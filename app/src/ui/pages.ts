@@ -561,6 +561,20 @@ const LIVE_SCRIPT = [
   'setTimeout(tick,5000)})()</script>',
 ].join('');
 
+/** What to do next about a patch-eligible finding, in the App's terms. */
+function nextActionForPatch(approval: Approval | null, migration: MigrationRecord | null, swap: { to: string } | undefined): string {
+  if (approval && (approval.status === 'queued' || approval.status === 'running')) {
+    return 'Nothing to do here: your CI is carrying out the approved migration, and the timeline above updates as it goes.';
+  }
+  if (migration?.outcome === 'pr-blocked') {
+    return 'Enable "Allow GitHub Actions to create and approve pull requests" in the repository settings and approve again, or open the pull request from the branch (link above).';
+  }
+  if (approval?.status === 'done' && migration?.prUrl && swap) {
+    return `Review and merge ${prLink(migration)} on GitHub. The next completed scan confirms the resolution here — never the merge itself.`;
+  }
+  return 'Approve the migration above. Your CI verifies the swap and opens one pull request for review; nothing is applied from this page.';
+}
+
 /** One finding, laid out as the six things a reader needs, in order. */
 function findingCard(inv: Inv, ctx: CardContext): string {
   const { repo, run, webUrl, migration } = ctx;
@@ -607,8 +621,10 @@ function findingCard(inv: Inv, ctx: CardContext): string {
   const decide = decision === 'patch' && ev.replacement ? approvalPart(inv, ctx, approval, back, ev.replacement) : '';
   const migrationPart = evidenceLine + ran + (decide ? `<div style="margin-top:8px">${decide}</div>` : '');
 
-  // 5. Next action — the CLI's own wording, so the UI never drifts.
-  const next = esc(inv.nextAction ?? inv.reason ?? '');
+  // 5. Next action — for a patch-eligible finding, what the person does next in
+  //    Mendr's terms (approve / wait / merge), not the command line's; other
+  //    decisions keep the scanner's own wording so the UI never drifts.
+  const next = decision === 'patch' && ev.replacement ? nextActionForPatch(approval, migration, swap) : esc(inv.nextAction ?? inv.reason ?? '');
 
   // 6. Ownership — who has seen this and who owns the follow-up. A note ABOUT
   //    the finding, keyed by repo + model so it follows the finding across runs.

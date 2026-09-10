@@ -159,6 +159,8 @@ describe('approving a migration on the run page', () => {
     const html = runPage(repo, record('patch', { migration: { workflowPresent: true } }), 'octocat', view);
     expect(html).toContain('migration workflow present');
     expect(html).toContain(APPROVE);
+    expect(html).toContain('Approve the migration above.'); // next action in the App's terms
+    expect(html).not.toContain('mendr fix-llm');
     expect(html).toContain('<input type="hidden" name="mode" value="pr">');
     expect(html).not.toContain('<option value="auto-merge">');
     expect(html).toContain('never merges');
@@ -196,12 +198,16 @@ describe('approving a migration on the run page', () => {
     expect(html).toContain('data-approval="9"');
     expect(html).toContain('Cancel</button>');
     expect(html).not.toContain(APPROVE);
+    expect(html).toContain('Nothing to do here: your CI is carrying out the approved migration');
     const done = { ...queued, status: 'done' as const, finishedAt: '2026-09-08T11:09:00.000Z', migrationId: 3, outcome: 'migration-proposed', events: [...queued.events, { at: '2026-09-08T11:09:00.000Z', stage: 'done' as const, detail: 'pull request #12 open · verified' }] };
     html = runPage(repo, record('patch', { migration: { workflowPresent: true } }), 'octocat', { ...view, approvals: new Map([['openai/gpt-4', done]]) });
     expect(html).toContain('>done<');
     expect(html).toContain('pull request #12 open');
     expect(html).not.toContain('Cancel</button>');
     expect(html).not.toContain(APPROVE);
+    html = runPage(repo, record('patch', { migration: { workflowPresent: true } }), 'octocat', { ...view, approvals: new Map([['openai/gpt-4', done]]), migration: migration() });
+    expect(html).toContain('Review and merge <a'); // the App's next step, not the command line's
+    expect(html).not.toContain('mendr fix-llm');
   });
 
   it('is absent when nothing is patch eligible, and when the App is unconfigured', () => {
