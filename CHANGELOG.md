@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.6-alpha — 2026-09-10
 
 - **One-click connect works again — a short caller file.** GitHub refuses a
   prefilled-editor URL over about 8 KB, and the generated two-job workflow had
