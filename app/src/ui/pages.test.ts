@@ -57,6 +57,12 @@ describe('run pills never let a non-conclusion look clean', () => {
     expect(html).toContain('Open run →');
     expect(html).not.toContain('>check<');
   });
+
+  it('the same finding scanned again is marked as such — one problem, not one per scan', () => {
+    const exposed = run('exposure_detected', { patch: 1, review: 0, informational: 0 });
+    const html = runsPage(repo, [{ ...exposed, id: 3 }, { ...exposed, id: 2 }, { ...run('no_exposure_in_completed_surfaces'), id: 1 }], 'octocat');
+    expect(html.match(/same finding, scanned again/g)?.length).toBe(1); // the second exposed row only
+  });
 });
 
 describe('overview: the last completed scan vs the latest attempt, and whether monitoring is alive', () => {

@@ -275,6 +275,15 @@ export function errorPage(title: string, message: string): string {
   return layout(title, `<div class="card"><strong>${esc(title)}.</strong> ${esc(message)}</div><p><a href="/">Back</a></p>`);
 }
 
+/** The same result as the newer scan above it: one finding scanned again, not another finding. */
+function sameAsAbove(runs: RunSummary[], i: number): string {
+  const r = runs[i]!;
+  const prev = runs[i - 1];
+  if (!prev || r.counts.patch + r.counts.review === 0) return '';
+  const same = prev.conclusion === r.conclusion && prev.counts.patch === r.counts.patch && prev.counts.review === r.counts.review && prev.counts.informational === r.counts.informational;
+  return same ? ' <span class="muted">· same finding, scanned again</span>' : '';
+}
+
 export function runsPage(repo: Repo, runs: RunSummary[], login: string, setupUrl?: string): string {
   if (!runs.length) {
     const cta = setupUrl
@@ -284,8 +293,8 @@ export function runsPage(repo: Repo, runs: RunSummary[], login: string, setupUrl
   }
   const rows = runs
     .map(
-      (r) =>
-        `<tr><td><a href="/r/${esc(repo.fullName)}/runs/${r.id}">${esc(r.receivedAt.slice(0, 19).replace('T', ' '))}</a></td><td><span class="muted">${esc(r.ref.replace(/^refs\/heads\//, ''))}</span> @ <code>${esc(r.sha.slice(0, 7))}</code></td><td>${pill(r.counts, r.conclusion)}</td><td><a class="tlink" href="/r/${esc(repo.fullName)}/runs/${r.id}">${r.counts.patch + r.counts.review > 0 ? 'Open findings →' : 'Open run →'}</a></td><td>${r.checkRunUrl ? `<a href="${esc(r.checkRunUrl)}" target="_blank" rel="noopener">GitHub check ↗</a>` : '<span class="muted">no check</span>'}</td></tr>`,
+      (r, i) =>
+        `<tr><td><a href="/r/${esc(repo.fullName)}/runs/${r.id}">${esc(r.receivedAt.slice(0, 19).replace('T', ' '))}</a></td><td><span class="muted">${esc(r.ref.replace(/^refs\/heads\//, ''))}</span> @ <code>${esc(r.sha.slice(0, 7))}</code></td><td>${pill(r.counts, r.conclusion)}${sameAsAbove(runs, i)}</td><td><a class="tlink" href="/r/${esc(repo.fullName)}/runs/${r.id}">${r.counts.patch + r.counts.review > 0 ? 'Open findings →' : 'Open run →'}</a></td><td>${r.checkRunUrl ? `<a href="${esc(r.checkRunUrl)}" target="_blank" rel="noopener">GitHub check ↗</a>` : '<span class="muted">no check</span>'}</td></tr>`,
     )
     .join('');
   const del = `<h2>Stored data</h2><p class="muted">Delete every stored run for this repository now. Uninstalling the App does this automatically; this is the same, on demand.</p><form method="post" action="/r/${esc(repo.fullName)}/delete" onsubmit="return confirm('Delete all stored findings for ${esc(repo.fullName)}? This cannot be undone.')"><button type="submit" class="btn danger">Delete stored data</button></form>`;
@@ -608,7 +617,7 @@ function findingCard(inv: Inv, ctx: CardContext): string {
   const hidden = `<input type="hidden" name="provider" value="${esc(inv.provider)}"><input type="hidden" name="model" value="${esc(inv.model)}"><input type="hidden" name="back" value="${esc(back)}">`;
   const ownership = ack
     ? `<span class="chip ok">acknowledged</span> Acknowledged by <strong>${esc(ack.acknowledgedBy)}</strong> on ${esc(ack.createdAt.slice(0, 10))}${ack.owner ? ` · owner <strong>${esc(ack.owner)}</strong>` : ''}${ack.note ? ` · <span class="muted">“${esc(ack.note)}”</span>` : ''} · <form method="post" action="/r/${esc(repo.fullName)}/ack/clear" class="ackclear">${hidden}<button class="linkbtn" type="submit">Clear</button></form>`
-    : `<form method="post" action="/r/${esc(repo.fullName)}/ack" class="ackform">${hidden}<input name="owner" placeholder="owner — a login, team or name" maxlength="80" aria-label="Owner"><input name="note" placeholder="note (optional)" maxlength="400" aria-label="Note"><button class="btn" type="submit">Acknowledge</button></form><div class="muted">Records who owns the follow-up. It does not change the result — only a completed scan can.</div>`;
+    : `<form method="post" action="/r/${esc(repo.fullName)}/ack" class="ackform">${hidden}<input name="owner" placeholder="owner — a login, team or name" maxlength="80" aria-label="Owner"><input name="note" placeholder="note (optional)" maxlength="400" aria-label="Note"><button class="btn" type="submit">Acknowledge</button></form><div class="muted">A note only: records who has seen this and who owns the follow-up. It changes nothing and starts nothing — to fix the finding, use <strong>Approve migration</strong> in the Migration part above.</div>`;
 
   const part = (label: string, html: string): string => `<div class="part"><div class="lbl">${label}</div><div>${html}</div></div>`;
   return `<div class="finding ${decision}" id="${anchor}">
@@ -618,7 +627,7 @@ function findingCard(inv: Inv, ctx: CardContext): string {
     ${part('Confidence boundary', `${repoConfirmed} ${prod}`)}
     ${part('Migration', migrationPart)}
     ${part('Next action', next)}
-    ${part('Ownership', ownership)}
+    ${part('Ownership · note only', ownership)}
   </div>`;
 }
 
