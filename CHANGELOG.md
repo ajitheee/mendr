@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **A repository removed from the App no longer turns red every hour.** The
+  approvals check now treats the App's "not installed" answer as "nothing to
+  do" — one notice, a green skip — instead of failing the run. The daily audit
+  still fails visibly on such a repository, which is the right signal that the
+  workflow file is orphaned.
+
 ## 0.4.7-alpha — 2026-09-10
 
 - **A refused pull request is reported, never silent.** GitHub's default

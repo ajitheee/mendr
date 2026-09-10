@@ -122,7 +122,18 @@ runs:
         fi
         token="$(curl -sS --retry 3 --retry-delay 2 --retry-all-errors -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=mendr" | jq -r .value)"
         app="${MENDR_APP_URL%/}"
-        list="$(curl -sS --fail-with-body --retry 4 --retry-delay 5 --retry-all-errors --max-time 60 -H "Authorization: Bearer $token" "$app/api/approvals")"
+        # A repository that was removed from the App (or whose installation is
+        # suspended) may still carry this workflow: that is "nothing to do", said
+        # once, not a red run every hour. Any other failure is still an error.
+        body="$(mktemp)"
+        code="$(curl -sS -o "$body" -w '%{http_code}' --retry 4 --retry-delay 5 --retry-all-errors --max-time 60 -H "Authorization: Bearer $token" "$app/api/approvals" || echo 000)"
+        if [ "$code" = "403" ]; then
+          echo "proceed=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::Mendr: the Mendr App is not installed on this repository (or its installation is suspended), so there is nothing to carry out. Install it again to resume, or remove this workflow."
+          exit 0
+        fi
+        if [ "${code#2}" = "$code" ]; then echo "::error::Mendr: the App answered HTTP $code to the approvals check."; cat "$body"; exit 1; fi
+        list="$(cat "$body")"
         ids="$(echo "$list" | jq -r '[.approvals[].id] | map(tostring) | join(",")')"
         if [ -z "$ids" ]; then
           echo "proceed=false" >> "$GITHUB_OUTPUT"
