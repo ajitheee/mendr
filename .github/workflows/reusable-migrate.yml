@@ -1,0 +1,58 @@
+# Mendr migrate — the reusable half of the one file a customer commits.
+#
+# Called by their `.github/workflows/mendr-audit.yml` (its `migrate` job) or by a
+# standalone `mendr-migrate.yml`. It asks THEIR App what a person approved on a
+# finding, verifies each approved swap on a throwaway copy in THEIR CI — a
+# baseline-relative type-check and build, plus their test suite — applies it ONLY
+# if the verdict is `verified`, pushes ONE stable branch (mendr/deprecated-model-ids),
+# opens or updates ONE pull request, and streams each step and the change itself
+# back to the finding. Nothing approved = nothing done, in seconds. Mendr never
+# touches the default branch and never merges — a person reviews the pull request.
+#
+# The caller pins this file to a release tag; this file pins the action and the CLI
+# it runs to the same release (bumped by the release checklist).
+name: mendr migrate (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      app-url:
+        description: "The customer's Mendr App — where approvals come from and progress goes to."
+        type: string
+        required: true
+      approval:
+        description: "The approval id the App passed when it started the workflow (informational; every queued approval is picked up regardless)."
+        type: string
+        default: ''
+      eval-command:
+        description: "Optional command run in the sandbox as a behavioral gate (for example an eval suite)."
+        type: string
+        default: ''
+      registry-refresh:
+        description: "'on' = plan against the latest signed registry snapshot (one GET of public files from github.com; nothing sent)."
+        type: string
+        default: 'on'
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    # Exactly what the branch and the pull request need, never more than the caller granted.
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    concurrency:
+      group: mendr-migrate
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ajitheee/mendr/mendr-action@v0.4.6-alpha
+        with:
+          mendr-spec: github:ajitheee/mendr#v0.4.6-alpha
+          app-url: ${{ inputs.app-url }}
+          approval-gated: 'true'
+          approval: ${{ inputs.approval }}
+          eval-command: ${{ inputs.eval-command }}
+        env:
+          MENDR_REGISTRY_REFRESH: ${{ inputs.registry-refresh }}

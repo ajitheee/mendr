@@ -3116,7 +3116,9 @@ program
           let workflowFile: string | null = existsSync(join(workflows, 'mendr-migrate.yml')) ? 'mendr-migrate.yml' : null;
           if (!workflowFile && existsSync(join(workflows, 'mendr-audit.yml'))) {
             try {
-              if (readFileSync(join(workflows, 'mendr-audit.yml'), 'utf8').includes('approval-gated')) workflowFile = 'mendr-audit.yml';
+              const text = readFileSync(join(workflows, 'mendr-audit.yml'), 'utf8');
+              // The two-job file: inline (approval-gated) or the short caller of the reusable migration workflow.
+              if (text.includes('approval-gated') || text.includes('reusable-migrate.yml')) workflowFile = 'mendr-audit.yml';
             } catch {
               // unreadable: treat as absent
             }

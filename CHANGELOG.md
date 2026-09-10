@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **One-click connect works again — a short caller file.** GitHub refuses a
+  prefilled-editor URL over about 8 KB, and the generated two-job workflow had
+  grown to 9.6 KB encoded ("Your request URL is too long"). The file a customer
+  commits is now ~40 lines: two jobs, each with its own least-privilege scopes,
+  each calling a reusable workflow kept in this repository at the pinned release
+  (`.github/workflows/reusable-audit.yml`, `reusable-migrate.yml`). Same scan, same
+  migration, same proofs — in the customer's CI — and a version bump is one line.
+  A test now fails if the setup URL ever exceeds 6 KB, and a contract test checks
+  the caller's `with:` against the reusable workflows' declared inputs. The
+  scanner recognises the caller as the migration workflow.
 - **Auto-merge is off in the public beta.** The "open a pull request and merge
   it when checks pass" choice now sits behind the operator flag
   `MENDR_AUTO_MERGE` (default off): the option is gone from the Approve form, the
