@@ -47,9 +47,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: ajitheee/mendr/mendr-action@v0.4.7-alpha
+      - uses: ajitheee/mendr/mendr-action@v0.4.8-alpha
         with:
-          mendr-spec: github:ajitheee/mendr#v0.4.7-alpha
+          mendr-spec: github:ajitheee/mendr#v0.4.8-alpha
           app-url: ${{ inputs.app-url }}
           approval-gated: 'true'
           approval: ${{ inputs.approval }}

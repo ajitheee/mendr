@@ -1,12 +1,22 @@
 # Changelog
 
-## Unreleased
+## 0.4.8-alpha — 2026-09-12
 
+- **The public-beta pin.** The tag the 20 September beta ships on; later fixes
+  ship as new tags and partners move when they choose.
 - **A repository removed from the App no longer turns red every hour.** The
   approvals check now treats the App's "not installed" answer as "nothing to
   do" — one notice, a green skip — instead of failing the run. The daily audit
   still fails visibly on such a repository, which is the right signal that the
   workflow file is orphaned.
+- **The Mendr mark.** The interrupted-m favicon and header lockup on the App
+  and the site; `brand/` carries the files and the rules.
+- **Privacy, security and TRUST wording checked against the system as built**
+  — what leaves your CI stated exactly (a signed findings report; on migration
+  runs also the outcome, branch, PR number, registry provenance and a redacted
+  diff hunk), the optional `actions: write` grant, subprocessors, personal data
+  and rights, uninstall deletion.
+- **Partner beta outreach** in `docs/partner-outreach.md`.
 
 ## 0.4.7-alpha — 2026-09-10
 

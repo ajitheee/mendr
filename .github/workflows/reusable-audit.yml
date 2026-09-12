@@ -29,7 +29,7 @@ on:
       mendr-spec:
         description: "The Mendr CLI ref to run: a tag, or a 40-char commit SHA. The calling repository's MENDR_SPEC variable overrides it."
         type: string
-        default: v0.4.7-alpha
+        default: v0.4.8-alpha
       registry-refresh:
         description: "'on' = one signed GET of public registry files so the audit uses current retirement knowledge; anything else = fully offline (a registry older than 14 days then makes a zero-finding result inconclusive)."
         type: string
