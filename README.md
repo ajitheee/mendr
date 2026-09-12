@@ -1,3 +1,5 @@
+<p><img src="brand/mendr-lockup.png" alt="mendr" height="44"></p>
+
 # mendr
 
 **Find every retiring AI model your repo still calls, before the provider shuts it off.**

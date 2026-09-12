@@ -12,7 +12,8 @@
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="mendr — stop AI model retirements before they break production">
 <meta name="twitter:description" content="Connect GitHub once. Mendr continuously monitors your AI dependencies, explains the risk, and prepares a validated migration pull request for human approval.">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%23F4F1EA'/><line x1='30' y1='24' x2='30' y2='76' stroke='%23315CFF' stroke-width='7'/><line x1='30' y1='50' x2='68' y2='50' stroke='%23D88916' stroke-width='7'/></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' role='img' aria-label='mendr'><rect width='100' height='100' fill='%23F4F1EA'/><rect x='15' y='30' width='77' height='14' fill='%23315CFF'/><rect x='15' y='30' width='14' height='62' fill='%23315CFF'/><rect x='43' y='30' width='14' height='62' fill='%23315CFF'/><rect x='78' y='30' width='14' height='34' fill='%23315CFF'/><rect x='78' y='78' width='14' height='14' fill='%23D88916'/></svg>">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -51,9 +52,8 @@
   header{position:sticky;top:0;z-index:40;background:color-mix(in srgb,var(--ivory) 90%,transparent);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
   .nav{max-width:var(--maxw);margin:0 auto;padding:20px clamp(22px,4.5vw,44px);display:flex;align-items:center;gap:22px}
   .mark{display:inline-flex;align-items:center;gap:11px;font-weight:600;font-size:1.06rem;letter-spacing:-.01em}
-  .mark .sig{width:16px;height:16px;position:relative;flex:none}
-  .mark .sig::before{content:"";position:absolute;left:5px;top:1px;bottom:1px;width:2px;background:var(--cobalt)}
-  .mark .sig::after{content:"";position:absolute;left:5px;top:7px;width:9px;height:2px;background:var(--amber)}
+  .mark{align-items:baseline;gap:.04em}
+  .mark .m{height:.51em;width:auto;flex:none;display:inline-block}
   .nav .links{display:flex;gap:24px;margin-left:14px}
   .nav .links a{font-size:.93rem;color:var(--grey)}.nav .links a:hover{color:var(--carbon)}
   .nav .run{margin-left:auto;color:var(--carbon);font-family:var(--mono);font-size:.86rem;border-bottom:1px solid var(--hair);padding-bottom:2px}
@@ -244,7 +244,7 @@
 
 <header>
   <div class="nav">
-    <a class="mark" href="#"><span class="sig"></span> mendr</a>
+    <a class="mark" href="#" aria-label="mendr"><svg class="m" viewBox="15 30 77 62" aria-hidden="true"><rect x="15" y="30" width="77" height="14" fill="var(--cobalt)"/><rect x="15" y="30" width="14" height="62" fill="var(--cobalt)"/><rect x="43" y="30" width="14" height="62" fill="var(--cobalt)"/><rect x="78" y="30" width="14" height="34" fill="var(--cobalt)"/><rect x="78" y="78" width="14" height="14" fill="var(--amber)"/></svg>endr</a>
     <nav class="links"><a href="#demo">Product</a><a href="#detect">How it works</a><a href="#evidence">Evidence</a><a href="#safety">Security</a><a href="https://github.com/ajitheee/mendr">GitHub</a></nav>
     <a class="run" href="https://mendr-app.onrender.com">Connect GitHub →</a>
   </div>

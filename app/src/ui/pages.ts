@@ -38,9 +38,8 @@ code,pre{font-family:var(--mono)}code{font-size:.88em;color:var(--carbon)}
 header.top{position:sticky;top:0;z-index:40;background:color-mix(in srgb,var(--ivory) 90%,transparent);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-bottom:1px solid var(--hair)}
 .nav{max-width:var(--maxw);margin:0 auto;padding:16px clamp(18px,4vw,40px);display:flex;align-items:center;gap:16px;flex-wrap:wrap}
 .mark{display:inline-flex;align-items:center;gap:11px;font-weight:600;font-size:1.06rem;letter-spacing:-.01em;color:var(--carbon)}.mark:hover{text-decoration:none}
-.mark .sig{width:16px;height:16px;position:relative;flex:none}
-.mark .sig::before{content:"";position:absolute;left:5px;top:1px;bottom:1px;width:2px;background:var(--cobalt)}
-.mark .sig::after{content:"";position:absolute;left:5px;top:7px;width:9px;height:2px;background:var(--amber)}
+.mark{align-items:baseline;gap:.04em}
+.mark .m{height:.51em;width:auto;flex:none;display:inline-block}
 .crumb{font-family:var(--mono);font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--grey);padding-left:16px;border-left:1px solid var(--hair)}
 .who{margin-left:auto;display:flex;align-items:center;gap:14px;font-size:.92rem;color:var(--grey)}
 .who strong{color:var(--carbon);font-weight:500}
@@ -109,11 +108,15 @@ ul.plain{margin:6px 0 0;padding-left:18px}ul.plain li{margin:4px 0}
 `;
 
 const FAVICON =
-  "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%23F4F1EA'/><line x1='30' y1='24' x2='30' y2='76' stroke='%23315CFF' stroke-width='7'/><line x1='30' y1='50' x2='68' y2='50' stroke='%23D88916' stroke-width='7'/></svg>";
+  "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' role='img' aria-label='mendr'><rect width='100' height='100' fill='%23F4F1EA'/><rect x='15' y='30' width='77' height='14' fill='%23315CFF'/><rect x='15' y='30' width='14' height='62' fill='%23315CFF'/><rect x='43' y='30' width='14' height='62' fill='%23315CFF'/><rect x='78' y='30' width='14' height='34' fill='%23315CFF'/><rect x='78' y='78' width='14' height='14' fill='%23D88916'/></svg>";
 
 const FONTS =
   '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
   '<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">';
+
+/** The Mendr mark cropped to its glyph box, used inline as the wordmark's own "m" (see brand/README.md). */
+const MARK_GLYPH =
+  '<svg class="m" viewBox="15 30 77 62" aria-hidden="true"><rect x="15" y="30" width="77" height="14" fill="var(--cobalt)"/><rect x="15" y="30" width="14" height="62" fill="var(--cobalt)"/><rect x="43" y="30" width="14" height="62" fill="var(--cobalt)"/><rect x="78" y="30" width="14" height="34" fill="var(--cobalt)"/><rect x="78" y="78" width="14" height="14" fill="var(--amber)"/></svg>';
 
 const GITHUB_MARK =
   '<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.37.5 0 5.87 0 12.5c0 5.3 3.44 9.8 8.21 11.39.6.11.82-.26.82-.58 0-.29-.01-1.04-.02-2.05-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.09-.75.08-.73.08-.73 1.21.09 1.84 1.24 1.84 1.24 1.07 1.84 2.81 1.31 3.5 1 .11-.78.42-1.31.76-1.61-2.67-.3-5.47-1.34-5.47-5.95 0-1.31.47-2.39 1.24-3.23-.13-.3-.54-1.53.11-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 3-.4c1.02 0 2.05.14 3 .4 2.29-1.55 3.3-1.23 3.3-1.23.65 1.65.24 2.88.12 3.18.77.84 1.24 1.92 1.24 3.23 0 4.62-2.81 5.64-5.49 5.94.43.37.81 1.1.81 2.22 0 1.6-.01 2.89-.01 3.28 0 .32.21.7.82.58C20.57 22.29 24 17.8 24 12.5 24 5.87 18.63.5 12 .5Z"/></svg>';
@@ -129,7 +132,7 @@ export function layout(title: string, body: string, opts: { login?: string | nul
   return (
     `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
     `<title>${esc(title)}</title><link rel="icon" href="${FAVICON}">${FONTS}<style>${CSS}</style></head><body>` +
-    `<header class="top"><div class="nav"><a class="mark" href="/"><span class="sig"></span> mendr</a><span class="crumb">${esc(title)}</span><div class="who">${who}</div></div></header>` +
+    `<header class="top"><div class="nav"><a class="mark" href="/" aria-label="mendr">${MARK_GLYPH}endr</a><span class="crumb">${esc(title)}</span><div class="who">${who}</div></div></header>` +
     `<main>${body}</main>${foot}</body></html>`
   );
 }
