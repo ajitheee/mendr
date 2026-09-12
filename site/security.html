@@ -37,22 +37,22 @@
   <p class="lede">The short version. The full, code-level detail — data-flow diagram, threat model, permissions, encryption, retention, audit log, incident response — is in <a href="https://github.com/ajitheee/mendr/blob/main/TRUST.md">TRUST.md</a>.</p>
 
   <h2>What runs where</h2>
-  <p>The scanner runs <strong>inside your GitHub Actions</strong>, on your runner. Mendr's hosted App never clones or reads your code — it holds <code>checks: write</code> and <code>metadata: read</code> only, and receives just the findings your CI chooses to send.</p>
-  <p>One permission is optional: <code>actions: write</code>. Grant it and clicking Approve on a finding starts your migration workflow at once; without it, that workflow's own schedule carries approvals out within hours. The permission lets the App start or cancel workflow runs in your repository and nothing more — no contents, no pull requests, no code. The migration itself always runs in your CI with your workflow's token; the App never touches your default branch and never merges.</p>
+  <p>The scanner runs <strong>inside your GitHub Actions</strong>, on your runner. Mendr's hosted App never clones or reads your code — it holds <code>checks: write</code> and <code>metadata: read</code> only, and receives only what your CI posts to it: a signed findings report per scan and, on a migration run, a redacted diff hunk of the proposed swap for display. Scans run on every push, every pull request, a daily schedule and on manual dispatch.</p>
+  <p>One permission is optional: <code>actions: write</code>. Grant it and clicking Approve on a finding starts your migration workflow at once; without it, that workflow's own schedule carries approvals out within hours. The permission lets the App start or cancel workflow runs in your repository and nothing more — no contents, no pull requests, no code. The migration itself always runs in your CI with your workflow's token: it verifies the swap on a throwaway copy (type-check, build, tests, and your eval if configured) and opens one pull request only if all of that passes. The App never touches your default branch and never merges (auto-merge is disabled for the beta), and a resolution is confirmed only by the next completed scan, never by the merge event.</p>
 
   <h2>Enforced in code, not just promised</h2>
   <ul>
-    <li><span class="k">Nothing uploaded by default.</span> The audit makes no network calls; a build-time test runs it under a preload that makes every network primitive throw, and it must still pass. Run it yourself with <code>--offline</code>.</li>
-    <li><span class="k">Secrets redacted.</span> Everything that could leave — the tracking-issue body and every stored snippet — passes through the same secret redaction, tested on every build.</li>
-    <li><span class="k">No stored credentials.</span> No GitHub tokens or provider keys are stored; findings are encrypted at rest with a key kept outside the database. A code test fails if a credential-shaped column is ever added.</li>
-    <li><span class="k">Least privilege.</span> The scaffolded workflow asks for <code>contents: read</code> + <code>issues: write</code>; the App asks for <code>checks: write</code> + <code>metadata: read</code> (plus the optional <code>actions: write</code>, which only starts workflows). Nothing modifies your default branch; nothing merges.</li>
+    <li><span class="k">Nothing about your repository is uploaded by the scan.</span> The audit sends nothing; a build-time test runs it under a preload that makes every network primitive throw, and it must still pass. Its one outbound request in CI is a GET of the signed retirement registry, which carries nothing of yours — and a stale or unsigned registry makes the run <em>inconclusive</em>, never clean. Run it fully offline yourself with <code>--offline</code>.</li>
+    <li><span class="k">Secrets redacted.</span> Everything that could leave — the tracking-issue body, every stored snippet and the diff hunk sent on a migration run — passes through the same secret redaction, tested on every build.</li>
+    <li><span class="k">No stored credentials.</span> No GitHub tokens or provider keys are stored; findings and migration reports are encrypted at rest, field by field (AES-256-GCM), with a key kept outside the database; <code>/healthz</code> on the App reports whether encryption is on and whether the newest sealed report opens. A code test fails if a credential-shaped column is ever added.</li>
+    <li><span class="k">Least privilege.</span> The audit workflow the App generates asks for <code>contents: read</code> + <code>id-token: write</code> (to prove the run to the App); the migration workflow adds <code>contents: write</code> + <code>pull-requests: write</code> for its one branch and one PR; the CLI's tracking-issue workflow asks for <code>contents: read</code> + <code>issues: write</code>; the App asks for <code>checks: write</code> + <code>metadata: read</code> (plus the optional <code>actions: write</code>, which only starts workflows). Nothing modifies your default branch; nothing merges.</li>
   </ul>
 
-  <h2>Reporting a vulnerability</h2>
-  <p>Report a security issue privately through GitHub's <a href="https://github.com/ajitheee/mendr/security/advisories/new">private vulnerability reporting</a> for the Mendr repository, and please keep anything sensitive out of public issues. Every report is acknowledged.</p>
-
   <h2>Your data, your control</h2>
-  <p>Uninstalling the App, removing a repository, or clicking "Delete stored data" removes your findings. Retention can age them out automatically. See <a href="/privacy.html">Privacy</a>.</p>
+  <p>Uninstalling the App deletes everything stored for its repositories — runs, migration reports, approvals, acknowledgements — and reinstalling restores nothing (verified on a real uninstall); removing a repository or clicking "Delete stored data" removes the same for that repository. The App keeps at most the newest 100 runs and 100 migration reports per repository. See <a href="/privacy.html">Privacy</a>.</p>
+
+  <h2>Where it runs</h2>
+  <p>The App (Hono + Postgres) runs on Render; this site is static on Vercel; sign-in is GitHub OAuth. Those are the only three providers that handle your data. The App carries no analytics SDK and no third-party trackers. Uploads from your CI are authenticated with GitHub OIDC tokens, so no shared secret exists to leak.</p>
 
   <h2>Supported versions</h2>
   <p>Only the newest tagged release receives fixes; a fix ships as the next tag, never a moved one. See <a href="https://github.com/ajitheee/mendr/blob/main/CHANGELOG.md">the changelog</a>.</p>
@@ -62,7 +62,7 @@
   <a href="https://github.com/ajitheee/mendr/security/advisories/new">github.com/ajitheee/mendr/security/advisories/new</a>.
   Expect acknowledgement within three business days and a fix as a new tag with the advisory named in the changelog. Full policy and safe-harbour terms: <a href="https://github.com/ajitheee/mendr/blob/main/SECURITY.md">SECURITY.md</a>. How we handle a confirmed incident: <a href="https://github.com/ajitheee/mendr/blob/main/INCIDENT-RESPONSE.md">INCIDENT-RESPONSE.md</a>.</p>
 
-  <p class="updated">Mendr is alpha software. This page describes the current, real posture; it is corrected in lock-step with the code whenever a claim changes.</p>
+  <p class="updated">Mendr is beta software (public beta from 20 September 2026). This page describes the current, real posture; it is corrected in lock-step with the code whenever a claim changes.</p>
 </main>
 </body>
 </html>

@@ -19,9 +19,10 @@ exist yet and is listed so the boundary is stated before it is built.
 |---|---|
 | The default `mendr audit` makes zero outbound network calls. | The test suite runs the audit under a Node preload that makes every network primitive throw (`scripts/no-network.cjs`, `src/audit/noNetwork.test.ts`). The audit must still exit 0 with a valid report on every build. A control test proves the preload bites. |
 | You can enforce it yourself. | `mendr audit . --offline` or `MENDR_OFFLINE=1` installs the same guard inside the process. Any attempt to open a socket, resolve a name or call `fetch` fails loudly and names the operation. |
-| Mendr has no backend, no account, no telemetry. | There is nothing to send to. The only outbound call in the source is the optional provider usage read (section 3), which goes to the provider you name, with a key you supply, from your machine. |
-| The GitHub App cannot read your code. | Its manifest requests `checks: write` and `metadata: read` only. It accepts one document (`mendr audit --json`), re-redacts every string and re-caps every snippet server-side, and stores nothing else. The one optional addition is `actions: write`, which lets it *start* your migration workflow the moment you approve a migration — still no contents, no clone, no file reads. Tested against a GitHub-shaped fake in `app/src/app.test.ts`. |
+| The CLI has no telemetry and needs no account; the default audit sends nothing anywhere. | The default audit has no endpoint to talk to. The outbound calls in the CLI source are the opt-in signed registry refresh (section 3; a GET of public files that carries nothing of yours), the optional provider usage read (section 3) — which goes to the provider you name, with a key you supply, from your machine — the `git clone` you ask for with a URL argument, and, only from the generated workflows, the POST of the report to the Mendr App (section 4). The App is the one Mendr-hosted component (Hono + Postgres on Render); it receives what your CI posts and never reaches into your repository. |
+| The GitHub App cannot read your code. | Its manifest requests `checks: write` and `metadata: read` only. It accepts what your CI posts — the audit document (`mendr audit --json`) and, from the migration workflow, the whitelisted migration report with its redacted diff hunk — re-redacts every string and re-caps every snippet server-side, and stores nothing beyond the inventory in section 4. The one optional addition is `actions: write`, which lets it *start* your migration workflow the moment you approve a migration — still no contents, no clone, no file reads. Tested against a GitHub-shaped fake in `app/src/app.test.ts`. |
 | Nothing edits your files unless you ask. | `fix-llm` prints a diff by default; `--write` is an explicit flag. `audit` never writes source. `--install` writes one workflow file you can read before committing. |
+| App-generated audit workflow (`.github/workflows/mendr-audit.yml` → `reusable-audit.yml`) | Your repository at the checked-out SHA, inside your GitHub Actions runner, on every push, pull request, the daily schedule and manual dispatch. | Nothing in your repository. | The pinned Mendr release from GitHub (`npx`), **one signed GET of the public registry files** (nothing of yours sent; a stale or unsigned registry makes the run inconclusive, never clean), and **one POST of the audit JSON to your Mendr App**, proven by the run's OIDC token. Permissions: `contents: read` + `id-token: write` only. |
 | Secrets do not leak through Mendr's own output. | Everything that could be published (the GitHub issue body, JSON snippets) passes through the same redaction (section 6). This is best-effort pattern matching and section 8 says what it does not cover. |
 
 ---
@@ -42,12 +43,14 @@ exist yet and is listed so the boundary is stated before it is built.
 | `mendr migrate [path]` | Source under `path` and the registry. Copies the repo into temp sandboxes (same exclusions/junction as above) to run **your** `build` script, **your** test command, and an optional `--eval-command`, once without the change and once with it. | stdout (report or `mendr-migration/v1` JSON); with `--patch`, a patch file. **Never the working tree.** Sandbox writes stay inside the throwaway copy. | **Whatever your build/test/eval commands do** — the same boundary as the fix-llm gates. Mendr adds no network of its own — except with `--refresh-registry` / `MENDR_REGISTRY_REFRESH=on` (which the generated migration workflow sets): the same one signed GET of public registry files as the audit, so an approved migration is planned against current knowledge. Nothing is sent. |
 | `mendr verify-registry`, `registry-discover` (maintainer commands) | The registry files in this repository. | Registry files, a PR in this repository. | Provider documentation pages and model-list endpoints. These run in Mendr's own CI against Mendr's own repository, never against yours. |
 | Scaffolded audit workflow (`--install`) | Your repository at the checked-out SHA, inside your GitHub Actions runner. | One tracking issue in your repository (created, updated, closed), nothing else. | The Node download from `npm`/GitHub to install Mendr, and the GitHub API calls the workflow makes to your own repository with `GITHUB_TOKEN`. The scan itself makes none. |
-| `mendr-action` (fix PRs) | Same. | A branch and a pull request in your repository containing the gated diff. | Same as above. Plus — only when you set `app-url` and grant `id-token: write` — **one POST of the migration result to your Mendr App** (outcome, PR url, verdict, gate statuses, the swaps and the file paths they touch, and — unless `send-diff` is off — the unified diff of the swap itself, so the finding can show what changes; **never whole files**), proven by the run's OIDC token. A failed POST is a warning, never a failed job. With `approval-gated`, also to your App: one GET (what a person approved), one POST (claim it) and one short POST per stage of progress (a stage name and a redacted line such as the files a swap touches or a PR number — never code). |
-| Mendr GitHub App (`app/`, hosted by Mendr) | The JSON your workflow posts and the claims of the run's OIDC token. Installation webhooks from GitHub. | Installations, repository ids and names, and the sanitized evidence per run in its Postgres. One check run on the commit. | Inbound from GitHub (webhooks) and from your CI (the POST). Outbound only to the GitHub API: an installation token limited to that repository and `checks: write`, the check run, and the signed-in user's repository access for the read side. |
+| `mendr-action` (fix PRs) | Same. | A branch and a pull request in your repository containing the gated diff. | Same as above. Plus — only when you set `app-url` and grant `id-token: write` — **one POST of the migration result to your Mendr App** (outcome, PR url, verdict, gate statuses, the swaps and the file paths they touch, the branch name, the registry provenance, and — unless `send-diff` is off — the redacted unified diff of the swap itself, capped at 100 000 characters, so the finding can show what changes; **never whole files**), proven by the run's OIDC token. A failed POST is a warning, never a failed job. With `approval-gated`, also to your App: one GET (what a person approved), one POST (claim it) and one short POST per stage of progress (a stage name and a redacted line such as the files a swap touches or a PR number — never code). |
+| Mendr GitHub App (`app/`, hosted by Mendr on Render) | The JSON your workflow posts and the claims of the run's OIDC token. Installation webhooks from GitHub. | Installations, repository ids and names, the sanitized evidence per run, migration reports, acknowledgements, approvals and an audit log in its Postgres. One check run on the commit. | Inbound from GitHub (webhooks) and from your CI (the POST). Outbound only to the GitHub API: an installation token limited to that repository and `checks: write`, the check run, the signed-in user's repository access for the read side, and — only with the optional `actions: write`, only when a person clicks Approve — one workflow-dispatch of your migration workflow. |
 
-The audit **never** sends: file contents, file names, model ids, findings,
+The audit itself **never** sends: file contents, file names, model ids, findings,
 paths, hashes, the repository URL, your git identity, environment variables,
-or usage statistics. There is no endpoint for them to go to.
+or usage statistics. The only thing that carries findings anywhere is the POST
+your own workflow makes to the App (section 4), and it carries exactly the
+document described there.
 
 ---
 
@@ -62,7 +65,7 @@ Every place in the shipped source that can reach the network, with why it exists
 | `src/registry/freshRegistry.ts` (`getBytes`) | The other `fetch`: `GET` of the three public registry-snapshot files, 10-second timeout per file, 8 MB cap, no header or body of yours. Verified before use — signature against a key built into the release, schema version, sha256, rollback floor, then the same entry validation as the bundled file — and any failure falls back to the bundled registry with the reason disclosed. | Only with `--refresh-registry` / `MENDR_REGISTRY_REFRESH=on`; never under `--offline`; never when the build trusts no signing key. |
 | `src/gates/runTests.ts`, `src/gates/runEval.ts` | `execa` runs the repository's own `npm test` or the `--eval-command` you pass, inside the sandbox copy. | Only in `fix-llm` gates. This is your code's network activity, not Mendr's. |
 | `scripts/` (registry maintenance) | Provider docs and model-list fetches. | Mendr's own CI on Mendr's own repository. Not part of the audit and not run in yours. |
-| `mendr-action/scripts/run-mendr.sh` (`report_to_app`) | `curl` of the run's OIDC token from GitHub, then one `POST` of the migration result (built by `build-report.mjs` from a field whitelist — the diff is never in it) to the `app-url` you set. | Only in `mendr-action`, only when `app-url` is set and the job grants `id-token: write`; in your CI. Otherwise nothing is sent. |
+| `mendr-action/scripts/run-mendr.sh` (`report_to_app`) | `curl` of the run's OIDC token from GitHub, then one `POST` of the migration result (built by `build-report.mjs` from a field whitelist; the secret-redacted, capped unified diff of the swap is included unless the action is run with `send-diff: 'false'`) to the `app-url` you set. | Only in `mendr-action`, only when `app-url` is set and the job grants `id-token: write`; in your CI. Otherwise nothing is sent. |
 
 Nothing else opens a socket. The runtime dependencies are `commander`,
 `diff`, `execa`, `simple-git`, `ts-morph` and `web-tree-sitter`; none of them
@@ -86,7 +89,7 @@ flowchart LR
   subgraph yours["Your infrastructure (laptop or your CI runner)"]
     repo[(Repository on disk)]
     cli[mendr audit]
-    registry[(Bundled retirement registry)]
+    registry[(Retirement registry: bundled,<br/>refreshed by one signed GET in CI)]
     report["Report: stdout · JSON · issue body"]
     sandbox["Temp sandbox copy<br/>(fix-llm gates only)"]
     repo -- read --> cli
@@ -97,17 +100,15 @@ flowchart LR
   end
   provider["Provider usage API<br/>(OpenAI, Anthropic, …)"]
   gh["GitHub API<br/>(your repository)"]
-  ui["Investigation workspace<br/>(static page, runs in your browser)"]
-  appnode["Mendr GitHub App<br/>(evidence only: findings, paths,<br/>classifications, redacted snippets, hashes)"]
+  appnode["Mendr GitHub App (hosted by Mendr)<br/>(findings, paths, classifications, redacted snippets,<br/>hashes; on migration runs: outcome, PR number,<br/>redacted diff hunk of the swap)"]
   cli -. "optional: GET usage,<br/>your read-only key" .-> provider
   report -. "scaffolded workflow:<br/>one tracking issue, GITHUB_TOKEN" .-> gh
-  report -. "you paste or open the JSON" .-> ui
-  report -. "your workflow POSTs the JSON,<br/>proven by the run's OIDC token" .-> appnode
+  report -. "your workflow POSTs the JSON<br/>(and the migration report),<br/>proven by the run's OIDC token" .-> appnode
   appnode -. "one check run<br/>(checks: write, this repo only)" .-> gh
 ```
 
 Solid arrows are the default audit. Dotted arrows only happen when you ask for
-them. There is no Mendr server on this diagram because there is none.
+them. The one Mendr-hosted component is the App node: it receives what your CI posts and never reaches into your repository.
 
 **What the JSON contains, precisely.** For each finding: provider, model id,
 file path, line number, evidence type, tier, disposition (`patch` /
@@ -118,7 +119,7 @@ UI tell "same line, unchanged" from "line changed" without holding the line.
 The JSON contains no other file content.
 
 **The GitHub App (built, `app/`).** The scanner still runs inside your GitHub
-Actions. Your workflow posts **only the JSON described above** to the App,
+Actions. Your audit workflow posts **only the JSON described above** to the App, and your migration workflow posts the migration report of section 2 (outcome, branch, PR number, registry provenance and the redacted diff hunk of the swap),
 authenticated by the run's GitHub OIDC token, so nothing in your repository
 holds a secret and the App knows exactly which repository, commit and run the
 evidence came from. The App re-redacts and re-caps the document before storing
@@ -172,7 +173,7 @@ run (only when the workflow sets `app-url`).
 |---|---|---|---|
 | `sha`, `ref`, `run_id`, `run_attempt`, `workflow_ref`, `actor` | which commit/run produced it | low | identify the run, dedupe attempts |
 | `received_at`, `generated_at`, `outcome`, `verdict`, `pr_url` | when, what happened (`clean` / `migration-proposed` / `not-verified` / `error`), the sandbox verdict, the PR | low | the finding page's "PR #12 · verified" line |
-| `report` (JSONB) | the whitelisted `mendr-migration-report/v1`: the four gate statuses, the model swaps (`from` → `to`, provider, language, site count) and the **file paths** they touch, capped notes, and the **unified diff of the swap** (only something shaped like a diff is kept; secret-redacted; capped at 100 000 characters with a visible mark; the action can be told not to send it with `send-diff: 'false'`) | **medium–high** — file paths and the changed lines of the model-id swap; **never whole files** | render the migration status, show what changes on the finding so nobody has to open GitHub to see it, and confirm a resolution against the next audit |
+| `report` (JSONB) | the whitelisted `mendr-migration-report/v1`: the four gate statuses, the model swaps (`from` → `to`, provider, language, site count) and the **file paths** they touch, capped notes, and the **unified diff of the swap** (only something shaped like a diff is kept; secret-redacted; capped at 100 000 characters with a visible mark; the action can be told not to send it with `send-diff: 'false'`) | **medium–high** — file paths and the changed lines of the model-id swap; **never whole files** | render the migration status, show what changes on the finding (under "What changes in <file> — sent by your CI for display; nothing is applied here") so nobody has to open GitHub to see it, and confirm a resolution against the next audit |
 
 **`acknowledgements`** — one row per acknowledgement of a finding by a
 signed-in person: "seen; X owns it". Keyed by repository + provider + model so
@@ -184,7 +185,7 @@ fresh registry can — and the App writes nothing to GitHub for it.
 |---|---|---|---|
 | `provider`, `model` | which finding it is about | low (a model name) | the key that follows the finding across runs |
 | `acknowledged_by`, `cleared_by` | the GitHub logins that acknowledged / cleared — taken from the session, never from the form | low–medium (usernames) | the record *is* the feature: who has seen it |
-| `owner` | who owns the follow-up — a login, a team or a name, as typed | low–medium (free text, ≤ 80 chars, escaped on render) | shown on the finding |
+| `owner` | who owns the follow-up — a login, a team or a name, as typed | low–medium (free text, ≤ 80 chars, escaped on render; also written to the audit log) | shown on the finding |
 | `note` | a short note, as typed | **medium** — free text a person chose to write (≤ 400 chars, escaped on render); kept out of the audit log | shown on the finding |
 | `created_at`, `cleared_at` | lifecycle | low | at most one active row per finding |
 
@@ -224,10 +225,31 @@ The sensitive fields are therefore the two `report` columns — `runs.report`
 (paths + redacted snippets) and `migrations.report` (the paths a migration
 touches and the redacted diff of the swap). Both are the target of field-level encryption (below) and of
 retention/deletion (section 5b). `actor` is the only field kept purely for display rather than
-function, and can be dropped by a customer who wants no usernames retained.
+function, and can be dropped on request (there is no self-service toggle for it yet).
 `acknowledgements.owner` and `.note` are the only free text a person types
 into the App: both are capped, escaped on render, and deleted with the
 repository's data (on demand or on uninstall).
+
+### Personal data, in one place
+
+The App holds GitHub logins in `installations.account_login`, `runs.actor`,
+`migrations.actor`, `acknowledgements.acknowledged_by` / `cleared_by`,
+`approvals.approved_by` and `audit_log.actor`, plus the free-text
+`acknowledgements.owner` and `.note`. No email address or other profile field
+is stored; sign-in keeps only the login inside the encrypted session cookie.
+Purpose: to show who did what, and to reconstruct events in an incident.
+Everything except the audit log is deleted on uninstall; audit-log entries are
+removed on request (section 10).
+
+### Hosting and subprocessors
+
+The hosted App (`mendr-app.onrender.com`, Hono) runs as a Render web service
+with Render's managed Postgres. The marketing site is static on Vercel. GitHub
+provides OAuth sign-in, the App installation, check runs and the OIDC tokens
+that authenticate uploads. No other third party processes customer data; the
+App has no analytics SDK and no trackers. Mendr does not assert a disk-level
+encryption claim for the host beyond what Render documents; the field-level
+layer below does not depend on it.
 
 ### Encryption at rest
 
@@ -277,9 +299,10 @@ a development-only mode.
 
 Data leaves when access does:
 
-- **Uninstall the App** → every finding and every repository row for that
-  installation is **hard-deleted** immediately (the `installation.deleted`
-  webhook). The installation row survives only as a deletion record — an id, a
+- **Uninstall the App** → every run, migration, approval, acknowledgement and
+  repository row for that installation is **hard-deleted** immediately (the
+  `installation.deleted` webhook); reinstalling restores nothing — verified on a
+  real uninstall. The installation row survives only as a deletion record — an id, a
   login, a `deleted_at` — holding no findings.
 - **Remove a repository** from the installation → that repository's stored runs
   and its row are hard-deleted (`installation_repositories.removed`). Not a
@@ -287,9 +310,8 @@ Data leaves when access does:
 - **Delete on demand** → a signed-in user with access can delete a repository's
   stored findings at any time from its page (`POST /r/:owner/:name/delete`),
   without uninstalling.
-- **Retention** → `MENDR_RETENTION_DAYS` deletes runs older than N days; run
-  count per repository is always bounded by `MAX_RUNS_PER_REPO`. Set a short
-  retention if you want findings to age out on their own.
+- **Retention** → `MENDR_RETENTION_DAYS` deletes runs and migration reports older than N days; both are always bounded per repository by `MAX_RUNS_PER_REPO` (default 100). These are operator settings, not customer settings. The hosted beta runs with the defaults — no time limit, the 100-row cap — and the privacy page states the current values.
+- **The audit log is not deleted on uninstall.** Its entries (event, ids, counts, the acting login, and the acknowledgement `owner` label) are kept for incident response; an account's entries are deleted on request through the channel in section 10.
 - **Deletion is recorded, not the content.** Each deletion writes an audit-log
   line with the repository and the count removed (section 5c) — never the
   findings themselves.
@@ -307,11 +329,11 @@ operator can reconstruct what happened during an incident:
 - installation connected, suspended, removed;
 - repositories added or removed;
 - an audit received (with its conclusion and counts);
-- data deleted (self-service or on uninstall).
-
-Two more events — a finding acknowledged, and a migration prepared / PR created
-— are wired to record once those features land (acknowledgement tracking, and
-the Action's PR flow reporting back).
+- data deleted (self-service or on uninstall);
+- a finding acknowledged or an acknowledgement cleared (login, provider, model
+  and the typed `owner` label — never the note);
+- a migration approved or an approval cancelled (login, provider, model,
+  approval id).
 
 Every entry stores only **scalars** — an event name, ids, a login, counts, a
 conclusion — passed through a sanitizer that drops any object or array before it
@@ -355,7 +377,7 @@ page.
 
 | # | Threat | Mitigation | Residual |
 |---|---|---|---|
-| T1 | Repository contents exfiltrated by the scanner. | No backend, no telemetry, no `fetch` in the default audit path; enforced by the offline test on every build and by `--offline` at run time. The opt-in registry refresh is a `GET` of public files that carries nothing of yours (section 3). | The GitHub App receives only the JSON in section 4 and is tested to re-redact and re-cap it. It holds no `contents` permission, so it could not fetch code even if asked. |
+| T1 | Repository contents exfiltrated by the scanner. | No backend, no telemetry, no `fetch` in the default audit path; enforced by the offline test on every build and by `--offline` at run time. The opt-in registry refresh is a `GET` of public files that carries nothing of yours (section 3). | The GitHub App receives only the audit JSON in section 4 and, on migration runs, the migration report with its redacted diff hunk; both are re-redacted and re-capped on receipt. It holds no `contents` permission, so it could not fetch code even if asked. |
 | T2 | A committed secret published through the audit's own output (issue body, JSON snippet). | `redactSecrets` runs over the whole issue body and every snippet line before clipping. Snippets are ±3 lines and 160 chars, never whole files. | Pattern-based. An unusual secret format adjacent to a model line could survive. See section 8. |
 | T3 | Your provider key leaked by the usage read. | Key read from env or flag, held in memory, sent only to the provider named, over HTTPS, 30-second timeout. Provider error bodies are redacted before printing. Never written to disk. | You choose the key's scope. Use a read-only or usage-only key. |
 | T4 | Mendr modifies your default branch. | The scaffolded workflow runs with `contents: read` and `persist-credentials: false`. `fix-llm` never writes without `--write`; `mendr-action` writes to a branch and opens a PR, never pushes to the default branch. | `mendr-action` needs `contents: write` to push its branch. Branch protection on your side is the control. |
@@ -448,10 +470,11 @@ default_events: []  # only the installation webhooks GitHub always sends
 No `contents`, no `pull_requests`, no `issues`. Each check run is written with
 an installation token limited to that one repository and `checks: write`. The
 evidence endpoint accepts only the run's GitHub OIDC token (your workflow adds
-`id-token: write`); there is no shared secret to store. In the scaffolded audit
-workflow the upload step is commented out and `id-token: write` is not granted,
-so a plain install sends nothing; enabling the App is a deliberate opt-in you
-make in your own workflow, and only then does the job carry `id-token: write`. Sign-in uses the App's
+`id-token: write`); there is no shared secret to store. The CLI's `--install`
+tracking-issue workflow grants no `id-token` and sends nothing. The workflow the
+App generates for you (`.github/workflows/mendr-audit.yml`, calling the reusable
+`reusable-audit.yml` with `contents: read` + `id-token: write`) is the opt-in:
+you read it and commit it, and only that job carries `id-token: write`. Sign-in uses the App's
 OAuth flow and your token stays in an encrypted cookie, never in the database.
 You can see a repository's evidence only if the App is installed on it and
 GitHub confirms you can access it. If a scope is ever added, this section and
@@ -536,3 +559,8 @@ See [SECURITY.md](SECURITY.md). In short: use GitHub's private vulnerability
 reporting on this repository, expect an acknowledgement within three business
 days, and expect the fix to ship as a new tag with the advisory named in the
 changelog.
+
+Privacy questions and data requests — a copy of what the App holds about you,
+a correction, or deletion of audit-log entries or usernames — go through the
+same private channel until a dedicated privacy contact exists, with the same
+three-business-day acknowledgement.

@@ -35,39 +35,56 @@
 <main>
   <div class="nav"><a href="/">← mendr</a><a href="/security.html">Security</a><a href="https://github.com/ajitheee/mendr/blob/main/TRUST.md">Trust (full detail)</a></div>
   <h1>Privacy</h1>
-  <p class="lede">Written against how Mendr actually works — not generic promises. The authoritative, code-level detail is in <a href="https://github.com/ajitheee/mendr/blob/main/TRUST.md">TRUST.md</a>.</p>
+  <p class="lede">Written against how Mendr actually works — not generic promises. Mendr is in public beta from 20 September 2026 and is operated by the maintainer of <a href="https://github.com/ajitheee/mendr">github.com/ajitheee/mendr</a>; the App runs at mendr-app.onrender.com. The authoritative, code-level detail is in <a href="https://github.com/ajitheee/mendr/blob/main/TRUST.md">TRUST.md</a>.</p>
 
   <h2>Where the scan runs</h2>
-  <p>Mendr scans your repository <strong>inside your own GitHub Actions runner</strong>. The CLI reads your code, the bundled retirement registry, and your local <code>git</code>. The default audit makes <strong>no network calls at all</strong> — that is enforced in code (<code>--offline</code>, and a build-time test that runs the audit under a network-blocking preload), not just asserted here.</p>
+  <p>Mendr scans your repository <strong>inside your own GitHub Actions runner</strong>. The CLI reads your code, a signed registry of provider retirement dates (OpenAI, Anthropic, Google), and your local <code>git</code>. Scans run on every push, every pull request, a daily schedule and on manual dispatch. The audit itself makes <strong>no network calls</strong> — that is enforced in code (<code>--offline</code>, and a build-time test that runs the audit under a network-blocking preload), not just asserted here. The workflow Mendr generates adds exactly one outbound request: a GET of the signed registry (three public files on GitHub) so the scan runs against current retirement dates. That request carries nothing about you or your repository. If the registry is stale or its signature does not verify, the scan reports <em>inconclusive</em>, never clean.</p>
 
   <h2>What leaves your environment</h2>
-  <p>With the standalone CLI or the tracking-issue workflow: nothing leaves — the report is printed, or written to one GitHub issue in your own repository.</p>
-  <p>If you connect the <strong>Mendr GitHub App</strong>, your workflow sends it <strong>only the audit findings</strong>: model ids, file paths, line numbers, classifications, secret-redacted snippets of at most seven lines, and line hashes. <strong>Never your source code, never a clone, never a key.</strong> The upload is authenticated by the run's GitHub OIDC token, so there is no secret to store. The App holds <code>checks: write</code> and <code>metadata: read</code> only; it cannot read repository contents.</p>
+  <p>With the standalone CLI or the tracking-issue workflow: nothing about your repository leaves — the report is printed, or written to one GitHub issue in your own repository.</p>
+  <p>If you connect the <strong>Mendr GitHub App</strong>, your workflow sends it a <strong>signed findings report per scan</strong>: provider, model ids, the file path and line of each call site, retirement dates, confidence flags, secret-redacted snippets of at most seven lines, line hashes, result counts, and which registry the scan used. If you later approve a migration, your CI also sends the migration outcome, the branch name and pull-request number, the registry it used, and a <strong>redacted diff hunk of the proposed swap</strong> (only diff-shaped content, secrets removed, capped at 100,000 characters, shown on the finding so you can see what changes without the App ever opening your repository; you can turn the diff off in the workflow). <strong>Never a whole file, never a clone, never a key.</strong> Both uploads are authenticated by the run's GitHub OIDC token, so there is no secret to store. The App holds <code>checks: write</code> and <code>metadata: read</code>, plus an optional <code>actions: write</code> you can grant so that clicking Approve starts your migration workflow at once (without it, that workflow's own schedule picks approvals up). It holds no <code>contents</code> permission and cannot read repository contents.</p>
 
   <h2>What the App stores</h2>
   <table>
     <tr><th>Data</th><th>Kept</th></tr>
     <tr><td>Which account installed the App, and which repositories it covers (ids, names)</td><td>while installed</td></tr>
-    <tr><td>Per audit run: commit, the findings (paths, line numbers, classifications, redacted snippets), and the result counts</td><td>see retention below</td></tr>
-    <tr><td>A security audit log of events (installs, audits received, deletions) — counts and ids only</td><td>for incident response</td></tr>
+    <tr><td>Per audit run: commit, timestamps, conclusion, the GitHub login that triggered the run, the findings (paths, line numbers, classifications, redacted snippets), the result counts, and which registry the scan used — findings encrypted at rest</td><td>see retention below</td></tr>
+    <tr><td>Per migration run: commit, outcome, branch name and PR number, registry provenance, and the redacted diff hunk of the swap — encrypted at rest</td><td>see retention below</td></tr>
+    <tr><td>Acknowledgements: the GitHub login that acknowledged or cleared a finding, the owner label and note typed in (free text, up to 80 and 400 characters), and when</td><td>until the repository's data is deleted</td></tr>
+    <tr><td>Approvals: the GitHub login that approved a migration, when, its status, and the progress timeline your CI reported (stage names, file paths, PR number — never code)</td><td>until the repository's data is deleted</td></tr>
+    <tr><td>A security audit log of events (installs, audits received, acknowledgements, approvals, deletions): event name, ids, counts, the GitHub login that acted, and for acknowledgements the owner label typed in — never findings or code</td><td>kept after uninstall, for incident response (see below)</td></tr>
   </table>
-  <p><strong>Not stored, ever:</strong> your source code, your GitHub tokens (your sign-in token lives only in an encrypted browser cookie), installation tokens (minted in memory, never written down), or provider API keys (Mendr never receives one). The one sensitive stored field — the findings — is <strong>encrypted at rest</strong> with a key held outside the database.</p>
+  <p><strong>Not stored, ever:</strong> your source code, your GitHub tokens (your sign-in token lives only in an encrypted browser cookie), installation tokens (minted in memory, never written down), or provider API keys (Mendr never receives one). The findings and migration reports are <strong>encrypted at rest</strong>, field by field (AES-256-GCM), with a key held outside the database; <code>/healthz</code> on the App reports whether that encryption is on. The other fields — repository names, GitHub logins, acknowledgement notes, approval records and the audit log — are stored in plain form in the database.</p>
 
-  <h2>How long, and how to delete it</h2>
+  <h2>Personal data, and why</h2>
+  <p>The personal data Mendr holds is your <strong>GitHub login</strong> (username) and account name — from sign-in, from the run that sent a report, and on any acknowledgement or approval you make — plus whatever you type into an acknowledgement's owner and note fields. No email address, real name or other profile field is stored; sign-in uses GitHub OAuth and the session lives only in an encrypted, HttpOnly cookie, which is the one cookie the App sets (this static site sets none). Mendr uses this data for a single purpose: to run the service you installed — showing who triggered a run, who acknowledged or approved what, and reconstructing events if something goes wrong. It is not used for marketing, not sold, and not shared beyond the providers listed under Third parties.</p>
+
+<h2>How long, and how to delete it</h2>
   <ul>
-    <li><strong>Uninstall the App</strong> → every finding and repository record is deleted immediately; only a minimal deletion record remains.</li>
-    <li><strong>Remove a repository</strong> from the installation → its findings are deleted.</li>
-    <li><strong>Delete on demand</strong> → from a repository's page in the App, "Delete stored data" removes its findings at any time.</li>
-    <li><strong>Retention</strong> → runs age out on a configurable schedule, and a per-repository cap always applies.</li>
+    <li><strong>Uninstall the App</strong> → every run, migration report, approval, acknowledgement and repository record for that installation is deleted immediately (verified on a real uninstall). Reinstalling restores nothing. What remains: a deletion record (installation id, account login, date) and the audit-log entries.</li>
+    <li><strong>Remove a repository</strong> from the installation → its runs, migration reports, approvals and acknowledgements are deleted.</li>
+    <li><strong>Delete on demand</strong> → from a repository's page in the App, "Delete stored data" removes its runs, migration reports, approvals and acknowledgements at any time.</li>
+    <li><strong>Retention</strong> → otherwise data is kept while the App is installed. The App keeps at most the newest 100 audit runs and 100 migration reports per repository; older ones are deleted as new ones arrive. The beta does not apply a time limit on top of that; if one is added, this page will state the number of days. Audit-log entries (ids, counts, logins) are kept for incident response and are not deleted on uninstall; Mendr deletes an account's entries on request (see Your rights).</li>
   </ul>
 
   <h2>Who can see your findings</h2>
-  <p>Only people GitHub confirms can access the repository. Signing in proves who you are; the App checks your GitHub access on every view. Findings for a repository are never shown to anyone GitHub does not already let into that repository.</p>
+  <p>Only people GitHub confirms can access the repository. Signing in proves who you are; the App checks your GitHub access on every view. Findings for a repository are never shown to anyone GitHub does not already let into that repository. Mendr's operator can reach the database and the encryption key in order to run the service and respond to incidents; there is no other access.</p>
 
   <h2>Third parties</h2>
-  <p>Mendr's hosted App talks only to the GitHub API (to write the check and confirm your access). There is no analytics, advertising, or third-party tracking on the App. Fonts on this marketing site load from Google Fonts.</p>
+  <p>Mendr's hosted App talks only to the GitHub API (to write the check, confirm your access, and — only if you granted <code>actions: write</code> — start your migration workflow). Sign-in is GitHub OAuth; only your GitHub login is kept. There is no analytics SDK, advertising, or third-party tracking on the App. Fonts on this marketing site load from Google Fonts, which sees the requesting browser's IP address.</p>
+  <p>Three providers process data on Mendr's behalf, and no others:</p>
+  <table>
+    <tr><th>Provider</th><th>What</th></tr>
+    <tr><td>Render</td><td>Hosts the App and its Postgres database — everything in the table above</td></tr>
+    <tr><td>Vercel</td><td>Hosts this static site</td></tr>
+    <tr><td>GitHub</td><td>Sign-in (OAuth), the App installation, check runs, and the OIDC tokens that authenticate uploads</td></tr>
+  </table>
+  <p>If a provider is ever added, it is added here first.</p>
 
-  <p class="updated">This page describes the system as built. If a claim here is ever shown to be wrong, it is corrected here and in TRUST.md in the same release. Questions or concerns: open a private report per the <a href="/security.html">security page</a>.</p>
+  <h2>Your rights</h2>
+  <p>You can see everything the App holds about a repository on that repository's page, delete it yourself with the routes above, and sign out to end your session. For anything you cannot do yourself — a copy of your data, a correction, deleting your username or audit-log entries, or a question about this page — contact Mendr privately through GitHub's <a href="https://github.com/ajitheee/mendr/security/advisories/new">private vulnerability reporting</a> for the repository (the one private channel today); expect a reply within three business days. If you are in the UK or EU you have rights of access, correction, erasure, restriction and objection, and can complain to your data-protection authority; California residents have similar rights. Mendr does not sell personal data.</p>
+
+  <p class="updated">Last updated 12 September 2026. This page describes the system as built. If a claim here is ever shown to be wrong, it is corrected here and in TRUST.md in the same release. Questions or concerns: open a private report per the <a href="/security.html">security page</a>.</p>
 </main>
 </body>
 </html>
