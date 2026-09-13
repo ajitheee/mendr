@@ -424,11 +424,14 @@ export function createApp(deps: AppDeps): Hono {
 
   app.post('/r/:owner/:name/approve', async (c) => {
     const fullName = `${c.req.param('owner')}/${c.req.param('name')}`;
+    // Read the form BEFORE the session check. A click made with an expired session used to redirect to
+    // the repository overview, so the approval was never created and nothing said so: the intent vanished.
+    // Coming back to the finding itself means the un-clicked Approve button is the signal.
+    const f = await approveForm(c);
     const sess = await session(c);
-    if (!sess) return c.redirect(`/auth/login?next=${encodeURIComponent(`/r/${fullName}`)}`);
+    if (!sess) return c.redirect(`/auth/login?next=${encodeURIComponent(f?.back ?? `/r/${fullName}`)}`);
     const repo = await accessibleRepo(sess, fullName);
     if (!repo) return c.html(errorPage('Not found', 'No such repository is visible to you here.'), 404);
-    const f = await approveForm(c);
     if (!f) return c.html(errorPage('Bad request', 'An approval names the provider and model of the finding it is about.'), 400);
     const key = `${f.provider}/${f.model}`;
     // One in flight per finding: a second click while it runs changes nothing.
