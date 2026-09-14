@@ -513,6 +513,20 @@ describe('approvals: decided in Mendr, carried out by the customer\'s own CI', (
     return { h, cookie, res };
   }
 
+  // Regression: the session was checked BEFORE the form was read, so a click made with an expired
+  // session was answered with a redirect to the repository overview — the finding it came from was
+  // lost, no approval was created, and nothing said so. It looked like it had worked.
+  it('a signed-out Approve click comes back to the finding it was made on, and creates nothing', async () => {
+    const h = harness({ 'acme/api': REPO.id });
+    await h.install();
+    await h.ingest(await actionsToken(), sampleReport());
+    const res = await post(h, '/r/acme/api/approve', { ...finding, mode: 'pr' }); // no session cookie
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe(`/auth/login?next=${encodeURIComponent('/r/acme/api/runs/1')}`);
+    expect(await h.store.getApproval(1)).toBeFalsy();
+    expect(h.gh.dispatches).toEqual([]);
+  });
+
   it('Approve starts the workflow at once when the App may, and the finding shows it in flight', async () => {
     const { h, cookie, res } = await approved();
     expect(res.status).toBe(303);
