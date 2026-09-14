@@ -522,9 +522,30 @@ describe('approvals: decided in Mendr, carried out by the customer\'s own CI', (
     await h.ingest(await actionsToken(), sampleReport());
     const res = await post(h, '/r/acme/api/approve', { ...finding, mode: 'pr' }); // no session cookie
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe(`/auth/login?next=${encodeURIComponent('/r/acme/api/runs/1')}`);
+    expect(res.headers.get('location')).toBe(`/auth/login?next=${encodeURIComponent('/r/acme/api/runs/1?signedout=1')}`);
     expect(await h.store.getApproval(1)).toBeFalsy();
     expect(h.gh.dispatches).toEqual([]);
+  });
+
+  // Coming back was only half of it. An Approve button that is simply un-clicked reads exactly like a
+  // page never touched, so the finding has to state that the click was lost.
+  it('the finding then says out loud that nothing was approved', async () => {
+    const h = harness({ 'acme/api': REPO.id });
+    await h.install();
+    await h.ingest(await actionsToken(), sampleReport());
+    const cookie = await h.sessionCookie();
+    const page = await (await h.app.request('/r/acme/api/runs/1?signedout=1', { headers: { cookie } })).text();
+    expect(page).toContain('You were signed out, so nothing was approved');
+    const clean = await (await h.app.request('/r/acme/api/runs/1', { headers: { cookie } })).text();
+    expect(clean).not.toContain('You were signed out');
+  });
+
+  it('a signed-out Cancel click comes back the same way, and cancels nothing', async () => {
+    const { h } = await approved();
+    const res = await post(h, '/r/acme/api/approve/cancel', { id: '1', back: '/r/acme/api/runs/1#f-openai-gpt-4' }); // no session cookie
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe(`/auth/login?next=${encodeURIComponent('/r/acme/api/runs/1?signedout=1#f-openai-gpt-4')}`);
+    expect((await h.store.getApproval(1))?.status).not.toBe('cancelled');
   });
 
   it('Approve starts the workflow at once when the App may, and the finding shows it in flight', async () => {

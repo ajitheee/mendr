@@ -75,6 +75,8 @@ td:first-child,th:first-child{padding-left:0}
 .pill.bad,.chip.bad{color:var(--red);background:rgba(176,57,44,.12)}
 ul.plain{margin:6px 0 0;padding-left:18px}ul.plain li{margin:4px 0}
 .bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0 18px}
+.notice{border:1px solid rgba(216,137,22,.45);background:rgba(216,137,22,.08);border-radius:12px;padding:14px 18px;margin:14px 0}
+.notice strong{color:var(--amber)}.notice p{margin:6px 0 0}
 .finding{position:relative;padding-left:24px}
 .finding::before{content:"";position:absolute;left:0;top:16px;bottom:16px;width:2px;background:var(--hair)}
 .finding.patch::before{background:var(--amber)}.finding.review::before{background:var(--amber);opacity:.5}.finding.monitor::before{background:var(--grey-2)}
@@ -287,12 +289,13 @@ function sameAsAbove(runs: RunSummary[], i: number): string {
   return same ? ' <span class="muted">· same finding, scanned again</span>' : '';
 }
 
-export function runsPage(repo: Repo, runs: RunSummary[], login: string, setupUrl?: string): string {
+export function runsPage(repo: Repo, runs: RunSummary[], login: string, setupUrl?: string, signedOut = false): string {
+  const notice = signedOut ? SIGNED_OUT_NOTICE : '';
   if (!runs.length) {
     const cta = setupUrl
       ? `<div class="card"><strong>Not connected yet.</strong> Add the audit workflow to start receiving runs. <a class="btn" href="${esc(setupUrl)}" target="_blank" rel="noopener">Set up the audit</a><p class="muted" style="margin:10px 0 0">Opens GitHub's new-file editor with the workflow filled in. You commit it; the scan runs in your CI.</p></div>`
       : `<p class="muted">No runs received yet.</p>`;
-    return layout(repo.fullName, `<h2>${esc(repo.fullName)}</h2>${cta}`, { login });
+    return layout(repo.fullName, `<h2>${esc(repo.fullName)}</h2>${notice}${cta}`, { login });
   }
   const rows = runs
     .map(
@@ -301,7 +304,7 @@ export function runsPage(repo: Repo, runs: RunSummary[], login: string, setupUrl
     )
     .join('');
   const del = `<h2>Stored data</h2><p class="muted">Delete every stored run for this repository now. Uninstalling the App does this automatically; this is the same, on demand.</p><form method="post" action="/r/${esc(repo.fullName)}/delete" onsubmit="return confirm('Delete all stored findings for ${esc(repo.fullName)}? This cannot be undone.')"><button type="submit" class="btn danger">Delete stored data</button></form>`;
-  const body = `<h2>${esc(repo.fullName)}</h2><div class="tbl"><table><thead><tr><th>Received</th><th>Commit</th><th>Result</th><th>Findings</th><th>Check run</th></tr></thead><tbody>${rows}</tbody></table></div>${del}`;
+  const body = `<h2>${esc(repo.fullName)}</h2>${notice}<div class="tbl"><table><thead><tr><th>Received</th><th>Commit</th><th>Result</th><th>Findings</th><th>Check run</th></tr></thead><tbody>${rows}</tbody></table></div>${del}`;
   return layout(repo.fullName, body, { login });
 }
 
@@ -671,7 +674,15 @@ export interface RunPageOptions {
   migrateSeenAt?: string | null;
   now?: Date;
   autoMerge?: boolean;
+  /** The visitor arrived here from a click their session was too old to carry. */
+  signedOut?: boolean;
 }
+
+/**
+ * Said out loud because the alternative is silence: an un-clicked Approve button looks exactly like
+ * one that was never pressed, so a returning visitor has no way to tell a lost click from a fresh page.
+ */
+const SIGNED_OUT_NOTICE = `<div class="notice"><strong>You were signed out, so nothing was approved.</strong><p>Your session had expired by the time the click arrived. No approval was created and no workflow was started. You are signed in now — press the button again below.</p></div>`;
 
 export function runPage(repo: Repo, run: RunRecord, login: string, opts: RunPageOptions): string {
   const invs = [...run.report.investigations].sort((a, b) => rank(a.decision) - rank(b.decision));
@@ -715,9 +726,10 @@ export function runPage(repo: Repo, run: RunRecord, login: string, opts: RunPage
 <div class="bar">${pill(run.counts, run.conclusion)} <span class="muted">conclusion <code>${esc(run.conclusion)}</code> · received ${esc(run.receivedAt.slice(0, 19).replace('T', ' '))}${run.actor ? ` · by ${esc(run.actor)}` : ''}</span>${regChip}</div>
 <div class="bar">${run.checkRunUrl ? `<a class="btn" href="${esc(run.checkRunUrl)}" target="_blank" rel="noopener">Check run on GitHub ↗</a>` : ''}<a class="btn" href="${esc(opts.workflowUrl)}" target="_blank" rel="noopener">Rerun audit ↗</a><a class="tlink" href="/api/runs/${run.id}">Evidence JSON</a></div>`;
 
+  const notice = opts.signedOut ? SIGNED_OUT_NOTICE : '';
   const body = actionable.length
-    ? `${header}${migration}<h2>Action needed (${actionable.length})</h2>${actionable.map(card).join('')}${info.length ? `<h2>Informational (${info.length})</h2><p class="muted">Catalog, documentation or fixture references — not dependencies. No migration action; monitor the provider.</p>${info.map(card).join('')}` : ''}`
-    : `${header}${migration}${quiet}${info.map(card).join('')}`;
+    ? `${header}${notice}${migration}<h2>Action needed (${actionable.length})</h2>${actionable.map(card).join('')}${info.length ? `<h2>Informational (${info.length})</h2><p class="muted">Catalog, documentation or fixture references — not dependencies. No migration action; monitor the provider.</p>${info.map(card).join('')}` : ''}`
+    : `${header}${notice}${migration}${quiet}${info.map(card).join('')}`;
 
   return layout(`${repo.fullName} run ${run.id}`, body + LIVE_SCRIPT, { login });
 }

@@ -51,6 +51,18 @@ function safeNext(v: string | undefined): string {
   return v && v.startsWith('/') && !v.startsWith('//') ? v : '/';
 }
 
+/**
+ * Mark a return path so the page it lands on can explain what happened. The path usually carries a
+ * fragment (the finding it came from), and a flag appended after that would be part of the fragment,
+ * so it goes in before it.
+ */
+function withFlag(path: string, flag: string): string {
+  const h = path.indexOf('#');
+  const base = h === -1 ? path : path.slice(0, h);
+  const frag = h === -1 ? '' : path.slice(h);
+  return `${base}${base.includes('?') ? '&' : '?'}${flag}=1${frag}`;
+}
+
 function isSha(v: unknown): v is string {
   return typeof v === 'string' && /^[0-9a-f]{40}$/.test(v);
 }
@@ -429,7 +441,9 @@ export function createApp(deps: AppDeps): Hono {
     // Coming back to the finding itself means the un-clicked Approve button is the signal.
     const f = await approveForm(c);
     const sess = await session(c);
-    if (!sess) return c.redirect(`/auth/login?next=${encodeURIComponent(f?.back ?? `/r/${fullName}`)}`);
+    // Coming back is not enough on its own: an un-clicked button looks the same as one never pressed.
+    // The flag makes the page say it outright.
+    if (!sess) return c.redirect(`/auth/login?next=${encodeURIComponent(withFlag(f?.back ?? `/r/${fullName}`, 'signedout'))}`);
     const repo = await accessibleRepo(sess, fullName);
     if (!repo) return c.html(errorPage('Not found', 'No such repository is visible to you here.'), 404);
     if (!f) return c.html(errorPage('Bad request', 'An approval names the provider and model of the finding it is about.'), 400);
@@ -465,13 +479,15 @@ export function createApp(deps: AppDeps): Hono {
 
   app.post('/r/:owner/:name/approve/cancel', async (c) => {
     const fullName = `${c.req.param('owner')}/${c.req.param('name')}`;
-    const sess = await session(c);
-    if (!sess) return c.redirect(`/auth/login?next=${encodeURIComponent(`/r/${fullName}`)}`);
-    const repo = await accessibleRepo(sess, fullName);
-    if (!repo) return c.html(errorPage('Not found', 'No such repository is visible to you here.'), 404);
+    // Same ordering as Approve, for the same reason: a click made with an expired session has to come
+    // back to the finding it was made on and say that nothing happened.
     const form = await c.req.parseBody();
     const id = Number(form.id);
     const back = safeNext(typeof form.back === 'string' ? form.back : '/');
+    const sess = await session(c);
+    if (!sess) return c.redirect(`/auth/login?next=${encodeURIComponent(withFlag(back === '/' ? `/r/${fullName}` : back, 'signedout'))}`);
+    const repo = await accessibleRepo(sess, fullName);
+    if (!repo) return c.html(errorPage('Not found', 'No such repository is visible to you here.'), 404);
     const approval = Number.isInteger(id) ? await store.getApproval(id) : null;
     if (!approval || approval.repoId !== repo.id) return c.html(errorPage('Not found', 'No such approval is visible to you here.'), 404);
     const cancelled = await store.cancelApproval(id, { at: now().toISOString(), stage: 'cancelled', detail: `cancelled by ${sess.login}` });
@@ -581,7 +597,7 @@ export function createApp(deps: AppDeps): Hono {
         private: repo.private,
       });
     }
-    return c.html(runsPage(repo, runs, sess.login, setupUrl));
+    return c.html(runsPage(repo, runs, sess.login, setupUrl, c.req.query('signedout') === '1'));
   });
 
   app.get('/r/:owner/:name/runs/:id', async (c) => {
@@ -631,6 +647,7 @@ export function createApp(deps: AppDeps): Hono {
         migrateSeenAt: repo.migrateSeenAt,
         now: now(),
         autoMerge: config.autoMerge,
+        signedOut: c.req.query('signedout') === '1',
       }),
     );
   });
