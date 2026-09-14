@@ -455,7 +455,7 @@ function migrationCard(ctx: CardContext, patchCount: number): string {
   const listening = migrateSeenAt
     ? `<span class="chip ok">migration workflow active</span><span class="muted">last checked for approvals ${esc(ago(migrateSeenAt, ctx.now))}</span>`
     : workflowPresent === true
-      ? `<span class="chip ok">migration workflow present</span><span class="muted">it checks for your approvals hourly, and at once when Mendr may start it</span>`
+      ? `<span class="chip ok">migration workflow present</span><span class="muted">it checks for your approvals ${ctx.repo.private ? 'every three hours' : 'hourly'}, and at once when Mendr may start it</span>`
       : workflowPresent === false
         ? `<span class="chip warn">migration workflow not added yet</span><a class="btn" href="${esc(migrate.setupUrl)}" target="_blank" rel="noopener">Add it once ↗</a><span class="muted">GitHub's editor opens with the workflow filled in — read it and commit it</span>`
         : `<span class="chip">migration workflow not seen yet</span><a class="tlink" href="${esc(migrate.setupUrl)}" target="_blank" rel="noopener">add it if you haven't ↗</a>`;
@@ -492,7 +492,7 @@ function approvalPart(inv: Inv, ctx: CardContext, approval: Approval | null, bac
     const last = approval.events[approval.events.length - 1];
     const head =
       approval.status === 'queued'
-        ? `<span class="chip warn">queued</span> <span class="muted">${approval.dispatchedAt ? 'workflow started — waiting for your CI to pick it up' : 'starts when your CI next checks (within the hour)'}</span>`
+        ? `<span class="chip warn">queued</span> <span class="muted">${approval.dispatchedAt ? 'workflow started — waiting for your CI to pick it up' : `starts when your CI next checks (${ctx.repo.private ? 'within three hours' : 'within the hour'})`}</span>`
         : approval.status === 'running'
           ? `<span class="chip warn">running</span> <span class="muted">${esc(STAGE_LABEL[last?.stage ?? 'claimed'] ?? '')}</span>`
           : `<span class="chip ok">done</span> <span class="muted">${esc(last?.detail ?? '')}</span>`;
@@ -516,7 +516,7 @@ function approvalPart(inv: Inv, ctx: CardContext, approval: Approval | null, bac
   if (!ctx.migrate) return earlier;
   const listening = !!ctx.migrateSeenAt || ctx.workflowPresent !== false;
   if (!listening) {
-    return `${earlier}<div class="muted">To approve migrations from here, <a class="tlink" href="${esc(ctx.migrate.setupUrl)}" target="_blank" rel="noopener">add the migration workflow once ↗</a> — GitHub's editor opens with it filled in; read it and commit it. It then checks for your approvals hourly.</div>`;
+    return `${earlier}<div class="muted">To approve migrations from here, <a class="tlink" href="${esc(ctx.migrate.setupUrl)}" target="_blank" rel="noopener">add the migration workflow once ↗</a> — GitHub's editor opens with it filled in; read it and commit it. It then checks for your approvals ${ctx.repo.private ? 'every three hours' : 'hourly'}.</div>`;
   }
   const hidden = `<input type="hidden" name="provider" value="${esc(inv.provider)}"><input type="hidden" name="model" value="${esc(inv.model)}"><input type="hidden" name="replacement" value="${esc(replacement)}"><input type="hidden" name="back" value="${esc(back)}">`;
   // The merge-when-checks-pass choice exists only when the operator enabled it

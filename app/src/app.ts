@@ -425,13 +425,19 @@ export function createApp(deps: AppDeps): Hono {
     return { provider, model, replacement: field('replacement', 128) || null, mode, back: safeNext(field('back', 300)) };
   };
 
-  const dispatchRefusal = (e: unknown): string => {
+  // Mendr writes the schedule itself, and it is not the same on both kinds of repository: hourly on a
+  // public one, every three hours on a private one, because minutes are billed there. Saying "hourly" to
+  // a private repository promises a check that will not happen for up to three hours.
+  const pickup = (isPrivate: boolean): string =>
+    isPrivate ? 'your CI picks it up on its next three-hourly check' : 'your CI picks it up on its next hourly check';
+
+  const dispatchRefusal = (e: unknown, isPrivate: boolean): string => {
     if (e instanceof GitHubApiError) {
-      if (e.status === 404) return 'no migration workflow was found in the repository — add it once (see the Migration card) and its hourly check will pick this up';
-      if (e.status === 403 || e.status === 422) return 'Mendr may not start workflows here yet (grant the App "Actions: write" for instant starts); your CI picks it up on its next hourly check';
-      return `GitHub answered ${e.status}; your CI picks it up on its next hourly check`;
+      if (e.status === 404) return `no migration workflow was found in the repository — add it once (see the Migration card) and ${pickup(isPrivate)}`;
+      if (e.status === 403 || e.status === 422) return `Mendr may not start workflows here yet (grant the App "Actions: write" for instant starts); ${pickup(isPrivate)}`;
+      return `GitHub answered ${e.status}; ${pickup(isPrivate)}`;
     }
-    return 'your CI picks it up on its next hourly check';
+    return pickup(isPrivate);
   };
 
   app.post('/r/:owner/:name/approve', async (c) => {
@@ -453,7 +459,7 @@ export function createApp(deps: AppDeps): Hono {
     const approval = await store.createApproval({ repoId: repo.id, provider: f.provider, model: f.model, replacement: f.replacement, mode: f.mode, approvedBy: sess.login });
     const at = now().toISOString();
     let dispatched = false;
-    let why = 'your CI picks it up on its next hourly check';
+    let why = pickup(repo.private);
     if (isConfigured(config)) {
       const gh = await github.getRepoAsUser(sess.token, fullName);
       const file = repo.migrateWorkflow ?? MENDR_MIGRATE_WORKFLOW_PATH.split('/').pop()!;
@@ -461,7 +467,7 @@ export function createApp(deps: AppDeps): Hono {
         await github.dispatchWorkflow(repo.installationId, fullName, repo.id, file, gh?.defaultBranch ?? 'main', { approval: String(approval.id) });
         dispatched = true;
       } catch (e) {
-        why = dispatchRefusal(e);
+        why = dispatchRefusal(e, repo.private);
       }
     }
     if (dispatched) await store.markApprovalDispatched(approval.id, { at, stage: 'dispatched', detail: 'Mendr started your migration workflow' });

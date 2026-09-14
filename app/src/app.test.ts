@@ -580,7 +580,27 @@ describe('approvals: decided in Mendr, carried out by the customer\'s own CI', (
     expect(a?.dispatchedAt).toBeNull();
     expect(a?.events[0]?.detail).toContain('Actions: write');
     const html = await (await h.app.request('/r/acme/api/runs/1', { headers: { cookie } })).text();
+    // acme/api is private, and Mendr writes a three-hour approvals cron on private repositories to keep
+    // billed Actions minutes down. Saying "within the hour" here promised a check that would not happen.
+    expect(html).toContain('within three hours');
+  });
+
+  // The other half of the same rule: a public repository really is on an hourly cron, and must not be
+  // told to wait three hours for it.
+  it('a public repository is told the hourly cadence its workflow actually runs on', async () => {
+    const h = harness({ 'acme/pub': 999 });
+    await h.install();
+    await h.webhook('installation_repositories', { action: 'added', installation: INSTALLATION, repositories_added: [{ id: 999, full_name: 'acme/pub', private: false }], repositories_removed: [] });
+    await h.ingest(await actionsToken({ repository: 'acme/pub', repository_id: '999' }), sampleReport());
+    h.gh.api.dispatchWorkflow = async () => {
+      throw new GitHubApiError(403, 'Resource not accessible by integration');
+    };
+    const cookie = await h.sessionCookie();
+    expect((await post(h, '/r/acme/pub/approve', finding, cookie)).status).toBe(303);
+    expect((await h.store.getApproval(1))?.events[0]?.detail).toContain('next hourly check');
+    const html = await (await h.app.request('/r/acme/pub/runs/1', { headers: { cookie } })).text();
     expect(html).toContain('within the hour');
+    expect(html).not.toContain('within three hours');
   });
 
   it('the CI carries it out: list → claim → progress → the report closes it as done; the live status agrees', async () => {
