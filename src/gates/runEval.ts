@@ -1,6 +1,6 @@
 import { execa } from 'execa';
 import { DEFAULT_EVAL_TIMEOUT_MS } from '../config/repoConfig.js';
-import { truncateOutput, withPatchedSandbox, type PatchedFile } from './sandbox.js';
+import { gateEnv, truncateOutput, withPatchedSandbox, type PatchedFile } from './sandbox.js';
 
 // The eval gate — the ONLY gate in mendr that can say anything about BEHAVIOR.
 //
@@ -131,6 +131,7 @@ export async function runRepoEval(
         reject: false,
         all: true,
         windowsHide: true,
+        env: gateEnv(),
         // POSIX only: own process group so the deadline can group-kill a shell
         // that forked the real program (Windows uses taskkill /T instead).
         detached: process.platform !== 'win32',

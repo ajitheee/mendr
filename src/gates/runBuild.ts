@@ -1,7 +1,7 @@
 import { execa } from 'execa';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { truncateOutput, withPatchedSandbox, type PatchedFile } from './sandbox.js';
+import { gateEnv, truncateOutput, withPatchedSandbox, type PatchedFile } from './sandbox.js';
 
 // The BUILD gate: run the repository's own build in a throwaway sandbox copy,
 // once WITHOUT the migration and once WITH it, and report BASELINE-RELATIVE —
@@ -55,7 +55,7 @@ export async function runRepoBuild(
         reject: false,
         all: true,
         timeout: timeoutMs,
-        env: { ...process.env, CI: '1' },
+        env: { ...gateEnv(), CI: '1' },
       }),
     );
 

@@ -1,7 +1,7 @@
 import { execa } from 'execa';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { truncateOutput, withPatchedSandbox, type PatchedFile } from './sandbox.js';
+import { gateEnv, truncateOutput, withPatchedSandbox, type PatchedFile } from './sandbox.js';
 
 // Phase 5: the test gate.
 //
@@ -103,6 +103,8 @@ export async function runRepoTests(
       reject: false,
       all: true,
       windowsHide: true,
+      // The customer's own secrets stay; the CI's write-scoped token and OIDC do not.
+      env: gateEnv(),
     }),
   );
 

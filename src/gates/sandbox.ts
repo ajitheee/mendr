@@ -28,11 +28,72 @@ const EXCLUDED_DIRS = new Set(['node_modules', '.git', 'dist']);
 /** Max chars of captured output a gate retains (head + tail around a marker). */
 const MAX_OUTPUT = 8000;
 
-/** Keep captured output bounded so a chatty runner cannot flood the CLI summary. */
+/**
+ * Credentials the GATE SUBPROCESS must never inherit.
+ *
+ * The gates run the CUSTOMER's own build, test and eval commands, so their own application
+ * secrets have to stay in scope — stripping those is what turns a passing gate into an
+ * inconclusive one and makes the product look worse than it is. What must NOT stay in scope
+ * is the CI's own write-scoped credentials, which the migrate job holds because it opens a
+ * pull request: contents:write, pull-requests:write, id-token:write.
+ *
+ * Nothing in a test suite legitimately needs those, and handing them to arbitrary code in a
+ * customer's dependency tree is a privilege escalation with no upside: a compromised
+ * transitive dependency could push to their default branch using the job's own token, or mint
+ * an OIDC token asserting their repository's identity.
+ */
+const GATE_DENIED_ENV: readonly RegExp[] = [
+  /^GITHUB_TOKEN$/,
+  /^ACTIONS_(ID_TOKEN_REQUEST_(TOKEN|URL)|RUNTIME_(TOKEN|URL)|RESULTS_URL)$/,
+  /^INPUT_/, // every `with:` value the action was given, which is where a secret is passed
+];
+
+/**
+ * The environment a gate subprocess runs in: the customer's, minus the CI's own credentials.
+ * Explicit rather than inherited, so what is dropped is readable and testable.
+ */
+export function gateEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(base)) {
+    if (GATE_DENIED_ENV.some((re) => re.test(k))) continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * Secret shapes, redacted from captured output BEFORE it leaves this machine.
+ *
+ * The App already redacts on ingest (app/src/redact.ts), but that is the receiving end: by
+ * then the value has crossed the network and passed through Mendr's own process. A product
+ * whose promise is that the scan runs in your CI and only findings leave should clean its
+ * output at the source, and keep the far-end redaction as a second line rather than the only
+ * one. Patterns are kept in step with app/src/redact.ts.
+ */
+export function redactCaptured(text: string): string {
+  return text
+    .replace(/\b(sk|pk|rk)-[A-Za-z0-9_-]{8,}/g, '$1-***REDACTED***')
+    .replace(/\bgh[pousr]_[A-Za-z0-9]{16,}\b/g, 'gh*_***REDACTED***')
+    .replace(/\bgithub_pat_[A-Za-z0-9_]{20,}\b/g, 'github_pat_***REDACTED***')
+    .replace(/\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g, 'xox*-***REDACTED***')
+    .replace(/\bAKIA[0-9A-Z]{16}\b/g, 'AKIA***REDACTED***')
+    .replace(/\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, 'jwt.***REDACTED***')
+    .replace(
+      /\b([A-Z][A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API_?KEY|ACCESS_?KEY|CREDENTIAL)S?)\s*[:=]\s*["']?[^\s"'<>]{6,}/gi,
+      '$1=***REDACTED***',
+    );
+}
+
+/**
+ * Keep captured output bounded so a chatty runner cannot flood the CLI summary — redacted
+ * FIRST, so a secret is never split across the truncation boundary into two harmless-looking
+ * halves, and so all three gates are covered by one chokepoint instead of three.
+ */
 export function truncateOutput(text: string): string {
-  if (text.length <= MAX_OUTPUT) return text;
+  const clean = redactCaptured(text);
+  if (clean.length <= MAX_OUTPUT) return clean;
   const half = Math.floor(MAX_OUTPUT / 2);
-  return `${text.slice(0, half)}\n... [truncated ${text.length - MAX_OUTPUT} chars] ...\n${text.slice(-half)}`;
+  return `${clean.slice(0, half)}\n... [truncated ${clean.length - MAX_OUTPUT} chars] ...\n${clean.slice(-half)}`;
 }
 
 /**
