@@ -4,6 +4,7 @@ import { canonicalizeId, familyOf } from './normalize.js';
 import {
   classifyEntry,
   isMachineReason,
+  knownDeprecatedFrom,
   mergeReasons,
   type VerificationOracles,
 } from './verify.js';
@@ -180,5 +181,68 @@ describe('mergeReasons', () => {
 
   it('never mistakes a human caveat for machine output', () => {
     for (const reason of human) expect(isMachineReason(reason), reason).toBe(false);
+  });
+});
+
+// THE REGISTRY'S OWN EVIDENCE. The chained check consulted only the hand-curated
+// officialRecommendations table, whose `google` section in oracles.ts is `{}`. So a mapping
+// into an id THIS REGISTRY already marks retired passed as verified. On 2026-09-14 a discovery
+// pass staged five such rows, including gemini-2.5-flash-image -> gemini-3.1-flash-image-preview,
+// which the same file records as retired 81 days earlier. Promoting one would have made Mendr
+// propose swapping working code to a model that already returns 404, under a verified label.
+describe("classifyEntry — chained on the registry's own evidence", () => {
+  const live = liveSet('good-model', 'dead-target');
+
+  it('refuses a replacement this registry records as deprecated, even when the oracle table is empty', () => {
+    const oracles: VerificationOracles = {
+      liveIds: live,
+      officialRecommendations: officialMap({}),
+      knownDeprecated: knownDeprecatedFrom([
+        { kind: 'model_id', deprecated: 'dead-target', status: 'retired', shutdownDate: '2026-06-25' },
+      ]),
+    };
+    const r = classifyEntry(entry('old-model', 'dead-target'), oracles);
+    expect(r.status).toBe('unverified');
+    expect(r.reasons.join(' ')).toContain('ITSELF deprecated in this registry');
+    expect(r.reasons.join(' ')).toContain('2026-06-25');
+  });
+
+  it('still verifies a replacement the registry knows nothing about', () => {
+    const oracles: VerificationOracles = {
+      liveIds: live,
+      officialRecommendations: officialMap({}),
+      knownDeprecated: knownDeprecatedFrom([
+        { kind: 'model_id', deprecated: 'some-other-id', status: 'retired', shutdownDate: '2026-01-01' },
+      ]),
+    };
+    expect(classifyEntry(entry('old-model', 'good-model'), oracles).status).toBe('verified');
+  });
+
+  // DOWNGRADE-ONLY is the property that makes it safe to derive this from data of uncertain
+  // quality: the worst outcome of a wrong signal is a refusal, never a wrong edit.
+  it('is downgrade-only — it can never turn a non-verified entry into a verified one', () => {
+    const base: VerificationOracles = { liveIds: liveSet('good-model'), officialRecommendations: officialMap({}) };
+    const withKnowledge: VerificationOracles = {
+      ...base,
+      knownDeprecated: knownDeprecatedFrom([
+        { kind: 'model_id', deprecated: 'good-model', status: 'deprecated', shutdownDate: '2027-01-01' },
+      ]),
+    };
+    // absent from every catalog: unverified with or without the extra knowledge
+    expect(classifyEntry(entry('old-model', 'ghost-model'), base).status).toBe('unverified');
+    expect(classifyEntry(entry('old-model', 'ghost-model'), withKnowledge).status).toBe('unverified');
+    // and knowledge can only take a verified entry DOWN
+    expect(classifyEntry(entry('old-model', 'good-model'), base).status).toBe('verified');
+    expect(classifyEntry(entry('old-model', 'good-model'), withKnowledge).status).toBe('unverified');
+  });
+
+  it('knownDeprecatedFrom ignores non-model entries and lets the registry win over a candidate', () => {
+    const m = knownDeprecatedFrom([
+      { kind: 'param_removal', deprecated: 'temperature', status: 'deprecated' },
+      { kind: 'model_id', deprecated: 'x-model', status: 'retired', shutdownDate: '2026-01-01' },
+      { kind: 'model_id', deprecated: 'x-model', status: 'deprecated', shutdownDate: '2027-01-01' },
+    ]);
+    expect(m.has(canonicalizeId('temperature'))).toBe(false);
+    expect(m.get(canonicalizeId('x-model'))).toContain('retired');
   });
 });

@@ -114,7 +114,7 @@ import { applyLlmFixesToProject, type LlmFixResult } from './fix/llmFix.js';
 import { collectPythonFiles, countPyTestFiles, readPythonSources, scanPyAnnotations } from './python/scanPy.js';
 import { applyPyModelIdFixesToSources } from './python/fixPy.js';
 import type { TestGateResult } from './gates/runTests.js';
-import { classifyEntry, mergeReasons, verificationSwitches } from './registry/verify.js';
+import { classifyEntry, knownDeprecatedFrom, mergeReasons, verificationSwitches } from './registry/verify.js';
 import { fetchOracles } from './registry/oracles.js';
 import {
   loadCandidates,
@@ -1818,6 +1818,9 @@ program
     const blocked: { status: VerificationStatus; provider: string; from: string; to: string }[] = [];
     /** Entries whose stamp this run CHANGED — the audit's real payload. */
     const flipped: { from: string; was: string; now: VerificationStatus }[] = [];
+    // The registry's own entries are evidence about what is dead. The curated oracle table
+    // is incomplete by provider, so a mapping into a retired id would otherwise pass.
+    const selfKnown = knownDeprecatedFrom(raw as unknown as Parameters<typeof knownDeprecatedFrom>[0]);
     let modelEntries = 0;
     let carriedReasons = 0;
     let keptQuarantined = 0;
@@ -1826,7 +1829,7 @@ program
       if (entry.kind !== 'model_id') continue;
       modelEntries++;
       const model = entry as unknown as LlmModelIdDeprecation;
-      const classified = classifyEntry(model, oracles);
+      const classified = classifyEntry(model, { ...oracles, knownDeprecated: selfKnown });
       const reasons = classified.reasons;
       const stamped = model.verification?.status ?? 'unstamped';
       // A RECHECK MUST NOT LIFT A QUARANTINE. The classifier answers ONE
@@ -2148,12 +2151,18 @@ candidates
       return;
     }
     const oracles = await fetchOracles();
+    // The world a promotion would create: the active registry PLUS every pending candidate,
+    // so a candidate pointing at another candidate is caught before it can be promoted.
+    const candidateWorld = knownDeprecatedFrom([
+      ...(JSON.parse(readFileSync(resolveRegistryPath(), 'utf8')) as Parameters<typeof knownDeprecatedFrom>[0]),
+      ...(queue as unknown as Parameters<typeof knownDeprecatedFrom>[0]),
+    ]);
     const checkedAt = new Date().toISOString().slice(0, 10);
     console.log(`oracles: ${oracles.notes.join(' | ')}`);
     console.log('');
 
     const stamped = queue.map((c) => {
-      const { status, reasons } = classifyEntry(c, oracles);
+      const { status, reasons } = classifyEntry(c, { ...oracles, knownDeprecated: candidateWorld });
       console.log(`[${status.toUpperCase().padEnd(12)}] ${c.candidateId}: ${c.deprecated} -> ${c.replacement}`);
       for (const reason of reasons) console.log(`               - ${reason}`);
       // The candidate's stamp carries the SAME structured switches the active

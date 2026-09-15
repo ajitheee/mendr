@@ -35,6 +35,23 @@ export interface VerificationOracles {
    * as deprecated, which drives the chained-deprecation check.
    */
   officialRecommendations: ReadonlyMap<string, string>;
+  /**
+   * Canonical ids the REGISTRY ITSELF already records as deprecated, mapped to a short
+   * description of what it knows ("retired, shutdown 2026-06-25").
+   *
+   * The chained-deprecation check used to consult `officialRecommendations` alone, which is
+   * the hand-curated table in oracles.ts — and its `google` section is empty. So the registry
+   * could hold, and a discovery pass could stage, a mapping whose replacement the SAME file
+   * marks retired months ago. Five such rows were staged on 2026-09-14, including
+   * gemini-2.5-flash-image -> gemini-3.1-flash-image-preview, retired 81 days earlier.
+   * Promoting one would make Mendr propose swapping working code to a model that already
+   * returns 404, under a verified label. The registry's own contents are the cheapest and
+   * most trustworthy evidence available here, and they were not being read.
+   *
+   * DOWNGRADE-ONLY, by construction: this set can turn `verified` into `unverified` and can
+   * never do the reverse, so a wrong entry here costs a refusal, never a bad edit.
+   */
+  knownDeprecated?: ReadonlyMap<string, string>;
 }
 
 /**
@@ -55,12 +72,36 @@ export interface ClassifyResult {
  * Classify a single `model_id` deprecation against the oracle data. Pure: no
  * fetch, no clock, no filesystem — the same inputs always yield the same result.
  */
+/**
+ * What the registry itself already knows is deprecated, keyed by canonical id.
+ *
+ * Feed it every entry in the world a promotion would create: the active registry, plus the
+ * candidate queue when classifying candidates. That is what lets the chained check catch a
+ * candidate pointing at another candidate, which is how the five dead-target rows staged on
+ * 2026-09-14 got past a check that only read the curated per-provider table.
+ */
+export function knownDeprecatedFrom(
+  entries: readonly { kind?: string; deprecated?: string; status?: string; shutdownDate?: string }[],
+): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const e of entries) {
+    if (e.kind !== 'model_id' || !e.deprecated) continue;
+    const shutdown = (e.shutdownDate ?? '').slice(0, 10);
+    const note = [e.status ?? 'deprecated', shutdown ? `shutdown ${shutdown}` : null]
+      .filter(Boolean)
+      .join(', ');
+    // First writer wins: the active registry is authoritative over a pending candidate.
+    if (!out.has(canonicalizeId(e.deprecated))) out.set(canonicalizeId(e.deprecated), note);
+  }
+  return out;
+}
+
 export function classifyEntry(
   entry: LlmModelIdDeprecation,
   oracles: VerificationOracles,
 ): ClassifyResult {
   const { deprecated, replacement } = entry;
-  const { liveIds, officialRecommendations } = oracles;
+  const { liveIds, officialRecommendations, knownDeprecated } = oracles;
   const reasons: string[] = [];
 
   // (1) OUT-OF-CLASS -> unverifiable. If either the retired id or its
@@ -92,6 +133,19 @@ export function classifyEntry(
     reasons.push(
       `replacement "${replacement}" is ITSELF deprecated (chained deprecation); ` +
         `the provider now recommends "${onward}" beyond it`,
+    );
+    return { status: 'unverified', reasons };
+  }
+
+  // (2b) CHAINED, on the registry's OWN evidence. The curated table above is incomplete by
+  // provider (google is empty), so also refuse when this very registry records the
+  // replacement as deprecated. Never point a migration at a moving target, and never at a
+  // target this file already knows is dead.
+  const selfKnown = knownDeprecated?.get(canonReplacement);
+  if (selfKnown) {
+    reasons.push(
+      `replacement "${replacement}" is ITSELF deprecated in this registry (${selfKnown}); ` +
+        `a migration must not point at a retiring id`,
     );
     return { status: 'unverified', reasons };
   }
