@@ -260,14 +260,27 @@ export interface AnnotationScan {
  * scan: no declaration files, no node_modules, no test-support files), so the
  * CLI can report catalogs as expected content and ignored files as a count.
  */
-export function scanProjectAnnotations(project: Project, registry: LlmRegistry): AnnotationScan {
+export function scanProjectAnnotations(
+  project: Project,
+  registry: LlmRegistry,
+  /** The repository root, when the caller knows it. Inferred from the project when not. */
+  repoRoot?: string,
+): AnnotationScan {
   const catalogs: CatalogFileReport[] = [];
   const ignoredFiles: string[] = [];
+  const root = repoRoot ? repoRoot.replace(/\\/g, '/').replace(/[/]+$/, '') : projectRootOf(
+    project
+      .getSourceFiles()
+      .filter((sf) => !sf.isDeclarationFile() && !sf.getFilePath().includes('/node_modules/'))
+      .map((sf) => sf.getFilePath()),
+  );
   for (const sf of project.getSourceFiles()) {
     if (sf.isDeclarationFile()) continue;
     const file = sf.getFilePath();
     if (file.includes('/node_modules/')) continue;
-    if (isTestPath(file)) continue;
+    // The path rules are about position INSIDE the repo, never about where it was checked out.
+    const rel = repoRelative(file, root);
+    if (isTestPath(rel)) continue;
     const annotation = fileAnnotation(sf.getFullText());
     if (annotation === 'ignore-file') {
       ignoredFiles.push(file);
@@ -613,7 +626,52 @@ export function isTestPath(file: string): boolean {
  * Only `kind: "model_id"` entries participate — `param_rename` is not a literal
  * match (see TODO in modelId.ts).
  */
-export function findModelIdLiterals(project: Project, registry: LlmRegistry): LiteralMatch[] {
+/**
+ * The repository root, derived from the files actually in the project.
+ *
+ * `isExamplePath` and `isTestPath` ask a question about a path INSIDE the repository
+ * ("is this file under docs/ or tests/?"). They were being handed the ABSOLUTE path, so a
+ * repository whose own NAME is docs, test, examples, bench or playground matched the rule on
+ * its own checkout directory: GitHub Actions checks out to /home/runner/work/<repo>/<repo>,
+ * so `/home/runner/work/docs/docs/src/ai.ts` contains "/docs/" and every finding in it was
+ * demoted to informational. The repository reported itself clean, forever, and exited 0.
+ *
+ * A false "clean" is the one answer this product must never give, so the rules now run on a
+ * repo-relative path. The longest common directory of the project's own files is that root.
+ */
+function isAbsolute(f: string): boolean {
+  return f.startsWith('/') || /^[A-Za-z]:[/]/.test(f);
+}
+
+function projectRootOf(files: string[]): string {
+  // Only absolute paths carry a checkout prefix to strip. An in-memory or already-relative
+  // path (the unit tests, and any caller that hands us repo-relative names) is left alone:
+  // `examples/basic/app.ts` must keep its `examples/` segment.
+  const abs = files.map((f) => f.replace(/\\/g, '/')).filter(isAbsolute);
+  if (abs.length === 0) return '';
+  // One directory tells us nothing: `/examples/basic/app.ts` alone could be a repo called
+  // `basic` or a samples tree. Strip nothing rather than risk demoting a real finding.
+  if (new Set(abs.map((f) => f.slice(0, f.lastIndexOf('/')))).size < 2) return '';
+  const parts = abs.map((f) => f.split('/'));
+  const first = parts[0]!;
+  let i = 0;
+  while (i < first.length - 1 && parts.every((p) => p[i] === first[i])) i++;
+  return parts.length === 1 ? first.slice(0, first.length - 1).join('/') : first.slice(0, i).join('/');
+}
+
+/** A path relative to the repository root, for the path rules only. */
+function repoRelative(file: string, root: string): string {
+  const f = file.replace(/\\/g, '/');
+  if (!isAbsolute(f)) return f;
+  return root && f.toLowerCase().startsWith(root.toLowerCase() + '/') ? f.slice(root.length + 1) : f;
+}
+
+export function findModelIdLiterals(
+  project: Project,
+  registry: LlmRegistry,
+  /** The repository root, when the caller knows it. Inferred from the project when not. */
+  repoRoot?: string,
+): LiteralMatch[] {
   // Index model-id deprecations by their exact `deprecated` value for O(1)
   // lookup. A value maps to EVERY entry that declares it — a MULTIMAP, not a
   // first-wins single: the registry may legitimately carry two records for one
@@ -634,11 +692,19 @@ export function findModelIdLiterals(project: Project, registry: LlmRegistry): Li
 
   const out: LiteralMatch[] = [];
 
+  const root = repoRoot ? repoRoot.replace(/\\/g, '/').replace(/[/]+$/, '') : projectRootOf(
+    project
+      .getSourceFiles()
+      .filter((sf) => !sf.isDeclarationFile() && !sf.getFilePath().includes('/node_modules/'))
+      .map((sf) => sf.getFilePath()),
+  );
   for (const sf of project.getSourceFiles()) {
     if (sf.isDeclarationFile()) continue;
     const file = sf.getFilePath();
     if (file.includes('/node_modules/')) continue;
-    if (isTestPath(file)) continue;
+    // The path rules are about position INSIDE the repo, never about where it was checked out.
+    const rel = repoRelative(file, root);
+    if (isTestPath(rel)) continue;
     // Annotated files never yield matches: a `model-catalog` file's ids are
     // expected registry content (own one-line surface), an `ignore-file` is
     // skipped outright. Both are surfaced via scanProjectAnnotations instead.
@@ -646,7 +712,7 @@ export function findModelIdLiterals(project: Project, registry: LlmRegistry): Li
 
     // An examples/samples/demos/docs tree is informational by rule (C3): a
     // runnable sample is not a dependency of the shipped product.
-    const example = isExamplePath(file);
+    const example = isExamplePath(rel);
     // The sink rule's evidence, once per file: which names reach a model position.
     const sinks = example ? undefined : collectTsSinks(sf);
 

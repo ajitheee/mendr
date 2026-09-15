@@ -152,7 +152,7 @@ interface PlannedMigration {
 function tsMigrations(baselineProject: ReturnType<typeof loadProject>, registry: LlmRegistry, repoPath: string): ModelMigration[] {
   // The SAME predicate the codemod uses (fix/modelId.ts): only model_arg
   // positions with a verified successor and a real change.
-  const swaps = findModelIdLiterals(baselineProject, registry).filter(
+  const swaps = findModelIdLiterals(baselineProject, registry, repoPath).filter(
     (m) => m.position === 'model_arg' && isVerified(m.deprecation) && m.value !== m.deprecation.replacement,
   );
   return groupMigrations(

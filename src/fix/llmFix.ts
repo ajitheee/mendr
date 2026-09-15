@@ -74,7 +74,7 @@ export function applyLlmFixesToProject(
   // the model-id fix pass (each used to re-run the identical full scan). It runs
   // BEFORE either pass edits anything, so line/column anchor the original source
   // and the match nodes are still valid when pass 1 consumes them.
-  const literalMatches = findModelIdLiterals(project, registry);
+  const literalMatches = findModelIdLiterals(project, registry, rootDir);
   const dataMatches = toModelIdDataMatches(literalMatches);
   const blockedMatches = toBlockedModelArgMatches(literalMatches);
   const azureMatches = toAzureDeploymentMatches(literalMatches);

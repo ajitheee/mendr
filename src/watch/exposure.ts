@@ -308,7 +308,7 @@ export async function scanForExposure(
     repoPath,
     prefilter,
   );
-  const tsMatches = findModelIdLiterals(project, registry).map(toMatch);
+  const tsMatches = findModelIdLiterals(project, registry, repoPath).map(toMatch);
 
   const pyFiles = collectPythonFiles(repoPath);
   const pySourcesAll = readPythonSources(pyFiles);

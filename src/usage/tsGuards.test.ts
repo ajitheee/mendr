@@ -150,6 +150,41 @@ describe('M4 — an Azure deployment alias is live only inside a call', () => {
   });
 });
 
+// The checkout directory is not part of the repository. GitHub Actions checks out to
+// /home/runner/work/<repo>/<repo>, so passing the ABSOLUTE path to the path rules made every
+// finding in a repository NAMED docs, test, examples, bench or playground vanish: it reported
+// itself clean, forever, and exited 0. A false clean is the one answer this product must never give.
+describe('the path rules read the repo, not the checkout directory', () => {
+  const src = `${OPENAI}export async function ask() {
+  return client.chat.completions.create({ model: "gpt-4", messages: [] });
+}
+`;
+  const scanAt = (root: string, file: string) => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(file, src);
+    const m = findModelIdLiterals(project, REG, root).find((x) => x.value === 'gpt-4');
+    return m ? classifyOccurrenceTier({ position: m.position, deprecation: m.deprecation, reason: m.reason }).tier : undefined;
+  };
+
+  for (const name of ['docs', 'test', 'tests', 'examples', 'demo-app', 'playground', 'bench', 'fixtures']) {
+    it(`a repository named ${name} still reports its own finding`, () => {
+      expect(scanAt(`/home/runner/work/${name}/${name}`, `/home/runner/work/${name}/${name}/src/app.ts`)).toBe('A');
+    });
+  }
+
+  it('a genuine examples/ directory inside the repo is still informational', () => {
+    expect(scanAt('/home/runner/work/app/app', '/home/runner/work/app/app/examples/basic/app.ts')).toBe('C');
+  });
+
+  it('a genuine tests/ directory inside the repo is still skipped', () => {
+    expect(scanAt('/home/runner/work/app/app', '/home/runner/work/app/app/tests/helper.ts')).toBeUndefined();
+  });
+
+  it('an examples/ tree inside a repo that is itself named docs is still informational', () => {
+    expect(scanAt('/home/runner/work/docs/docs', '/home/runner/work/docs/docs/examples/x.ts')).toBe('C');
+  });
+});
+
 describe('C3 / C4 — examples and type-tests are never dependencies', () => {
   it('an examples/ file is informational, whatever it calls', () => {
     const t = tierOf(`${OPENAI}export async function ask() {\n  return client.chat.completions.create({ model: "gpt-4", messages: [] });\n}\n`, 'examples/basic/app.ts');

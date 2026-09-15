@@ -506,7 +506,7 @@ program
     // File-level mendr annotations (both languages): `model-catalog` files
     // collapse to one expected-content line each, `ignore-file` files are
     // skipped entirely and surface only as a count.
-    const tsAnnotations = scanProjectAnnotations(scanProject, registry);
+    const tsAnnotations = scanProjectAnnotations(scanProject, registry, resolved);
     const pyAnnotations = scanPyAnnotations(pySources, registry);
     const catalogFiles = [...tsAnnotations.catalogs, ...pyAnnotations.catalogs].map((c) => ({
       file: rel(c.file),
@@ -520,7 +520,7 @@ program
       );
     }
 
-    const modelMatches = findModelIdLiterals(scanProject, registry);
+    const modelMatches = findModelIdLiterals(scanProject, registry, resolved);
     const paramMatches = findParamSites(scanProject, registry);
 
     // Python pass: scan + swap + syntax gate, all in memory (see fixPy.ts).
