@@ -325,9 +325,11 @@ describe('fix-llm three-tier report', () => {
     // back: the id is a CANDIDATE replacement -- the label changes, not just a
     // row below it -- and the verdict row prints the record's own stated cause.
     expect(stdout).toContain('  candidate replacement: "gpt-5.6-sol"');
-    expect(stdout.replace(/\s+/g, ' ')).toContain(
-      'replacement verdict: quarantined (registry stamp 2026-08-21) -- stamped "verified" ' +
-        'while its own recorded research says',
+    // The stamp DATE moves every time the registry is re-verified, which has nothing to do
+    // with what this test checks: that a quarantined replacement prints the record's own
+    // stated cause. Match the shape of the date, not the day.
+    expect(stdout.replace(/\s+/g, ' ')).toMatch(
+      /replacement verdict: quarantined \(registry stamp \d{4}-\d{2}-\d{2}\) -- stamped "verified" while its own recorded research says/,
     );
     // THE ROW THE SINGLE VERDICT LINE USED TO SWALLOW. This finding's usage is
     // the unproven half, and it now says so on its own row instead of leaving

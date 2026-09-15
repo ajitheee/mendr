@@ -324,10 +324,10 @@ describe('the shipped registry', () => {
     // And the MEASURED shape of the shipped registry, so a re-stamp that moves
     // records between buckets has to be acknowledged here rather than landing
     // silently.
-    expect(provenance.activeEntries).toBe(106);
-    expect(provenance.autoFixEligible).toBe(86);
+    expect(provenance.activeEntries).toBe(154);
+    expect(provenance.autoFixEligible).toBe(133);
     expect(provenance.reviewOnlyCounts.quarantined).toBe(12);
-    expect(provenance.reviewOnlyCounts.unverified).toBe(3);
+    expect(provenance.reviewOnlyCounts.unverified).toBe(4);
     expect(provenance.reviewOnlyCounts.unverifiable).toBe(5);
     // Nothing ships in the defence-in-depth state; the validator forbids it.
     expect(provenance.reviewOnlyCounts.withheld).toBe(0);

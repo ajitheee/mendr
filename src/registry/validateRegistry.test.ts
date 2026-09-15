@@ -214,6 +214,6 @@ describe('the shipped registry', () => {
       result.violations.map((v) => `${v.entryId}: ${v.code}`),
       formatValidation(result).join('\n'),
     ).toEqual([]);
-    expect(result.recordsChecked).toBe(106);
+    expect(result.recordsChecked).toBe(154);
   });
 });

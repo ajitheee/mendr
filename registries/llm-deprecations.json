@@ -14,7 +14,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": false,
       "quarantineReason": "stamped \"verified\" while its own recorded research says \"do not auto-apply\", \"status unknown\" -- held for review until that contradiction is resolved (see verification.reasons)",
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -42,7 +42,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": false,
       "quarantineReason": "stamped \"verified\" while its own recorded research says \"do not auto-apply\", \"status unknown\" -- held for review until that contradiction is resolved (see verification.reasons)",
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -70,7 +70,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": false,
       "quarantineReason": "stamped \"verified\" while its own recorded research says \"unverified\", \"status unknown\" -- held for review until that contradiction is resolved (see verification.reasons)",
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -96,7 +96,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -124,7 +124,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": false,
       "quarantineReason": "stamped \"verified\" while its own recorded research says \"itself deprecated\" -- held for review until that contradiction is resolved (see verification.reasons)",
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -150,7 +150,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": false,
       "quarantineReason": "stamped \"verified\" while its own recorded research says \"unverified\" -- held for review until that contradiction is resolved (see verification.reasons)",
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -177,7 +177,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -205,7 +205,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -232,7 +232,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -259,7 +259,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -285,7 +285,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": false,
       "quarantineReason": "stamped \"verified\" while its own recorded research says \"status unknown\" -- held for review until that contradiction is resolved (see verification.reasons)",
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -312,7 +312,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -338,7 +338,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -365,7 +365,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -392,7 +392,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": false,
       "quarantineReason": "stamped \"verified\" while its own recorded research says \"unverified\" -- held for review until that contradiction is resolved (see verification.reasons)",
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -418,7 +418,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": false,
       "quarantineReason": "stamped \"verified\" while its own recorded research says \"unverified\" -- held for review until that contradiction is resolved (see verification.reasons)",
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -444,7 +444,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -470,7 +470,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -543,7 +543,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -571,7 +571,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -599,7 +599,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -627,7 +627,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -655,7 +655,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -683,7 +683,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -711,7 +711,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -739,7 +739,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -767,7 +767,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -794,7 +794,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -821,7 +821,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": false,
       "quarantineReason": "stamped \"verified\" while its own recorded research says \"itself deprecated\" -- held for review until that contradiction is resolved (see verification.reasons)",
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -848,7 +848,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -876,7 +876,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -903,7 +903,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -930,7 +930,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": false,
       "quarantineReason": "stamped \"verified\" while its own recorded research says \"itself deprecated\" -- held for review until that contradiction is resolved (see verification.reasons)",
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -957,7 +957,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -984,7 +984,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": false,
       "quarantineReason": "stamped \"verified\" while its own recorded research says \"stale\" -- held for review until that contradiction is resolved (see verification.reasons)",
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1011,7 +1011,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1038,7 +1038,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1065,7 +1065,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1093,7 +1093,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1120,7 +1120,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1147,7 +1147,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1174,7 +1174,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1201,7 +1201,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1228,7 +1228,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1255,7 +1255,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1282,7 +1282,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1309,7 +1309,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1336,7 +1336,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1363,7 +1363,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1390,7 +1390,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1417,7 +1417,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1443,7 +1443,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1470,7 +1470,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1497,7 +1497,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1524,7 +1524,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1551,7 +1551,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1578,7 +1578,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1605,7 +1605,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1632,7 +1632,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1659,7 +1659,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1686,7 +1686,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1713,7 +1713,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1740,7 +1740,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1768,7 +1768,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1795,7 +1795,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1823,7 +1823,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1850,7 +1850,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1877,7 +1877,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1904,7 +1904,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1931,7 +1931,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1958,7 +1958,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1985,7 +1985,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2012,7 +2012,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2039,7 +2039,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2066,7 +2066,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2093,7 +2093,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2120,7 +2120,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2147,7 +2147,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2174,7 +2174,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2201,7 +2201,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2228,7 +2228,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2255,7 +2255,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2282,7 +2282,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2309,7 +2309,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2336,7 +2336,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2363,7 +2363,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2390,7 +2390,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2417,7 +2417,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2444,7 +2444,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2471,7 +2471,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2498,7 +2498,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2525,7 +2525,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2552,7 +2552,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2576,16 +2576,16 @@
     "verification": {
       "status": "quarantined",
       "officialSourceConfirmed": true,
-      "replacementConfirmed": true,
+      "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": "stamped \"verified\" while its own recorded research says \"itself deprecated\" -- held for review until that contradiction is resolved (see verification.reasons)",
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
       ],
       "reasons": [
-        "replacement \"gemini-3.1-flash-lite\" is live in a public catalog",
+        "replacement \"gemini-3.1-flash-lite\" is ITSELF deprecated in this registry (deprecated, shutdown 2027-05-07); a migration must not point at a retiring id",
         "Provider-named. Caution: gemini-3.1-flash-lite is itself deprecated (shutdown 2027-05-07, successor gemini-3.5-flash-lite)."
       ]
     }
@@ -2601,18 +2601,18 @@
     "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
     "note": "Provider-named; same caution as gemini-2.0-flash-lite.",
     "verification": {
-      "status": "verified",
+      "status": "unverified",
       "officialSourceConfirmed": true,
-      "replacementConfirmed": true,
-      "autoApplyAllowed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
       ],
       "reasons": [
-        "replacement \"gemini-3.1-flash-lite\" is live in a public catalog",
+        "replacement \"gemini-3.1-flash-lite\" is ITSELF deprecated in this registry (deprecated, shutdown 2027-05-07); a migration must not point at a retiring id",
         "Provider-named; same caution as gemini-2.0-flash-lite."
       ]
     }
@@ -2633,7 +2633,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2660,7 +2660,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2687,7 +2687,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2714,7 +2714,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2741,7 +2741,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2768,7 +2768,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2795,7 +2795,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2821,7 +2821,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2848,7 +2848,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2875,7 +2875,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2902,7 +2902,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-08-21",
+      "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
         "models.dev"
@@ -2912,5 +2912,1685 @@
         "Provider-named; long runway, low urgency."
       ]
     }
+  },
+  {
+    "entryId": "google.gemini-2.5-flash-preview-09-25.retirement-2026-02-17",
+    "provider": "google",
+    "kind": "model_id",
+    "deprecated": "gemini-2.5-flash-preview-09-25",
+    "replacement": "gemini-3.6-flash",
+    "status": "retired",
+    "shutdownDate": "2026-02-17",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "note": "discovered from the google deprecation table; row read as: gemini-2.5-flash-preview-09-25 | September 25, 2025 | February 17, 2026 | gemini-3.6-flash",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gemini-3.6-flash\" is live in a public catalog",
+        "the deprecation claim for \"gemini-2.5-flash-preview-09-25\" is self-consistent (status \"retired\", shutdown 2026-02-17) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:f634c61e6afb848a868052963eef89696dd7ae544aaac846f8d31514c61b9c36",
+        "retrievedAt": "2026-09-14T23:54:46.353Z",
+        "excerpt": "gemini-2.5-flash-preview-09-25 | September 25, 2025 | February 17, 2026 | gemini-3.6-flash"
+      }
+    ]
+  },
+  {
+    "entryId": "google.gemini-2.0-flash-lite-preview.retirement-2025-12-09",
+    "provider": "google",
+    "kind": "model_id",
+    "deprecated": "gemini-2.0-flash-lite-preview",
+    "replacement": "gemini-2.5-flash-lite",
+    "status": "retired",
+    "shutdownDate": "2025-12-09",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "note": "discovered from the google deprecation table; row read as: gemini-2.0-flash-lite-preview | February 5, 2025 | December 9, 2025 | gemini-2.5-flash-lite",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gemini-2.5-flash-lite\" is live in a public catalog",
+        "the deprecation claim for \"gemini-2.0-flash-lite-preview\" is self-consistent (status \"retired\", shutdown 2025-12-09) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:f634c61e6afb848a868052963eef89696dd7ae544aaac846f8d31514c61b9c36",
+        "retrievedAt": "2026-09-14T23:54:46.353Z",
+        "excerpt": "gemini-2.0-flash-lite-preview | February 5, 2025 | December 9, 2025 | gemini-2.5-flash-lite"
+      }
+    ]
+  },
+  {
+    "entryId": "google.gemini-2.0-flash-lite-preview-02-05.retirement-2025-12-09",
+    "provider": "google",
+    "kind": "model_id",
+    "deprecated": "gemini-2.0-flash-lite-preview-02-05",
+    "replacement": "gemini-2.5-flash-lite",
+    "status": "retired",
+    "shutdownDate": "2025-12-09",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "note": "discovered from the google deprecation table; row read as: gemini-2.0-flash-lite-preview-02-05 | February 5, 2025 | December 9, 2025 | gemini-2.5-flash-lite",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gemini-2.5-flash-lite\" is live in a public catalog",
+        "the deprecation claim for \"gemini-2.0-flash-lite-preview-02-05\" is self-consistent (status \"retired\", shutdown 2025-12-09) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:f634c61e6afb848a868052963eef89696dd7ae544aaac846f8d31514c61b9c36",
+        "retrievedAt": "2026-09-14T23:54:46.353Z",
+        "excerpt": "gemini-2.0-flash-lite-preview-02-05 | February 5, 2025 | December 9, 2025 | gemini-2.5-flash-lite"
+      }
+    ]
+  },
+  {
+    "entryId": "google.gemini-2.0-flash-live-001.retirement-2025-12-09",
+    "provider": "google",
+    "kind": "model_id",
+    "deprecated": "gemini-2.0-flash-live-001",
+    "replacement": "gemini-3.1-flash-live-preview",
+    "status": "retired",
+    "shutdownDate": "2025-12-09",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "note": "discovered from the google deprecation table; row read as: gemini-2.0-flash-live-001 | April 9, 2025 | December 9, 2025 | gemini-3.1-flash-live-preview",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gemini-3.1-flash-live-preview\" is live in a public catalog",
+        "the deprecation claim for \"gemini-2.0-flash-live-001\" is self-consistent (status \"retired\", shutdown 2025-12-09) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:f634c61e6afb848a868052963eef89696dd7ae544aaac846f8d31514c61b9c36",
+        "retrievedAt": "2026-09-14T23:54:46.353Z",
+        "excerpt": "gemini-2.0-flash-live-001 | April 9, 2025 | December 9, 2025 | gemini-3.1-flash-live-preview"
+      }
+    ]
+  },
+  {
+    "entryId": "google.gemini-live-2.5-flash-preview.retirement-2025-12-09",
+    "provider": "google",
+    "kind": "model_id",
+    "deprecated": "gemini-live-2.5-flash-preview",
+    "replacement": "gemini-3.1-flash-live-preview",
+    "status": "retired",
+    "shutdownDate": "2025-12-09",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "note": "discovered from the google deprecation table; row read as: gemini-live-2.5-flash-preview | June 17, 2025 | December 9, 2025 | gemini-3.1-flash-live-preview",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gemini-3.1-flash-live-preview\" is live in a public catalog",
+        "the deprecation claim for \"gemini-live-2.5-flash-preview\" is self-consistent (status \"retired\", shutdown 2025-12-09) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:f634c61e6afb848a868052963eef89696dd7ae544aaac846f8d31514c61b9c36",
+        "retrievedAt": "2026-09-14T23:54:46.353Z",
+        "excerpt": "gemini-live-2.5-flash-preview | June 17, 2025 | December 9, 2025 | gemini-3.1-flash-live-preview"
+      }
+    ]
+  },
+  {
+    "entryId": "google.gemini-embedding-exp.retirement-2025-10-30",
+    "provider": "google",
+    "kind": "model_id",
+    "deprecated": "gemini-embedding-exp",
+    "replacement": "gemini-embedding-2",
+    "status": "retired",
+    "shutdownDate": "2025-10-30",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "note": "discovered from the google deprecation table; row read as: gemini-embedding-exp | | October 30, 2025 | gemini-embedding-2",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gemini-embedding-2\" is live in a public catalog",
+        "the deprecation claim for \"gemini-embedding-exp\" is self-consistent (status \"retired\", shutdown 2025-10-30) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:f634c61e6afb848a868052963eef89696dd7ae544aaac846f8d31514c61b9c36",
+        "retrievedAt": "2026-09-14T23:54:46.353Z",
+        "excerpt": "gemini-embedding-exp | | October 30, 2025 | gemini-embedding-2"
+      }
+    ]
+  },
+  {
+    "entryId": "google.gemini-embedding-exp-03-07.retirement-2025-10-30",
+    "provider": "google",
+    "kind": "model_id",
+    "deprecated": "gemini-embedding-exp-03-07",
+    "replacement": "gemini-embedding-2",
+    "status": "retired",
+    "shutdownDate": "2025-10-30",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "note": "discovered from the google deprecation table; row read as: gemini-embedding-exp-03-07 | | October 30, 2025 | gemini-embedding-2",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gemini-embedding-2\" is live in a public catalog",
+        "the deprecation claim for \"gemini-embedding-exp-03-07\" is self-consistent (status \"retired\", shutdown 2025-10-30) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:f634c61e6afb848a868052963eef89696dd7ae544aaac846f8d31514c61b9c36",
+        "retrievedAt": "2026-09-14T23:54:46.353Z",
+        "excerpt": "gemini-embedding-exp-03-07 | | October 30, 2025 | gemini-embedding-2"
+      }
+    ]
+  },
+  {
+    "entryId": "anthropic.claude-1.0.retirement-2024-11-06",
+    "provider": "anthropic",
+    "kind": "model_id",
+    "deprecated": "claude-1.0",
+    "replacement": "claude-haiku-4-5-20251001",
+    "status": "retired",
+    "shutdownDate": "2024-11-06",
+    "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+    "note": "discovered from the anthropic deprecation table; row read as: November 6, 2024 | claude-1.0 | claude-haiku-4-5-20251001",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"claude-haiku-4-5-20251001\" is live in a public catalog",
+        "the deprecation claim for \"claude-1.0\" is self-consistent (status \"retired\", shutdown 2024-11-06) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+        "contentHash": "sha256:88fe498e50b3d51b0b60551189c216f3fde4e3e6287e2c8113a80b5f7f62bf2b",
+        "retrievedAt": "2026-09-14T23:54:48.081Z",
+        "excerpt": "November 6, 2024 | claude-1.0 | claude-haiku-4-5-20251001"
+      }
+    ]
+  },
+  {
+    "entryId": "anthropic.claude-1.1.retirement-2024-11-06",
+    "provider": "anthropic",
+    "kind": "model_id",
+    "deprecated": "claude-1.1",
+    "replacement": "claude-haiku-4-5-20251001",
+    "status": "retired",
+    "shutdownDate": "2024-11-06",
+    "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+    "note": "discovered from the anthropic deprecation table; row read as: November 6, 2024 | claude-1.1 | claude-haiku-4-5-20251001",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"claude-haiku-4-5-20251001\" is live in a public catalog",
+        "the deprecation claim for \"claude-1.1\" is self-consistent (status \"retired\", shutdown 2024-11-06) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+        "contentHash": "sha256:88fe498e50b3d51b0b60551189c216f3fde4e3e6287e2c8113a80b5f7f62bf2b",
+        "retrievedAt": "2026-09-14T23:54:48.081Z",
+        "excerpt": "November 6, 2024 | claude-1.1 | claude-haiku-4-5-20251001"
+      }
+    ]
+  },
+  {
+    "entryId": "anthropic.claude-1.3.retirement-2024-11-06",
+    "provider": "anthropic",
+    "kind": "model_id",
+    "deprecated": "claude-1.3",
+    "replacement": "claude-haiku-4-5-20251001",
+    "status": "retired",
+    "shutdownDate": "2024-11-06",
+    "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+    "note": "discovered from the anthropic deprecation table; row read as: November 6, 2024 | claude-1.3 | claude-haiku-4-5-20251001",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"claude-haiku-4-5-20251001\" is live in a public catalog",
+        "the deprecation claim for \"claude-1.3\" is self-consistent (status \"retired\", shutdown 2024-11-06) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+        "contentHash": "sha256:88fe498e50b3d51b0b60551189c216f3fde4e3e6287e2c8113a80b5f7f62bf2b",
+        "retrievedAt": "2026-09-14T23:54:48.081Z",
+        "excerpt": "November 6, 2024 | claude-1.3 | claude-haiku-4-5-20251001"
+      }
+    ]
+  },
+  {
+    "entryId": "anthropic.claude-instant-1.0.retirement-2024-11-06",
+    "provider": "anthropic",
+    "kind": "model_id",
+    "deprecated": "claude-instant-1.0",
+    "replacement": "claude-haiku-4-5-20251001",
+    "status": "retired",
+    "shutdownDate": "2024-11-06",
+    "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+    "note": "discovered from the anthropic deprecation table; row read as: November 6, 2024 | claude-instant-1.0 | claude-haiku-4-5-20251001",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"claude-haiku-4-5-20251001\" is live in a public catalog",
+        "the deprecation claim for \"claude-instant-1.0\" is self-consistent (status \"retired\", shutdown 2024-11-06) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+        "contentHash": "sha256:88fe498e50b3d51b0b60551189c216f3fde4e3e6287e2c8113a80b5f7f62bf2b",
+        "retrievedAt": "2026-09-14T23:54:48.081Z",
+        "excerpt": "November 6, 2024 | claude-instant-1.0 | claude-haiku-4-5-20251001"
+      }
+    ]
+  },
+  {
+    "entryId": "anthropic.claude-instant-1.1.retirement-2024-11-06",
+    "provider": "anthropic",
+    "kind": "model_id",
+    "deprecated": "claude-instant-1.1",
+    "replacement": "claude-haiku-4-5-20251001",
+    "status": "retired",
+    "shutdownDate": "2024-11-06",
+    "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+    "note": "discovered from the anthropic deprecation table; row read as: November 6, 2024 | claude-instant-1.1 | claude-haiku-4-5-20251001",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"claude-haiku-4-5-20251001\" is live in a public catalog",
+        "the deprecation claim for \"claude-instant-1.1\" is self-consistent (status \"retired\", shutdown 2024-11-06) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+        "contentHash": "sha256:88fe498e50b3d51b0b60551189c216f3fde4e3e6287e2c8113a80b5f7f62bf2b",
+        "retrievedAt": "2026-09-14T23:54:48.081Z",
+        "excerpt": "November 6, 2024 | claude-instant-1.1 | claude-haiku-4-5-20251001"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-realtime.retirement-2027-01-20",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-realtime",
+    "replacement": "gpt-realtime-2.1",
+    "status": "deprecated",
+    "shutdownDate": "2027-01-20",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Jan 20, 2027 | gpt-realtime | gpt-realtime-2.1",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-realtime-2.1\" is live in a public catalog",
+        "the deprecation claim for \"gpt-realtime\" is self-consistent (status \"deprecated\", shutdown 2027-01-20) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "Jan 20, 2027 | gpt-realtime | gpt-realtime-2.1"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-4o-realtime.retirement-2027-01-20",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4o-realtime",
+    "replacement": "gpt-realtime-2.1",
+    "status": "deprecated",
+    "shutdownDate": "2027-01-20",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Jan 20, 2027 | gpt-4o-realtime | gpt-realtime-2.1",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-realtime-2.1\" is live in a public catalog",
+        "the deprecation claim for \"gpt-4o-realtime\" is self-consistent (status \"deprecated\", shutdown 2027-01-20) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "Jan 20, 2027 | gpt-4o-realtime | gpt-realtime-2.1"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-5-mini-2025-08-07.retirement-2026-12-11",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-5-mini-2025-08-07",
+    "replacement": "gpt-5.6-terra",
+    "status": "deprecated",
+    "shutdownDate": "2026-12-11",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Dec 11, 2026 | gpt-5-mini-2025-08-07 | gpt-5.6-terra",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-terra\" is live in a public catalog",
+        "the deprecation claim for \"gpt-5-mini-2025-08-07\" is self-consistent (status \"deprecated\", shutdown 2026-12-11) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "Dec 11, 2026 | gpt-5-mini-2025-08-07 | gpt-5.6-terra"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-5-nano-2025-08-07.retirement-2026-12-11",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-5-nano-2025-08-07",
+    "replacement": "gpt-5.6-luna",
+    "status": "deprecated",
+    "shutdownDate": "2026-12-11",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Dec 11, 2026 | gpt-5-nano-2025-08-07 | gpt-5.6-luna",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-luna\" is live in a public catalog",
+        "the deprecation claim for \"gpt-5-nano-2025-08-07\" is self-consistent (status \"deprecated\", shutdown 2026-12-11) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "Dec 11, 2026 | gpt-5-nano-2025-08-07 | gpt-5.6-luna"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-5-pro-2025-10-06.retirement-2026-12-11",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-5-pro-2025-10-06",
+    "replacement": "gpt-5.6-sol",
+    "status": "deprecated",
+    "shutdownDate": "2026-12-11",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Dec 11, 2026 | gpt-5-pro-2025-10-06 | gpt-5.6-sol ( reasoning.mode: pro )",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
+        "the deprecation claim for \"gpt-5-pro-2025-10-06\" is self-consistent (status \"deprecated\", shutdown 2026-12-11) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "Dec 11, 2026 | gpt-5-pro-2025-10-06 | gpt-5.6-sol ( reasoning.mode: pro )"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.o3-2025-04-16.retirement-2026-12-11",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "o3-2025-04-16",
+    "replacement": "gpt-5.6-sol",
+    "status": "deprecated",
+    "shutdownDate": "2026-12-11",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Dec 11, 2026 | o3-2025-04-16 | gpt-5.6-sol",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
+        "the deprecation claim for \"o3-2025-04-16\" is self-consistent (status \"deprecated\", shutdown 2026-12-11) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "Dec 11, 2026 | o3-2025-04-16 | gpt-5.6-sol"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.o3-pro-2025-06-10.retirement-2026-12-11",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "o3-pro-2025-06-10",
+    "replacement": "gpt-5.6-sol",
+    "status": "deprecated",
+    "shutdownDate": "2026-12-11",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Dec 11, 2026 | o3-pro-2025-06-10 | gpt-5.6-sol ( reasoning.mode: pro )",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
+        "the deprecation claim for \"o3-pro-2025-06-10\" is self-consistent (status \"deprecated\", shutdown 2026-12-11) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "Dec 11, 2026 | o3-pro-2025-06-10 | gpt-5.6-sol ( reasoning.mode: pro )"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.o1-2024-12-17.retirement-2026-10-23",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "o1-2024-12-17",
+    "replacement": "gpt-5.6-sol",
+    "status": "deprecated",
+    "shutdownDate": "2026-10-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: October 23, 2026 | o1-2024-12-17 | o1 | gpt-5.6-sol",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
+        "the deprecation claim for \"o1-2024-12-17\" is self-consistent (status \"deprecated\", shutdown 2026-10-23) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "October 23, 2026 | o1-2024-12-17 | o1 | gpt-5.6-sol"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.babbage-002.retirement-2026-09-28",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "babbage-002",
+    "replacement": "gpt-5.6-terra",
+    "status": "deprecated",
+    "shutdownDate": "2026-09-28",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2026-09-28 | babbage-002 | gpt-5.6-terra",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-terra\" is live in a public catalog",
+        "the deprecation claim for \"babbage-002\" is self-consistent (status \"deprecated\", shutdown 2026-09-28) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2026-09-28 | babbage-002 | gpt-5.6-terra"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.davinci-002.retirement-2026-09-28",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "davinci-002",
+    "replacement": "gpt-5.6-terra",
+    "status": "deprecated",
+    "shutdownDate": "2026-09-28",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2026-09-28 | davinci-002 | gpt-5.6-terra",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-terra\" is live in a public catalog",
+        "the deprecation claim for \"davinci-002\" is self-consistent (status \"deprecated\", shutdown 2026-09-28) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2026-09-28 | davinci-002 | gpt-5.6-terra"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-4o-mini-search-preview-2025-03-11.retirement-2026-07-23",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4o-mini-search-preview-2025-03-11",
+    "replacement": "gpt-5.6-terra",
+    "status": "retired",
+    "shutdownDate": "2026-07-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: July 23, 2026 | gpt-4o-mini-search-preview-2025-03-11 | gpt-5.6-terra",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-terra\" is live in a public catalog",
+        "the deprecation claim for \"gpt-4o-mini-search-preview-2025-03-11\" is self-consistent (status \"retired\", shutdown 2026-07-23) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "July 23, 2026 | gpt-4o-mini-search-preview-2025-03-11 | gpt-5.6-terra"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-4o-search-preview-2025-03-11.retirement-2026-07-23",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4o-search-preview-2025-03-11",
+    "replacement": "gpt-5.6-terra",
+    "status": "retired",
+    "shutdownDate": "2026-07-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: July 23, 2026 | gpt-4o-search-preview-2025-03-11 | gpt-5.6-terra",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-terra\" is live in a public catalog",
+        "the deprecation claim for \"gpt-4o-search-preview-2025-03-11\" is self-consistent (status \"retired\", shutdown 2026-07-23) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "July 23, 2026 | gpt-4o-search-preview-2025-03-11 | gpt-5.6-terra"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-5-chat-latest.retirement-2026-07-23",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-5-chat-latest",
+    "replacement": "gpt-5.6-sol",
+    "status": "retired",
+    "shutdownDate": "2026-07-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: July 23, 2026 | gpt-5-chat-latest | gpt-5.6-sol",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
+        "the deprecation claim for \"gpt-5-chat-latest\" is self-consistent (status \"retired\", shutdown 2026-07-23) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "July 23, 2026 | gpt-5-chat-latest | gpt-5.6-sol"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-5-codex.retirement-2026-07-23",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-5-codex",
+    "replacement": "gpt-5.6-sol",
+    "status": "retired",
+    "shutdownDate": "2026-07-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: July 23, 2026 | gpt-5-codex | gpt-5.6-sol",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
+        "the deprecation claim for \"gpt-5-codex\" is self-consistent (status \"retired\", shutdown 2026-07-23) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "July 23, 2026 | gpt-5-codex | gpt-5.6-sol"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-5.1-chat-latest.retirement-2026-07-23",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-5.1-chat-latest",
+    "replacement": "gpt-5.6-sol",
+    "status": "retired",
+    "shutdownDate": "2026-07-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: July 23, 2026 | gpt-5.1-chat-latest | gpt-5.6-sol",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
+        "the deprecation claim for \"gpt-5.1-chat-latest\" is self-consistent (status \"retired\", shutdown 2026-07-23) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "July 23, 2026 | gpt-5.1-chat-latest | gpt-5.6-sol"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.text-davinci-edit-001.retirement-2024-01-04",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "text-davinci-edit-001",
+    "replacement": "gpt-4o",
+    "status": "retired",
+    "shutdownDate": "2024-01-04",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2024-01-04 | text-davinci-edit-001 | gpt-4o",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-4o\" is live in a public catalog",
+        "the deprecation claim for \"text-davinci-edit-001\" is self-consistent (status \"retired\", shutdown 2024-01-04) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2024-01-04 | text-davinci-edit-001 | gpt-4o"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.code-davinci-edit-001.retirement-2024-01-04",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "code-davinci-edit-001",
+    "replacement": "gpt-4o",
+    "status": "retired",
+    "shutdownDate": "2024-01-04",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2024-01-04 | code-davinci-edit-001 | gpt-4o",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-4o\" is live in a public catalog",
+        "the deprecation claim for \"code-davinci-edit-001\" is self-consistent (status \"retired\", shutdown 2024-01-04) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2024-01-04 | code-davinci-edit-001 | gpt-4o"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.text-similarity-ada-001.retirement-2024-01-04",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "text-similarity-ada-001",
+    "replacement": "text-embedding-3-small",
+    "status": "retired",
+    "shutdownDate": "2024-01-04",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2024-01-04 | text-similarity-ada-001 | $4.00 / 1M tokens | text-embedding-3-small",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"text-embedding-3-small\" is live in a public catalog",
+        "the deprecation claim for \"text-similarity-ada-001\" is self-consistent (status \"retired\", shutdown 2024-01-04) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2024-01-04 | text-similarity-ada-001 | $4.00 / 1M tokens | text-embedding-3-small"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.text-search-ada-doc-001.retirement-2024-01-04",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "text-search-ada-doc-001",
+    "replacement": "text-embedding-3-small",
+    "status": "retired",
+    "shutdownDate": "2024-01-04",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2024-01-04 | text-search-ada-doc-001 | $4.00 / 1M tokens | text-embedding-3-small",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"text-embedding-3-small\" is live in a public catalog",
+        "the deprecation claim for \"text-search-ada-doc-001\" is self-consistent (status \"retired\", shutdown 2024-01-04) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2024-01-04 | text-search-ada-doc-001 | $4.00 / 1M tokens | text-embedding-3-small"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.text-search-ada-query-001.retirement-2024-01-04",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "text-search-ada-query-001",
+    "replacement": "text-embedding-3-small",
+    "status": "retired",
+    "shutdownDate": "2024-01-04",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2024-01-04 | text-search-ada-query-001 | $4.00 / 1M tokens | text-embedding-3-small",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"text-embedding-3-small\" is live in a public catalog",
+        "the deprecation claim for \"text-search-ada-query-001\" is self-consistent (status \"retired\", shutdown 2024-01-04) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2024-01-04 | text-search-ada-query-001 | $4.00 / 1M tokens | text-embedding-3-small"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.code-search-ada-code-001.retirement-2024-01-04",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "code-search-ada-code-001",
+    "replacement": "text-embedding-3-small",
+    "status": "retired",
+    "shutdownDate": "2024-01-04",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2024-01-04 | code-search-ada-code-001 | $4.00 / 1M tokens | text-embedding-3-small",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"text-embedding-3-small\" is live in a public catalog",
+        "the deprecation claim for \"code-search-ada-code-001\" is self-consistent (status \"retired\", shutdown 2024-01-04) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2024-01-04 | code-search-ada-code-001 | $4.00 / 1M tokens | text-embedding-3-small"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.code-search-ada-text-001.retirement-2024-01-04",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "code-search-ada-text-001",
+    "replacement": "text-embedding-3-small",
+    "status": "retired",
+    "shutdownDate": "2024-01-04",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2024-01-04 | code-search-ada-text-001 | $4.00 / 1M tokens | text-embedding-3-small",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"text-embedding-3-small\" is live in a public catalog",
+        "the deprecation claim for \"code-search-ada-text-001\" is self-consistent (status \"retired\", shutdown 2024-01-04) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2024-01-04 | code-search-ada-text-001 | $4.00 / 1M tokens | text-embedding-3-small"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.text-similarity-babbage-001.retirement-2024-01-04",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "text-similarity-babbage-001",
+    "replacement": "text-embedding-3-small",
+    "status": "retired",
+    "shutdownDate": "2024-01-04",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2024-01-04 | text-similarity-babbage-001 | $5.00 / 1M tokens | text-embedding-3-small",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"text-embedding-3-small\" is live in a public catalog",
+        "the deprecation claim for \"text-similarity-babbage-001\" is self-consistent (status \"retired\", shutdown 2024-01-04) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2024-01-04 | text-similarity-babbage-001 | $5.00 / 1M tokens | text-embedding-3-small"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.text-search-babbage-doc-001.retirement-2024-01-04",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "text-search-babbage-doc-001",
+    "replacement": "text-embedding-3-small",
+    "status": "retired",
+    "shutdownDate": "2024-01-04",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2024-01-04 | text-search-babbage-doc-001 | $5.00 / 1M tokens | text-embedding-3-small",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"text-embedding-3-small\" is live in a public catalog",
+        "the deprecation claim for \"text-search-babbage-doc-001\" is self-consistent (status \"retired\", shutdown 2024-01-04) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2024-01-04 | text-search-babbage-doc-001 | $5.00 / 1M tokens | text-embedding-3-small"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.text-search-babbage-query-001.retirement-2024-01-04",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "text-search-babbage-query-001",
+    "replacement": "text-embedding-3-small",
+    "status": "retired",
+    "shutdownDate": "2024-01-04",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2024-01-04 | text-search-babbage-query-001 | $5.00 / 1M tokens | text-embedding-3-small",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"text-embedding-3-small\" is live in a public catalog",
+        "the deprecation claim for \"text-search-babbage-query-001\" is self-consistent (status \"retired\", shutdown 2024-01-04) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2024-01-04 | text-search-babbage-query-001 | $5.00 / 1M tokens | text-embedding-3-small"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.code-search-babbage-code-001.retirement-2024-01-04",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "code-search-babbage-code-001",
+    "replacement": "text-embedding-3-small",
+    "status": "retired",
+    "shutdownDate": "2024-01-04",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2024-01-04 | code-search-babbage-code-001 | $5.00 / 1M tokens | text-embedding-3-small",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"text-embedding-3-small\" is live in a public catalog",
+        "the deprecation claim for \"code-search-babbage-code-001\" is self-consistent (status \"retired\", shutdown 2024-01-04) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2024-01-04 | code-search-babbage-code-001 | $5.00 / 1M tokens | text-embedding-3-small"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.code-search-babbage-text-001.retirement-2024-01-04",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "code-search-babbage-text-001",
+    "replacement": "text-embedding-3-small",
+    "status": "retired",
+    "shutdownDate": "2024-01-04",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2024-01-04 | code-search-babbage-text-001 | $5.00 / 1M tokens | text-embedding-3-small",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"text-embedding-3-small\" is live in a public catalog",
+        "the deprecation claim for \"code-search-babbage-text-001\" is self-consistent (status \"retired\", shutdown 2024-01-04) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2024-01-04 | code-search-babbage-text-001 | $5.00 / 1M tokens | text-embedding-3-small"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.text-similarity-curie-001.retirement-2024-01-04",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "text-similarity-curie-001",
+    "replacement": "text-embedding-3-small",
+    "status": "retired",
+    "shutdownDate": "2024-01-04",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2024-01-04 | text-similarity-curie-001 | $20.00 / 1M tokens | text-embedding-3-small",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"text-embedding-3-small\" is live in a public catalog",
+        "the deprecation claim for \"text-similarity-curie-001\" is self-consistent (status \"retired\", shutdown 2024-01-04) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2024-01-04 | text-similarity-curie-001 | $20.00 / 1M tokens | text-embedding-3-small"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.text-search-curie-doc-001.retirement-2024-01-04",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "text-search-curie-doc-001",
+    "replacement": "text-embedding-3-small",
+    "status": "retired",
+    "shutdownDate": "2024-01-04",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2024-01-04 | text-search-curie-doc-001 | $20.00 / 1M tokens | text-embedding-3-small",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"text-embedding-3-small\" is live in a public catalog",
+        "the deprecation claim for \"text-search-curie-doc-001\" is self-consistent (status \"retired\", shutdown 2024-01-04) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2024-01-04 | text-search-curie-doc-001 | $20.00 / 1M tokens | text-embedding-3-small"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.text-search-curie-query-001.retirement-2024-01-04",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "text-search-curie-query-001",
+    "replacement": "text-embedding-3-small",
+    "status": "retired",
+    "shutdownDate": "2024-01-04",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2024-01-04 | text-search-curie-query-001 | $20.00 / 1M tokens | text-embedding-3-small",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"text-embedding-3-small\" is live in a public catalog",
+        "the deprecation claim for \"text-search-curie-query-001\" is self-consistent (status \"retired\", shutdown 2024-01-04) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2024-01-04 | text-search-curie-query-001 | $20.00 / 1M tokens | text-embedding-3-small"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.text-similarity-davinci-001.retirement-2024-01-04",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "text-similarity-davinci-001",
+    "replacement": "text-embedding-3-small",
+    "status": "retired",
+    "shutdownDate": "2024-01-04",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2024-01-04 | text-similarity-davinci-001 | $200.00 / 1M tokens | text-embedding-3-small",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"text-embedding-3-small\" is live in a public catalog",
+        "the deprecation claim for \"text-similarity-davinci-001\" is self-consistent (status \"retired\", shutdown 2024-01-04) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2024-01-04 | text-similarity-davinci-001 | $200.00 / 1M tokens | text-embedding-3-small"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.text-search-davinci-doc-001.retirement-2024-01-04",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "text-search-davinci-doc-001",
+    "replacement": "text-embedding-3-small",
+    "status": "retired",
+    "shutdownDate": "2024-01-04",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2024-01-04 | text-search-davinci-doc-001 | $200.00 / 1M tokens | text-embedding-3-small",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"text-embedding-3-small\" is live in a public catalog",
+        "the deprecation claim for \"text-search-davinci-doc-001\" is self-consistent (status \"retired\", shutdown 2024-01-04) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2024-01-04 | text-search-davinci-doc-001 | $200.00 / 1M tokens | text-embedding-3-small"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.text-search-davinci-query-001.retirement-2024-01-04",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "text-search-davinci-query-001",
+    "replacement": "text-embedding-3-small",
+    "status": "retired",
+    "shutdownDate": "2024-01-04",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2024-01-04 | text-search-davinci-query-001 | $200.00 / 1M tokens | text-embedding-3-small",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"text-embedding-3-small\" is live in a public catalog",
+        "the deprecation claim for \"text-search-davinci-query-001\" is self-consistent (status \"retired\", shutdown 2024-01-04) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2024-01-04 | text-search-davinci-query-001 | $200.00 / 1M tokens | text-embedding-3-small"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.code-davinci-001.retirement-2023-03-23",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "code-davinci-001",
+    "replacement": "gpt-4o",
+    "status": "retired",
+    "shutdownDate": "2023-03-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2023-03-23 | code-davinci-001 | gpt-4o",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-4o\" is live in a public catalog",
+        "the deprecation claim for \"code-davinci-001\" is self-consistent (status \"retired\", shutdown 2023-03-23) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2023-03-23 | code-davinci-001 | gpt-4o"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.code-cushman-002.retirement-2023-03-23",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "code-cushman-002",
+    "replacement": "gpt-4o",
+    "status": "retired",
+    "shutdownDate": "2023-03-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2023-03-23 | code-cushman-002 | gpt-4o",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-4o\" is live in a public catalog",
+        "the deprecation claim for \"code-cushman-002\" is self-consistent (status \"retired\", shutdown 2023-03-23) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2023-03-23 | code-cushman-002 | gpt-4o"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.code-cushman-001.retirement-2023-03-23",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "code-cushman-001",
+    "replacement": "gpt-4o",
+    "status": "retired",
+    "shutdownDate": "2023-03-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2023-03-23 | code-cushman-001 | gpt-4o",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-15",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-4o\" is live in a public catalog",
+        "the deprecation claim for \"code-cushman-001\" is self-consistent (status \"retired\", shutdown 2023-03-23) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2023-03-23 | code-cushman-001 | gpt-4o"
+      }
+    ]
   }
 ]

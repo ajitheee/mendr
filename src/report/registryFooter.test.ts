@@ -174,8 +174,8 @@ describe('the SHIPPED registry footer', () => {
 
   it('prints the measured shape of the shipped registry', () => {
     const lines = formatRegistryProvenanceLines(registryProvenance(loadLlmRegistry()));
-    expect(lines[0]).toBe('registry: 106 records');
-    expect(lines[1]).toBe('auto-fix eligible: 86');
-    expect(lines[2]).toBe('review-only: 20 (quarantined 12, unverified 3, unverifiable 5)');
+    expect(lines[0]).toBe('registry: 154 records');
+    expect(lines[1]).toBe('auto-fix eligible: 133');
+    expect(lines[2]).toBe('review-only: 21 (quarantined 12, unverified 4, unverifiable 5)');
   });
 });

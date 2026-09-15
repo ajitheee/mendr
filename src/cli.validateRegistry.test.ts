@@ -64,7 +64,7 @@ function corruptedRegistry(
 describe('mendr validate-registry', () => {
   it('passes on the shipped registry, and says how many records it checked', async () => {
     const { exitCode, stdout } = await validate();
-    expect(stdout).toContain('registry OK: 0 violations across 106 model_id records.');
+    expect(stdout).toContain('registry OK: 0 violations across 154 model_id records.');
     expect(exitCode).toBe(0);
   }, 60_000);
 
@@ -77,7 +77,7 @@ describe('mendr validate-registry', () => {
     expect(stdout).toContain('registry INVALID: 1 violation(s)');
     expect(stdout).toContain('openai.gpt-4.retirement-2026-10-23');
     expect(stdout).toContain('[verified_without_replacement_confirmation]');
-    expect(stdout).toContain('summary: 1 violation(s) across 106 model_id records');
+    expect(stdout).toContain('summary: 1 violation(s) across 154 model_id records');
   }, 60_000);
 
   it('fails when a record is switched on under a non-verified status', async () => {
