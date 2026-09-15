@@ -376,13 +376,28 @@ function toConfigLocation(m: ConfigMatch, readers?: Map<string, EnvReader[]>): L
 }
 
 /**
- * Only a Tier-A occurrence is a VERIFIED call site. A Tier-B occurrence is real
- * but unverified — an unknown wrapper, a capped surface, an untraced default —
- * and calling it "verified" was the single most repeated overclaim in external
- * validation (9 of 12 repositories). The role is keyed on the tier, nothing else.
+ * Is the CALL SITE proven? This asks about the customer's code, and nothing else.
+ *
+ * Keying it on the tier alone conflated two unrelated downgrades. A Tier-B occurrence is
+ * usually real but unproven — an unknown wrapper, a capped surface, an untraced default —
+ * and calling those "verified" was the most repeated overclaim in external validation
+ * (9 of 12 repositories). But `replacement_unverified` is not one of those: it means the
+ * scanner DID prove a `model_arg` SDK call site and the REGISTRY's replacement is
+ * quarantined or unverified. Reporting that location as "a code default or call not traced
+ * to a provider request" states the registry's opinion as if it were an analysis of the
+ * customer's code, and it is false about the code.
+ *
+ * It showed up on the one model that matters most here: `getGenerativeModel({ model:
+ * 'gemini-2.0-flash' })` was described as untraced, while the identical line with
+ * `gemini-1.5-pro` was described as a verified call site. Same file, same receiver, same
+ * shape — only the registry entry differed.
+ *
+ * This is the explanation layer only. Tier and patch-eligibility are untouched: `patchable`
+ * still demands `replacementVerdict === 'verified'` AND Tier A, so nothing new is offered
+ * for auto-swap. The quarantine is still stated, on its own line, as the migration evidence.
  */
 function isProvenCallSite(o: ExposureOccurrence): boolean {
-  return o.tier === 'A';
+  return o.tier === 'A' || (o.tier === 'B' && o.reason === 'replacement_unverified');
 }
 
 function toSourceLocation(o: ExposureOccurrence, model: string): LocationRef {

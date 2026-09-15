@@ -121,6 +121,17 @@ describe('buildInvestigations — code call sites drive the patch/review split',
     expect(inv.reason).toContain('not proven');
   });
 
+  // The registry's verdict is not an analysis of the customer's code. A `model_arg` call site
+  // the scanner PROVED, whose replacement happens to be quarantined, was being reported as
+  // "a code default or call not traced to a provider request" — false about the code, and it
+  // fired on gemini-2.0-flash, the model behind the incident that started this project.
+  it('a proven call site whose REPLACEMENT is unverified is still described as a call site', () => {
+    const [inv] = buildInvestigations(NO_RUNTIME_EVIDENCE, [], NOW, [codeModel('gpt-4', 'B', 'replacement_unverified')]);
+    expect(inv.locations.selectors[0].role).toBe('code_call_site');
+    // and it is still NOT patchable: the description changed, the decision did not
+    expect(inv.decision).toBe('review');
+  });
+
   it('treats a Tier-C code occurrence as a data reference => MONITOR', () => {
     const [inv] = buildInvestigations(NO_RUNTIME_EVIDENCE, [], NOW, [codeModel('gpt-4', 'C')]);
     expect(inv.locations.selectors).toHaveLength(0);
