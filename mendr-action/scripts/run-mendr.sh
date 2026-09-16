@@ -175,16 +175,18 @@ BODY="$(mktemp)"
   echo "$MARKER"
   echo "Mendr verified this migration in an isolated sandbox and applied it to this branch. **Mendr never merges — review and merge if it looks right.**"
   echo
-  echo "**Swaps**"
-  jq -r '.migrations[] | "- `\(.from)` → `\(.to)`  (\(.provider), \(.language), \(.sites) site(s): \(.files | join(", ")))"' "$ARTIFACT"
-  echo
-  echo "**Sandbox verification** (run in this CI, on a throwaway copy)"
-  jq -r '.verification | "- type-check: \(.typeCheck.status)\n- build: \(.build.status)\n- tests: \(.tests.status)\n- eval: \(.eval.status)"' "$ARTIFACT"
-  echo
-  if [ "$(jq -r '.verification.behavioralTested' "$ARTIFACT")" != "true" ]; then
-    echo "> Behavior was NOT verified: the gates prove it builds and your existing tests pass, not that the new model matches the old one on quality, latency, cost or response shape. Check those before merging."
-    echo
+  # The evidence block: each swap with its retirement date and the provider notice behind it,
+  # the replacement verdict, coupled parameters, what actually ran, and what was deliberately
+  # left alone. Rendered by `mendr migrate --pr-body` rather than assembled here, because
+  # wording those is the part with rules in it and it is covered by tests in report/prBody.ts.
+  if [ -s "$PRBODY" ]; then
+    cat "$PRBODY"
+  else
+    # Never leave a PR bodyless if the render is missing.
+    echo "**Swaps**"
+    jq -r '.migrations[] | "- `\(.from)` → `\(.to)`  (\(.provider), \(.sites) site(s))"' "$ARTIFACT"
   fi
+  echo
   echo "Mendr updates this same branch on each run, so re-running keeps one PR current instead of stacking new ones."
   echo
   echo '<details><summary>Full Mendr report</summary>'

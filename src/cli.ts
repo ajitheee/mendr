@@ -185,6 +185,7 @@ import {
   type RuntimeSource,
 } from './runtime/evidence.js';
 import { decisionLines, renderAuditReport, type AuditMeta } from './report/auditReport.js';
+import { renderPrBody } from './report/prBody.js';
 
 const program = new Command();
 
@@ -3524,6 +3525,7 @@ program
   .description('[preview] Verify a model-id migration in an isolated sandbox and emit a portable result. Never writes your working tree.')
   .option('--json', 'emit the mendr-migration/v1 artifact as JSON instead of the human report')
   .option('--patch <file>', 'write the git-applyable patch to this file')
+  .option('--pr-body <file>', 'write the evidence block for a pull request body to this file (markdown)')
   .option('--write', 'apply the migration to your working tree — ONLY when the sandbox verdict is verified')
   .option('--eval-command <cmd>', 'run YOUR evaluation in the sandbox as a behavioral gate')
   .option('--sha <sha>', 'the commit being migrated (recorded in the artifact)')
@@ -3537,7 +3539,7 @@ program
   .action(
     async (
       repoPath: string,
-      opts: { json?: boolean; patch?: string; write?: boolean; evalCommand?: string; sha?: string; skipVerify?: boolean; only?: string; refreshRegistry?: boolean },
+      opts: { json?: boolean; patch?: string; prBody?: string; write?: boolean; evalCommand?: string; sha?: string; skipVerify?: boolean; only?: string; refreshRegistry?: boolean },
     ) => {
       if (/^(https?:\/\/|git@)/i.test(repoPath)) {
         console.error(
@@ -3567,6 +3569,18 @@ program
       if (opts.patch) {
         if (result.diff) writeDiffOrExit(opts.patch, result.diff);
         else console.error('mendr: no migration to write — the patch file was not created.');
+      }
+
+      // The evidence block a pull request needs, rendered here rather than in the action's shell:
+      // it is the part with judgement in it (how urgent, who says so, how well checked, what was
+      // left alone), and it is covered by tests. The action keeps its own scaffold and prints this.
+      if (opts.prBody) {
+        if (result.migrations.length > 0) {
+          writeFileSync(opts.prBody, `${renderPrBody(result)}
+`, 'utf8');
+        } else {
+          console.error('mendr: nothing migrated — the pr-body file was not created.');
+        }
       }
 
       if (opts.json) {

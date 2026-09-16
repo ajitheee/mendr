@@ -1,10 +1,11 @@
 import { basename } from 'node:path';
 import { relative } from 'node:path';
-import type { LlmRegistry } from '../types.js';
+import type { LlmModelIdDeprecation, LlmRegistry } from '../types.js';
 import { loadProject } from '../usage/scanRepo.js';
 import { applyLlmFixesToProject } from '../fix/llmFix.js';
 import { findModelIdLiterals } from '../usage/scanLiterals.js';
 import { isVerified } from '../usage/llmRegistry.js';
+import { normalizePath } from '../audit/fingerprint.js';
 import { collectPythonFiles, readPythonSources } from '../python/scanPy.js';
 import { applyPyModelIdFixesToSources } from '../python/fixPy.js';
 import { checkTypes } from '../gates/typecheck.js';
@@ -42,6 +43,33 @@ export interface ModelMigration {
   sites: number;
   /** Repo-relative files this model's swap touches. */
   files: string[];
+  /**
+   * THE EVIDENCE BEHIND THE SWAP, carried into the artifact so a reviewer can decide without
+   * leaving the pull request.
+   *
+   * All of it was already on the registry entry at the moment the swap was planned and was
+   * simply dropped on the floor, so the pull request said "gpt-4-0613 -> gpt-5.6-sol" and left
+   * the reader to go and find out whether that was urgent, who said so, and how well checked the
+   * replacement was.
+   */
+  evidence?: MigrationEvidence;
+}
+
+export interface MigrationEvidence {
+  /** The registry record this swap derives its authority from. */
+  entryId: string | null;
+  /** `deprecated` or `retired` — a retired id is already failing, not about to. */
+  lifecycle: string | null;
+  /** ISO date the provider shuts it down. */
+  shutdownDate: string | null;
+  /** Days from the run to that date. Negative means it is already past. */
+  daysUntil: number | null;
+  /** The provider's own notice. */
+  sourceUrl: string | null;
+  /** How well checked the replacement mapping is: verified / quarantined / unverified. */
+  replacementVerdict: string | null;
+  /** Quoted excerpts from the captured provider page, where the entry carries them. */
+  excerpts: { sourceUrl: string; excerpt: string }[];
 }
 
 export type GateStatus = 'pass' | 'fail' | 'inconclusive' | 'not-configured';
@@ -87,6 +115,23 @@ export interface MigrationResult {
   sha: string | null;
   migrated: boolean;
   migrations: ModelMigration[];
+  /**
+   * Parameter transforms applied ALONGSIDE the model swaps, one label per unique transform.
+   *
+   * Swapping the id is the easy half. `max_tokens` becomes `max_completion_tokens` on the gpt-5.x
+   * and o-series lines; `temperature`, `top_p` and `top_k` are rejected outright on recent Claude
+   * Opus. A pull request that changed those and did not say so is asking a reviewer to notice it
+   * in the diff.
+   */
+  paramTransforms: string[];
+  /**
+   * What this migration deliberately did NOT touch, and why.
+   *
+   * The most dangerous thing a migration PR can imply is completeness. A repo can have a verified
+   * swap in one file and four retiring ids nobody may auto-rewrite in others, and a body that
+   * lists only the swap reads as "that was all of it".
+   */
+  skipped: SkippedItem[];
   changedFiles: string[];
   /** The combined, git-applyable unified diff (empty when nothing migrates). */
   diff: string;
@@ -137,6 +182,15 @@ export function restrictRegistry(registry: LlmRegistry, only: string[] | undefin
   return registry.filter((e) => e.kind !== 'model_id' || wanted.has(`${e.provider}/${e.deprecated}`.toLowerCase()) || wanted.has(e.deprecated.toLowerCase()));
 }
 
+/** One thing the migration saw and left alone, with the reason a reviewer needs. */
+export interface SkippedItem {
+  file: string;
+  line: number;
+  model: string;
+  /** Why it was not rewritten, in the reader's terms. */
+  reason: string;
+}
+
 interface PlannedMigration {
   patchedFiles: PatchedFile[];
   /** The same files with their pre-migration text, for a drift-checked --write. */
@@ -144,12 +198,14 @@ interface PlannedMigration {
   changedFiles: string[];
   diff: string;
   migrations: ModelMigration[];
+  paramTransforms: string[];
+  skipped: SkippedItem[];
   /** Kept for the type-check gate. */
   baselineProject: ReturnType<typeof loadProject>;
   patchedProject: ReturnType<typeof loadProject>;
 }
 
-function tsMigrations(baselineProject: ReturnType<typeof loadProject>, registry: LlmRegistry, repoPath: string): ModelMigration[] {
+function tsMigrations(baselineProject: ReturnType<typeof loadProject>, registry: LlmRegistry, repoPath: string, now: Date): ModelMigration[] {
   // The SAME predicate the codemod uses (fix/modelId.ts): only model_arg
   // positions with a verified successor and a real change.
   const swaps = findModelIdLiterals(baselineProject, registry, repoPath).filter(
@@ -161,13 +217,14 @@ function tsMigrations(baselineProject: ReturnType<typeof loadProject>, registry:
       from: m.deprecation.deprecated,
       to: m.deprecation.replacement,
       file: relative(repoPath, m.location.file).replace(/\\/g, '/'),
+      evidence: evidenceOf(m.deprecation, now),
     })),
     'ts',
   );
 }
 
 function groupMigrations(
-  rows: { provider: string; from: string; to: string; file: string }[],
+  rows: { provider: string; from: string; to: string; file: string; evidence?: MigrationEvidence }[],
   language: 'ts' | 'py',
 ): ModelMigration[] {
   const byKey = new Map<string, ModelMigration>();
@@ -176,6 +233,7 @@ function groupMigrations(
     let mig = byKey.get(key);
     if (!mig) {
       mig = { provider: r.provider, model: r.from, from: r.from, to: r.to, language, sites: 0, files: [] };
+      if (r.evidence) mig.evidence = r.evidence;
       byKey.set(key, mig);
     }
     mig.sites++;
@@ -184,7 +242,34 @@ function groupMigrations(
   return [...byKey.values()];
 }
 
-async function plan(repoPath: string, registry: LlmRegistry): Promise<PlannedMigration> {
+/** Pull the evidence off the registry entry that authorised this swap. */
+export function evidenceOf(entry: LlmModelIdDeprecation, now: Date): MigrationEvidence {
+  const shutdownDate = entry.shutdownDate ? entry.shutdownDate.slice(0, 10) : null;
+  let daysUntil: number | null = null;
+  if (shutdownDate) {
+    const then = Date.parse(`${shutdownDate}T00:00:00Z`);
+    if (!Number.isNaN(then)) {
+      daysUntil = Math.round((then - Date.parse(`${now.toISOString().slice(0, 10)}T00:00:00Z`)) / 86_400_000);
+    }
+  }
+  const refs = Array.isArray((entry as { evidence?: unknown }).evidence)
+    ? ((entry as { evidence: { sourceUrl?: string; excerpt?: string }[] }).evidence ?? [])
+    : [];
+  return {
+    entryId: (entry as { entryId?: string }).entryId ?? null,
+    lifecycle: entry.status ?? null,
+    shutdownDate,
+    daysUntil,
+    sourceUrl: entry.sourceUrl ?? null,
+    replacementVerdict: entry.verification?.status ?? null,
+    excerpts: refs
+      .filter((r) => r.sourceUrl && r.excerpt)
+      .slice(0, 3)
+      .map((r) => ({ sourceUrl: r.sourceUrl as string, excerpt: r.excerpt as string })),
+  };
+}
+
+async function plan(repoPath: string, registry: LlmRegistry, now: Date): Promise<PlannedMigration> {
   // TS/JS: a fresh baseline and a patched load (the type-check gate needs both).
   const baselineProject = loadProject(repoPath);
   const patchedProject = loadProject(repoPath);
@@ -197,7 +282,7 @@ async function plan(repoPath: string, registry: LlmRegistry): Promise<PlannedMig
     originalText: baselineProject.getSourceFileOrThrow(absPath).getFullText(),
   }));
   const tsPatchedFiles: PatchedFile[] = tsWrites.map(({ absPath, newText }) => ({ absPath, newText }));
-  const migrations = tsMigrations(baselineProject, registry, repoPath);
+  const migrations = tsMigrations(baselineProject, registry, repoPath, now);
 
   // Python: read sources and apply the same verified-only swap set.
   const pySources = readPythonSources(collectPythonFiles(repoPath));
@@ -224,7 +309,36 @@ async function plan(repoPath: string, registry: LlmRegistry): Promise<PlannedMig
   const writes = [...tsWrites, ...pyWrites];
   const changedFiles = patchedFiles.map((f) => relative(repoPath, f.absPath).replace(/\\/g, '/'));
   const diff = [tsResult.diff, pyApplies ? pyResult.diff : ''].filter(Boolean).join('\n');
-  return { patchedFiles, writes, changedFiles, diff, migrations: [...migrations, ...pyMigrations], baselineProject, patchedProject };
+  // Everything the codemod saw and left alone, in the reader's terms. `blockedMatches` are live
+  // model-arg positions whose replacement the registry will not vouch for; `azureMatches` are
+  // deployment aliases that are never safe to rewrite blind.
+  const skipped: SkippedItem[] = [
+    ...tsResult.blockedMatches.map((b) => ({
+      file: normalizePath(relative(repoPath, b.location.file)),
+      line: b.location.line,
+      model: b.value,
+      reason:
+        `the registry will not vouch for "${b.replacement}" as its replacement ` +
+        `(${b.status}) — human review, never an automatic rewrite`,
+    })),
+    ...tsResult.azureMatches.map((a) => ({
+      file: normalizePath(relative(repoPath, a.location.file)),
+      line: a.location.line,
+      model: a.value,
+      reason: "an Azure deployment alias - the name is yours, not the provider's, so it is never rewritten",
+    })),
+  ];
+  return {
+    patchedFiles,
+    writes,
+    changedFiles,
+    diff,
+    migrations: [...migrations, ...pyMigrations],
+    paramTransforms: tsResult.paramLabels,
+    skipped,
+    baselineProject,
+    patchedProject,
+  };
 }
 
 function outcome(status: GateStatus, detail?: string, command?: string): GateOutcome {
@@ -270,13 +384,15 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
 
   const only = (opts.only ?? []).map((s) => s.trim()).filter(Boolean);
   const onlyNote = only.length ? [`Restricted to ${only.join(', ')} (--only); every other retiring model was left untouched.`] : [];
-  const planned = await plan(repoPath, restrictRegistry(registry, only));
+  const planned = await plan(repoPath, restrictRegistry(registry, only), now);
 
   if (planned.patchedFiles.length === 0) {
     return {
       ...base,
       migrated: false,
       migrations: [],
+      paramTransforms: [],
+      skipped: planned.skipped,
       changedFiles: [],
       diff: '',
       verification: {
@@ -297,6 +413,8 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
       ...base,
       migrated: true,
       migrations: planned.migrations,
+      paramTransforms: planned.paramTransforms,
+      skipped: planned.skipped,
       changedFiles: planned.changedFiles,
       diff: planned.diff,
       verification: {
@@ -379,6 +497,8 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
     ...base,
     migrated: true,
     migrations: planned.migrations,
+    paramTransforms: planned.paramTransforms,
+    skipped: planned.skipped,
     changedFiles: planned.changedFiles,
     diff: planned.diff,
     verification: { typeCheck, build, tests, eval: evalOut, behavioralTested, verdict },
