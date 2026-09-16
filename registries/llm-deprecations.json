@@ -490,9 +490,24 @@
       "o1",
       "o3",
       "o4",
-      "gpt-5"
+      "gpt-5",
+      "gpt-5.6",
+      "gpt-5.5",
+      "gpt-5.4"
     ],
-    "note": "reasoning models require max_completion_tokens"
+    "note": "reasoning models require max_completion_tokens; the gpt-5.x line is covered family by family because the matcher is an exact prefix and \"gpt-5\" does not match \"gpt-5.6-sol\"",
+    "evidence": [
+      {
+        "sourceUrl": "https://github.com/rafacm/vinga/issues/444",
+        "excerpt": "openai_compatible cannot reach GPT-5.6: max_tokens is always sent",
+        "retrievedAt": "2026-09-15"
+      },
+      {
+        "sourceUrl": "https://github.com/iurysza/herdr-tab-smart-rename/issues/7",
+        "excerpt": "OpenAI provider: every rename fails with 'max_tokens is not supported... use max_completion_tokens' (gpt-5.x)",
+        "retrievedAt": "2026-09-15"
+      }
+    ]
   },
   {
     "provider": "anthropic",

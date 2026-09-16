@@ -706,6 +706,11 @@ export interface SummaryDisposition {
    * that does not know about write refusals cannot accidentally claim one.
    */
   refused?: number;
+  /**
+   * Located Tier A sites the codemod correctly declined because the transform stopped
+   * applying once the model was swapped — distinct from a gate failure.
+   */
+  notApplicable?: number;
 }
 
 /**
@@ -736,6 +741,13 @@ export function formatSummaryLines(
     // debug a diff that is fine.
     (disposition.refused ?? 0) > 0
       ? `${disposition.refused} not written -- write refused, working tree unchanged`
+      : '',
+    // A param transform that no longer applies AFTER the model swap is not a gate failure.
+    // Pass 2 evaluates against the model pass 1 just wrote, so a rule that matched the old id
+    // can correctly decline on the new one. Calling that "gates failed" sends a reader to debug
+    // a gate that never ran on it.
+    (disposition.notApplicable ?? 0) > 0
+      ? `${disposition.notApplicable} not applicable after the swap -- the new model does not need it`
       : '',
     disposition.downgraded > 0
       ? `${disposition.downgraded} downgraded -- gates failed, not applied`

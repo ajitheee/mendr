@@ -937,20 +937,18 @@ program
     // the label says WHY: already retired, or dying on a known date.
     const swaps = new Map<string, LlmModelIdDeprecation>();
     for (const m of swapMatches) swaps.set(m.deprecation.deprecated, m.deprecation);
-    // Params: one per unique transform (removal or rename), tagged with model.
-    const paramLabelSet = new Set<string>();
-    for (const p of paramMatches) {
-      paramLabelSet.add(
-        p.deprecation.kind === 'param_removal'
-          ? `remove "${p.deprecation.param}" (on ${p.model})`
-          : `rename "${p.deprecation.param}" -> "${p.deprecation.replacement}" (on ${p.model})`,
-      );
-    }
-    const allLabels = [...[...swaps.values()].map(swapLabel), ...paramLabelSet];
-    const labels =
-      allLabels.length > 6
-        ? `${allLabels.slice(0, 6).join(', ')}, +${allLabels.length - 6} more`
-        : allLabels.join(', ');
+    // Params: one per unique transform, taken from what the codemod ACTUALLY APPLIED.
+    //
+    // This used to be built from `paramMatches`, the LOCATED sites, which are scanned against
+    // the ORIGINAL models. Pass 2 runs after pass 1 on purpose, so it evaluates against the
+    // models pass 1 just wrote, and a rule that applied to the old model may not apply to the
+    // new one. The sentence therefore named renames the diff beside it did not contain — while
+    // the `breakdown()` half of the SAME sentence was already counting applied edits. Both
+    // halves now describe the diff.
+    const labelsOf = (r: LlmFixResult | undefined) => {
+      const all = [...[...swaps.values()].map(swapLabel), ...(r?.paramLabels ?? [])];
+      return all.length > 6 ? `${all.slice(0, 6).join(', ')}, +${all.length - 6} more` : all.join(', ');
+    };
 
     // Per-transform breakdown, NON-ZERO parts only — "0 params renamed ()" is
     // noise, never information.
@@ -1251,7 +1249,7 @@ program
       if (gateLines.length > 0) say('');
       if (tsTier === 'A') {
         say(
-          `Tier A: ${breakdown(tsResult)} (${labels}) across ` +
+          `Tier A: ${breakdown(tsResult)} (${labelsOf(tsResult)}) across ` +
             `${tsResult.changedFiles.length} file${tsResult.changedFiles.length === 1 ? '' : 's'}. ` +
             (opts.skipGates
               ? '(gates skipped -- tier asserted, not verified)'
@@ -1263,7 +1261,7 @@ program
         );
       } else {
         say(
-          `Tier A (NOT applied): ${breakdown(tsResult)} (${labels}) -- ` +
+          `Tier A (NOT applied): ${breakdown(tsResult)} (${labelsOf(tsResult)}) -- ` +
             `${downgradeReason.replace(/\.+$/, '')}. ` +
             `The diff above is shown for manual review only; it is not trusted.`,
         );
@@ -1439,6 +1437,12 @@ program
     // to print a negative, or claim a disposition for more sites than were
     // counted.
     const gatedSites = Math.min(tsApplied + pyApplied, tierCounts.tierA);
+    // Located param sites minus the ones pass 2 actually applied: transforms that stopped
+    // applying once pass 1 changed the model underneath them.
+    const paramNotApplicable = Math.max(
+      0,
+      paramMatches.length - ((tsResult?.paramsRemoved ?? 0) + (tsResult?.paramsRenamed ?? 0)),
+    );
     // "auto-fixed" means the working tree CHANGED, so it may only be claimed by
     // a run that actually writes: --write, with the gates really run. Without
     // it the patch exists only on screen, and the Summary used to print
@@ -1507,7 +1511,11 @@ program
       // two must not share a word.
       ready: thisRunWrites && writeAttempted ? 0 : gatedSites,
       refused: writeAttempted && !writeApplied ? gatedSites : 0,
-      downgraded: tierCounts.tierA - gatedSites,
+      // Split the old single "downgraded" bucket. A located param site the codemod declined
+      // because the swapped-to model does not need the transform never reached a gate, and
+      // attributing it to one sent readers to debug a gate that never ran.
+      notApplicable: paramNotApplicable,
+      downgraded: Math.max(0, tierCounts.tierA - gatedSites - paramNotApplicable),
     })) {
       say(line);
     }

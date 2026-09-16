@@ -42,7 +42,8 @@ export type RegistryViolationCode =
   | 'caveat_over_auto_apply'
   | 'missing_entry_id'
   | 'entry_id_mismatch'
-  | 'duplicate_entry_id';
+  | 'duplicate_entry_id'
+  | 'param_rule_misses_replacement';
 
 /** One thing wrong with one record. */
 export interface RegistryViolation {
@@ -205,6 +206,47 @@ export function validateRegistry(registry: LlmRegistry): RegistryValidation {
           `entryId "${id}" is claimed by ${claimants.length} records -- an id that names two ` +
           'records cannot be used to look either of them up',
       });
+    }
+  }
+
+  // A replacement this registry migrates TO, which sits just outside a param rule that plainly
+  // means to cover it.
+  //
+  // The param matcher is an exact prefix: `model === v || model.startsWith(v + '-')`. So
+  // on_models "gpt-5" covers gpt-5 and gpt-5-mini and does NOT cover gpt-5.6-sol — which was the
+  // replacement target of 20 entries in this file, with gpt-5.6-terra behind another 18. Every
+  // one of those migrations swapped the model and left a `max_tokens` the new model rejects with
+  // a 400, and nothing anywhere asked the question.
+  //
+  // The test is deliberately narrow: flag only a replacement that STARTS WITH an on_models entry
+  // yet fails that entry's own match rule. gpt-4o does not start with gpt-5, so it never fires;
+  // gpt-5-mini starts with it and matches, so it never fires. Only the "right family, wrong
+  // separator" case survives, which is exactly the shape that hid this.
+  const paramRules = registry.filter(
+    (e): e is Extract<LlmRegistry[number], { kind: 'param_rename' | 'param_removal' }> =>
+      e.kind === 'param_rename' || e.kind === 'param_removal',
+  );
+  const matchesRule = (model: string, on: readonly string[]): boolean =>
+    on.some((v) => model === v || model.startsWith(`${v}-`));
+  for (const entry of entries) {
+    const rep = entry.replacement;
+    if (!rep) continue;
+    for (const rule of paramRules) {
+      const on = rule.on_models ?? [];
+      // If the rule matches the replacement at all, there is nothing to report: a family added
+      // alongside a narrower one (gpt-5.6 beside gpt-5) is the FIX, not the defect.
+      if (matchesRule(rep, on)) continue;
+      const nearMiss = on.find((v) => rep.startsWith(v));
+      if (!nearMiss) continue;
+      violations.push({
+        entryId: idOf(entry),
+        code: 'param_rule_misses_replacement',
+        message:
+          `replacement "${rep}" starts with "${nearMiss}" but does not match that param rule's ` +
+          `on_models, so the "${rule.param}" transform will not fire after this migration -- ` +
+          'either add its family to on_models, or record why it does not apply',
+      });
+      break;
     }
   }
 

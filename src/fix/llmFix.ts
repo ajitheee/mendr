@@ -44,6 +44,17 @@ export interface LlmFixResult {
   paramsRemoved: number;
   /** Number of param keys renamed (param_rename). */
   paramsRenamed: number;
+  /**
+   * The param transforms that were ACTUALLY APPLIED, one label per unique transform.
+   *
+   * The caller used to build this sentence from the LOCATED param sites instead, which are
+   * scanned against the ORIGINAL models. Pass 2 deliberately runs after pass 1, so it evaluates
+   * against the models pass 1 just wrote — and a param rule that applied to the old model may
+   * not apply to the new one. The summary therefore announced renames the diff did not contain,
+   * under a heading marked VERIFIED. Reporting what was applied is the only thing that can match
+   * the diff printed beside it.
+   */
+  paramLabels: string[];
   /** Deprecated model ids matched in DATA positions — Tier C locate-only. */
   dataMatches: ModelIdDataLocate[];
   /** Deprecated ids in live model-arg positions blocked as not-verified — Tier C. */
@@ -85,6 +96,15 @@ export function applyLlmFixesToProject(
   const paramEdits = applyParamFixes(project, registry);
   const paramsRemoved = paramEdits.filter((e) => e.kind === 'param_removal').length;
   const paramsRenamed = paramEdits.filter((e) => e.kind === 'param_rename').length;
+  const paramLabels = [
+    ...new Set(
+      paramEdits.map((e) =>
+        e.kind === 'param_removal'
+          ? `remove "${e.param}" (on ${e.model})`
+          : `rename "${e.param}" -> "${e.replacement}" (on ${e.model})`,
+      ),
+    ),
+  ];
 
   // Diff each file that actually changed against its captured original.
   const changedFiles: string[] = [];
@@ -106,6 +126,7 @@ export function applyLlmFixesToProject(
     modelIdSites,
     paramsRemoved,
     paramsRenamed,
+    paramLabels,
     dataMatches,
     blockedMatches,
     azureMatches,
