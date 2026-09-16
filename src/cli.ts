@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
+import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -163,6 +164,15 @@ import { fetchProviderUsage, loadFixtureUsage, providerCoverageNotes } from './r
 import type { Provider } from './recon/types.js';
 import { renderUsageReport } from './report/usageReport.js';
 import { buildInvestigations, concludeAudit, partitionFindings, type AuditCoverage } from './audit/investigation.js';
+import { toFindings } from './audit/fingerprint.js';
+import {
+  applySuppressions,
+  formatSuppressionLines,
+  loadSuppressions,
+  saveSuppressions,
+  SUPPRESSIONS_RELATIVE_PATH,
+} from './suppress/suppress.js';
+import { fingerprint as fingerprintOf, identityOf, normalizePath } from './audit/fingerprint.js';
 import { EMPTY_STATE, parseAuditState, redactSecrets, renderAuditIssue } from './audit/issueReport.js';
 import { installOfflineGuard } from './net/offlineGuard.js';
 import { installAuditWorkflow } from './audit/installAuditWorkflow.js';
@@ -2541,6 +2551,206 @@ program
     );
   });
 
+
+// --- suppression helpers ----------------------------------------------------
+
+interface SuppressOptions {
+  reason: string;
+  author?: string;
+  until?: string;
+  list?: boolean;
+}
+
+/** One reported location, with the SAME fingerprint audit/fingerprint.ts would give it. */
+interface ReportedFinding {
+  fingerprint: string;
+  provider: string;
+  model: string;
+  path: string;
+  key: string | null;
+  evidenceType: string;
+  lines: number[];
+}
+
+const isoDay = (d: Date): string => d.toISOString().slice(0, 10);
+
+function gitUserName(repoPath: string): string | null {
+  try {
+    const out = execSync('git config user.name', { cwd: repoPath, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    return out.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The findings mendr ACTUALLY REPORTS for this repo, by running its own audit.
+ *
+ * Re-running the scan rather than re-implementing the classification is the point: a suppression
+ * must key on a finding the audit produces, computed by the audit's own rules. The fingerprint is
+ * rebuilt here from the same five inputs `toFindings` uses, so the two cannot drift apart.
+ */
+function reportedFindings(repoPath: string): ReportedFinding[] {
+  let json: string;
+  try {
+    json = execSync(
+      `"${process.execPath}" "${process.argv[1]}" audit "${repoPath}" --json`,
+      { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] },
+    );
+  } catch (err) {
+    // A non-zero exit is normal here: exposure_detected with --fail-on-exposure, inconclusive,
+    // and so on. The stdout is still the report.
+    json = String((err as { stdout?: string }).stdout ?? '');
+  }
+  let doc: { investigations?: unknown[] };
+  try {
+    doc = JSON.parse(json) as { investigations?: unknown[] };
+  } catch {
+    return [];
+  }
+  const byFp = new Map<string, ReportedFinding>();
+  for (const invRaw of doc.investigations ?? []) {
+    const inv = invRaw as {
+      provider?: string; model?: string;
+      locations?: { selectors?: unknown[]; catalog?: unknown[] };
+    };
+    const locs = [...(inv.locations?.selectors ?? []), ...(inv.locations?.catalog ?? [])];
+    for (const locRaw of locs) {
+      const loc = locRaw as { file?: string; line?: number; key?: string | null; role?: string };
+      if (!loc.file || typeof loc.line !== 'number' || !loc.role) continue;
+      const path = normalizePath(loc.file);
+      const identity = identityOf({
+        provider: inv.provider ?? '',
+        model: inv.model ?? '',
+        path,
+        key: loc.key ?? null,
+        evidenceType: loc.role,
+      });
+      const fp = fingerprintOf(identity);
+      const found = byFp.get(fp);
+      if (found) {
+        if (!found.lines.includes(loc.line)) found.lines.push(loc.line);
+      } else {
+        byFp.set(fp, {
+          fingerprint: fp,
+          provider: inv.provider ?? '',
+          model: inv.model ?? '',
+          path,
+          key: loc.key ?? null,
+          evidenceType: loc.role,
+          lines: [loc.line],
+        });
+      }
+    }
+  }
+  return [...byFp.values()];
+}
+
+program
+  .command('suppress')
+  .argument('<location>', 'the finding to suppress, as path:line — exactly as the report printed it')
+  .argument('[repoPath]', 'path to the repo (default: current directory)', '.')
+  .description(
+    'Record, in a committed file, that a reported finding is not a dependency of this repo. ' +
+      'Suppressed findings stay in every report: they stop being actionable, never visible.',
+  )
+  .option('--reason <text>', 'why this is not a dependency (required — a suppression with no argument is not reviewable)')
+  .option('--author <name>', 'who decided (default: your git user.name)')
+  .option('--until <YYYY-MM-DD>', 'stop suppressing after this date — prefer this to a permanent entry')
+  .option('--list', 'print the current suppressions and exit')
+  .action((location: string, repoPath: string, opts: SuppressOptions) => {
+    const resolved = resolveRepoOrExit(repoPath);
+    const file = loadSuppressions(resolved);
+
+    if (opts.list) {
+      if (file.suppressions.length === 0) {
+        console.log(`No suppressions recorded in ${SUPPRESSIONS_RELATIVE_PATH}.`);
+        return;
+      }
+      console.log(`${file.suppressions.length} suppression(s) in ${SUPPRESSIONS_RELATIVE_PATH}:`);
+      for (const sup of file.suppressions) {
+        console.log(
+          `  ${sup.path} ${sup.model} — "${sup.reason}" — ${sup.author}, ${sup.createdAt}` +
+            (sup.expiresAt ? ` · expires ${sup.expiresAt}` : ' · no expiry'),
+        );
+      }
+      return;
+    }
+
+    if (!opts.reason || !opts.reason.trim()) {
+      console.error('mendr: --reason is required. A suppression nobody can review is not a decision.');
+      process.exitCode = 2;
+      return;
+    }
+    const m = /^(.*):(\d+)$/.exec(location.trim());
+    if (!m) {
+      console.error('mendr: give the finding as path:line, exactly as the report printed it.');
+      process.exitCode = 2;
+      return;
+    }
+    if (opts.until && !/^\d{4}-\d{2}-\d{2}$/.test(opts.until)) {
+      console.error('mendr: --until takes an ISO date, YYYY-MM-DD.');
+      process.exitCode = 2;
+      return;
+    }
+    const wantPath = normalizePath(m[1] as string);
+    const wantLine = Number(m[2]);
+
+    // Keyed on a finding the audit ACTUALLY REPORTS. A suppression typed against a line nothing
+    // was reported at is a silent no-op that a reviewer would read as protection, so it is
+    // refused rather than written.
+    const findings = reportedFindings(resolved);
+    const match = findings.find((f) => f.path === wantPath && f.lines.includes(wantLine));
+    if (!match) {
+      console.error(`mendr: no reported finding at ${wantPath}:${wantLine}.`);
+      console.error('run `mendr audit` first and copy a location from the report — suppressing a');
+      console.error('line that was never reported protects nothing.');
+      const near = findings.filter((f) => f.path === wantPath);
+      if (near.length > 0) {
+        console.error(`  reported in that file: ${near.map((f) => `${f.lines.join(',')} (${f.model})`).join(' · ')}`);
+      }
+      process.exitCode = 2;
+      return;
+    }
+
+    const author = (opts.author ?? gitUserName(resolved) ?? '').trim();
+    if (!author) {
+      console.error('mendr: could not read git user.name — pass --author.');
+      process.exitCode = 2;
+      return;
+    }
+
+    const entry = {
+      fingerprint: match.fingerprint,
+      identity: identityOf({
+        provider: match.provider,
+        model: match.model,
+        path: match.path,
+        key: match.key,
+        evidenceType: match.evidenceType,
+      }),
+      model: match.model,
+      path: match.path,
+      reason: opts.reason.trim(),
+      author,
+      createdAt: isoDay(new Date()),
+      ...(opts.until ? { expiresAt: opts.until } : {}),
+    };
+    const at = file.suppressions.findIndex((x) => x.fingerprint === match.fingerprint);
+    if (at >= 0) file.suppressions[at] = entry;
+    else file.suppressions.push(entry);
+
+    const written = saveSuppressions(resolved, file);
+    console.log(`${at >= 0 ? 'Updated' : 'Recorded'} suppression for ${match.path}:${wantLine} (${match.model}).`);
+    console.log(`  reason: ${entry.reason}`);
+    console.log(`  author: ${entry.author}${entry.expiresAt ? ` · expires ${entry.expiresAt}` : ' · no expiry'}`);
+    console.log(`  -> ${written}`);
+    console.log('');
+    console.log('Commit that file. The finding stays in every report, marked suppressed with your');
+    console.log('reason, and it can never make a run read as clean: the conclusion is decided');
+    console.log('before suppression is applied.');
+  });
+
 program
   .command('watch')
   .argument('[repoPath]', 'local path to the repo, or a GitHub/git URL to scan a read-only copy (default: current directory)', '.')
@@ -3146,7 +3356,28 @@ program
       // The verdict turns on real EXPOSURE. Informational catalog / documentation
       // / fixture references are reported, but never produce exposure_detected.
       const { exposure: exposureFindings } = partitionFindings(investigations);
+      // THE CONCLUSION IS COMPUTED BEFORE SUPPRESSION, AND SUPPRESSION NEVER REVISITS IT.
+      // A repository whose every finding is suppressed still reports exposure_detected. The file
+      // decides what is ACTIONABLE; it has no vote on what is TRUE, so no arrangement of it can
+      // turn a live exposure into a clean run.
       const conclusion = concludeAudit(coverage, exposureFindings.length);
+
+      const suppressionFile = loadSuppressions(resolved);
+      const suppression = applySuppressions(
+        toFindings(exposureFindings),
+        suppressionFile,
+        iso(now),
+      );
+      // Exposure that no live suppression covers. `--fail-on-exposure` keys off THIS, which is
+      // the one thing suppression is for: a reviewed non-dependency stops breaking the build,
+      // while anything not reviewed still does.
+      //
+      // Only ACTIONABLE findings count. A Tier C catalog or documentation reference never made a
+      // build fail in the first place, so leaving one unsuppressed must not keep it failing —
+      // otherwise suppressing the real call site would look like it did nothing.
+      const unsuppressedExposure = suppression.active.filter((f) =>
+        (f.tiers ?? []).some((t) => t !== 'C'),
+      ).length;
 
       // DETERMINISTIC EXIT CODES (documented in --help/README), set before either
       // the JSON or the human path so both agree. A failed or inconclusive scan
@@ -3155,7 +3386,8 @@ program
       //   0 = clean, or exposure (unless --fail-on-exposure). 2 = usage error (set earlier).
       if (conclusion === 'audit_failed') process.exitCode = 1;
       else if (conclusion === 'inconclusive') process.exitCode = 3;
-      else if (conclusion === 'exposure_detected' && opts.failOnExposure) process.exitCode = 1;
+      else if (conclusion === 'exposure_detected' && opts.failOnExposure && unsuppressedExposure > 0)
+        process.exitCode = 1;
 
       // --- GitHub-native single-issue report (optional) ----------------------
       let issueRender: ReturnType<typeof renderAuditIssue> | null = null;
@@ -3276,6 +3508,13 @@ program
       const meta: AuditMeta = { from, to, coverage, verbose: !!opts.verbose };
       const rendered = renderAuditReport(investigations, meta);
       for (const line of shouldUsePlain(opts.plain) ? toPlainLines(rendered) : rendered) console.log(line);
+      // Printed after the findings, never instead of them: a suppression the reader cannot see
+      // is indistinguishable from a finding the scanner missed.
+      const suppressionLines = formatSuppressionLines(suppression, iso(now));
+      if (suppressionLines.length > 0) {
+        console.log('');
+        for (const line of suppressionLines) console.log(line);
+      }
     },
   );
 
