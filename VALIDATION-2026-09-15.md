@@ -12,8 +12,14 @@
 > repository read the code behind each candidate; two independent skeptics tried to refute every
 > claimed defect. Only defects surviving both are counted.
 >
-> **Status.** This describes the build at commit `8a0f278`. It supersedes the September 3
-> figures, which measured v0.2.2-alpha and are twelve releases old.
+> **Status.** Re-measured on 2026-09-16 at commit `1ca8aaf`, after suppressions, the evidence-rich
+> pull request body, the coverage denominator and the config-scanner work landed. It supersedes
+> the September 3 figures, which measured v0.2.2-alpha.
+>
+> **What the re-run changed.** Nothing in section 1, 2 or 3: the same conclusions, the same single
+> Tier A finding, the same 4,116 occurrences narrowing to the same 75 candidates with zero
+> confirmed misses. What it did catch was a regression introduced three commits earlier — see
+> section 5.
 
 ## 1. Before and after, on identical clones
 
@@ -94,27 +100,37 @@ findings.
 **The trade is therefore explicit: six real call sites are reported but must be fixed by hand.**
 Nothing was hidden. The cost of the precision gain is auto-fixability, not visibility.
 
-## 4. What was skipped
+## 4. What was skipped, and what was not read at all
 
-| repo | scanned | unanalyzed | tests skipped | docs | seconds |
-|---|---|---|---|---|---|
-| chatbot-ui | 259 | 26 | 3 | 1 | 3.3 |
-| LibreChat | 3,078 | 18 | 1,860 | 41 | 47.9 |
-| NextChat | 154 | 6 | 34 | 28 | 4.8 |
-| anything-llm | 158 | 3 | 13 | 17 | 2.6 |
-| vercel/ai | 3,090 | 0 | 49 | 582 | 13.2 |
-| lobe-chat | 2,415 | 7 | 1,136 | 599 | 49.0 |
-| open-webui | 349 | **670** | 2 | 16 | 29.4 |
-| ragflow | 1,511 | **2,429** | 703 | 230 | 12.9 |
-| langflow | 194 | 116 | 0 | 313 | 4.1 |
-| langchain | 1,666 | 13 | 645 | 37 | 14.4 |
-| continue | 727 | 5 | 390 | 200 | 14.7 |
-| dify-official-plugins | 2,111 | 0 | 239 | 423 | 33.0 |
-| **total** | **15,712** | **3,293** | **5,074** | **2,487** | |
+Every file the walker found now lands in exactly one category, so the column adds up. Two of these
+categories did not exist when this document was first written: a file that could not be **opened**,
+and a file that **parsed with syntax errors**.
 
-**82.7% of discovered source files were analyzed.** Two repositories carry most of the gap:
-`ragflow` (2,265 Go files) and `open-webui` (662 Svelte files). Neither is a language Mendr
-reads, and both are disclosed in the report rather than silently excluded.
+| repo | discovered | analyzed | test files | languages not read | parse failures | unopenable |
+|---|---|---|---|---|---|---|
+| chatbot-ui | 288 | 259 | 3 | 26 | 0 | 0 |
+| LibreChat | 4,956 | 3,078 | 1,860 | 18 | 0 | 0 |
+| NextChat | 194 | 154 | 34 | 6 | 0 | 0 |
+| anything-llm | 174 | 158 | 13 | 3 | 0 | 0 |
+| vercel/ai | 3,139 | 3,090 | 49 | 0 | 0 | 0 |
+| lobe-chat | 3,558 | 2,415 | 1,136 | 7 | 0 | 0 |
+| open-webui | 1,021 | 349 | 2 | **670** | 0 | 0 |
+| ragflow | 4,643 | 1,511 | 703 | **2,429** | 0 | 0 |
+| langflow | 310 | 194 | 0 | 116 | 0 | 0 |
+| langchain | 2,324 | 1,666 | 645 | 13 | 0 | 0 |
+| continue | 1,122 | 727 | 390 | 5 | 0 | 0 |
+| dify-official-plugins | 2,350 | 2,111 | 239 | 0 | 0 | 0 |
+| **total** | **24,079** | **15,712** | **5,074** | **3,293** | **0** | **0** |
+
+**Zero parse failures and zero unopenable files across all twelve repositories.** That is the
+result worth reading: the detector that forces `inconclusive` fires on nothing in real, healthy
+code. It was calibrated against exactly this corpus, twice, because the first two versions were
+too eager — see section 5.
+
+**65% of everything discovered was analyzed, and 83% of the source that is not a test file.**
+Both are true, of different denominators, which is why the report prints the categories rather
+than a percentage. Two repositories carry most of the gap: `ragflow` (2,265 Go files) and
+`open-webui` (662 Svelte files). Neither is a language Mendr reads, and both are disclosed.
 
 **Within the languages it does read, nothing is unaccounted for.** Counting every
 `.py/.ts/.tsx/.js/.jsx/.mjs/.cjs` file on disk and comparing against scanned plus
@@ -145,25 +161,59 @@ count, every repository is seen at least as completely as before, and `anything-
 0 files analyzed to 158. `langflow` fell from 6,120 files to 194 because the repository itself
 restructured: it has 195 source files on disk today.
 
-## 5. Two defects this run found
+## 5. What the harness caught, and what it cost to calibrate
 
-**The Tier A summary names a parameter rename the diff does not contain.** On a call using
-`model: 'gpt-5'` with `max_tokens`, the printed summary reads `1 model-id swap (... rename
-"max_tokens" -> "max_completion_tokens" (on gpt-5))` while the diff below it changes only the
-model. The parameter transform was located, counted in the Tier A total, then downgraded by the
-gates — and the sentence is built from what was *located* rather than what was *applied*. It
-appears under a heading marked VERIFIED. A reader applying that diff gets less than the
-description promises.
+The first run of this harness found two defects in the migration path. Both are now fixed, and
+re-running it caught a third — a regression introduced by one of those fixes.
 
-**The parameter rule does not cover the models it migrates to.** `max_tokens` to
-`max_completion_tokens` lists `on_models: [o1, o3, o4, gpt-5]`, and the matcher requires an
-exact prefix, so `gpt-5.6-sol` does not match. That id is the replacement target of 20 registry
-entries and `gpt-5.6-terra` of another 18 — the two most common migration targets in the file.
-Whether the `gpt-5.6` line requires the rename is a fact about the provider that the registry
-does not record, and nothing in the pipeline raises the question.
+**Fixed: the Tier A summary named a parameter rename the diff did not contain.** The sentence was
+built from the parameter sites *located*, while the other half of the same sentence counted the
+edits *applied*. Pass 2 evaluates against the model pass 1 just wrote, so a rule that applied to
+the old id can correctly decline on the new one. The summary therefore announced renames that were
+not in the diff below it, under a heading marked VERIFIED. Labels now come from the edits made.
 
-Both belong to the evidence-rich pull request body work, where coupled parameters and anything
-skipped have to be stated accurately.
+**Fixed: the parameter rule did not cover the models it migrates to.** `max_tokens` to
+`max_completion_tokens` listed `on_models: [o1, o3, o4, gpt-5]`, and the matcher requires an exact
+prefix, so `gpt-5.6-sol` did not match — the replacement target of 20 registry entries, with
+`gpt-5.6-terra` behind another 18. Every one of those migrations swapped the model and left a
+`max_tokens` the new model rejects. `chatbot-ui`, the single auto-fixable finding in this whole
+corpus, now renames the parameter in the same diff. A `validate-registry` check fails when a
+replacement starts with a parameter rule's family yet does not match it: 0 on the fixed registry,
+41 on the one from an hour earlier.
+
+**Caught by re-running: commented-out config was promoted to a live selector.** Reading a key
+inside a flow mapping (`llm: {model: gpt-4-0613}`) means searching the text to the LEFT of the id,
+and that search read straight through a leading `#`. Two commented lines in LibreChat's
+`helm/librechat/values.yaml` became runtime selector candidates:
+
+```
+#         titleModel: "gpt-3.5-turbo"
+#         summaryModel: "gpt-3.5-turbo"
+```
+
+Commented-out config is everywhere in Helm values and docker-compose files, and it is the opposite
+of a live selection. LibreChat is back to the 6 Tier B findings it had before, and this is the only
+number in the entire re-run that moved.
+
+### What calibration cost
+
+The parse-failure detector was too eager twice, and only measuring against these twelve
+repositories showed it:
+
+- **Strict JSON parsing called 23 files malformed, and every one was fine.** `.vscode/launch.json`,
+  `.vscode/settings.json`, `tsconfig.json`, `.eslintrc.json`. Comments and trailing commas are the
+  norm in that family. A check that fires on `tsconfig.json` is a check people switch off.
+- **Flagging every YAML anchor fired on anchors that could not hold a model** — ragflow's
+  `exclude: &web_exclude [globs]`, dify's `document: &id001`. Narrowed to an alias standing where a
+  model would be.
+- **Unparseable documentation was pushing a clean repository to inconclusive.** langflow flipped
+  from `no_exposure` over three tutorial curl samples under `docs/` containing a literal `...`.
+  Genuinely invalid JSON; genuinely irrelevant. The same fixture-path rule the scanner already
+  uses for findings now applies to the parse check.
+
+All three were false alarms of the same shape: technically correct detection of something that
+could not have hidden a live call site. A scanner that cries wolf on `tsconfig.json` teaches people
+to ignore it, which costs more than the gap it was closing.
 
 ## 6. What this does not establish
 
@@ -180,8 +230,19 @@ skipped have to be stated accurately.
   would never have reached an adjudicator.
 - **Nothing here was run by anyone outside this project**, and no engineer has been observed
   reading a Mendr report.
-- One batch run recorded a 900-second timeout on `lobe-chat`. Run alone it completes in 49
-  seconds; the timeout was CPU contention between parallel harness jobs, not the scanner.
+- **Scan times here are not a benchmark.** The whole corpus took 52 seconds on the re-run against
+  229 seconds on the first. Most of that is a quieter machine, not faster code: the first run had
+  parallel harness jobs competing for CPU, and one of them recorded a 900-second "timeout" on
+  `lobe-chat` that completes in 49 seconds when run alone. Treat the per-repo seconds as an order
+  of magnitude, nothing finer.
+- **The parse-failure detector is calibrated on this corpus.** It reports zero across all twelve
+  repositories, which is the right answer for healthy code, but it took three narrowings to get
+  there and every one was informed by these same repos. Its behaviour on a repository genuinely
+  full of broken files is untested outside synthetic fixtures.
+- **The config scanner still has no YAML parser.** Flow mappings are read correctly now, but an
+  alias standing where a model would be is declared unreadable rather than resolved. Merge keys,
+  nested anchors and multi-document streams need a parser, not a regex, and that remains a
+  deliberate gap rather than a solved problem.
 
 ## 7. Reproducing this
 
@@ -192,6 +253,7 @@ clone.sh                                          # pin the 12 repos
 python run.py <old>/dist/cli.js A-old             # pre-hardening scanner
 python run.py <new>/dist/cli.js B <old-registry>  # current scanner, old data
 python run.py <new>/dist/cli.js C-shipped         # shipped artifact
+python compare.py                                 # diff any two runs, to catch a regression
 python search.py && python narrow.py              # independent recall search
 python compare.py
 ```
@@ -220,3 +282,11 @@ dify-official-plugins 331077a2c7f821318ed6aae455847e5dcd7b9246
 > occurrences of a retiring model id found nothing it had missed. Six further live call sites
 > were reported for human review rather than automatic repair, because their client could not be
 > resolved in the same file.
+
+Re-verified on 2026-09-16 against a build four features newer. Every number above reproduced.
+
+**And that is the argument for running this again before each release.** The re-run existed to
+confirm the figures, and it earned its keep by catching something else: a regression, three
+commits old, that had quietly promoted commented-out Helm config to a live selector. No unit test
+caught it, because the unit tests assert what the rules should do and this was a rule doing
+exactly what it was told to a case nobody had thought of. Twelve real repositories thought of it.
