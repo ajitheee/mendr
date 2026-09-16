@@ -333,6 +333,25 @@ function parseKey(line: string): { key: string; sepEnd: number } | null {
  * punctuation sits between them — so `models: [gpt-4-0613, ...]` still reads as a LIST whose
  * elements are not the value of `models`, which is the existing, correct behaviour.
  */
+/**
+ * Is the id inside a COMMENT on this line?
+ *
+ * `innerKeyAt` searches the text to the left of the id, which reads straight through a leading
+ * `#`. Commented-out config is everywhere in Helm values and docker-compose files, and it is the
+ * opposite of a live selector — it is config someone deliberately turned off.
+ *
+ * Caught by re-running the twelve-repo harness: the flow-mapping fix promoted two commented lines
+ * in LibreChat's helm/librechat/values.yaml (`#   titleModel: "gpt-3.5-turbo"`) from informational
+ * to runtime selector candidates.
+ */
+function insideComment(line: string, idCol: number): boolean {
+  const before = line.slice(0, idCol);
+  const hash = before.indexOf('#');
+  if (hash !== -1 && !/["']/.test(before.slice(0, hash))) return true;
+  const slashes = before.indexOf('//');
+  return slashes !== -1 && !/["']/.test(before.slice(0, slashes));
+}
+
 export function innerKeyAt(line: string, idCol: number): { key: string; sepEnd: number } | null {
   const prefix = line.slice(0, idCol);
   const m = /["']?([A-Za-z0-9_.\-]+)["']?\s*:\s*["']?$/.exec(prefix);
@@ -361,7 +380,7 @@ export function classifyConfigOccurrence(
 
   // A key INSIDE a flow mapping governs the id more closely than the line's leading key.
   // Only consulted when it differs, so nothing about block-style config changes.
-  const inner = innerKeyAt(line, idCol);
+  const inner = insideComment(line, idCol) ? null : innerKeyAt(line, idCol);
   if (inner && (!parsed || inner.key !== parsed.key)) {
     const value = flowValueAt(line, inner.sepEnd);
     if (value === id) {

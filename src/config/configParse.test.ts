@@ -50,6 +50,20 @@ describe('a key inside a flow mapping governs the id', () => {
     expect(at('meta: {name: gpt-4-0613}', 'gpt-4-0613')).toMatchObject({ position: 'config_catalog', key: 'name' });
   });
 
+  // Commented-out config is everywhere in Helm values and docker-compose, and it is the opposite
+  // of a live selector. The inner-key search reads straight through a leading #, so it had to be
+  // stopped explicitly: re-running the harness caught it promoting two commented lines in
+  // LibreChat helm/librechat/values.yaml from informational to runtime selector candidates.
+  it('a commented-out line is never a selector', () => {
+    expect(at('#         titleModel: "gpt-4-0613"', 'gpt-4-0613').position).toBe('config_catalog');
+    expect(at('  # model: gpt-4-0613', 'gpt-4-0613').position).toBe('config_catalog');
+    expect(at('  // "model": "gpt-4-0613"', 'gpt-4-0613').position).toBe('config_catalog');
+  });
+
+  it('a # inside a quoted value does not make the line a comment', () => {
+    expect(at('model: gpt-4-0613  # pinned', 'gpt-4-0613')).toMatchObject({ position: 'config_selector' });
+  });
+
   it('innerKeyAt declines when anything but flow punctuation precedes the id', () => {
     expect(innerKeyAt('models: [', 9)).toBeNull();
     expect(innerKeyAt('llm: {model: ', 13)).toMatchObject({ key: 'model' });
