@@ -6,8 +6,8 @@
 // published before it (rollback floor). See src/registry/freshRegistry.ts.
 
 /** ISO-8601 UTC. */
-export const BUNDLED_PUBLISHED_AT = '2026-09-12T17:15:59Z';
+export const BUNDLED_PUBLISHED_AT = '2026-09-16T07:16:41Z';
 /** Content hash of registries/llm-deprecations.json at stamp time (informational). */
-export const BUNDLED_REGISTRY_VERSION = 'sha256:46cb77bc5e20c16f';
+export const BUNDLED_REGISTRY_VERSION = 'sha256:047ae5bde87d6951';
 /** Entries in the bundled registry at stamp time (informational). */
-export const BUNDLED_ENTRY_COUNT = 110;
+export const BUNDLED_ENTRY_COUNT = 158;

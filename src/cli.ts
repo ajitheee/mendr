@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { simpleGit } from 'simple-git';
 import { loadSpec } from './detect/fetchSpec.js';
 import { diffSpecs } from './detect/diffSpec.js';
@@ -192,7 +193,7 @@ const program = new Command();
 program
   .name('mendr')
   .description('Auto-fix third-party API breaking changes: deprecated LLM model ids + Stripe renames.')
-  .version('0.2.0-alpha')
+  .version(cliVersion())
   // "Nothing is uploaded" enforced in code: with --offline (or MENDR_OFFLINE=1)
   // every outbound network primitive throws. The default audit never needs
   // the network, so it runs unchanged; the optional provider usage read,
@@ -232,6 +233,29 @@ async function cloneRemoteOrExit(url: string): Promise<string> {
 /** The distinct providers the loaded registry actually covers (for the coverage report). */
 function registryProviders(registry: ReturnType<typeof loadLlmRegistry>): string[] {
   return [...new Set(registry.map((e) => e.provider))].sort();
+}
+
+/**
+ * The version, read from package.json rather than typed in.
+ *
+ * It was hardcoded, and by this release it was three releases stale: `mendr --version` printed
+ * 0.2.0-alpha on a 0.4.8-alpha build. A version string a human has to remember to update is a
+ * version string that lies, and it lies to the person trying to tell you which build hit a bug.
+ */
+function cliVersion(): string {
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    for (const rel of ['../package.json', '../../package.json']) {
+      const p = resolve(here, rel);
+      if (existsSync(p)) {
+        const v = (JSON.parse(readFileSync(p, 'utf8')) as { version?: string }).version;
+        if (v) return v;
+      }
+    }
+  } catch {
+    // fall through
+  }
+  return 'unknown';
 }
 
 function resolveRepoOrExit(repoPath: string): string {

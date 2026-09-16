@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.5.0-alpha — 2026-09-16
+
+- **A verification run no longer hands your CI's token to your own test code.**
+  The gates run your build and tests, and they inherited the migrate job's
+  `contents: write` / `pull-requests: write` token and its OIDC credentials. A
+  compromised transitive dependency could have pushed to your default branch
+  using Mendr's own job token. Your application secrets stay in scope; the CI's
+  do not. Captured output is now redacted at the source, before it leaves your
+  machine, rather than only on arrival at the App.
+- **A migration can no longer point at a model that is already dead.** The
+  chained-deprecation check read only a curated table whose google section was
+  empty, so a mapping into an id this registry records as retired classified as
+  verified. Five such rows existed. It now also consults what the registry knows
+  about itself, downgrade-only.
+- **The parameter migrates with the model.** `max_tokens` →
+  `max_completion_tokens` did not cover `gpt-5.6-sol` or `gpt-5.6-terra`, the
+  targets of 38 registry entries between them, so the two most common migrations
+  swapped the model and left a parameter the new model rejects.
+- **Suppressions** — `.mendr/suppressions.json`, reviewed in a pull request like
+  any other change. Suppressed findings appear in every report with the reason
+  and the author, and the conclusion is computed before suppression is applied,
+  so no arrangement of that file can make a run read as clean.
+- **A pull request body you can decide from** — the shutdown date and how far
+  away it is, the provider's notice, the replacement's verdict, coupled
+  parameters, what actually ran, and what was deliberately left alone.
+- **An account of every file, and a parse failure fails closed.** Discovered,
+  analyzed, test files, languages not read, parse failures, unopenable — exclusive
+  and adding up. A file that could not be opened was previously swallowed; a file
+  that parsed WITH SYNTAX ERRORS was never looked for, and that one silently
+  changes the answer rather than failing. Either now forces `inconclusive`.
+- **Config in flow style is read correctly.** `llm: {model: x}` was demoted to a
+  catalog reference while `model: x` was a selector. The config scanner also
+  gained a parse concept: malformed JSON (JSONC-aware) and a model-like key whose
+  value is a YAML alias, declared unreadable rather than guessed.
+- **A repository named `docs`, `test` or `e2e` is no longer misread.** The
+  repo-relative path fix reached the literal scanner but not the file walkers, so
+  such a repository had its entire source filed as test support.
+- **`mendr --version` tells the truth.** It was hardcoded and three releases
+  stale; it now reads package.json.
+- **Registry: 158 entries, up from 110**, and the 48 promoted retirements all
+  carry evidence — hash, quoted excerpt, stored snapshot — where none of the
+  previous 110 did. Auto-fix eligible 133.
+- **Measured against twelve public repositories** (`VALIDATION-2026-09-15.md`):
+  one automatically fixable finding across 15,712 analyzed files and it is
+  correct; an independent search of 4,116 occurrences found nothing missed; zero
+  parse failures and zero unopenable files. 1,135 tests.
+
 ## 0.4.8-alpha — 2026-09-12
 
 - **The public-beta pin.** The tag the 20 September beta ships on; later fixes
