@@ -546,15 +546,31 @@ export function isInDefaultContainer(obj: Node): boolean {
   return false;
 }
 
-/** `program.option('-m, --model <model>', 'Model ID', 'dall-e-3')`: the default of a --model flag. */
-export function isCliModelOptionDefault(call: CallExpression, arg: Node): boolean {
+/** Is this call a command-line option/argument declaration (commander, yargs, oclif)? */
+export function isCliOptionCall(call: CallExpression): boolean {
   const name = lastIdentifier(call);
-  if (!name || !/^(option|requiredOption|addOption|argument|flag)$/.test(name)) return false;
+  return !!name && /^(option|requiredOption|addOption|argument|positional|flag)$/.test(name);
+}
+
+/**
+ * `program.option('-m, --model <model>', 'Model ID', 'dall-e-3')`: the default of a CLI flag.
+ *
+ * The flag's NAME used to have to match /model/i. That gate is gone, because it is exactly
+ * how the same defect hid in the Python scanner: `--gpt_version` names a model and contains
+ * no "model", so a 4,954-star repository whose documented Quick Start runs a retiring id
+ * audited as NO EXPOSURE IN COMPLETED SURFACES (going-doer/Paper2Code, 2026-09-16).
+ *
+ * The value is the signal instead, and it is a stronger one: this is only reached for a
+ * literal already matched against the registry, so the question is not "is this a model id"
+ * but "is this id the one the program runs with when the flag is omitted" — and for a CLI
+ * default it is, whatever the flag is called. It caps at review, never swap-eligible, since
+ * the path from parsed argv to a provider request is not traced.
+ */
+export function isCliModelOptionDefault(call: CallExpression, arg: Node): boolean {
+  if (!isCliOptionCall(call)) return false;
   const args = call.getArguments();
-  if (args.length < 2 || args[0] === arg) return false;
-  const first = args[0];
-  const flags = Node.isStringLiteral(first) || Node.isNoSubstitutionTemplateLiteral(first) ? first.getLiteralValue() : first.getText();
-  return /model/i.test(flags);
+  // The first argument is the flag spec itself; a default is always a later one.
+  return args.length >= 2 && args[0] !== arg;
 }
 
 /** Re-exported for callers that only need the constructor check. */

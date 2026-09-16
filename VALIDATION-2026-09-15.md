@@ -290,3 +290,52 @@ confirm the figures, and it earned its keep by catching something else: a regres
 commits old, that had quietly promoted commented-out Helm config to a live selector. No unit test
 caught it, because the unit tests assert what the rules should do and this was a rule doing
 exactly what it was told to a case nobody had thought of. Twelve real repositories thought of it.
+
+---
+
+## Addendum, 2026-09-16 — the recall filter had a blind spot
+
+The recall claim above ("an independent search of 4,116 occurrences found nothing missed") is
+weaker than it reads, and a repository outside this corpus proved it the next day.
+
+**going-doer/Paper2Code** (4,954 stars) audited as **NO EXPOSURE IN COMPLETED SURFACES**. Its
+documented Quick Start is `bash run.sh`, and both README evaluation commands take no
+`--gpt_version` flag; every one of those paths runs `o3-mini`, which OpenAI retires 2026-10-23.
+The scanner saw the literal and filed it as a code data reference — the same bucket as a
+docstring.
+
+The cause was a defaulting shape neither language recognized:
+
+```python
+parser.add_argument('--gpt_version', type=str, default="o3-mini")
+```
+
+Two independent rules had to miss it. `modelNamedAssignmentTarget` looks for a model-named
+assignment target, and a bare `add_argument(...)` statement has none. And `isModelLikeName` is
+`/model/i`, which `--gpt_version` does not satisfy despite naming a model exactly.
+
+TypeScript had the identical hole, and had it twice: `isCliModelOptionDefault` existed for
+commander's positional default but was gated on the same `/model/i` flag-name test, and it knew
+nothing of the yargs spelling, where the default is a `default:` property rather than a
+positional argument. `yargs.option('gptVersion', { default: 'o3-mini' })` feeding
+`model: argv.gptVersion` also audited clean.
+
+Both are fixed, keyed on the CALL rather than the option's name — by that point the value is
+already known to match a registry id, so the question is not whether it is a model but whether
+it is the one that runs when the flag is omitted. Both cap at **review, never swap-eligible**:
+the path from parsed argv to a provider request is not traced.
+
+**What this says about the recall measurement.** The 4,116 occurrences were narrowed by a
+pattern filter and the survivors checked. That design can only find ids classified into the
+wrong bucket among candidates the filter surfaced; it cannot find a whole POSITION the classifier
+misreads, because such a literal is correctly excluded as "data" at every step. A recall search
+built from the scanner's own notion of a candidate inherits the scanner's blind spots.
+
+**It also did not show up here because this corpus could not show it.** Re-measured after the
+fix, all twelve repositories produce byte-identical output — same conclusions, same tallies.
+A precise search confirms why: not one CLI option in the corpus carries a model id as its
+default. Twelve repositories agreeing proves less than it appears to when they share a shape.
+
+The honest summary is that this corpus measures precision well and recall only within the
+filter's imagination. The Paper2Code class was found by reading a repository by hand, which is
+the method that keeps working.

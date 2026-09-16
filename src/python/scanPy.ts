@@ -540,6 +540,8 @@ export const PY_LOOKUP_DEFAULT_REASON =
   'fallback value of a model lookup (getattr / .get / getenv); a real default whose consumer is not traced, review before changing';
 export const PY_DEFAULT_CONTAINER_REASON =
   'model value inside a default-configuration dict; a real default whose consumer is not traced, review before changing';
+export const PY_CLI_DEFAULT_REASON =
+  'default value of a command-line option; the model used whenever the flag is omitted, and its use is not traced — review before changing';
 
 /** Is the literal the LAST argument of a lookup whose key names a model, or whose result is assigned to a model-named name? */
 function isLookupDefaultForModel(argList: PyNode, literal: PyNode): boolean {
@@ -684,6 +686,36 @@ function capFactory(
  * assignment target — `model_name: str = Field(default="…")`,
  * `model = Column(default="…")`? Then the literal is a real selector.
  */
+/**
+ * `parser.add_argument('--gpt_version', type=str, default="o3-mini")`.
+ *
+ * A command-line option's `default=` IS the model the program runs with whenever the flag is
+ * omitted — and for a documented command in a README, the flag is omitted every time. Two
+ * separate rules had to miss this for it to read as inert data: the option's name is not an
+ * assignment target, so `modelNamedAssignmentTarget` sees nothing to test; and a flag called
+ * `--gpt_version` does not contain the substring "model", so `isModelLikeName` rejects it too.
+ *
+ * External validation (going-doer/Paper2Code, 2026-09-16): `scripts/run.sh` and both README
+ * evaluation commands run `o3-mini`, which OpenAI retires in 37 days, and the audit concluded
+ * NO EXPOSURE IN COMPLETED SURFACES. A wrong "clean" is the one answer this scanner must never
+ * give, so a CLI default holding a retiring id has to surface.
+ *
+ * Deliberately keyed on the CALL rather than on the option's name: by the time this runs the
+ * value is already known to match a registry model id, and a CLI default holding a model id is
+ * a selector whatever the flag happens to be called. It caps at review — the path from
+ * `args.x` to a provider request is not traced — so this never becomes swap-eligible.
+ */
+function isCliOptionDefault(kwarg: PyNode): boolean {
+  const call = kwarg.parent?.parent; // keyword_argument → argument_list → call
+  if (!call || call.type !== 'call') return false;
+  const dotted = dottedCallee(call);
+  if (!dotted) return false;
+  // argparse / optparse / absl (`add_argument`, `add_option`), and click / typer
+  // decorators (`@click.option(...)`, `typer.Option(...)`).
+  const last = dotted.split('.').pop() ?? '';
+  return last === 'add_argument' || last === 'add_option' || last === 'option' || last === 'Option';
+}
+
 function modelNamedAssignmentTarget(kwarg: PyNode): boolean {
   const call = kwarg.parent?.parent; // keyword_argument → argument_list → call
   if (!call || call.type !== 'call') return false;
@@ -1021,6 +1053,11 @@ export function classifyPyPosition(
       // filed as Tier C "no selector" while a parser label next to it was Tier A.
       if (/^(default|value)$/.test(name.text) && modelNamedAssignmentTarget(parent)) {
         return { position: 'usage_unverified', reason: PY_FIELD_DEFAULT_REASON };
+      }
+      // The same defaulting idea one call shape over: a command-line option's
+      // default, which no assignment target and no model-like flag name betray.
+      if (name.text === 'default' && isCliOptionDefault(parent)) {
+        return { position: 'usage_unverified', reason: PY_CLI_DEFAULT_REASON };
       }
     }
     return { position: 'data', purpose: 'generic' };

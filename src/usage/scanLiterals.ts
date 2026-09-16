@@ -7,6 +7,7 @@ import {
   enclosingCallOfObject,
   hasCatalogSiblings,
   isCliModelOptionDefault,
+  isCliOptionCall,
   isInDefaultContainer,
   judgeDeclarationSinks,
   TS_CLI_DEFAULT_REASON,
@@ -517,6 +518,14 @@ function classifyByEnclosure(node: Node, parent: Node | undefined, sinks?: TsSin
       // is catalog-shaped (label/pricing siblings). Partner audits, mem0.
       if (isModelLikeName(keyName) && obj && !hasCatalogSiblings(obj) && isInDefaultContainer(obj)) {
         return { position: 'usage_unverified', reason: TS_DEFAULT_CONTAINER_REASON };
+      }
+      // The yargs spelling of a CLI default: `.option('gptVersion', { default: 'o3-mini' })`.
+      // commander passes the default as a positional argument, which
+      // `isCliModelOptionDefault` already covers; yargs hides it in a `default:` property,
+      // where the key is not model-like and the object is not a default CONTAINER, so it
+      // fell through to catalog data — the TypeScript twin of the argparse defect.
+      if (keyName === 'default' && call && isCliOptionCall(call)) {
+        return { position: 'usage_unverified', reason: TS_CLI_DEFAULT_REASON };
       }
       // A property VALUE that is not a proven live model argument sits in a
       // standalone / catalog-shaped object (the chatbot-ui failure mode).
