@@ -8,6 +8,6 @@
 /** ISO-8601 UTC. */
 export const BUNDLED_PUBLISHED_AT = '2026-09-16T07:16:41Z';
 /** Content hash of registries/llm-deprecations.json at stamp time (informational). */
-export const BUNDLED_REGISTRY_VERSION = 'sha256:047ae5bde87d6951';
+export const BUNDLED_REGISTRY_VERSION = 'sha256:8241d681b80651cd';
 /** Entries in the bundled registry at stamp time (informational). */
 export const BUNDLED_ENTRY_COUNT = 158;

@@ -28,7 +28,17 @@ const bytes = readFileSync(registryPath);
 const entries = JSON.parse(bytes.toString('utf8'));
 if (!Array.isArray(entries)) throw new Error(`${registryPath} must be a JSON array`);
 // Mirrors registryVersionOf() in src/registry/manifest.ts: sha256: + 16 hex.
-const version = 'sha256:' + createHash('sha256').update(bytes).digest('hex').slice(0, 16);
+//
+// Hash the LF-NORMALIZED bytes. A Windows checkout materializes this file with
+// CRLF, so stamping on Windows recorded a hash for a byte sequence that exists
+// on no server: v0.5.0-alpha was stamped sha256:047ae5be while the snapshot CI
+// published from the same commit was sha256:8241d681. Nothing compares the two
+// — freshRegistry.ts recomputes the bundled version from the shipped bytes and
+// checks a downloaded registry against its own signed manifest — which is
+// exactly why this was worth fixing before someone makes it an integrity check
+// and a routine release from a Windows machine starts looking like tampering.
+const canonical = Buffer.from(bytes.toString('utf8').replace(/\r\n/g, '\n'), 'utf8');
+const version = 'sha256:' + createHash('sha256').update(canonical).digest('hex').slice(0, 16);
 const rawAt = process.env.MENDR_STAMP_AT ?? new Date().toISOString();
 if (Number.isNaN(Date.parse(rawAt))) throw new Error(`MENDR_STAMP_AT is not a parseable timestamp: ${rawAt}`);
 const at = new Date(rawAt).toISOString().replace(/\.\d{3}Z$/, 'Z');
