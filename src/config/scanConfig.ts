@@ -319,6 +319,34 @@ function parseKey(line: string): { key: string; sepEnd: number } | null {
 }
 
 /**
+ * The key that most immediately governs the id, INCLUDING inside a `{...}` flow mapping.
+ *
+ * `parseKey` is anchored to the start of the line, so `llm: {model: gpt-4-0613}` returned the key
+ * `llm` and never saw the inner `model`. The same logical config written three ways got three
+ * different verdicts:
+ *
+ *     model: gpt-4-0613            -> runtime_selector_candidate, key=model
+ *     llm: {model: gpt-4-0613}     -> catalog_reference,          key=llm
+ *
+ * A live selector was demoted to an informational reference purely by YAML style. This finds the
+ * nearest `key:` to the left of the id, and deliberately fails when anything other than flow
+ * punctuation sits between them — so `models: [gpt-4-0613, ...]` still reads as a LIST whose
+ * elements are not the value of `models`, which is the existing, correct behaviour.
+ */
+export function innerKeyAt(line: string, idCol: number): { key: string; sepEnd: number } | null {
+  const prefix = line.slice(0, idCol);
+  const m = /["']?([A-Za-z0-9_.\-]+)["']?\s*:\s*["']?$/.exec(prefix);
+  return m ? { key: m[1] as string, sepEnd: prefix.length } : null;
+}
+
+/** The scalar the id belongs to inside a flow mapping: up to the next `,` `}` or `]`. */
+function flowValueAt(line: string, sepEnd: number): string {
+  const rest = line.slice(sepEnd);
+  const end = rest.search(/[,}\]]/);
+  return stripQuotes(stripComment(end === -1 ? rest : rest.slice(0, end)));
+}
+
+/**
  * Classify one id occurrence on one line. Conservative: `config_selector` (Tier B)
  * only when a model-like key's value is EXACTLY the id; everything else is
  * `config_catalog` (Tier C). Accuracy over recall, as everywhere in mendr.
@@ -330,6 +358,19 @@ export function classifyConfigOccurrence(
 ): { position: ConfigPosition; purpose?: ConfigPurpose; key: string | null } {
   const parsed = parseKey(line);
   const isListItem = /^\s*-\s+/.test(line);
+
+  // A key INSIDE a flow mapping governs the id more closely than the line's leading key.
+  // Only consulted when it differs, so nothing about block-style config changes.
+  const inner = innerKeyAt(line, idCol);
+  if (inner && (!parsed || inner.key !== parsed.key)) {
+    const value = flowValueAt(line, inner.sepEnd);
+    if (value === id) {
+      return isModelLikeName(inner.key)
+        ? { position: 'config_selector', key: inner.key }
+        : { position: 'config_catalog', purpose: 'catalog_entry', key: inner.key };
+    }
+    return { position: 'config_catalog', purpose: 'catalog_entry', key: inner.key };
+  }
 
   if (parsed) {
     // The id sits BEFORE the separator => it IS the key (a map key / catalog entry).
@@ -648,6 +689,114 @@ export function scanConfigText(
  * number: a scan that collected 80 files and read 0 found nothing because it read
  * nothing, which must never be reported as "no exposure".
  */
+/**
+ * Files the line walk cannot claim to have read properly.
+ *
+ * The config scanner is deliberately line-based: it never builds a YAML or JSON tree, which is
+ * what lets it survive the half-broken and templated config real repositories are full of. The
+ * cost is that two constructs are genuinely beyond it, and until now it said nothing about either.
+ *
+ *   MALFORMED JSON. A .json file that does not parse is not "a file with no model ids in it", but
+ *   that is exactly how it read. JSON.parse settles it exactly, with no dependency.
+ *
+ *   YAML ALIASES. `defaults: &d gpt-4-0613` followed by `model: *d` is a live selector whose value
+ *   lives on another line. The walk sees `model: *d`, finds no id, and reports nothing — while the
+ *   anchor line itself is filed as a catalog reference. Resolving aliases properly means merge
+ *   keys, nested anchors and multi-document streams: a YAML parser, not a regex. So the file is
+ *   declared not-reliably-read instead of guessed at.
+ *
+ * Both feed the same coverage denominator as a source parse failure, and the same fail-closed
+ * conclusion: a file mendr could not read properly cannot be used as evidence of absence.
+ */
+/**
+ * Strip JSONC so a `.json` file can be checked for real malformation.
+ *
+ * `JSON.parse` alone was hopeless here, and measurably so: run against the twelve validation
+ * repositories it declared 23 files malformed, and every one I inspected was fine —
+ * `.vscode/launch.json`, `.vscode/settings.json`, `tsconfig.json`, `.eslintrc.json`. Comments and
+ * trailing commas are the NORM in that family, not a defect, and a check that fires on tsconfig
+ * is a check people switch off.
+ *
+ * String-aware on purpose: a naive `//` strip eats the middle of every `"https://..."` in the
+ * file and turns valid config into a parse error, which is the same false alarm wearing a
+ * different hat.
+ */
+export function stripJsonComments(text: string): string {
+  let out = '';
+  let inString = false;
+  let quote = '';
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i] as string;
+    const next = text[i + 1];
+    if (inString) {
+      out += ch;
+      if (ch === '\\') {
+        out += text[i + 1] ?? '';
+        i++;
+      } else if (ch === quote) {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      inString = true;
+      quote = ch;
+      out += ch;
+      continue;
+    }
+    if (ch === '/' && next === '/') {
+      while (i < text.length && text[i] !== '\n') i++;
+      out += '\n';
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      i += 2;
+      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
+      i++;
+      continue;
+    }
+    out += ch;
+  }
+  // Trailing commas before a closing brace/bracket, which JSONC allows and JSON does not.
+  return out.replace(/,(\s*[}\]])/g, '$1');
+}
+
+export function configParseIssue(file: string, text: string): 'malformed_json' | 'unresolved_alias' | null {
+  // A file that is not deployed configuration cannot hide a live selector, so its unreadability
+  // narrows nothing. The SAME rule the scanner already uses to demote findings applies here:
+  // docs, examples, templates and generated output are data.
+  //
+  // Measured, not assumed: without this, langflow flipped from a clean result to inconclusive
+  // over three documentation samples under docs/ that contain a literal `...` elision. They are
+  // genuinely invalid JSON and they are also curl examples in a tutorial. Reporting them would
+  // teach a reader that "inconclusive" means "mendr found some prose it did not like".
+  if (isTestFixturePath(file)) return null;
+  if (/\.json5?$/i.test(file)) {
+    try {
+      JSON.parse(stripJsonComments(text));
+    } catch {
+      return 'malformed_json';
+    }
+    return null;
+  }
+  if (/\.ya?ml$/i.test(file)) {
+    // ONLY an alias standing where a MODEL would be: `model: *default`.
+    //
+    // Flagging every anchor was measurably too broad — across the validation corpus it fired on
+    // ragflow's `exclude: &web_exclude [globs]` and dify's `document: &id001`, neither of which
+    // could ever hold a model id. A clean repository would have been pushed to inconclusive by a
+    // list of file globs, which is the kind of false alarm that teaches people to ignore the tool.
+    //
+    // Narrowed to the case that genuinely defeats the reader: the value of a model-like key lives
+    // on another line, so the walk sees `model: *d` and finds no id at all.
+    for (const line of text.split('\n')) {
+      const m = /^\s*(?:-\s*)?["']?([A-Za-z0-9_.\-]+)["']?\s*:\s*\*[A-Za-z0-9_.\-]+\s*$/.exec(line);
+      if (m && isModelLikeName(m[1] as string)) return 'unresolved_alias';
+    }
+  }
+  return null;
+}
+
 export function scanConfigFiles(repoPath: string, registry: LlmRegistry): {
   matches: ConfigMatch[];
   filesScanned: number;
@@ -657,6 +806,8 @@ export function scanConfigFiles(repoPath: string, registry: LlmRegistry): {
   generatedSkipped: number;
   /** Generated-artifact directories that were PRESENT and excluded. */
   excludedDirs: string[];
+  /** Files the line walk could not claim to have read properly, with the reason. */
+  parseIssues: { file: string; issue: string }[];
 } {
   const abs = resolve(repoPath);
   const excluded = new Set<string>();
@@ -671,6 +822,7 @@ export function scanConfigFiles(repoPath: string, registry: LlmRegistry): {
   let filesRead = 0;
   let filesUnreadable = 0;
   let generatedSkipped = 0;
+  const parseIssues: { file: string; issue: string }[] = [];
   for (const file of files) {
     let text: string;
     try {
@@ -689,9 +841,19 @@ export function scanConfigFiles(repoPath: string, registry: LlmRegistry): {
     }
     const r = rel(file);
     const gitignored = ignored.has(r) || ignored.has(r.split('/').pop() ?? '');
+    const issue = configParseIssue(r, text);
+    if (issue) parseIssues.push({ file: r, issue });
     for (const m of scanConfigText(r, text, registry, { gitignored })) matches.push(m);
   }
-  return { matches, filesScanned: files.length, filesRead, filesUnreadable, generatedSkipped, excludedDirs: [...excluded].sort() };
+  return {
+    matches,
+    filesScanned: files.length,
+    filesRead,
+    filesUnreadable,
+    generatedSkipped,
+    excludedDirs: [...excluded].sort(),
+    parseIssues,
+  };
 }
 
 /** Exact (non-glob) entries of the root .gitignore, as repo-relative paths or bare basenames. */

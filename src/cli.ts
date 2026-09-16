@@ -3164,6 +3164,7 @@ program
       let generatedSkipped = 0;
       let excludedDirs: string[] = [];
       let configFailed = false;
+      let configParseIssues: { file: string; issue: string }[] = [];
       let config: ReturnType<typeof foldConfigExposure> = [];
       try {
         const scan = scanConfigFiles(resolved, registry);
@@ -3172,6 +3173,9 @@ program
         generatedSkipped = scan.generatedSkipped;
         excludedDirs = scan.excludedDirs;
         config = foldConfigExposure(scan.matches);
+        // A config file the line walk could not claim to have read properly counts in the same
+        // denominator as a source parse failure, and fails closed the same way.
+        configParseIssues = scan.parseIssues;
         if (scan.filesUnreadable > 0 && !json) {
           console.error(`mendr: ${scan.filesUnreadable} config file(s) could not be read.`);
         }
@@ -3334,7 +3338,16 @@ program
           parseFailureFiles,
           note: opts.skipSource ? 'skipped (--skip-source)' : undefined,
         },
-        config: { analyzed: !configFailed, failed: configFailed, filesScanned, filesRead, generatedSkipped, excludedDirs },
+        config: {
+          analyzed: !configFailed,
+          failed: configFailed,
+          filesScanned,
+          filesRead,
+          generatedSkipped,
+          excludedDirs,
+          parseFailures: configParseIssues.length,
+          parseFailureFiles: configParseIssues.slice(0, 5).map((x) => `${x.file} (${x.issue.replace(/_/g, ' ')})`),
+        },
         registry: { providers: registryProviders(registry), ...coverageFieldsOf(registryFreshness) },
         runtime: {
           connected: runtime.connected,

@@ -147,7 +147,15 @@ export interface ModelInvestigation {
 
 // --- coverage + conclusion --------------------------------------------------
 
-export interface SurfaceCoverage {
+/** A surface that can say what it could not read properly, rather than reporting silence. */
+export interface ParseAware {
+  /** Files read but NOT reliably understood — a syntax error, or a construct the reader cannot resolve. */
+  parseFailures?: number;
+  /** A few of those paths, so the reader can go and look. */
+  parseFailureFiles?: string[];
+}
+
+export interface SurfaceCoverage extends ParseAware {
   analyzed: boolean;
   filesScanned: number;
   /** Files actually READ (a collected-but-unreadable file proves nothing). */
@@ -324,7 +332,11 @@ export function concludeAudit(coverage: AuditCoverage, exposureCount: number): A
   // forces `inconclusive` — the same fail-closed posture a stale registry already gets. There is
   // no threshold: one unreadable file is one place a live call site could be hiding, and a
   // threshold would only be a rule about when it is acceptable to guess.
-  if ((coverage.source.parseFailures ?? 0) > 0 || (coverage.source.unreadableFiles ?? 0) > 0) {
+  if (
+    (coverage.source.parseFailures ?? 0) > 0 ||
+    (coverage.source.unreadableFiles ?? 0) > 0 ||
+    (coverage.config.parseFailures ?? 0) > 0
+  ) {
     return 'inconclusive';
   }
   const analyzed = coverage.source.tsFiles + (coverage.source.jsFiles ?? 0) + coverage.source.pyFiles;
@@ -354,6 +366,12 @@ export function coverageGaps(coverage: AuditCoverage): string[] {
   }
   if ((coverage.source.unreadableFiles ?? 0) > 0) {
     gaps.push(`${coverage.source.unreadableFiles ?? 0} file(s) could not be opened at all`);
+  }
+  if ((coverage.config.parseFailures ?? 0) > 0) {
+    gaps.push(
+      `${coverage.config.parseFailures ?? 0} configuration file(s) could not be read properly ` +
+        '(malformed JSON, or a YAML alias whose value the line reader cannot resolve)',
+    );
   }
   if (coverage.source.failed) gaps.push('source scan FAILED');
   else if (!coverage.source.analyzed) gaps.push('source code (TS/TSX/Python) was not scanned');
