@@ -32,7 +32,14 @@ on a known date.
 
 ---
 
-## 2. evalstate / Shaun Smith — fast-agent  (3,919 stars)
+## 2. evalstate / Shaun Smith — fast-agent  (3,919 stars)  — **SENT 2026-09-16**
+
+Filed as https://github.com/evalstate/fast-agent/issues/959 (open, authored by ajitheee).
+Reworked from a DM into a plain bug report before sending: `DEFAULT_OPENAI_MODEL` was confirmed
+reachable at four fallback sites (llm_openai.py:386, :1187, :1542, :1589) and `DEFAULT_RESPONSES_MODEL`
+at four more, so both are live defaults rather than dead constants. The repo already receives
+promotional issues (#922 and #955 are duplicates of the same pitch), so the scanner is mentioned
+only once, at the end, as disclosure of method.
 
 **Hook:** `src/fast_agent/llm/provider/openai/llm_openai.py:86` hardcodes
 `DEFAULT_OPENAI_MODEL = "gpt-5-mini"`. Registry `openai.gpt-5-mini.retirement-2026-12-11`,
