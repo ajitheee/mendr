@@ -7,7 +7,13 @@ import {
 } from '../usage/llmRegistry.js';
 import { buildRegistryPrefilter, loadPrefilteredProject } from '../usage/scanRepo.js';
 import { findModelIdLiterals } from '../usage/scanLiterals.js';
-import { collectPythonFiles, findPyModelIdLiterals, readPythonSources } from '../python/scanPy.js';
+import {
+  collectPythonFiles,
+  countSyntaxErrors,
+  findPyModelIdLiterals,
+  parsePython,
+  readPythonSources,
+} from '../python/scanPy.js';
 import { classifyOccurrenceTier } from '../report/classifyOccurrence.js';
 import { usageVerdictState, type Tier, type UsageVerdict } from '../report/tiers.js';
 
@@ -280,7 +286,15 @@ export function foldExposure(matches: readonly ExposureMatch[]): ExposedModel[] 
 export async function scanForExposure(
   repoPath: string,
   registry: LlmRegistry,
-): Promise<{ matches: ExposureMatch[]; filesScanned: number; filesMatched: number }> {
+): Promise<{
+  matches: ExposureMatch[];
+  filesScanned: number;
+  filesMatched: number;
+  /** Files found but not openable — reported rather than swallowed. */
+  unreadableFiles: string[];
+  /** Files parsed WITH SYNTAX ERRORS: a damaged tree silently changes the classification. */
+  parseFailures: string[];
+}> {
   const rel = (file: string): string => relative(repoPath, file).replace(/\\/g, '/');
   const prefilter = buildRegistryPrefilter(registry);
 
@@ -304,19 +318,42 @@ export async function scanForExposure(
     };
   };
 
-  const { project, totalFiles: tsFiles, matchedFiles: tsMatched } = loadPrefilteredProject(
-    repoPath,
-    prefilter,
-  );
+  const {
+    project,
+    totalFiles: tsFiles,
+    matchedFiles: tsMatched,
+    unreadableFiles,
+    parseFailures,
+  } = loadPrefilteredProject(repoPath, prefilter);
   const tsMatches = findModelIdLiterals(project, registry, repoPath).map(toMatch);
 
   const pyFiles = collectPythonFiles(repoPath);
   const pySourcesAll = readPythonSources(pyFiles);
+  // The Python reader drops an unopenable file silently; recover the count by difference so the
+  // denominator is whole rather than "acceptable for a permissions edge case".
+  const pyUnreadable = pyFiles.filter((f) => !pySourcesAll.some((src) => src.path === f));
   const pySources = prefilter ? pySourcesAll.filter((s) => prefilter.test(s.text)) : [];
   const pyMatches = (await findPyModelIdLiterals(pySources, registry)).map(toMatch);
 
+  // Python's parser is error-tolerant in the same way TypeScript's is: a malformed file yields a
+  // tree full of ERROR/MISSING nodes rather than raising, so a syntax error silently narrows what
+  // the scan can see instead of announcing itself. countSyntaxErrors already exists for the fix
+  // gate; this is the same signal, used for coverage. Only the pre-filtered files are re-parsed —
+  // the handful that mention a registry id — so the cost is small.
+  const pyParseFailures: string[] = [];
+  for (const src of pySources) {
+    try {
+      if (countSyntaxErrors(await parsePython(src.text)) > 0) pyParseFailures.push(src.path);
+    } catch {
+      // A file the parser cannot handle at all is a stronger version of the same thing.
+      pyParseFailures.push(src.path);
+    }
+  }
+
   return {
     matches: [...tsMatches, ...pyMatches],
+    unreadableFiles: [...unreadableFiles, ...pyUnreadable].map(rel),
+    parseFailures: [...parseFailures, ...pyParseFailures].map(rel),
     filesScanned: tsFiles + pyFiles.length,
     filesMatched: tsMatched + pySources.length,
   };

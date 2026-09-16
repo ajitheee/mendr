@@ -163,7 +163,7 @@ export function countTsTestFiles(repoPath: string): number {
       const full = join(dir, entry.name);
       if (entry.isDirectory()) {
         if (!SCAN_EXCLUDED_DIRS.has(entry.name)) walk(full);
-      } else if (entry.isFile() && scriptLanguageOf(entry.name) !== null && isTestPath(full)) {
+      } else if (entry.isFile() && scriptLanguageOf(entry.name) !== null && isTestPath(relative(abs, full))) {
         count++;
       }
     }
@@ -186,7 +186,7 @@ export function collectTsSourceFiles(repoPath: string): string[] {
       const full = join(dir, entry.name);
       if (entry.isDirectory()) {
         if (!SCAN_EXCLUDED_DIRS.has(entry.name)) walk(full);
-      } else if (entry.isFile() && scriptLanguageOf(entry.name) !== null && !isTestPath(full)) {
+      } else if (entry.isFile() && scriptLanguageOf(entry.name) !== null && !isTestPath(relative(abs, full))) {
         out.push(full);
       }
     }
@@ -221,6 +221,30 @@ export interface PrefilteredScan {
   totalFiles: number;
   /** How many of those matched the registry pre-filter and were parsed. */
   matchedFiles: number;
+  /**
+   * Files the walker found and could NOT read — permissions, encoding, a broken link.
+   *
+   * These used to vanish into a bare catch whose own comment conceded that it "slightly
+   * overstates coverage". A file Mendr could not open is indistinguishable, in the output, from
+   * a file containing nothing — which is the exact shape of a false clean, so it is counted and
+   * reported rather than tolerated.
+   */
+  unreadableFiles: string[];
+  /**
+   * Files that PARSED WITH SYNTAX ERRORS.
+   *
+   * ts-morph is error-tolerant, so a malformed file does not throw: it yields a damaged tree,
+   * and the damage silently changes the answer. Proven on a two-file repo: with unbalanced
+   * braces a live `client.chat.completions.create({ model: 'gpt-3.5-turbo-0613' })` is reported
+   * as "code data reference" (informational, never migrated); balance the braces and the same
+   * line becomes "verified provider SDK call site". A syntax error therefore DOWNGRADES a real
+   * finding, and nothing told the reader.
+   *
+   * `parseDiagnostics` is the right signal because it is purely syntactic: a file whose imports
+   * do not resolve — the normal case, since Mendr scans without installing dependencies —
+   * reports zero.
+   */
+  parseFailures: string[];
 }
 
 /**
@@ -232,13 +256,14 @@ export interface PrefilteredScan {
  */
 function buildPrefiltered(files: readonly string[], prefilter: RegExp | undefined): PrefilteredScan {
   const hits: string[] = [];
+  const unreadableFiles: string[] = [];
   if (prefilter) {
     for (const file of files) {
       try {
         if (prefilter.test(readFileSync(file, 'utf8'))) hits.push(file);
       } catch {
-        // Unreadable file: counted as walked, cannot be scanned. Same
-        // permissions edge case the Python reader tolerates.
+        // A file Mendr could not open looks exactly like a file with nothing in it. Record it.
+        unreadableFiles.push(file);
       }
     }
   }
@@ -246,8 +271,30 @@ function buildPrefiltered(files: readonly string[], prefilter: RegExp | undefine
   // the literal + param locators are syntax-driven (no cross-file type
   // resolution), so the repo's own tsconfig adds nothing but load time here.
   const project = new Project({ compilerOptions: fallbackCompilerOptions() });
-  for (const file of hits) project.addSourceFileAtPath(file);
-  return { project, totalFiles: files.length, matchedFiles: hits.length };
+  const added: { file: string; sf: ReturnType<Project['addSourceFileAtPath']> }[] = [];
+  for (const file of hits) {
+    try {
+      added.push({ file, sf: project.addSourceFileAtPath(file) });
+    } catch {
+      unreadableFiles.push(file);
+    }
+  }
+  // SYNTACTIC diagnostics only, and only over the pre-filtered set (the handful of files that
+  // mention a registry id), so the program build stays cheap. Semantic errors are deliberately
+  // not consulted: Mendr scans without installing dependencies, so every import is unresolved
+  // and a semantic check would flag the entire repository.
+  const parseFailures: string[] = [];
+  try {
+    const program = project.getProgram().compilerObject;
+    for (const { file, sf } of added) {
+      if (program.getSyntacticDiagnostics(sf.compilerNode).length > 0) parseFailures.push(file);
+    }
+  } catch {
+    // A program that cannot be built tells us nothing about individual files. Claiming zero
+    // parse failures here would be the false-confidence this whole count exists to prevent, so
+    // the list is left empty and the surrounding report says what it does and does not know.
+  }
+  return { project, totalFiles: files.length, matchedFiles: hits.length, unreadableFiles, parseFailures };
 }
 
 export function loadPrefilteredProject(repoPath: string, prefilter: RegExp | undefined): PrefilteredScan {
@@ -280,7 +327,7 @@ export function collectTestSourceFiles(repoPath: string): string[] {
       const full = join(dir, entry.name);
       if (entry.isDirectory()) {
         if (!SCAN_EXCLUDED_DIRS.has(entry.name)) walk(full);
-      } else if (entry.isFile() && scriptLanguageOf(entry.name) !== null && isTestPath(full)) {
+      } else if (entry.isFile() && scriptLanguageOf(entry.name) !== null && isTestPath(relative(abs, full))) {
         out.push(full);
       }
     }

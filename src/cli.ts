@@ -3199,6 +3199,9 @@ program
       } catch {
         // A language census failure must not fail the audit; it only enriches coverage.
       }
+      let unreadableFiles = 0;
+      let parseFailures = 0;
+      let parseFailureFiles: string[] = [];
       if (!opts.skipSource) {
         try {
           // "files scanned" = files whose model ids were examined as production
@@ -3213,6 +3216,9 @@ program
           testFilesSkipped = countTsTestFiles(resolved) + pyTests;
           if (progress) console.error(`Scanning source (${tsFiles} TS/TSX, ${jsFiles} JavaScript, ${pyFiles} Python file(s); ${testFilesSkipped} test file(s) as test-only references)...`);
           const scan = await scanForExposure(resolved, registry);
+          unreadableFiles = scan.unreadableFiles.length;
+          parseFailures = scan.parseFailures.length;
+          parseFailureFiles = scan.parseFailures.slice(0, 5);
           // Test-file references: informational, forced Tier C, never migrated.
           const testRefs = findTestReferences(resolved, registry);
           source = foldExposure([...scan.matches, ...testRefs]);
@@ -3323,6 +3329,9 @@ program
           unanalyzedFiles,
           docsFiles,
           testFilesSkipped,
+          unreadableFiles,
+          parseFailures,
+          parseFailureFiles,
           note: opts.skipSource ? 'skipped (--skip-source)' : undefined,
         },
         config: { analyzed: !configFailed, failed: configFailed, filesScanned, filesRead, generatedSkipped, excludedDirs },

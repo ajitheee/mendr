@@ -15,6 +15,7 @@ import {
   partitionFindings,
   isExposure as isExposureInv,
   type AuditCoverage,
+  type SourceCoverage,
   type LocationRef,
   type ModelInvestigation,
   analyzedIsMinority,
@@ -150,6 +151,23 @@ export function coverageReport(meta: AuditMeta): string[] {
   );
   if ((src.testFilesSkipped ?? 0) > 0) {
     lines.push(row('✓', 'Test files', `${int(src.testFilesSkipped ?? 0)} scanned as test-only references — reported informational, never migration candidates`));
+  }
+  // THE DENOMINATOR. Every file the walker found lands in exactly one of these, so a reader can
+  // add them up and see what happened to all of them. "No exposure" is only as good as this
+  // account of what was not looked at.
+  lines.push(...coverageDenominator(src));
+  // A parse failure is the one gap that changes an ANSWER rather than narrowing it. ts-morph is
+  // error-tolerant, so a malformed file yields a damaged tree instead of an error: the same live
+  // call site reads as "code data reference" instead of "verified provider SDK call site". It
+  // gets its own row, and it forces `inconclusive` below.
+  if ((src.parseFailures ?? 0) > 0) {
+    lines.push(
+      row('✗', 'Parse failures', `${int(src.parseFailures ?? 0)} file(s) had syntax errors — what they contain was NOT reliably read`),
+    );
+    for (const f of (src.parseFailureFiles ?? []).slice(0, 5)) lines.push(`    ${f}`);
+  }
+  if ((src.unreadableFiles ?? 0) > 0) {
+    lines.push(row('✗', 'Unreadable', `${int(src.unreadableFiles ?? 0)} file(s) could not be opened at all`));
   }
   // `✓` is reserved for a surface that actually scanned something. No supported
   // config files at all is NOT APPLICABLE; files present but unreadable is a real
@@ -308,6 +326,39 @@ export function plainSummary(investigations: readonly ModelInvestigation[], cove
 }
 
 /** Render the combined audit for a terminal. */
+/**
+ * The five-way account of every file the walker found.
+ *
+ * The categories are exclusive and ordered, so a file appears exactly once: a file that fails to
+ * parse is a parse failure even though it is also TypeScript, because that is the fact that
+ * decides what the report can claim about it.
+ */
+export function coverageDenominator(src: SourceCoverage): string[] {
+  const unsupported = src.unanalyzedFiles ?? 0;
+  const tests = src.testFilesSkipped ?? 0;
+  const parseFailed = src.parseFailures ?? 0;
+  const unreadable = src.unreadableFiles ?? 0;
+  // The per-language totals count files on disk by extension, so a file that failed to parse or
+  // could not be opened is ALREADY in them. Subtract, so each file lands in exactly one row and
+  // the column adds up to the discovered total. Without this, a broken file is reported twice and
+  // the denominator is larger than the repository.
+  const byLanguage = src.tsFiles + (src.jsFiles ?? 0) + src.pyFiles;
+  const analyzed = Math.max(0, byLanguage - parseFailed - unreadable);
+  const discovered = analyzed + unsupported + tests + parseFailed + unreadable;
+  if (discovered === 0) return [];
+  const pad2 = (n: number): string => String(n).padStart(6);
+  return [
+    '',
+    '  Files accounted for',
+    `  ${pad2(discovered)}  discovered`,
+    `  ${pad2(analyzed)}  analyzed (TS/TSX, JavaScript, Python)`,
+    ...(tests > 0 ? [`  ${pad2(tests)}  test files — read, but never migration candidates`] : []),
+    ...(unsupported > 0 ? [`  ${pad2(unsupported)}  languages mendr does not read`] : []),
+    ...(parseFailed > 0 ? [`  ${pad2(parseFailed)}  parse failures — contents NOT reliably read`] : []),
+    ...(unreadable > 0 ? [`  ${pad2(unreadable)}  could not be opened`] : []),
+  ];
+}
+
 export function renderAuditReport(investigations: readonly ModelInvestigation[], meta: AuditMeta): string[] {
   const lines: string[] = ['mendr audit (preview)', ''];
   for (const line of coverageReport(meta)) lines.push(line);

@@ -3,6 +3,10 @@ import { Project } from 'ts-morph';
 import type { LlmRegistry } from '../types.js';
 import { autoApplyVerification } from './llmRegistry.js';
 import { findModelIdLiterals, isTestPath } from './scanLiterals.js';
+import { collectTsSourceFiles, countTsTestFiles } from './scanRepo.js';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { classifyOccurrenceTier } from '../report/classifyOccurrence.js';
 import { isExamplePath, splitProviderPrefix } from './sharedRules.js';
 import {
@@ -182,6 +186,55 @@ describe('the path rules read the repo, not the checkout directory', () => {
 
   it('an examples/ tree inside a repo that is itself named docs is still informational', () => {
     expect(scanAt('/home/runner/work/docs/docs', '/home/runner/work/docs/docs/examples/x.ts')).toBe('C');
+  });
+});
+
+// The FILE WALKERS, which yesterday's repo-relative fix did not reach. scanLiterals.ts was fixed
+// and scanRepo.ts was not, so collectTsSourceFiles / countTsTestFiles / collectTestSourceFiles
+// still handed isTestPath the ABSOLUTE path. A repository NAMED tests, mocks, fixtures or e2e
+// therefore had its entire source classified as test-support: not a false clean (the audit fails
+// closed to inconclusive), but every live call site in it was silently filed as a test fixture,
+// and the reader was told so.
+describe('the file walkers judge position inside the repo, not the checkout directory', () => {
+  const src = `${OPENAI}export async function ask() {
+  return client.chat.completions.create({ model: "gpt-4", messages: [] });
+}
+`;
+
+  for (const name of ['tests', 'test', 'mocks', 'fixtures', 'e2e', 'testing']) {
+    it(`a repository named ${name} has its source treated as source`, () => {
+      const dir = mkdtempSync(join(tmpdir(), 'mendr-walk-'));
+      const repo = join(dir, name, name);
+      mkdirSync(join(repo, 'src'), { recursive: true });
+      writeFileSync(join(repo, 'src', 'app.ts'), src, 'utf8');
+      expect(collectTsSourceFiles(repo), name).toHaveLength(1);
+      expect(countTsTestFiles(repo), name).toBe(0);
+      rmSync(dir, { recursive: true, force: true });
+    });
+  }
+
+  it('a genuine tests/ directory inside the repo is still test-support', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mendr-walk-'));
+    const repo = join(dir, 'app', 'app');
+    mkdirSync(join(repo, 'src'), { recursive: true });
+    mkdirSync(join(repo, 'tests'), { recursive: true });
+    writeFileSync(join(repo, 'src', 'app.ts'), src, 'utf8');
+    writeFileSync(join(repo, 'tests', 'helper.ts'), src, 'utf8');
+    expect(collectTsSourceFiles(repo)).toHaveLength(1);
+    expect(countTsTestFiles(repo)).toBe(1);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('a tests/ directory inside a repo that is itself named tests still separates correctly', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mendr-walk-'));
+    const repo = join(dir, 'tests', 'tests');
+    mkdirSync(join(repo, 'src'), { recursive: true });
+    mkdirSync(join(repo, 'tests'), { recursive: true });
+    writeFileSync(join(repo, 'src', 'app.ts'), src, 'utf8');
+    writeFileSync(join(repo, 'tests', 'helper.ts'), src, 'utf8');
+    expect(collectTsSourceFiles(repo)).toHaveLength(1);
+    expect(countTsTestFiles(repo)).toBe(1);
+    rmSync(dir, { recursive: true, force: true });
   });
 });
 

@@ -176,6 +176,25 @@ export interface SourceCoverage extends SurfaceCoverage {
   docsFiles?: number;
   /** Test-support source files: present, counted, but their model ids are skipped by rule. */
   testFilesSkipped?: number;
+  /**
+   * Files the walker found and could NOT open. Permissions, encoding, a broken symlink.
+   *
+   * Previously swallowed by a bare catch. A file Mendr could not read is indistinguishable in
+   * the output from a file containing nothing, which is the exact shape of a false clean.
+   */
+  unreadableFiles?: number;
+  /**
+   * Files that were read and parsed WITH SYNTAX ERRORS.
+   *
+   * The most dangerous category, because a damaged parse does not fail loudly — it quietly
+   * changes the answer. Demonstrated on a two-file repository: with unbalanced braces a live
+   * `client.chat.completions.create({ model: 'gpt-3.5-turbo-0613' })` is classified "code data
+   * reference" (informational, never migrated); balance the braces and the identical line becomes
+   * "verified provider SDK call site". A syntax error DOWNGRADES a real finding, silently.
+   */
+  parseFailures?: number;
+  /** Up to a few parse-failure paths, so the reader can go and look. */
+  parseFailureFiles?: string[];
 }
 
 /**
@@ -294,6 +313,20 @@ export function concludeAudit(coverage: AuditCoverage, exposureCount: number): A
   // (handled above) but can never prove the absence of one. A missing
   // `freshness` (a report from before the field existed) is not fresh either.
   if (coverage.registry.freshness !== 'fresh') return 'inconclusive';
+  // A PARSE FAILURE CANNOT PRODUCE A CLEAN RESULT. ts-morph is error-tolerant, so a malformed
+  // file does not fail the scan — it yields a damaged tree, and the damage changes the answer
+  // rather than announcing itself. Demonstrated: with unbalanced braces a live
+  // `client.chat.completions.create({ model: 'gpt-3.5-turbo-0613' })` classifies as "code data
+  // reference"; balance the braces and the same line is a "verified provider SDK call site".
+  //
+  // So a file mendr could not read properly is a file it cannot vouch for, and silence about it
+  // is not evidence of absence. Any parse failure, or any file that could not be opened at all,
+  // forces `inconclusive` — the same fail-closed posture a stale registry already gets. There is
+  // no threshold: one unreadable file is one place a live call site could be hiding, and a
+  // threshold would only be a rule about when it is acceptable to guess.
+  if ((coverage.source.parseFailures ?? 0) > 0 || (coverage.source.unreadableFiles ?? 0) > 0) {
+    return 'inconclusive';
+  }
   const analyzed = coverage.source.tsFiles + (coverage.source.jsFiles ?? 0) + coverage.source.pyFiles;
   const sourceComplete = coverage.source.analyzed && analyzed > 0;
   // M8 (external validation): anything-llm — 22 of 1,242 source files analyzed —
@@ -312,6 +345,16 @@ export function analyzedIsMinority(coverage: AuditCoverage): boolean {
 /** The limits on this run — what a zero-finding result does NOT prove. */
 export function coverageGaps(coverage: AuditCoverage): string[] {
   const gaps: string[] = [];
+  if ((coverage.source.parseFailures ?? 0) > 0) {
+    const n = coverage.source.parseFailures ?? 0;
+    gaps.push(
+      `${n} file(s) had SYNTAX ERRORS — a damaged parse does not fail loudly, it silently ` +
+        'reclassifies what it finds, so nothing in those files is proven either way',
+    );
+  }
+  if ((coverage.source.unreadableFiles ?? 0) > 0) {
+    gaps.push(`${coverage.source.unreadableFiles ?? 0} file(s) could not be opened at all`);
+  }
   if (coverage.source.failed) gaps.push('source scan FAILED');
   else if (!coverage.source.analyzed) gaps.push('source code (TS/TSX/Python) was not scanned');
   else if (coverage.source.tsFiles + (coverage.source.jsFiles ?? 0) + coverage.source.pyFiles === 0) {
