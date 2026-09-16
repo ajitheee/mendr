@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.1-alpha — 2026-09-16
+
+- **A command-line default is a selector, not documentation.** `going-doer/Paper2Code`
+  (4,954 stars) audited as NO EXPOSURE IN COMPLETED SURFACES while its documented
+  Quick Start ran `o3-mini`, retiring 2026-10-23. `parser.add_argument('--gpt_version',
+  default="o3-mini")` was filed in the same bucket as a docstring: one rule wanted a
+  model-named assignment target that a bare call statement does not have, and another
+  tested `/model/i` against a flag that names a model without containing the word.
+  TypeScript had the same hole twice — commander's positional default was gated on that
+  same flag-name test, and the yargs `default:` property shape was unknown. Both now key
+  on the call rather than the option name, and both cap at review: a CLI default is never
+  swap-eligible, because the path from parsed argv to a provider request is not traced.
+  All twelve validation repositories produce byte-identical output before and after.
+
 ## 0.5.0-alpha — 2026-09-16
 
 - **A verification run no longer hands your CI's token to your own test code.**
