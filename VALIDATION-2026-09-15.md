@@ -116,6 +116,30 @@ Nothing was hidden. The cost of the precision gain is auto-fixability, not visib
 `ragflow` (2,265 Go files) and `open-webui` (662 Svelte files). Neither is a language Mendr
 reads, and both are disclosed in the report rather than silently excluded.
 
+**Within the languages it does read, nothing is unaccounted for.** Counting every
+`.py/.ts/.tsx/.js/.jsx/.mjs/.cjs` file on disk and comparing against scanned plus
+test-files-skipped, the difference is between -26 and +3 files per repository — counting noise,
+not coverage loss:
+
+| repo | supported files on disk | scanned + tests skipped | difference |
+|---|---|---|---|
+| LibreChat | 4,935 | 4,938 | +3 |
+| lobe-chat | 3,525 | 3,551 | +26 |
+| vercel/ai | 3,139 | 3,139 | 0 |
+| dify-official-plugins | 2,350 | 2,350 | 0 |
+| langchain | 2,311 | 2,311 | 0 |
+| ragflow | 2,217 | 2,214 | -3 |
+| continue | 1,104 | 1,117 | +13 |
+| open-webui | 352 | 351 | -1 |
+| chatbot-ui | 262 | 262 | 0 |
+| anything-llm | 172 | 171 | -1 |
+| NextChat | 189 | 188 | -1 |
+| langflow | 195 | 194 | -1 |
+
+So the two numbers to quote are different statements and both are true: **82.7% of all discovered
+source files**, and **effectively 100% of files in the languages Mendr claims to read**. The
+unanalyzed column is out-of-scope languages, not files the scanner failed to open.
+
 **No coverage regressed.** Adding back the test files the new build excludes from its scanned
 count, every repository is seen at least as completely as before, and `anything-llm` went from
 0 files analyzed to 158. `langflow` fell from 6,120 files to 194 because the repository itself
