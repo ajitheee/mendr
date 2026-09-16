@@ -12,7 +12,7 @@ have been visible to the maintainer. The bodies in this directory are the CORREC
 | guardrails-ai/guardrails | 7,421 | `LiteLLMCallable._invoke_llm` binds `model="gpt-3.5-turbo"` (llm_providers.py:149), reaching `litellm.completion` at :208 | 2026-10-23 | 37 |
 | skywalker023/sodaverse | — | `openai.Completion.create(model="gpt-3.5-turbo-instruct")` hardcoded in co3.py:50, not governed by `--model` | 2026-09-28 | **12** |
 | microsoft/TinyTroupe | 7,570 | `REASONING_MODEL=o3-mini` default (config.ini:22 + `__init__.py:99` fallback) | 2026-10-23 | 37 |
-| going-doer/Paper2Code | 4,954 | `GPT_VERSION="o3-mini"` in scripts/run.sh:3, the documented Quick Start | 2026-10-23 | 37 |
+| going-doer/Paper2Code **[FILED #31]** | 4,954 | `GPT_VERSION="o3-mini"` in scripts/run.sh:3, the documented Quick Start | 2026-10-23 | 37 |
 
 ## What the adversary caught (why this pass exists)
 
@@ -48,3 +48,17 @@ docstring occurrence at all.
 That is the scanner being right where a grep would have been wrong, and it is the single best
 argument for the Tier A/B/C split. It is also why "search for the string and email the owner" does
 not work as an outreach strategy.
+
+## Filed
+
+- **going-doer/Paper2Code** — https://github.com/going-doer/Paper2Code/issues/31 (2026-09-16).
+  Every citation re-verified at source before filing: `run.sh:28/41/47`, `1_planning.py:12/23/249`,
+  `eval.py:243`, `4_debugging.py:109-114` and its `create` call at `:249`, all at HEAD `ba91699`.
+  This is the repository that produced v0.5.1-alpha — its `argparse` default is what the scanner
+  was calling documentation — so the disclosure line says the tool missed it and now does not.
+- **danny-avila/LibreChat** — https://github.com/danny-avila/LibreChat/issues/16017 (2026-09-16).
+- **evalstate/fast-agent** — https://github.com/evalstate/fast-agent/issues/959 (2026-09-16).
+
+Still to send: guardrails and sodaverse (handed to Ajith to file by hand), TinyTroupe (queued).
+Pace these. Four issues across unrelated repositories in one day reads as an automated campaign
+however carefully each one is written.
