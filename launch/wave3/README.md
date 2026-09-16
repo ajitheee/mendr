@@ -1,0 +1,50 @@
+# wave 3 — verified, ready to file, NOT yet filed
+
+Found by GitHub code search for live call sites (not README/doc matches), then each candidate was
+cloned, scanned with the shipped v0.5.0-alpha, traced for reachability, and checked for an
+existing duplicate issue. Then an adversary re-read every cited line in the repo itself.
+
+**The adversary returned FIX on all four drafts.** Every one contained a factual error that would
+have been visible to the maintainer. The bodies in this directory are the CORRECTED versions.
+
+| repo | stars | the finding | date | days |
+|---|---|---|---|---|
+| guardrails-ai/guardrails | 7,421 | `LiteLLMCallable._invoke_llm` binds `model="gpt-3.5-turbo"` (llm_providers.py:149), reaching `litellm.completion` at :208 | 2026-10-23 | 37 |
+| skywalker023/sodaverse | — | `openai.Completion.create(model="gpt-3.5-turbo-instruct")` hardcoded in co3.py:50, not governed by `--model` | 2026-09-28 | **12** |
+| microsoft/TinyTroupe | 7,570 | `REASONING_MODEL=o3-mini` default (config.ini:22 + `__init__.py:99` fallback) | 2026-10-23 | 37 |
+| going-doer/Paper2Code | 4,954 | `GPT_VERSION="o3-mini"` in scripts/run.sh:3, the documented Quick Start | 2026-10-23 | 37 |
+
+## What the adversary caught (why this pass exists)
+
+- **guardrails** — draft claimed provenance "main as of the 2026-09-13 push". main's HEAD is
+  `06d0ff2c`, committed 2026-08-26; the 2026-09-13 `pushed_at` was not a push to main. Also
+  miscounted the test-fixture hits (61 occurrences, 45 in tests/, not "43 are test fixtures").
+- **TinyTroupe** — draft claimed ":457 is the only chat-completions call site". There are two
+  inside `_raw_model_call` alone, and the traced Proposition path reaches the *other* one
+  (`beta.chat.completions.parse` at :449) because `LLMChat` sets a json_object response format.
+- **Paper2Code** — **the title was false.** `o4-mini` is not reachable from the Quick Start;
+  `codes/4_debugging.py` is referenced by no script in `scripts/` and appears nowhere in the README.
+- **sodaverse** — three off-by-one line citations (each one the maintainer would click), the word
+  "unconditional" applied to a loop containing `continue` and `break`, and an unsupported
+  assertion about how often the author's own dataset has an empty `y` field.
+
+## Rejected, and why
+
+| repo | killed by |
+|---|---|
+| allenai/molmo | archived ~21 months, **and issue #30 already reports this exact failure** |
+| eth-sri/lmql | abandoned — last code commit ~28 months ago; nobody would read it |
+| smol-ai/developer | abandoned — ~36 months since the tracked code changed; the finding itself was real |
+| DeepInsight-AI/DeepBI | not a live call — token-accounting lookup table in a function with zero callers |
+
+## The false positive worth remembering
+
+Code search proposed `gpt-4-0613` in **microsoft/TinyTroupe** and **DeepInsight-AI/DeepBI**. In
+both it is the verbatim OpenAI-cookbook token-counting table — a dict mapping model names to
+per-message token overhead, computed locally via tiktoken, never sent anywhere. Mendr independently
+classified all of TinyTroupe's hits as `code data reference / MONITOR` and never surfaced the
+docstring occurrence at all.
+
+That is the scanner being right where a grep would have been wrong, and it is the single best
+argument for the Tier A/B/C split. It is also why "search for the string and email the owner" does
+not work as an outreach strategy.

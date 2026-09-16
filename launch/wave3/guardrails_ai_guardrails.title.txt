@@ -1,0 +1,1 @@
+[bug] `LiteLLMCallable` default model is `gpt-3.5-turbo`, which OpenAI shuts down 2026-10-23

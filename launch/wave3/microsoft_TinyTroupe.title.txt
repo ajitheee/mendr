@@ -1,0 +1,1 @@
+Default REASONING_MODEL is o3-mini, which OpenAI stops serving on 2026-10-23

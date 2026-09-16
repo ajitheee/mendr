@@ -1,0 +1,1 @@
+gpt-3.5-turbo-instruct is hardcoded in co3.py and OpenAI shuts it down on 2026-09-28
