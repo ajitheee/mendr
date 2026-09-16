@@ -97,6 +97,16 @@ ONLY_ARGS=()
 # never completed a scan (bad path/spec), which must NEVER be reported as clean.
 post_event verifying "type-check, build and your tests on a throwaway copy"
 set +e
+# npm 10 cannot install a git dependency pinned to a FULL 40-character commit SHA when
+# that package has a `prepare` script -- it fails with "GitFetcher requires an Arborist
+# constructor to pack a tarball". A 39-character prefix works, which is how the boundary
+# was found. Node 22 still ships npm 10, and a full immutable SHA is exactly what a
+# customer is told to pin, so raise npm rather than ask anyone to truncate a hash. Node
+# is untouched: the customer's build and tests still run on the version they chose.
+if [ "$(npm --version | cut -d. -f1)" -lt 11 ]; then
+  npm install -g npm@^11 >/dev/null 2>&1 || true
+fi
+
 npx --yes "$MENDR_SPEC" migrate . "${ONLY_ARGS[@]}" ${MENDR_EVAL:+--eval-command "$MENDR_EVAL"} >"$REPORT" 2>&1
 REPORT_STATUS=$?
 npx --yes "$MENDR_SPEC" migrate . --write --json "${ONLY_ARGS[@]}" ${MENDR_EVAL:+--eval-command "$MENDR_EVAL"} >"$ARTIFACT" 2>/dev/null
