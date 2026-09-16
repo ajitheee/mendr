@@ -1,3 +1,13 @@
+> **STOP — DO NOT SEND FROM THIS FILE. Verified 2026-09-16: 13 of these 14 are unsendable.**
+>
+> Every repo was cloned and scanned with the shipped v0.5.0-alpha, every cited issue fetched,
+> every contact checked. Most cited issues are **closed and already fixed**; several name the
+> **wrong person**; three repos are in languages Mendr cannot read; and **zero of the 14 produced
+> a Tier A finding**, so the "let me send you the diff" offer cannot be honoured on any of them.
+>
+> Use **[READY-TO-SEND.md](READY-TO-SEND.md)**, which carries the survivors and the full
+> per-target autopsy. Kept below only as a record of what was attempted.
+
 # personalized DMs
 
 each one cites the person's real issue. lead with the question, offer the diff. don't blast them all at once, follow the day-by-day order in README.md.

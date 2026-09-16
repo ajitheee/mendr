@@ -1,3 +1,15 @@
+> **STOP — DO NOT SEND FROM THIS FILE.** Written 2026-08-19 and never sent; it is now stale.
+>
+> Spot-checked 2026-09-16 against the shipped registry. Two of its lead claims are false:
+> `gpt-4o-realtime-preview` (the entire Vida pitch) and `gpt-4o` (half the telli pitch) are **not
+> in the registry at all** — we have no evidence either is retiring. The Vida repo
+> `VIDA-Global/mod_openai_s2s` is a **404**; the real one belongs to TeleFlow Ltd and is C++.
+> The file's own proof points are also wrong: `npx mendr fix-llm` does not work (npm unpublished)
+> and "zero wrong edits across 26 real repos" is not what the shipped validation says.
+>
+> This file's own rule — "click the evidence link and confirm it's real before every send" — is
+> the reason it is quarantined rather than deleted. See **[READY-TO-SEND.md](READY-TO-SEND.md)**.
+
 # wave 2 DMs · cold prospects (Polar/Apollo research run, 2026-08-19)
 
 unlike wave 1, these are COLD. nobody here has filed an issue about mendr's problem; they were picked because the research shows a direct OpenAI/Anthropic/Google API call in their product, weighted to voice and real-time agents. that's the sharpest ICP cut we have, a dead model id in a voice stack doesn't fail a batch job, it breaks a live customer call.
