@@ -63,6 +63,14 @@ export interface AuditState {
   v: 1;
   open: OpenFinding[];
   history: HistoryEntry[];
+  /**
+   * What produced this baseline. `v` deliberately stays 1: bumping the schema would discard every
+   * baseline in the wild, and an absent value is meaningful rather than broken -- it means
+   * "written before this was recorded", which counts as a change and settles on the next run.
+   */
+  scanner?: string | null;
+  /** Content hash of the registry this baseline was computed against. */
+  registry?: string | null;
 }
 
 export const EMPTY_STATE: AuditState = { v: 1, open: [], history: [] };
@@ -137,6 +145,8 @@ export function parseAuditState(body: string | null | undefined): AuditState {
       v: 1,
       open: Array.isArray(parsed.open) ? parsed.open.map(toOpen).filter((o): o is OpenFinding => o !== null) : [],
       history: Array.isArray(parsed.history) ? (parsed.history.filter((h) => h && typeof h === 'object') as HistoryEntry[]) : [],
+      scanner: typeof parsed.scanner === 'string' ? parsed.scanner : null,
+      registry: typeof parsed.registry === 'string' ? parsed.registry : null,
     };
   } catch {
     return { v: 1, open: [], history: [] };
@@ -279,6 +289,8 @@ export interface AuditIssueInput {
   sha: string;
   scannedAt: string;
   previous: AuditState;
+  /** The mendr version doing this scan. Compared with the baseline's, alongside the registry. */
+  scannerVersion: string;
 }
 
 export interface AuditIssueRender {
@@ -295,14 +307,24 @@ export interface AuditIssueRender {
 
 /** Render the whole issue body. The returned body is sanitized and redacted. */
 export function renderAuditIssue(input: AuditIssueInput): AuditIssueRender {
-  const { investigations, coverage, sha, scannedAt, previous } = input;
+  const { investigations, coverage, sha, scannedAt, previous, scannerVersion } = input;
   // Only real EXPOSURE enters the issue lifecycle. Informational catalog /
   // fixture / documentation references are reported separately and must never
   // open, hold open, or reopen an issue.
   const exposureInvestigations = investigations.filter(isExposure);
   const informationalCount = investigations.length - exposureInvestigations.length;
   const findings = toFindings(exposureInvestigations);
-  const diff = diffFindings(previous.open, findings, coverage);
+  // Both halves of what decides a finding's existence. The registry hash comes from the very
+  // registry this run joined against, so it moves exactly when the data moves.
+  const currentIdentity = { scanner: scannerVersion, registry: coverage.registry.version ?? null };
+  const previousIdentity =
+    previous.scanner === undefined || previous.scanner === null
+      ? null
+      : { scanner: previous.scanner, registry: previous.registry ?? null };
+  const diff = diffFindings(previous.open, findings, coverage, {
+    previous: previousIdentity,
+    current: currentIdentity,
+  });
 
   // Carried findings stay OPEN — they were never re-checked, so they are not gone.
   const carriedOpen = diff.carried;
@@ -348,6 +370,8 @@ export function renderAuditIssue(input: AuditIssueInput): AuditIssueRender {
     v: 1,
     open: [...findings.map(toOpenFinding), ...carriedOpen].slice(0, 500).map(safeOpen),
     history,
+    scanner: sanitizeRepoText(currentIdentity.scanner),
+    registry: currentIdentity.registry === null ? null : sanitizeRepoText(currentIdentity.registry),
   };
 
   const L: string[] = [AUDIT_MARKER];
@@ -409,11 +433,32 @@ export function renderAuditIssue(input: AuditIssueInput): AuditIssueRender {
     for (const line of boundedList(diff.resolved.map(openLine), MAX_LISTED_FINDINGS)) L.push(line);
     L.push('');
   }
-  if (carriedOpen.length > 0) {
+  // Two very different causes, and conflating them publishes a false one. A surface that did not
+  // complete is a CI problem the reader should go and look at; a scanner or registry change is
+  // not a problem at all, and telling them their surface failed sends them to debug nothing.
+  if (diff.carriedIncompleteSurface.length > 0) {
     L.push('### ⏸️ Not re-checked this run (still open)');
     L.push('');
     L.push('The surface that found these did not complete, so they could NOT be verified as fixed:');
-    for (const line of boundedList(carriedOpen.map(openLine), MAX_LISTED_FINDINGS)) L.push(line);
+    for (const line of boundedList(diff.carriedIncompleteSurface.map(openLine), MAX_LISTED_FINDINGS)) L.push(line);
+    L.push('');
+  }
+  if (diff.carriedScanChanged.length > 0) {
+    L.push('### ⏸️ Held open across a scanner or registry change (still open)');
+    L.push('');
+    const from = sanitizeRepoText(previous.scanner ?? 'an unrecorded version');
+    const to = sanitizeRepoText(currentIdentity.scanner);
+    const registryMoved =
+      previousIdentity !== null &&
+      previousIdentity.registry !== null &&
+      currentIdentity.registry !== null &&
+      previousIdentity.registry !== currentIdentity.registry;
+    L.push(
+      `These are gone from a scan whose surfaces all completed — but ${
+        registryMoved ? 'the deprecation registry has changed' : `mendr changed (\`${from}\` → \`${to}\`)`
+      } since they were recorded, so a disappearance cannot yet be told apart from a change in how they are classified. They stay open until a run with the same scanner and registry on both sides:`,
+    );
+    for (const line of boundedList(diff.carriedScanChanged.map(openLine), MAX_LISTED_FINDINGS)) L.push(line);
     L.push('');
   }
 

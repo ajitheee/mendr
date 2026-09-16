@@ -3453,6 +3453,9 @@ program
           coverage,
           sha: opts.sha ?? 'unknown',
           scannedAt: now.toISOString(),
+          // Recorded in the baseline with the registry hash, so a disappearance across a
+          // change to EITHER is held open rather than declared fixed.
+          scannerVersion: cliVersion(),
           previous,
         });
         if (opts.issueBody) {

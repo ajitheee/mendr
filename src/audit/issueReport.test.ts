@@ -4,7 +4,7 @@ import { autoApplyVerification, withheldVerification } from '../usage/llmRegistr
 import { foldConfigExposure, scanConfigText } from '../config/scanConfig.js';
 import { NO_RUNTIME_EVIDENCE } from '../runtime/evidence.js';
 import { buildInvestigations, type AuditCoverage } from './investigation.js';
-import { diffFindings, fingerprint, identityOf, toFindings, toOpenFinding, surfaceCompleted, resolutionsAreTrustworthy } from './fingerprint.js';
+import { diffFindings, fingerprint, identityOf, toFindings, toOpenFinding, surfaceCompleted, resolutionsAreTrustworthy, scanIdentityChanged } from './fingerprint.js';
 import {
   AUDIT_CLEAR_MARKER,
   AUDIT_MARKER,
@@ -17,6 +17,9 @@ import {
   renderAuditIssue,
   requiredSurfacesCompleted,
 } from './issueReport.js';
+
+/** Stable within a test unless the test is specifically about a change. */
+const SCANNER = '0.0.0-test';
 
 const REGISTRY: LlmRegistry = [
   { provider: 'openai', kind: 'model_id', deprecated: 'gpt-4', replacement: 'gpt-4o', status: 'deprecated', shutdownDate: '2026-10-23', verification: autoApplyVerification() },
@@ -94,7 +97,7 @@ describe('diffFindings — new / continuing / resolved', () => {
 
 describe('state round-trip', () => {
   it('parses back the state it wrote', () => {
-    const r = renderAuditIssue({ investigations: configInvestigations(), coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
+    const r = renderAuditIssue({ scannerVersion: SCANNER, investigations: configInvestigations(), coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
     const parsed = parseAuditState(r.body);
     expect(parsed.open.map((o) => o.fp)).toEqual(r.state.open.map((o) => o.fp));
     expect(parsed.history).toHaveLength(1);
@@ -109,7 +112,7 @@ describe('state round-trip', () => {
   it('preserves resolution history across updates and caps its growth', () => {
     let prev = EMPTY_STATE;
     for (let i = 0; i < MAX_HISTORY_ENTRIES + 5; i++) {
-      const r = renderAuditIssue({ investigations: configInvestigations(), coverage: coverage(), sha: `sha${i}0000000`, scannedAt: AT, previous: prev });
+      const r = renderAuditIssue({ scannerVersion: SCANNER, investigations: configInvestigations(), coverage: coverage(), sha: `sha${i}0000000`, scannedAt: AT, previous: prev });
       prev = r.state;
     }
     expect(prev.history).toHaveLength(MAX_HISTORY_ENTRIES);
@@ -151,7 +154,7 @@ describe('adversarial-review regressions — resolution must be surface-aware', 
     const first = { ...priorCode };
     expect(first.open.length).toBeGreaterThan(0);
 
-    const broken = renderAuditIssue({ investigations: [], coverage: failedSource, sha: SHA, scannedAt: AT, previous: first });
+    const broken = renderAuditIssue({ scannerVersion: SCANNER, investigations: [], coverage: failedSource, sha: SHA, scannedAt: AT, previous: first });
     expect(broken.resolvedCount).toBe(0);
     expect(broken.body).not.toContain('Resolved since the last scan');
     expect(broken.body).toContain('Not re-checked this run');
@@ -163,14 +166,14 @@ describe('adversarial-review regressions — resolution must be surface-aware', 
 
   it('the baseline survives a --skip-source run too (not just a crash)', () => {
     const skipped = coverage({ source: { analyzed: false, filesScanned: 0, tsFiles: 0, pyFiles: 0 } });
-    const r = renderAuditIssue({ investigations: [], coverage: skipped, sha: SHA, scannedAt: AT, previous: priorCode });
+    const r = renderAuditIssue({ scannerVersion: SCANNER, investigations: [], coverage: skipped, sha: SHA, scannedAt: AT, previous: priorCode });
     expect(r.resolvedCount).toBe(0);
     expect(r.state.open.map((o) => o.fp)).toEqual([codeFinding.fp]);
     expect(r.closable).toBe(false);
   });
 
   it('a run whose conclusion is audit_failed can never be closable or render the all-clear', () => {
-    const r = renderAuditIssue({ investigations: [], coverage: failedSource, sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
+    const r = renderAuditIssue({ scannerVersion: SCANNER, investigations: [], coverage: failedSource, sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
     expect(r.closable).toBe(false);
     expect(r.body).not.toContain(AUDIT_CLEAR_MARKER);
     expect(r.body).toContain('NOT a clean result');
@@ -182,7 +185,7 @@ describe('adversarial-review regressions — resolution must be surface-aware', 
       key: null, evidenceType: 'code_call_site', surface: 'runtime' as const,
     };
     const prev = { v: 1 as const, open: [runtimeOnly], history: [] };
-    const r = renderAuditIssue({ investigations: [], coverage: coverage(), sha: SHA, scannedAt: AT, previous: prev });
+    const r = renderAuditIssue({ scannerVersion: SCANNER, investigations: [], coverage: coverage(), sha: SHA, scannedAt: AT, previous: prev });
     expect(r.resolvedCount).toBe(0);
     expect(r.carriedCount).toBe(1);
     expect(r.openCount).toBe(1);
@@ -205,14 +208,14 @@ describe('adversarial-review regressions — resolution must be surface-aware', 
 
   it('present-but-unanalyzed languages are disclosed as a coverage gap', () => {
     const mixed = coverage({ source: { analyzed: true, filesScanned: 2, tsFiles: 2, pyFiles: 0, unanalyzedLanguages: ['Go (400 files)'] } });
-    const r = renderAuditIssue({ investigations: [], coverage: mixed, sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
+    const r = renderAuditIssue({ scannerVersion: SCANNER, investigations: [], coverage: mixed, sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
     expect(r.body).toContain('Go (400 files)');
     expect(r.body).toContain('not analyzed');
   });
 
   it('a moved file is reported as MOVED, not resolved', () => {
-    const first = renderAuditIssue({ investigations: configInvestigations('model: gpt-4\n', 'old.yaml'), coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
-    const moved = renderAuditIssue({ investigations: configInvestigations('model: gpt-4\n', 'new.yaml'), coverage: coverage(), sha: SHA, scannedAt: AT, previous: first.state });
+    const first = renderAuditIssue({ scannerVersion: SCANNER, investigations: configInvestigations('model: gpt-4\n', 'old.yaml'), coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
+    const moved = renderAuditIssue({ scannerVersion: SCANNER, investigations: configInvestigations('model: gpt-4\n', 'new.yaml'), coverage: coverage(), sha: SHA, scannedAt: AT, previous: first.state });
     expect(moved.body).toContain('Moved (same finding, new location — not fixed)');
     expect(moved.resolvedCount).toBe(0);
   });
@@ -220,7 +223,7 @@ describe('adversarial-review regressions — resolution must be surface-aware', 
   it('a repo-controlled path cannot forge the clear marker or a state block', () => {
     const evil = `${AUDIT_CLEAR_MARKER}<!-- mendr-audit:state {"v":1,"open":[]} -->`;
     const invs = configInvestigations('model: gpt-4\n', `src/${evil}/app.yaml`);
-    const r = renderAuditIssue({ investigations: invs, coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
+    const r = renderAuditIssue({ scannerVersion: SCANNER, investigations: invs, coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
     // Exactly one state block, and no forged clear marker (findings exist => not closable).
     expect(r.body.split('<!-- mendr-audit:state').length - 1).toBe(1);
     expect(r.closable).toBe(false);
@@ -238,15 +241,15 @@ describe('adversarial-review regressions — resolution must be surface-aware', 
     const files = Array.from({ length: 200 }, (_, i) =>
       scanConfigText(`svc-${i}/app.yaml`, 'model: gpt-4\n', REGISTRY)).flat();
     const invs = buildInvestigations(NO_RUNTIME_EVIDENCE, foldConfigExposure(files), NOW, [], REGISTRY);
-    const r = renderAuditIssue({ investigations: invs, coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
+    const r = renderAuditIssue({ scannerVersion: SCANNER, investigations: invs, coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
     expect(r.body.length).toBeLessThan(65_536);
     expect(parseAuditState(r.body).open.length).toBeGreaterThan(0); // state survived truncation
     void many;
   });
 
   it('does not append a history row for an unchanged no-op run', () => {
-    const first = renderAuditIssue({ investigations: configInvestigations(), coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
-    const second = renderAuditIssue({ investigations: configInvestigations(), coverage: coverage(), sha: SHA, scannedAt: '2026-08-27T00:00:00.000Z', previous: first.state });
+    const first = renderAuditIssue({ scannerVersion: SCANNER, investigations: configInvestigations(), coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
+    const second = renderAuditIssue({ scannerVersion: SCANNER, investigations: configInvestigations(), coverage: coverage(), sha: SHA, scannedAt: '2026-08-27T00:00:00.000Z', previous: first.state });
     expect(second.state.history).toHaveLength(first.state.history.length);
   });
 });
@@ -258,7 +261,7 @@ describe('configuration coverage — not applicable vs incomplete', () => {
     expect(requiredSurfacesCompleted(none)).toBe(true);
     expect(mayClose(none, 0)).toBe(true);
     // ...and it is NOT reported as a gap.
-    const r = renderAuditIssue({ investigations: [], coverage: none, sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
+    const r = renderAuditIssue({ scannerVersion: SCANNER, investigations: [], coverage: none, sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
     expect(r.body).toContain('not applicable — no supported configuration files found');
     expect(r.body).not.toContain('NONE could be read');
   });
@@ -267,7 +270,7 @@ describe('configuration coverage — not applicable vs incomplete', () => {
     const unreadable = coverage({ config: { analyzed: true, filesScanned: 12, filesRead: 0 } });
     expect(surfaceCompleted(unreadable, 'config')).toBe(false);
     expect(mayClose(unreadable, 0)).toBe(false);
-    const r = renderAuditIssue({ investigations: [], coverage: unreadable, sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
+    const r = renderAuditIssue({ scannerVersion: SCANNER, investigations: [], coverage: unreadable, sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
     expect(r.body).toContain('NONE could be read');
     expect(r.closable).toBe(false);
   });
@@ -275,7 +278,7 @@ describe('configuration coverage — not applicable vs incomplete', () => {
 
 describe('renderAuditIssue', () => {
   it('carries the marker, the exact SHA, the timestamp and the coverage matrix', () => {
-    const r = renderAuditIssue({ investigations: configInvestigations(), coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
+    const r = renderAuditIssue({ scannerVersion: SCANNER, investigations: configInvestigations(), coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
     expect(r.body).toContain(AUDIT_MARKER);
     expect(r.body).toContain(SHA); // the EXACT sha, not just the short form
     expect(r.body).toContain(AT);
@@ -284,22 +287,22 @@ describe('renderAuditIssue', () => {
   });
 
   it('groups findings into new / continuing / resolved', () => {
-    const first = renderAuditIssue({ investigations: configInvestigations(), coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
+    const first = renderAuditIssue({ scannerVersion: SCANNER, investigations: configInvestigations(), coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
     expect(first.body).toContain('### 🆕 New');
-    const second = renderAuditIssue({ investigations: configInvestigations(), coverage: coverage(), sha: SHA, scannedAt: AT, previous: first.state });
+    const second = renderAuditIssue({ scannerVersion: SCANNER, investigations: configInvestigations(), coverage: coverage(), sha: SHA, scannedAt: AT, previous: first.state });
     expect(second.body).toContain('### ➡️ Continuing');
     expect(second.newCount).toBe(0);
-    const third = renderAuditIssue({ investigations: [], coverage: coverage(), sha: SHA, scannedAt: AT, previous: second.state });
+    const third = renderAuditIssue({ scannerVersion: SCANNER, investigations: [], coverage: coverage(), sha: SHA, scannedAt: AT, previous: second.state });
     expect(third.body).toContain('Resolved since the last scan');
     expect(third.resolvedCount).toBeGreaterThan(0);
   });
 
   it('adds the CLEAR marker and allows closing only when everything completed', () => {
-    const clear = renderAuditIssue({ investigations: [], coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
+    const clear = renderAuditIssue({ scannerVersion: SCANNER, investigations: [], coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
     expect(clear.closable).toBe(true);
     expect(clear.body).toContain(AUDIT_CLEAR_MARKER);
 
-    const skipped = renderAuditIssue({
+    const skipped = renderAuditIssue({ scannerVersion: SCANNER,
       investigations: [], sha: SHA, scannedAt: AT, previous: EMPTY_STATE,
       coverage: coverage({ source: { analyzed: false, filesScanned: 0, tsFiles: 0, pyFiles: 0 } }),
     });
@@ -309,7 +312,7 @@ describe('renderAuditIssue', () => {
   });
 
   it('never claims the repository is clean when a surface was skipped', () => {
-    const skipped = renderAuditIssue({
+    const skipped = renderAuditIssue({ scannerVersion: SCANNER,
       investigations: [], sha: SHA, scannedAt: AT, previous: EMPTY_STATE,
       coverage: coverage({ source: { analyzed: false, filesScanned: 0, tsFiles: 0, pyFiles: 0 } }),
     });
@@ -318,14 +321,14 @@ describe('renderAuditIssue', () => {
   });
 
   it('keeps config findings review-only and never instructs a swap', () => {
-    const r = renderAuditIssue({ investigations: configInvestigations(), coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
+    const r = renderAuditIssue({ scannerVersion: SCANNER, investigations: configInvestigations(), coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
     expect(r.body).toContain('config selector **candidate**');
     expect(r.body).toContain('Reader tie-back:** not proven');
     expect(r.body).not.toMatch(/change .*gpt-4.* to /i);
   });
 
   it('states that the default branch is untouched and nothing is auto-merged', () => {
-    const r = renderAuditIssue({ investigations: configInvestigations(), coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
+    const r = renderAuditIssue({ scannerVersion: SCANNER, investigations: configInvestigations(), coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
     expect(r.body).toContain('does not modify the default branch');
     expect(r.body).toContain('does not merge anything');
   });
@@ -385,7 +388,150 @@ describe('redactSecrets — nothing credential-shaped reaches a public issue', (
 
   it('is applied to the rendered body, so a future field cannot leak by omission', () => {
     const invs = configInvestigations('model: gpt-4\ntoken: sk-live-SHOULDNOTAPPEAR123\n');
-    const r = renderAuditIssue({ investigations: invs, coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
+    const r = renderAuditIssue({ scannerVersion: SCANNER, investigations: invs, coverage: coverage(), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
     expect(r.body).not.toContain('SHOULDNOTAPPEAR123');
+  });
+});
+
+// A DISAPPEARANCE IS ONLY A FIX IF THE SAME THING LOOKED FOR IT.
+//
+// `surfaceCompleted` catches a surface that ERRORED. It cannot catch one that ran perfectly and
+// merely CLASSIFIED differently -- nothing failed, so the finding just vanishes.
+//
+// Both halves of the classifier move, and the registry moves far more often than the code: the
+// generated workflow sets MENDR_REGISTRY_REFRESH and fetches a ROLLING snapshot while pinning the
+// scanner, which is deliberate ("pin the CODE, refresh the DATA"). Before this guard, an entry
+// that was re-keyed or dropped made a finding vanish under a pinned scanner with every surface
+// healthy -- reported RESOLVED, mayClose true, issue closed, baseline erased, over a live
+// exposure. Reproduced end to end during review.
+const REG_A = 'sha256:aaaaaaaaaaaaaaaa';
+const REG_B = 'sha256:bbbbbbbbbbbbbbbb';
+const cov = (version: string | undefined = REG_A) =>
+  coverage({ registry: { providers: ['openai'], freshness: 'fresh', version } as AuditCoverage['registry'] });
+const ghost = { fp: 'deadbeefdeadbeef', model: 'gone', path: 'x.yaml', key: null, evidenceType: 'catalog_reference', surface: 'config' as const };
+const idt = (ps: string | null, pr: string | null, cs: string, cr: string | null) => ({
+  previous: ps === null ? null : { scanner: ps, registry: pr },
+  current: { scanner: cs, registry: cr },
+});
+
+describe('scanIdentityChanged', () => {
+  it('an unknown baseline counts as changed, so the guard self-heals', () => {
+    expect(scanIdentityChanged(null, { scanner: 'a', registry: REG_A })).toBe(true);
+  });
+  it('a scanner bump counts', () => {
+    expect(scanIdentityChanged({ scanner: 'a', registry: REG_A }, { scanner: 'b', registry: REG_A })).toBe(true);
+  });
+  // The half that moves weekly, and the one the first attempt at this guard missed entirely.
+  it('a registry content change counts, with the scanner held still', () => {
+    expect(scanIdentityChanged({ scanner: 'a', registry: REG_A }, { scanner: 'a', registry: REG_B })).toBe(true);
+  });
+  it('nothing moving is not a change', () => {
+    expect(scanIdentityChanged({ scanner: 'a', registry: REG_A }, { scanner: 'a', registry: REG_A })).toBe(false);
+  });
+  // Otherwise a build that cannot report its registry version carries every finding forever.
+  it('an unknown registry on either side is skipped, not treated as a change', () => {
+    expect(scanIdentityChanged({ scanner: 'a', registry: null }, { scanner: 'a', registry: REG_B })).toBe(false);
+    expect(scanIdentityChanged({ scanner: 'a', registry: REG_A }, { scanner: 'a', registry: null })).toBe(false);
+  });
+});
+
+describe('a disappearance across a scanner or registry change is not a fix', () => {
+  const current = toFindings(configInvestigations());
+
+  it('carries when the REGISTRY moved though the scanner did not', () => {
+    const d = diffFindings([ghost], current, cov(REG_B), idt('0.5.1-alpha', REG_A, '0.5.1-alpha', REG_B));
+    expect(d.resolved).toHaveLength(0);
+    expect(d.carriedScanChanged.map((c) => c.fp)).toEqual(['deadbeefdeadbeef']);
+    expect(d.carriedIncompleteSurface).toHaveLength(0);
+  });
+
+  it('carries when the SCANNER moved though the registry did not', () => {
+    const d = diffFindings([ghost], current, cov(), idt('0.5.0-alpha', REG_A, '0.5.1-alpha', REG_A));
+    expect(d.resolved).toHaveLength(0);
+    expect(d.carriedScanChanged).toHaveLength(1);
+  });
+
+  it('resolves when neither moved', () => {
+    const d = diffFindings([ghost], current, cov(), idt('0.5.1-alpha', REG_A, '0.5.1-alpha', REG_A));
+    expect(d.resolved.map((r) => r.fp)).toEqual(['deadbeefdeadbeef']);
+    expect(d.carried).toHaveLength(0);
+  });
+
+  it('treats an unrecorded baseline as a change, then settles', () => {
+    expect(diffFindings([ghost], current, cov(), idt(null, null, '0.5.1-alpha', REG_A)).resolved).toHaveLength(0);
+    expect(diffFindings([ghost], current, cov(), idt('0.5.1-alpha', REG_A, '0.5.1-alpha', REG_A)).resolved).toHaveLength(1);
+  });
+
+  // A move claims the finding still EXISTS, which is the safe direction.
+  it('still reports a move across a change', () => {
+    const [f] = toFindings(configInvestigations());
+    const from = { ...toOpenFinding(f!), fp: 'oldfingerprint00', path: 'elsewhere.yaml' };
+    const d = diffFindings([from], current, cov(REG_B), idt('0.5.0-alpha', REG_A, '0.5.1-alpha', REG_B));
+    expect(d.moved).toHaveLength(1);
+    expect(d.carried).toHaveLength(0);
+  });
+
+  it('is unchanged for a caller that supplies no identity', () => {
+    expect(diffFindings([ghost], current, cov()).resolved).toHaveLength(1);
+  });
+
+  it('carried stays the union of both causes, so open counts do not shift', () => {
+    const d = diffFindings([ghost], current, cov(REG_B), idt('0.5.1-alpha', REG_A, '0.5.1-alpha', REG_B));
+    expect(d.carried).toEqual([...d.carriedIncompleteSurface, ...d.carriedScanChanged]);
+  });
+});
+
+describe('the issue states the RIGHT reason for holding a finding open', () => {
+  // The defect this replaced: one flat carried list rendered a hardcoded "your surface did not
+  // complete", printed directly above a coverage table showing every surface completing. That
+  // sends a partner to debug CI for a failure that did not happen.
+  it('does not blame the surface when the surface was fine', () => {
+    const prior: AuditState = { v: 1, open: [ghost], history: [], scanner: '0.5.0-alpha', registry: REG_A };
+    const r = renderAuditIssue({ scannerVersion: '0.5.1-alpha', investigations: configInvestigations(), coverage: cov(REG_A), sha: SHA, scannedAt: AT, previous: prior });
+    expect(r.body).toContain('Held open across a scanner or registry change');
+    expect(r.body).not.toContain('did not complete, so they could NOT be verified as fixed');
+    expect(r.carriedCount).toBe(1);
+    expect(r.resolvedCount).toBe(0);
+  });
+
+  it('still blames the surface when the surface really did fail', () => {
+    const prior: AuditState = { v: 1, open: [ghost], history: [], scanner: '0.5.1-alpha', registry: REG_A };
+    const broken = coverage({
+      config: { analyzed: false, failed: true, filesScanned: 0 } as AuditCoverage['config'],
+      registry: { providers: ['openai'], freshness: 'fresh', version: REG_A } as AuditCoverage['registry'],
+    });
+    const r = renderAuditIssue({ scannerVersion: '0.5.1-alpha', investigations: configInvestigations(), coverage: broken, sha: SHA, scannedAt: AT, previous: prior });
+    expect(r.body).toContain('did not complete, so they could NOT be verified as fixed');
+  });
+
+  // The whole point: a held finding keeps the issue open and keeps the baseline.
+  it('a held finding blocks closing and survives in the baseline', () => {
+    const prior: AuditState = { v: 1, open: [ghost], history: [], scanner: '0.5.0-alpha', registry: REG_A };
+    const r = renderAuditIssue({ scannerVersion: '0.5.1-alpha', investigations: [], coverage: cov(REG_A), sha: SHA, scannedAt: AT, previous: prior });
+    expect(r.closable).toBe(false);
+    expect(r.state.open.map((o) => o.fp)).toContain('deadbeefdeadbeef');
+  });
+});
+
+describe('the baseline records what produced it', () => {
+  it('writes and reads back both halves', () => {
+    const r = renderAuditIssue({ scannerVersion: '9.9.9-test', investigations: configInvestigations(), coverage: cov(REG_A), sha: SHA, scannedAt: AT, previous: EMPTY_STATE });
+    expect(r.state.scanner).toBe('9.9.9-test');
+    expect(r.state.registry).toBe(REG_A);
+    const parsed = parseAuditState(r.body);
+    expect(parsed.scanner).toBe('9.9.9-test');
+    expect(parsed.registry).toBe(REG_A);
+  });
+
+  it('still parses a baseline written before either field existed', () => {
+    const legacy = [
+      '<!-- mendr-audit:state',
+      '{"v":1,"open":[{"fp":"aaaabbbbccccdddd","model":"m","path":"p.ts","key":null,"evidenceType":"code_call_site","surface":"code"}],"history":[]}',
+      '-->',
+    ].join(String.fromCharCode(10));
+    const parsed = parseAuditState(legacy);
+    expect(parsed.open).toHaveLength(1);
+    expect(parsed.scanner).toBeNull();
+    expect(parsed.registry).toBeNull();
   });
 });

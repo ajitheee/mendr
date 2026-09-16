@@ -236,6 +236,35 @@ export const toOpenFinding = (f: Finding): OpenFinding => ({
   surface: f.surface,
 });
 
+/**
+ * Everything that decides whether a finding EXISTS, so a disappearance can be told apart from a
+ * reclassification. A finding is a JOIN of a scanned occurrence against a registry entry, so both
+ * halves matter: the scanner code that classifies the occurrence, and the registry data it joins
+ * against. Guarding only the code is the trap -- the generated workflow pins the code and
+ * REFRESHES THE DATA every run by design (freshRegistry.ts: "pin the CODE, refresh the DATA"),
+ * so the half that moves weekly would be the half left unguarded.
+ */
+export interface ScanIdentity {
+  /** The mendr version doing the classifying. */
+  scanner: string;
+  /** Content hash of the registry joined against; null when it could not be determined. */
+  registry: string | null;
+}
+
+/**
+ * Has anything that decides existence moved since the baseline was written?
+ *
+ * An unknown baseline counts as changed, so the guard applies once and then self-heals. A
+ * registry hash unknown on EITHER side is skipped rather than counted as a change -- otherwise a
+ * build that cannot report its registry version would carry every finding forever.
+ */
+export function scanIdentityChanged(previous: ScanIdentity | null, current: ScanIdentity): boolean {
+  if (previous === null) return true;
+  if (previous.scanner !== current.scanner) return true;
+  if (previous.registry !== null && current.registry !== null && previous.registry !== current.registry) return true;
+  return false;
+}
+
 /** What changed between the previous run and this one. */
 export interface FindingDiff {
   fresh: Finding[];
@@ -244,8 +273,12 @@ export interface FindingDiff {
   resolved: OpenFinding[];
   /** Same finding at a new path — a move, not a fix. */
   moved: { from: OpenFinding; to: Finding }[];
-  /** Could not be re-checked because their surface did not complete. NOT resolved. */
+  /** Everything held open instead of resolved this run: the union of the two below. */
   carried: OpenFinding[];
+  /** Their surface did not complete, so they could not be re-checked at all. */
+  carriedIncompleteSurface: OpenFinding[];
+  /** Re-checked and absent, but by a DIFFERENT scanner or registry than the one that found them. */
+  carriedScanChanged: OpenFinding[];
 }
 
 /**
@@ -260,7 +293,27 @@ export function diffFindings(
   previous: readonly OpenFinding[],
   current: readonly Finding[],
   coverage: AuditCoverage,
+  identity?: { previous: ScanIdentity | null; current: ScanIdentity },
 ): FindingDiff {
+  // THE THIRD RULE. A finding may only be called RESOLVED when the thing that fails to find it is
+  // the same thing that found it -- same scanner code AND same registry data.
+  //
+  // `surfaceCompleted` catches a surface that ERRORED. It cannot catch a surface that ran
+  // perfectly and merely CLASSIFIED differently: the files were read, the scan succeeded, the
+  // finding is simply gone. At that layer a reclassification and a fix are the same event.
+  //
+  // Both inputs move, and the registry moves far more often than the code. The generated audit
+  // workflow sets MENDR_REGISTRY_REFRESH and fetches a ROLLING snapshot, so an entry that is
+  // re-keyed, re-statused or dropped makes a finding vanish under a pinned scanner with every
+  // surface healthy. Reproduced end to end before this guard existed: reported resolved,
+  // `mayClose` true, issue closed, baseline erased -- over a live exposure.
+  //
+  // A MOVE is still reported across a change, because that claims the finding still EXISTS, which
+  // is the safe direction. Only the "it is gone" claim is withheld.
+  //
+  // HONEST LIMIT: the scanner half is a package version, so a classifier change WITHIN one
+  // release is invisible to it. The registry half is a content hash and is exact.
+  const scanChanged = identity !== undefined && scanIdentityChanged(identity.previous, identity.current);
   const priorByFp = new Map(previous.map((p) => [p.fp, p]));
   const currentByFp = new Map(current.map((f) => [f.fingerprint, f]));
 
@@ -269,7 +322,8 @@ export function diffFindings(
   for (const f of current) (priorByFp.has(f.fingerprint) ? continuing : fresh).push(f);
 
   const resolved: OpenFinding[] = [];
-  const carried: OpenFinding[] = [];
+  const carriedIncompleteSurface: OpenFinding[] = [];
+  const carriedScanChanged: OpenFinding[] = [];
   const moved: { from: OpenFinding; to: Finding }[] = [];
 
   // A "move" is the same (model, key, evidenceType) reappearing at a new path.
@@ -281,7 +335,7 @@ export function diffFindings(
   for (const p of previous) {
     if (currentByFp.has(p.fp)) continue;
     if (!surfaceCompleted(coverage, p.surface)) {
-      carried.push(p);
+      carriedIncompleteSurface.push(p);
       continue;
     }
     const relocated = freshByShape.get(`${p.model}|${p.key ?? '-'}|${p.evidenceType}`);
@@ -289,8 +343,20 @@ export function diffFindings(
       moved.push({ from: p, to: relocated });
       continue;
     }
+    if (scanChanged) {
+      carriedScanChanged.push(p);
+      continue;
+    }
     resolved.push(p);
   }
 
-  return { fresh, continuing, resolved, moved, carried };
+  return {
+    fresh,
+    continuing,
+    resolved,
+    moved,
+    carried: [...carriedIncompleteSurface, ...carriedScanChanged],
+    carriedIncompleteSurface,
+    carriedScanChanged,
+  };
 }
