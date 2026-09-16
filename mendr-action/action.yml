@@ -1,7 +1,7 @@
 name: "Mendr - migrate deprecated LLM model ids"
 description: >-
   Scan a repo for retired LLM model ids and their coupled params, VERIFY the
-  migration in an isolated sandbox (a baseline-relative type-check and build plus
+  migration in a secret-sanitized environment (a baseline-relative type-check and build plus
   YOUR test suite, and an optional eval), and open one idempotent, human-approved
   pull request — only when the migration verifies. Mendr runs entirely inside
   YOUR CI runner and never edits your default branch. With `approval-gated`, it

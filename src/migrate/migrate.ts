@@ -18,7 +18,7 @@ import { writeAllOrNothing, type PendingWrite } from '../fix/atomicWrite.js';
 // THE MIGRATION SANDBOX.
 //
 // A migration is the set of verified Tier-A model-id swaps fix-llm would make.
-// This module PROVES one in an isolated sandbox — build it, run the repo's
+// This module PROVES one in a secret-sanitized verification environment — build it, run the repo's
 // tests, run an optional eval — WITHOUT ever touching the working tree, and
 // emits ONE self-contained artifact (`mendr-migration/v1`): the diff, every
 // model swap, each gate's outcome, an overall verdict, and whether it is
@@ -358,7 +358,7 @@ export function computeVerdict(typeCheck: GateOutcome, build: GateOutcome, tests
 }
 
 /**
- * Plan and (unless skipped) verify a migration in a sandbox. Never writes the
+ * Plan and (unless skipped) verify a migration in a throwaway copy. Never writes the
  * working tree.
  */
 /** A stale registry is said out loud: a newer retirement or replacement may exist. */

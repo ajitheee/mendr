@@ -344,6 +344,36 @@ page.
 
 ---
 
+## 4b. What the verification environment is, and what it is not
+
+Mendr runs your build, tests and optional eval to check a migration. Earlier wording called that
+an "isolated sandbox". It is not isolated, and the word is withdrawn. What it actually is:
+
+**A secret-sanitized verification environment.**
+
+What it DOES do:
+
+- Runs in a **throwaway copy** of your repository, never your working tree. `node_modules` is
+  junctioned rather than copied; `.git` and `dist` are excluded.
+- **Strips the CI's own credentials** before running your commands: `GITHUB_TOKEN`, the Actions
+  OIDC request token and URL, the runtime token and results URL, and every `INPUT_*` variable.
+  Your own application secrets stay in scope deliberately — removing them turns a passing gate
+  inconclusive and makes the tool look worse than it is.
+- **Redacts captured output at the source**, before it leaves the machine.
+
+What it does NOT do, and you should assume none of it:
+
+- **No network isolation.** Your test suite can reach anything the runner can reach. `--offline`
+  constrains *Mendr's* own requests; it cannot constrain yours.
+- **No process or filesystem isolation.** Your commands run as the same user with the same
+  permissions. Anything they can write outside the copy, they will.
+- **No resource limits.** No cgroup, no seccomp, no container boundary of Mendr's making.
+
+The honest boundary: running a migration gate executes your repository's own code with your
+repository's own privileges, minus the CI credentials Mendr took away. If you do not already
+trust your test suite and its dependency tree to run in CI, this does not make that safe — and
+nothing in Mendr claims to.
+
 ## 5. Threat model
 
 ### Assets

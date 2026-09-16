@@ -3568,7 +3568,7 @@ program
 program
   .command('migrate')
   .argument('[repoPath]', 'path to the target repo (local only — the sandbox runs your build and tests)', '.')
-  .description('[preview] Verify a model-id migration in an isolated sandbox and emit a portable result. Never writes your working tree.')
+  .description('[preview] Verify a model-id migration in a secret-sanitized verification environment and emit a portable result. Never writes your working tree.')
   .option('--json', 'emit the mendr-migration/v1 artifact as JSON instead of the human report')
   .option('--patch <file>', 'write the git-applyable patch to this file')
   .option('--pr-body <file>', 'write the evidence block for a pull request body to this file (markdown)')

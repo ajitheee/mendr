@@ -1,6 +1,6 @@
 # Mendr GitHub Action
 
-Runs [Mendr](https://github.com/ajitheee/mendr) in your CI. When a provider retires an LLM model id your code still calls, or flips a coupled param on the newer models, Mendr verifies the migration in an isolated sandbox and opens one pull request for you to review.
+Runs [Mendr](https://github.com/ajitheee/mendr) in your CI. When a provider retires an LLM model id your code still calls, or flips a coupled param on the newer models, Mendr verifies the migration in a secret-sanitized verification environment and opens one pull request for you to review.
 
 The whole thing runs inside your own CI. Mendr verifies the migration — a baseline-relative type-check and your build, plus your test suite (and an optional eval) — in a throwaway copy, and applies it to the PR branch ONLY when that verification passes. It never edits your default branch, and it never merges anything on its own. A human reviews and merges.
 
@@ -50,7 +50,7 @@ your token; the App only records the decision and what your CI reports.
 ## what it does on each run
 
 1. Installs your repo's dependencies (auto-detected from your lockfile) so the build and test gates can actually run.
-2. Runs `mendr migrate . --write`, which verifies the migration in a sandbox (type-check, your build, your test suite, an optional `eval-command`) and applies it to the working tree ONLY when the verdict is `verified`.
+2. Runs `mendr migrate . --write`, which verifies the migration in a throwaway copy with your CI credentials stripped (type-check, your build, your test suite, an optional `eval-command`) and applies it to the working tree ONLY when the verdict is `verified`.
 3. If a tracked file changed, it commits to a stable branch (`mendr/deprecated-model-ids`) and opens or updates a single PR whose body lists every swap and each gate's outcome. If there was nothing to migrate, it closes a stale Mendr PR if one was open. If a migration existed but did not verify, it applies nothing, opens no PR, and leaves any existing PR untouched (`outcome: not-verified`).
 
 Re-running never stacks new PRs. It keeps the one branch current, and it never merges — a human approves.
