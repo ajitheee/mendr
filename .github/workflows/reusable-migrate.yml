@@ -16,10 +16,6 @@ name: mendr migrate (reusable)
 on:
   workflow_call:
     inputs:
-      mendr-spec:
-        description: "The Mendr CLI ref to run: a tag, or a commit SHA. The calling repository's MENDR_SPEC variable overrides it."
-        type: string
-        default: v0.5.1-alpha
       app-url:
         description: "The customer's Mendr App — where approvals come from and progress goes to."
         type: string
@@ -51,14 +47,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # NOTE, and it is a real limitation: GitHub does not allow an expression in `uses:`,
-      # so the ACTION reference below must be a literal. Pinning this workflow to a commit
-      # SHA gets you the action ref recorded at that SHA -- a tag, which is movable. The
-      # CLI below IS pinned by the caller. Treat the action ref as the one link in the
-      # chain a tag still governs, and see RC-2026-09-16.md.
+      # The action reference and the CLI spec MUST name the same release. The action is a
+      # thin wrapper that shells out to the CLI, so running wrapper vN against CLI vM is a
+      # silent compatibility bet, and app/src/ui/workflowTemplate.test.ts enforces the pair.
+      #
+      # That is why the CLI here is NOT caller-overridable, unlike the audit job: GitHub
+      # forbids an expression in `uses:`, so honouring a caller's MENDR_SPEC would pin the
+      # CLI while leaving the wrapper on a tag -- decoupling exactly what must stay coupled.
+      #
+      # THE CONSEQUENCE, stated rather than hidden: pinning this workflow to a commit SHA
+      # gets you this file as it was at that SHA, and this file names a TAG. The migrate
+      # path is therefore governed by that tag, which the repository owner can move. The
+      # real fix is to rewrite both refs to the release's own commit SHA at release time
+      # (the test already accepts a 40-character ref). See RC-2026-09-16.md, limitation 9.
       - uses: ajitheee/mendr/mendr-action@v0.5.1-alpha
         with:
-          mendr-spec: github:ajitheee/mendr#${{ vars.MENDR_SPEC || inputs.mendr-spec }}
+          mendr-spec: github:ajitheee/mendr#v0.5.1-alpha
           app-url: ${{ inputs.app-url }}
           approval-gated: 'true'
           approval: ${{ inputs.approval }}
