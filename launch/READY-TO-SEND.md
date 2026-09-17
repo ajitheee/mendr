@@ -97,3 +97,43 @@ Two consequences:
 2. Most cited issues were `max_tokens` -> `max_completion_tokens` parameter renames. That is not
    a model retirement, and the registry does not cover it. The outreach was built on a pain
    Mendr does not solve.
+
+---
+
+# Outcomes — the first external signal
+
+## danny-avila/LibreChat#16017 — CLOSED AS COMPLETED, no code change
+
+Closed 2026-09-17T03:47Z by danny-avila, `stateReason: COMPLETED`. No comment, no label.
+
+Verified rather than assumed:
+
+- `api/server/services/Endpoints/assistants/title.js:25` on `main` **still reads**
+  `model: 'gpt-3.5-turbo'`.
+- That file's last commit is `ab6cde0c`, 2026-09-08 — **eight days before the issue was
+  filed**. It has not been touched since.
+- No pull request references 16017.
+
+So the report was **accepted as legitimate** — `COMPLETED` rather than `NOT PLANNED`, which is
+what a maintainer picks for an invalid or unwanted report — and it produced **no fix**. Why is
+unknown. Plausible reasons include the assistants path being legacy, a fix planned elsewhere, or
+ordinary triage housekeeping. No evidence was found for any of them, so none is claimed here.
+
+**What this proves and does not prove.** The finding was technically correct: the line exists, the
+call path is live (`chatV2.js:41` → `addTitle` → `generateTitle`), and OpenAI retires that id on
+2026-10-23. It was not enough to cause action.
+
+**The lesson, which is bigger than this issue.** Correctness is not actionability. Mendr can prove
+a line will fail on a date; it cannot know whether the owner still cares about that code path.
+Nothing in the scanner sees "this endpoint is on its way out" or "we are rewriting this next
+quarter". A maintainer closing without fixing is the human form of a suppression — and it is the
+strongest argument so far that the product's value sits in the reviewed workflow and the evidence
+it carries, not in the raw finding.
+
+**Deliberately not done:** commenting to ask why. He triaged it; pressing a maintainer to justify
+a close is not worth the goodwill, and the signal we actually need comes from a partner who has
+agreed to look, not from a stranger's closed tracker.
+
+## evalstate/fast-agent#959 — open, no response yet
+## going-doer/Paper2Code#31 — open, no response yet
+## giselles-ai/giselle#2971 — open since 2026-09-13, labeled `bug`, no response
