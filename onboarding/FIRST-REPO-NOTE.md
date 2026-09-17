@@ -30,8 +30,8 @@ commit SHA rather than a tag, because a tag can be moved and a moved tag is indi
 the original.
 
 ```yaml
-uses: ajitheee/mendr/.github/workflows/reusable-audit.yml@a77b9f4fed7701f823a52800034554b560d6a0af
-uses: ajitheee/mendr/.github/workflows/reusable-migrate.yml@a77b9f4fed7701f823a52800034554b560d6a0af
+uses: ajitheee/mendr/.github/workflows/reusable-audit.yml@3cbb6d79823ef8361bdef5aec631ee8ba520ca74
+uses: ajitheee/mendr/.github/workflows/reusable-migrate.yml@3cbb6d79823ef8361bdef5aec631ee8ba520ca74
 ```
 
 Set the repository variable `MENDR_SPEC` to the same SHA so the CLI it fetches is pinned too.
