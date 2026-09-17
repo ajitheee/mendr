@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.5.3-alpha — 2026-09-17
+
+- **A clean repository no longer reads as `inconclusive`.** The generated audit
+  workflow ran `mendr audit . --json > mendr-audit.json` from the repository root,
+  and the shell creates that file BEFORE mendr starts — so every run scanned
+  mendr's own zero-byte output, the config scanner called it malformed JSON, and
+  the fail-closed rule turned the run inconclusive. A run WITH findings concludes
+  `exposure_detected` regardless, so this could only ever strike a repository that
+  was CLEAN, turning every all-clear into a neutral red check. Fixed on both
+  sides: an empty file is not malformed configuration (no content to misread, so
+  its unreadability narrows nothing — a file with any content, including a lone
+  `{`, still fails closed), and the report is written to `$RUNNER_TEMP`, outside
+  the scanned tree.
+- **The pull request stops repeating itself.** The behavioural ceiling was stated
+  twice, in two voices and two spellings — once as the evidence block's
+  blockquote, again as the CLI's note. The note also still said "the sandbox",
+  a claim withdrawn in 0.5.1-alpha, and "applied to N file(s) in the working tree"
+  sat a few lines under "your working tree was never touched".
+
 ## 0.5.2-alpha — 2026-09-17
 
 - **The pull request never opened.** Found by approving a real migration rather than
