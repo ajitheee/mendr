@@ -202,3 +202,30 @@ describe('notes ride along', () => {
     expect(out).toContain('STALE');
   });
 });
+
+describe('it does not say the same thing twice', () => {
+  // The first real pull request Mendr ever opened (mendr-demo#4, 2026-09-17) stated the
+  // behavioural ceiling twice: once as this module's blockquote, and again under "Also worth
+  // knowing" as the CLI's own note -- in two voices, two spellings, and the second one using
+  // a word that had just been withdrawn. Correct in a terminal report; redundant here.
+  it('drops the CLI behaviour note, which the blockquote already covers', () => {
+    const out = render({
+      notes: [
+        'Behaviour was NOT verified: the throwaway copy proves the migration builds and existing tests pass.',
+        'Restricted to openai/gpt-4-0613 (--only); every other retiring model was left untouched.',
+      ],
+    });
+    expect(out).toContain('**Behaviour was not verified.**');
+    expect(out).not.toContain('Behaviour was NOT verified:');
+    expect(out).toContain('every other retiring model was left untouched');
+  });
+
+  it('matches the American spelling the CLI actually emitted too', () => {
+    const out = render({ notes: ['Behavior was NOT verified: the sandbox proves it builds.'] });
+    expect(out).not.toContain('the sandbox proves');
+  });
+
+  it('omits the section entirely when nothing survives the filter', () => {
+    expect(render({ notes: ['Behaviour was NOT verified: x.'] })).not.toContain('Also worth knowing');
+  });
+});

@@ -456,7 +456,7 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
   const notes: string[] = [...onlyNote];
   if (!behavioralTested) {
     notes.push(
-      'Behavior was NOT verified: the sandbox proves the migration builds and existing tests pass, not that the replacement model matches the old one on quality, latency, cost or response shape. Pass --eval-command to test behavior, and review the swap either way.',
+      'Behaviour was NOT verified: the throwaway copy proves the migration builds and existing tests pass, not that the replacement model matches the old one on quality, latency, cost or response shape. Pass --eval-command to test behaviour, and review the swap either way.',
     );
   }
   if (build.status === 'not-configured') notes.push('No build script found (package.json has no `build`); the build gate did not run.');
@@ -488,7 +488,7 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
         }
       } else {
         applied = result.written.map((p) => relativeSafe(repoPath, p));
-        notes.push(`Applied the verified migration to ${applied.length} file(s) in the working tree.`);
+        notes.push(`Applied the verified migration to ${applied.length} file${applied.length === 1 ? "" : "s"} in this checkout.`);
       }
     }
   }

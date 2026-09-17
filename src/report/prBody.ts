@@ -134,10 +134,16 @@ export function renderPrBody(result: MigrationResult): string {
 
   lines.push(...skippedLines(result.skipped));
 
-  if (result.notes && result.notes.length > 0) {
+  // The behavioural ceiling is already stated above, as a blockquote, in this module's own
+  // words. `notes` carries the CLI's version of the same sentence -- correct in a terminal
+  // report where no blockquote exists, redundant here. Printed unfiltered, the first real
+  // pull request said it twice, in two voices and two spellings, which reads as a tool that
+  // does not know what it already told you.
+  const extraNotes = (result.notes ?? []).filter((n) => !/behaviou?r was not verified/i.test(n));
+  if (extraNotes.length > 0) {
     lines.push('');
     lines.push('**Also worth knowing**');
-    for (const n of result.notes) lines.push(`- ${n}`);
+    for (const n of extraNotes) lines.push(`- ${n}`);
   }
 
   return lines.join('\n');
