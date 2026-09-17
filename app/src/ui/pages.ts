@@ -492,7 +492,7 @@ function approvalPart(inv: Inv, ctx: CardContext, approval: Approval | null, bac
     const last = approval.events[approval.events.length - 1];
     const head =
       approval.status === 'queued'
-        ? `<span class="chip warn">queued</span> <span class="muted">${approval.dispatchedAt ? 'workflow started — waiting for your CI to pick it up' : `starts when your CI next checks (${ctx.repo.private ? 'within three hours' : 'within the hour'})`}</span>`
+        ? `<span class="chip warn">queued</span> <span class="muted">${approval.dispatchedAt ? 'workflow started — waiting for your CI to pick it up' : 'starts when your CI next runs its scheduled check — GitHub can delay that by hours'}</span>`
         : approval.status === 'running'
           ? `<span class="chip warn">running</span> <span class="muted">${esc(STAGE_LABEL[last?.stage ?? 'claimed'] ?? '')}</span>`
           : `<span class="chip ok">done</span> <span class="muted">${esc(last?.detail ?? '')}</span>`;

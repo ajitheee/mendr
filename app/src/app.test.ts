@@ -566,7 +566,7 @@ describe('approvals: decided in Mendr, carried out by the customer\'s own CI', (
     expect((await h.store.listAuditLog()).some((e) => e.event === 'migration_approved' && e.actor === 'octocat')).toBe(true);
   });
 
-  it('without Actions: write the approval waits for the workflow\'s hourly check — and says so', async () => {
+  it('without Actions: write the approval waits for the scheduled check — and never names an hour', async () => {
     const h = harness({ 'acme/api': REPO.id });
     await h.install();
     await h.ingest(await actionsToken(), sampleReport());
@@ -580,14 +580,16 @@ describe('approvals: decided in Mendr, carried out by the customer\'s own CI', (
     expect(a?.dispatchedAt).toBeNull();
     expect(a?.events[0]?.detail).toContain('Actions: write');
     const html = await (await h.app.request('/r/acme/api/runs/1', { headers: { cookie } })).text();
-    // acme/api is private, and Mendr writes a three-hour approvals cron on private repositories to keep
-    // billed Actions minutes down. Saying "within the hour" here promised a check that would not happen.
-    expect(html).toContain('within three hours');
+    // GitHub runs scheduled workflows best-effort and drops most of them: measured on mendr-demo,
+    // an hourly cron produced 17 runs where 73 were requested, median gap 4.5 hours, worst 7.5.
+    // Any number printed here is a promise GitHub never made, so print none.
+    expect(html).toContain('scheduled check');
+    expect(html).not.toMatch(/within (the hour|three hours)/);
   });
 
-  // The other half of the same rule: a public repository really is on an hourly cron, and must not be
-  // told to wait three hours for it.
-  it('a public repository is told the hourly cadence its workflow actually runs on', async () => {
+  // The same rule on a public repository. It used to be told "within the hour" because its cron asks
+  // for one — but the cron asking is not the same as GitHub running it.
+  it('a public repository is not promised an hour either', async () => {
     const h = harness({ 'acme/pub': 999 });
     await h.install();
     await h.webhook('installation_repositories', { action: 'added', installation: INSTALLATION, repositories_added: [{ id: 999, full_name: 'acme/pub', private: false }], repositories_removed: [] });
@@ -597,9 +599,11 @@ describe('approvals: decided in Mendr, carried out by the customer\'s own CI', (
     };
     const cookie = await h.sessionCookie();
     expect((await post(h, '/r/acme/pub/approve', finding, cookie)).status).toBe(303);
-    expect((await h.store.getApproval(1))?.events[0]?.detail).toContain('next hourly check');
+    expect((await h.store.getApproval(1))?.events[0]?.detail).toContain('next scheduled check');
+    expect((await h.store.getApproval(1))?.events[0]?.detail).not.toContain('hourly');
     const html = await (await h.app.request('/r/acme/pub/runs/1', { headers: { cookie } })).text();
-    expect(html).toContain('within the hour');
+    expect(html).toContain('scheduled check');
+    expect(html).not.toMatch(/within (the hour|three hours)/);
     expect(html).not.toContain('within three hours');
   });
 

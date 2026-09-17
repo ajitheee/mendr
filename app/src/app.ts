@@ -333,8 +333,8 @@ export function createApp(deps: AppDeps): Hono {
   // An approval is a person's decision on a finding: migrate this model, open a
   // PR (and, if they chose it, merge it when checks pass). The App records it
   // and, when it holds the OPTIONAL `actions: write`, starts the repository's
-  // migration workflow at once; otherwise that workflow's own hourly check
-  // finds it. Either way the work — verify on a throwaway copy, push one
+  // migration workflow at once; otherwise that workflow's own scheduled check
+  // finds it, whenever GitHub gets round to running it. Either way the work — verify on a throwaway copy, push one
   // branch, open one PR — happens in the customer's CI with the workflow's
   // token. The App never touches the repository; it records the decision and
   // what the CI streams back, proven by the run's OIDC token like everything else.
@@ -425,19 +425,25 @@ export function createApp(deps: AppDeps): Hono {
     return { provider, model, replacement: field('replacement', 128) || null, mode, back: safeNext(field('back', 300)) };
   };
 
-  // Mendr writes the schedule itself, and it is not the same on both kinds of repository: hourly on a
-  // public one, every three hours on a private one, because minutes are billed there. Saying "hourly" to
-  // a private repository promises a check that will not happen for up to three hours.
-  const pickup = (isPrivate: boolean): string =>
-    isPrivate ? 'your CI picks it up on its next three-hourly check' : 'your CI picks it up on its next hourly check';
+  // DO NOT NAME A CADENCE HERE. Mendr writes the cron, but GitHub decides whether to honour it:
+  // scheduled workflows are best-effort and are dropped under load. Measured on mendr-demo across a
+  // 73-hour window with an hourly cron requested: 17 runs, not 73. Median gap 4.5 hours, worst 7.5.
+  // Lowering the requested interval from three hours to one changed nothing measurable, because the
+  // throttle dominates the request.
+  //
+  // So the schedule is a BACKSTOP, and the instant path is the App's own dispatch, which needs the
+  // optional `actions: write`. Telling someone "within the hour" and delivering four hours later is
+  // the first promise Mendr would break to a new customer, on the very screen where they are waiting.
+  const pickup = (): string =>
+    'your CI picks it up on its next scheduled check — GitHub runs those best-effort, so it can be several hours';
 
-  const dispatchRefusal = (e: unknown, isPrivate: boolean): string => {
+  const dispatchRefusal = (e: unknown): string => {
     if (e instanceof GitHubApiError) {
-      if (e.status === 404) return `no migration workflow was found in the repository — add it once (see the Migration card) and ${pickup(isPrivate)}`;
-      if (e.status === 403 || e.status === 422) return `Mendr may not start workflows here yet (grant the App "Actions: write" for instant starts); ${pickup(isPrivate)}`;
-      return `GitHub answered ${e.status}; ${pickup(isPrivate)}`;
+      if (e.status === 404) return `no migration workflow was found in the repository — add it once (see the Migration card) and ${pickup()}`;
+      if (e.status === 403 || e.status === 422) return `Mendr may not start workflows here yet (grant the App "Actions: write" for instant starts); ${pickup()}`;
+      return `GitHub answered ${e.status}; ${pickup()}`;
     }
-    return pickup(isPrivate);
+    return pickup();
   };
 
   app.post('/r/:owner/:name/approve', async (c) => {
@@ -459,7 +465,7 @@ export function createApp(deps: AppDeps): Hono {
     const approval = await store.createApproval({ repoId: repo.id, provider: f.provider, model: f.model, replacement: f.replacement, mode: f.mode, approvedBy: sess.login });
     const at = now().toISOString();
     let dispatched = false;
-    let why = pickup(repo.private);
+    let why = pickup();
     if (isConfigured(config)) {
       const gh = await github.getRepoAsUser(sess.token, fullName);
       const file = repo.migrateWorkflow ?? MENDR_MIGRATE_WORKFLOW_PATH.split('/').pop()!;
@@ -467,7 +473,7 @@ export function createApp(deps: AppDeps): Hono {
         await github.dispatchWorkflow(repo.installationId, fullName, repo.id, file, gh?.defaultBranch ?? 'main', { approval: String(approval.id) });
         dispatched = true;
       } catch (e) {
-        why = dispatchRefusal(e, repo.private);
+        why = dispatchRefusal(e);
       }
     }
     if (dispatched) await store.markApprovalDispatched(approval.id, { at, stage: 'dispatched', detail: 'Mendr started your migration workflow' });

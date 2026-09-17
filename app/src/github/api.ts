@@ -45,7 +45,7 @@ export interface GitHubApi {
    * Start the customer's own migration workflow (workflow_dispatch) on a branch.
    * Needs the OPTIONAL `actions: write` permission — which is not code access;
    * without it GitHub refuses and the approval waits for that workflow's own
-   * hourly check instead. Still no contents, no clone, no file reads.
+   * scheduled check instead, whenever GitHub runs it. Still no contents, no clone, no file reads.
    */
   dispatchWorkflow(installationId: number, repoFullName: string, repoId: number, workflowFile: string, ref: string, inputs: Record<string, string>): Promise<void>;
 }
@@ -207,7 +207,7 @@ export function createGitHubApi(cfg: ApiConfig): GitHubApi {
     // Start the customer's own migration workflow on their default branch. This
     // is the one optional permission (actions: write, which is not code access);
     // when the App was never granted it, GitHub answers 422 to the token request
-    // and the approval simply waits for that workflow's own hourly check.
+    // and the approval waits for that workflow's own scheduled check, which GitHub may delay.
     async dispatchWorkflow(installationId, repoFullName, repoId, workflowFile, ref, inputs) {
       const token = await installationToken(installationId, repoId, { actions: 'write' });
       await call(
