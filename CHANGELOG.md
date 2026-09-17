@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.2-alpha — 2026-09-17
+
+- **The pull request never opened.** Found by approving a real migration rather than
+  by any test: the scaffold read `$PRBODY` and its own comment said "Rendered by
+  `mendr migrate --pr-body`", but that call was never added and the variable was
+  never assigned. Under `set -u` that is fatal one line before the PR is created, so
+  every migration verified the change, applied it, pushed its branch — and opened
+  nothing. Slice 5 had wired the reader without the writer, which also means the
+  evidence-rich PR body shipped in 0.5.0-alpha had never once appeared in a real
+  pull request and could not have. CI now runs shellcheck, which reports this class
+  as SC2154; `bash -n` cannot see it.
+- **The PR body no longer claims an "isolated sandbox".** The wording was withdrawn
+  everywhere else in 0.5.1-alpha, but the sweep covered `*.md`, `*.ts`, `*.yml` and
+  `*.html` — not `*.sh`, which is where the pull request body is assembled. The one
+  surface a customer actually reads kept the claim.
+
 ## 0.5.1-alpha — 2026-09-16
 
 - **A command-line default is a selector, not documentation.** `going-doer/Paper2Code`
