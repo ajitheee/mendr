@@ -15,6 +15,11 @@ set -euo pipefail
 
 REPORT="$(mktemp)"
 ARTIFACT="mendr-migration.json"
+# The evidence block for the pull request body. `mendr migrate --pr-body <file>` writes it;
+# the PR assembly below reads it. It was READ but never WRITTEN and never even defined,
+# so under `set -u` every migration pushed its branch and then died one line before
+# opening the pull request. Caught on mendr-demo 2026-09-17, approval 5.
+PRBODY="$(mktemp)"
 
 # Optional: report what happened to the customer's Mendr App (MENDR_APP_URL),
 # proven by THIS run's OIDC token — the same pattern as the audit upload. What is
@@ -109,7 +114,7 @@ fi
 
 npx --yes "$MENDR_SPEC" migrate . "${ONLY_ARGS[@]}" ${MENDR_EVAL:+--eval-command "$MENDR_EVAL"} >"$REPORT" 2>&1
 REPORT_STATUS=$?
-npx --yes "$MENDR_SPEC" migrate . --write --json "${ONLY_ARGS[@]}" ${MENDR_EVAL:+--eval-command "$MENDR_EVAL"} >"$ARTIFACT" 2>/dev/null
+npx --yes "$MENDR_SPEC" migrate . --write --json --pr-body "$PRBODY" "${ONLY_ARGS[@]}" ${MENDR_EVAL:+--eval-command "$MENDR_EVAL"} >"$ARTIFACT" 2>/dev/null
 WRITE_STATUS=$?
 set -e
 cat "$REPORT"

@@ -7,6 +7,22 @@ on:
   pull_request:
 
 jobs:
+  # A variable that is READ but never ASSIGNED is invisible to `bash -n`, which checks
+  # syntax only. Under `set -u` it is fatal at runtime, and the action's scaffold runs
+  # only in a customer's CI after a person has approved a migration -- the worst place
+  # to discover it. That is not hypothetical: `PRBODY` was referenced and never defined,
+  # so every migration pushed its branch and then died one line before opening the pull
+  # request (mendr-demo, 2026-09-17, approval 5). No unit test could see it; shellcheck
+  # reports it as SC2154.
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck the action scripts
+        run: |
+          shellcheck --version
+          shellcheck mendr-action/scripts/*.sh
+
   build-and-test:
     runs-on: ubuntu-latest
     steps:
