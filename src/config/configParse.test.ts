@@ -138,3 +138,36 @@ describe('configParseIssue — say what could not be read, guess nothing', () =>
     expect(configParseIssue('.env', 'MODEL=gpt-4-0613')).toBeNull();
   });
 });
+
+describe('an empty file is not malformed configuration', () => {
+  // MENDR FAILED ON ITS OWN OUTPUT. The generated audit workflow ran
+  // `mendr audit . --json > mendr-audit.json` from the repository root, and the shell creates
+  // that file BEFORE mendr starts. So every run scanned mendr's own zero-byte output, called it
+  // malformed JSON, and fail-closed.
+  //
+  // It hid for weeks because a run WITH findings concludes `exposure_detected` regardless of
+  // parse failures. It therefore only ever struck a repository that was CLEAN -- turning every
+  // all-clear into `inconclusive` with a neutral check. It surfaced on mendr's own demo, whose
+  // migration pull request failed the check mendr opened it with.
+  //
+  // The rule is the same one that already exempts docs and fixtures: a file with no content
+  // cannot be hiding a model id, so its unreadability narrows nothing.
+  it('a zero-byte json file is not a parse failure', () => {
+    expect(configParseIssue('mendr-audit.json', '')).toBeNull();
+  });
+
+  it('whitespace only is the same thing', () => {
+    expect(configParseIssue('a.json', '   ')).toBeNull();
+    expect(configParseIssue('a.json', String.fromCharCode(10, 10))).toBeNull();
+    expect(configParseIssue('a.yaml', '  ')).toBeNull();
+  });
+
+  // The guard must not become an excuse to ignore real breakage.
+  it('a file with actual malformed content still fails closed', () => {
+    expect(configParseIssue('a.json', '{ "model": "gpt-4", ')).toBe('malformed_json');
+  });
+
+  it('a single stray character is content, not emptiness', () => {
+    expect(configParseIssue('a.json', '{')).toBe('malformed_json');
+  });
+});

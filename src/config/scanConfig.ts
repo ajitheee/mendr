@@ -790,6 +790,18 @@ export function configParseIssue(file: string, text: string): 'malformed_json' |
   // genuinely invalid JSON and they are also curl examples in a tutorial. Reporting them would
   // teach a reader that "inconclusive" means "mendr found some prose it did not like".
   if (isTestFixturePath(file)) return null;
+  // AN EMPTY FILE IS NOT MALFORMED CONFIGURATION. It has no content to misread, so it cannot be
+  // hiding a model id and its unreadability narrows nothing -- the same reasoning that exempts
+  // docs and fixtures above.
+  //
+  // Found the hard way. The generated audit workflow runs `mendr audit . --json > mendr-audit.json`
+  // from the repository root, and the shell CREATES that file before mendr starts. So every run
+  // scanned mendr's own zero-byte output, called it malformed JSON, and fail-closed. It stayed
+  // invisible because a run WITH findings concludes `exposure_detected` regardless -- meaning it
+  // only ever struck a customer whose repository was clean, turning every all-clear into
+  // `inconclusive` with a neutral check. It first showed up on mendr's own demo, whose migration
+  // pull request failed the check mendr opened it with.
+  if (text.trim() === '') return null;
   if (/\.json5?$/i.test(file)) {
     try {
       JSON.parse(stripJsonComments(text));

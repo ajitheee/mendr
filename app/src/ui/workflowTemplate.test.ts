@@ -127,7 +127,13 @@ describe('the caller and the reusable workflows agree (the contract lives in thi
     expect(audit).toContain('MENDR_APP_URL: ${{ inputs.app-url }}');
     expect(audit).toContain('audience=$MENDR_AUDIENCE');
     expect(audit).toContain('/api/ingest');
-    expect(audit).toContain('--data-binary @mendr-audit.json');
+    // The report is written OUTSIDE the scanned tree and only that file is sent. The path
+    // moved because writing it into the repository root put mendr's own zero-byte output in
+    // front of its own config scanner, which read it as malformed JSON and fail-closed every
+    // clean run. Assert both halves: where it is written, and that it is what gets posted.
+    expect(audit).toContain('REPORT="$RUNNER_TEMP/mendr-audit.json"');
+    expect(audit).toContain('--data-binary @"$REPORT"');
+    expect(audit).not.toMatch(/--json > mendr-audit\.json/);
     expect(audit).toContain('${{ github.event.pull_request.head.sha || github.sha }}');
     expect(audit).toContain('persist-credentials: false');
     expect(audit).toContain('MENDR_SPEC: ${{ vars.MENDR_SPEC || inputs.mendr-spec }}'); // the repo variable still overrides the pin
