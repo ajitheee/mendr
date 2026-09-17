@@ -45,7 +45,7 @@ export function renderMigrationReport(r: MigrationResult): string[] {
     lines.push(`  ${m.model} -> ${m.to}  (${m.provider}, ${m.language}, ${m.sites} site${m.sites === 1 ? '' : 's'}: ${m.files.join(', ')})`);
   }
   lines.push('');
-  lines.push('Sandbox verification (your working tree was never touched)');
+  lines.push('Verification on a throwaway copy (your working tree was never touched)');
   lines.push(gateRow('type-check', r.verification.typeCheck));
   lines.push(gateRow('build', r.verification.build));
   lines.push(gateRow('tests', r.verification.tests));

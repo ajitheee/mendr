@@ -183,7 +183,7 @@ post_event pushed "$MENDR_BRANCH"
 BODY="$(mktemp)"
 {
   echo "$MARKER"
-  echo "Mendr verified this migration in an isolated sandbox and applied it to this branch. **Mendr never merges — review and merge if it looks right.**"
+  echo "Mendr verified this migration on a throwaway copy of this repository, in this CI, with this job’s own credentials stripped — then applied it to this branch. **Mendr never merges — review and merge if it looks right.**"
   echo
   # The evidence block: each swap with its retirement date and the provider notice behind it,
   # the replacement verdict, coupled parameters, what actually ran, and what was deliberately
