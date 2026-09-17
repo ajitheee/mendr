@@ -23,6 +23,15 @@ jobs:
           shellcheck --version
           shellcheck mendr-action/scripts/*.sh
 
+      # The install snippet a customer pastes drifted four releases behind the identity row
+      # it sits under, and nothing noticed: a stale 40-character hex string looks exactly like
+      # a fresh one.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: every customer-facing pin is the verified pin
+        run: node scripts/check-pins.mjs
+
   build-and-test:
     runs-on: ubuntu-latest
     steps:
