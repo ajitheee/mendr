@@ -12,7 +12,7 @@
         )
 ```
 
-OpenAI lists `gpt-3.5-turbo-instruct` for shutdown on **2026-09-28** — 12 days from today (filing this 2026-09-16). Source: https://developers.openai.com/api/docs/deprecations. After that date, requests naming that model stop being served.
+OpenAI lists `gpt-3.5-turbo-instruct` for shutdown on **2026-09-28** — 11 days from today (filing this 2026-09-17). Source: https://developers.openai.com/api/docs/deprecations. After that date, requests naming that model stop being served.
 
 It is not dead code. Path to it, each hop read rather than inferred (line numbers are call sites, not definitions):
 

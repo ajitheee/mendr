@@ -26,7 +26,7 @@ That bound default flows unmodified into a real provider request 59 lines later:
 
 where `completion` is `litellm.completion` (imported at `llm_providers.py:170`).
 
-OpenAI lists `gpt-3.5-turbo` for shutdown on **2026-10-23** — 37 days from today (2026-09-16). Source: https://developers.openai.com/api/docs/deprecations
+OpenAI lists `gpt-3.5-turbo` for shutdown on **2026-10-23** — 36 days from today (2026-09-17). Source: https://developers.openai.com/api/docs/deprecations
 
 After that date, any caller that lands on this default gets a hard provider error, surfaced as `PromptCallableException` (`guardrails/classes/llm/prompt_callable.py:36`).
 

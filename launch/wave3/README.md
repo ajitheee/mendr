@@ -59,6 +59,15 @@ not work as an outreach strategy.
 - **danny-avila/LibreChat** — https://github.com/danny-avila/LibreChat/issues/16017 (2026-09-16).
 - **evalstate/fast-agent** — https://github.com/evalstate/fast-agent/issues/959 (2026-09-16).
 
-Still to send: guardrails and sodaverse (handed to Ajith to file by hand), TinyTroupe (queued).
-Pace these. Four issues across unrelated repositories in one day reads as an automated campaign
-however carefully each one is written.
+All four are now filed:
+
+- **skywalker023/sodaverse** https://github.com/skywalker023/sodaverse/issues/11 (2026-09-17)
+- **guardrails-ai/guardrails** https://github.com/guardrails-ai/guardrails/issues/1657 (2026-09-17)
+- **microsoft/TinyTroupe** https://github.com/microsoft/TinyTroupe/issues/166 (2026-09-17)
+- **going-doer/Paper2Code** https://github.com/going-doer/Paper2Code/issues/31 (2026-09-17)
+
+Re-verified at the moment of filing, not trusted from the day before: every cited line still
+existed at current HEAD, no duplicate had appeared overnight, and the hardcoded day counts were
+recomputed. The drafts said "12 days from today (filing this 2026-09-16)" and "37 days"; filed a
+day later those were both wrong by one, which is exactly the kind of small inaccuracy that makes a
+maintainer stop trusting the rest. Now 11 and 36.

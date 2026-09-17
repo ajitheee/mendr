@@ -16,7 +16,7 @@ self._config["reasoning_model"] = config["OpenAI"].get(
 )
 ```
 
-OpenAI retires `o3-mini` on **2026-10-23** — 37 days from today (2026-09-16). Source: https://developers.openai.com/api/docs/deprecations
+OpenAI retires `o3-mini` on **2026-10-23** — 36 days from today (2026-09-17). Source: https://developers.openai.com/api/docs/deprecations
 
 ### It reaches the API, it isn't a leftover string
 
