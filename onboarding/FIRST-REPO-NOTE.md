@@ -30,8 +30,8 @@ commit SHA rather than a tag, because a tag can be moved and a moved tag is indi
 the original.
 
 ```yaml
-uses: ajitheee/mendr/.github/workflows/reusable-audit.yml@3cbb6d79823ef8361bdef5aec631ee8ba520ca74
-uses: ajitheee/mendr/.github/workflows/reusable-migrate.yml@3cbb6d79823ef8361bdef5aec631ee8ba520ca74
+uses: ajitheee/mendr/.github/workflows/reusable-audit.yml@ff86f14e18165a984d5e5297b68504190d09f93f
+uses: ajitheee/mendr/.github/workflows/reusable-migrate.yml@ff86f14e18165a984d5e5297b68504190d09f93f
 ```
 
 Set the repository variable `MENDR_SPEC` to the same SHA so the CLI it fetches is pinned too.
@@ -69,7 +69,7 @@ an automatically fixable finding. Mendr only rewrites a call site when it can re
 client in the same file, and production code usually injects or wraps its client. Expect findings
 you review, not patches you merge. If you want the patch rate to be the pitch, it isn't.
 
-**2. It reads TypeScript/TSX, JavaScript and Python. Nothing else.** Go, Java, Kotlin, Rust, C#,
+**2. It reads TypeScript/TS191b202ec20618d1, JavaScript and Python. Nothing else.** Go, Java, Kotlin, Rust, C#,
 Ruby, PHP are counted and reported as unread, never analyzed. It does not read shell scripts — a
 model id set in a `.sh` and passed as a CLI argument is invisible.
 

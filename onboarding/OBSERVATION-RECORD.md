@@ -18,11 +18,11 @@ supposed to happen.
 | Does it have a real type-check? (`tsc`, `mypy`) | |
 | Does it have a test suite that passes today? | |
 | Reviewer name and role | |
-| Mendr pin (40-char SHA) | `3cbb6d79823ef8361bdef5aec631ee8ba520ca74` |
+| Mendr pin (40-char SHA) | `ff86f14e18165a984d5e5297b68504190d09f93f` |
 | Registry version at first run | |
 | Date onboarded | |
 
-**Why the language % matters:** Mendr reads TypeScript/TSX, JavaScript and Python and nothing
+**Why the language % matters:** Mendr reads TypeScript/TS191b202ec20618d1, JavaScript and Python and nothing
 else. If 60% of the repo is Go, the denominator tells you what "no exposure" is actually worth.
 
 ---
@@ -49,7 +49,7 @@ Copy the denominator straight from the run output. Do not summarize it.
 | | count |
 |---|---|
 | discovered | |
-| analyzed (TS/TSX, JavaScript, Python) | |
+| analyzed (TS/TS191b202ec20618d1, JavaScript, Python) | |
 | test files | |
 | languages mendr does not read | |
 | parse failures | |
