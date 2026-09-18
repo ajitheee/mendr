@@ -1988,8 +1988,8 @@ program
 
 program
   .command('resolve')
-  .argument('[model]', 'a model id to resolve; omit when using --audit')
-  .description('Walk the replacement chain for a retiring model id and say whether it ends somewhere a public catalog still lists.')
+  .argument('[model]', 'a model id, or an SDK as npm:<name>@<version> / pypi:<name>@<version>; omit when using --audit')
+  .description('Walk a retiring model id to where its replacement chain ends, or an SDK major to the newer majors its provider has shipped.')
   .option('--audit', 'resolve EVERY retiring id and report only the ones that do not end somewhere live')
   .option('--registry <path>', 'use a registry at an explicit path (default: the shipped registry)')
   .option('--catalog <path>', 'use a catalog at an explicit path (default: registries/model-catalog.json)')
@@ -1997,8 +1997,39 @@ program
   .action(async (model: string | undefined, opts: { audit?: boolean; json?: boolean; registry?: string; catalog?: string }) => {
     // Plane 1's terminal node. The registry knows what is dying; the catalog knows what
     // still exists. Neither alone can say where a dying id actually leads.
-    const { buildContractGraph, resolveSuccessor, auditGraph } = await import('./registry/graph.js');
+    const { buildContractGraph, resolveSuccessor, auditGraph, parseSdkSpec, resolveSdk } = await import('./registry/graph.js');
     const registryPath = opts.registry ? resolve(opts.registry) : resolveRegistryPath();
+
+    // An SDK question never loads the model registry — a broken registry must not fail a
+    // question that does not use it — and is routed before any id canonicalization, which
+    // would turn 'npm:openai@^0.28' into 'npm'.
+    if (!opts.audit && model && /^\s*(npm|pypi):/i.test(model)) {
+      const spec = parseSdkSpec(model);
+      if (!spec) {
+        console.error(
+          `mendr resolve: cannot read one major version from "${model}" — give npm:<name>@<version> or pypi:<name>@<version>, e.g. npm:openai@^4.28.0 (ranges that can span majors are refused)`,
+        );
+        process.exitCode = 2;
+        return;
+      }
+      const sdkPath = join(dirname(registryPath), 'sdk-releases.json');
+      let releases = null;
+      try {
+        releases = JSON.parse(readFileSync(sdkPath, 'utf8'));
+      } catch {
+        releases = null;
+      }
+      if (!releases) console.error(`note: no SDK release record at ${sdkPath} — run \`mendr sdk-releases --write ${sdkPath}\`.`);
+      const r = resolveSdk(releases, spec);
+      if (opts.json) {
+        console.log(JSON.stringify(r, null, 2));
+        return;
+      }
+      console.log(r.path.join(' -> '));
+      console.log(`  ${r.outcome}: ${r.reason}`);
+      return;
+    }
+
     let registry;
     try {
       registry = loadLlmRegistry(registryPath);
@@ -2048,7 +2079,9 @@ program
     }
 
     if (!model) {
-      console.error('mendr resolve: give a model id, or pass --audit to check every retiring id.');
+      console.error(
+        'mendr resolve: give a model id, an SDK as npm:<name>@<version> or pypi:<name>@<version>, or pass --audit to check every retiring id.',
+      );
       process.exitCode = 2;
       return;
     }
@@ -2067,7 +2100,7 @@ program
   .option('--json', 'print the release record as JSON')
   .action(async (opts: { write?: string; json?: boolean }) => {
     // Plane 1, box two. A model id is not the only thing a provider changes: `openai`
-    // is at 7.x on npm, and a repo pinned to ^0.28 is six majors behind a rewritten API.
+    // is at 7.x on npm, and a repo pinned to ^0.28 is seven majors behind a rewritten API.
     const { buildSdkReleases, serializeSdkReleases } = await import('./registry/sdkReleases.js');
     let releases;
     try {

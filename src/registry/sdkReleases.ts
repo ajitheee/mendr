@@ -2,9 +2,10 @@
 //
 // SLICE 2 takes the narrowest real cut of that box: the provider SDKs themselves.
 // A model id is not the only thing a provider changes underneath you. `openai` on npm
-// is at 7.x and on PyPI at 3.x; a repository pinned to `openai@^0.28` is six majors
-// behind an API surface that was rewritten. That breaks code exactly the way a retired
-// model id does, and nothing in a lockfile tells you a major was your provider's.
+// is at 7.x and on PyPI at 3.x; a repository pinned to `openai@^0.28` is seven majors
+// behind on npm (three on PyPI), past an API surface that was rewritten. That breaks
+// code exactly the way a retired model id does, and nothing in a lockfile tells you a
+// major was your provider's.
 //
 // WHAT THIS SLICE DOES: record what each first-party SDK has published, and when each
 // major first appeared. Facts, with evidence.
