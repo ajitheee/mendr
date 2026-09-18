@@ -99,5 +99,7 @@ jobs:
             registry-dist/llm-deprecations.json \
             registry-dist/manifest.json \
             registry-dist/manifest.sig \
+            registry-dist/model-catalog.json \
+            registry-dist/model-catalog.sig \
             --clobber
           echo "published: $(cat registry-dist/manifest.json)"

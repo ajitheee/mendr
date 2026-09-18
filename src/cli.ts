@@ -1987,6 +1987,45 @@ program
   });
 
 program
+  .command('catalog')
+  .description('Collect the live model catalog from public sources — which model ids each provider currently publishes, not only the ones retiring.')
+  .option('--write <path>', 'write the catalog to this file (default: print a summary)')
+  .option('--json', 'print the catalog as JSON')
+  .action(async (opts: { write?: string; json?: boolean }) => {
+    // Plane 1's other half. The deprecation registry says what is dying; this says
+    // what exists. Without it a literal is either a known retirement or invisible.
+    const { buildModelCatalog, serializeCatalog } = await import('./registry/catalog.js');
+    let catalog;
+    try {
+      catalog = await buildModelCatalog();
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+      return;
+    }
+    if (opts.write) {
+      writeFileSync(opts.write, serializeCatalog(catalog), 'utf8');
+      console.log(`wrote ${catalog.count} model ids to ${opts.write}`);
+    }
+    if (opts.json) {
+      console.log(JSON.stringify(catalog, null, 2));
+      return;
+    }
+    if (opts.write) return;
+    console.log(`model catalog — fetched ${catalog.fetchedAt}`);
+    for (const source of catalog.sources) {
+      console.log(`  ${source.ok ? '[x]' : '[ ]'} ${source.url} — ${source.note}`);
+    }
+    console.log('');
+    for (const [provider, ids] of Object.entries(catalog.providers)) {
+      console.log(`  ${provider.padEnd(10)} ${String(ids.length).padStart(4)} ids`);
+    }
+    console.log(`
+  ${catalog.count} total`);
+  });
+
+program
+program
   .command('validate-registry')
   .option(
     '--registry <path>',

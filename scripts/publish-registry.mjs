@@ -113,4 +113,26 @@ writeFileSync(join(outDir, 'llm-deprecations.json'), bytes);
 writeFileSync(join(outDir, 'manifest.json'), manifestBytes);
 writeFileSync(join(outDir, 'manifest.sig'), sig + '\n');
 if (devKey) writeFileSync(join(outDir, 'trusted-keys.pem'), publicPem);
+
+// 6. The model CATALOG, if one has been collected. Signed as its OWN detached file
+// rather than folded into the manifest: the manifest has a fixed shape the scanner
+// validates on arrival, and widening it to carry a second artifact would change that
+// contract for every pinned build already in the field. A second signature over a
+// second file costs one call and breaks nothing.
+const catalogPath = join(root, 'registries', 'model-catalog.json');
+let catalogNote = 'no catalog collected (run `mendr catalog --write registries/model-catalog.json`)';
+try {
+  const catalogBytes = readFileSync(catalogPath);
+  const parsed = JSON.parse(catalogBytes.toString('utf8'));
+  if (parsed.schema !== 'mendr-model-catalog/v1') fail(`${catalogPath}: unexpected schema ${parsed.schema}`);
+  const catalogSig = m.signManifest(catalogBytes, privatePem);
+  if (!m.verifyManifestSignature(catalogBytes, catalogSig, [publicPem])) fail('self-check failed: the catalog signature does not verify');
+  writeFileSync(join(outDir, 'model-catalog.json'), catalogBytes);
+  writeFileSync(join(outDir, 'model-catalog.sig'), catalogSig + String.fromCharCode(10));
+  catalogNote = `catalog ${parsed.count} ids fetched ${parsed.fetchedAt}`;
+} catch (e) {
+  if (e && e.code !== 'ENOENT') throw e;
+}
+
 console.log(`published ${manifest.registryVersion} (${entries.length} entries) at ${publishedAt} from ${sourceCommit.slice(0, 12)} → ${outDir}`);
+console.log(`  ${catalogNote}`);
