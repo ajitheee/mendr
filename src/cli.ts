@@ -1987,6 +1987,80 @@ program
   });
 
 program
+  .command('resolve')
+  .argument('[model]', 'a model id to resolve; omit when using --audit')
+  .description('Walk the replacement chain for a retiring model id and say whether it ends somewhere a public catalog still lists.')
+  .option('--audit', 'resolve EVERY retiring id and report only the ones that do not end somewhere live')
+  .option('--registry <path>', 'use a registry at an explicit path (default: the shipped registry)')
+  .option('--catalog <path>', 'use a catalog at an explicit path (default: registries/model-catalog.json)')
+  .option('--json', 'print the result as JSON')
+  .action(async (model: string | undefined, opts: { audit?: boolean; json?: boolean; registry?: string; catalog?: string }) => {
+    // Plane 1's terminal node. The registry knows what is dying; the catalog knows what
+    // still exists. Neither alone can say where a dying id actually leads.
+    const { buildContractGraph, resolveSuccessor, auditGraph } = await import('./registry/graph.js');
+    const registryPath = opts.registry ? resolve(opts.registry) : resolveRegistryPath();
+    let registry;
+    try {
+      registry = loadLlmRegistry(registryPath);
+    } catch (err) {
+      console.error(`registry INVALID: ${err instanceof Error ? err.message : String(err)}`);
+      process.exitCode = 1;
+      return;
+    }
+
+    // No catalog is a REPORTED condition, not a silent one: without it the graph cannot
+    // tell a live destination from one nothing publishes, and it says so per result.
+    const catalogPath = opts.catalog ? resolve(opts.catalog) : join(dirname(registryPath), 'model-catalog.json');
+    let catalog = null;
+    try {
+      catalog = JSON.parse(readFileSync(catalogPath, 'utf8'));
+    } catch {
+      catalog = null;
+    }
+    const graph = buildContractGraph(registry, catalog);
+    if (!catalog) console.error(`note: no catalog at ${catalogPath} — run \`mendr catalog --write\` to check destinations.`);
+
+    if (opts.audit) {
+      const audit = auditGraph(graph);
+      // A chain that ends nowhere live is a registry defect; fail so a pipeline can gate on it.
+      if (audit.problems.length > 0) process.exitCode = 1;
+      if (opts.json) {
+        console.log(JSON.stringify(audit, null, 2));
+        return;
+      }
+      const passed = audit.retiring - audit.problems.length - audit.unchecked.length;
+      console.log(`resolved ${audit.retiring} retiring ids against the catalog`);
+      console.log(`  ${passed} end on an id a public catalog lists`);
+      if (audit.unchecked.length > 0) {
+        console.log(`  ${audit.unchecked.length} end on an unlisted moderation/image/audio id the catalogs cover only partly — NOT checked:`);
+        for (const u of audit.unchecked) console.log(`    ${u.path.join(' -> ')}`);
+      }
+      if (audit.problems.length === 0) {
+        console.log('  0 problems');
+        return;
+      }
+      console.log(`  ${audit.problems.length} do NOT end somewhere live:`);
+      for (const p of audit.problems) {
+        console.log(`    ${p.outcome.padEnd(20)} ${p.path.join(' -> ')}`);
+        console.log(`    ${' '.repeat(20)} ${p.reason}`);
+      }
+      return;
+    }
+
+    if (!model) {
+      console.error('mendr resolve: give a model id, or pass --audit to check every retiring id.');
+      process.exitCode = 2;
+      return;
+    }
+    const r = resolveSuccessor(graph, model);
+    if (opts.json) {
+      console.log(JSON.stringify(r, null, 2));
+      return;
+    }
+    console.log(r.path.join(' -> '));
+    console.log(`  ${r.outcome}: ${r.reason}`);
+  });
+program
   .command('sdk-releases')
   .description('Collect what each provider SDK has published \u2014 latest version, and when each major first appeared.')
   .option('--write <path>', 'write the release record to this file (default: print a summary)')
