@@ -15,7 +15,7 @@ checks against the repo and the live sources, and both rounds of corrections are
 | Immutable source evidence | Built for deprecation pages: hashed and snapshotted. The catalog and SDK record carry a sha256 of each source's response but **no stored copy**, so the hash can show only that a source changed, not what it said. | `evidence.ts`, `registries/evidence/` |
 | Normalizer and change classifier | Normalizer: built. Classifier: **partial**. `discover.ts` labels a row retired (shutdown date on or before the run date) or deprecated (a later date) when it can read a shutdown date, and leaves the status unset when it cannot. `verify.ts` grades whether a replacement is safe to auto-apply. `claimCheck.ts` gates whether a deprecation claim is quote-backed. Nothing classifies an SDK release as breaking: slice 2 defers that to a human reading changelogs, a curation step that does not exist yet. | `normalize.ts`, `discover.ts`, `verify.ts`, `claimCheck.ts` |
 | Contract and change graph | Built, slices 3 (`911f62b`) and 4 (`ae3bdc4`) | `src/registry/graph.ts`, shown by `mendr resolve` |
-| Signed metadata feed | Deprecation registry: signed, published to `registry-latest`, and verified by the scanner before use when refresh is on (re-checked after open item 1 was resolved: the refresh grades it `fresh`). Catalog and SDK record: the publish script will sign each with a detached `.sig`, but it has not run since slices 1 and 2, so **neither is signed, published or verified yet** (open item 3). | `manifest.ts`, `scripts/publish-registry.mjs`, `.github/workflows/registry-publish.yml` |
+| Signed metadata feed | Deprecation registry: signed, published to `registry-latest`, and verified by the scanner before use when refresh is on (re-checked after open item 1 was resolved: the refresh grades it `fresh`). Catalog and SDK record: signed with detached `.sig` files and published to `registry-latest` since 2026-09-18, but **not verified on read** (open item 3). | `manifest.ts`, `scripts/publish-registry.mjs`, `.github/workflows/registry-publish.yml` |
 | OpenAPI, GraphQL, protobuf, SDK releases | SDK releases: built, slice 2 (`928326f`). OpenAPI: a pre-v2 differ exists (`src/detect/diffSpec.ts`, behind `mendr check` and `mendr fix`) that compares two local Stripe spec files, but no Plane 1 collector fetches provider specs. GraphQL, protobuf: not built. | `src/registry/sdkReleases.ts` → `registries/sdk-releases.json` |
 | Kubernetes, database, infrastructure contracts | Not built | — |
 
@@ -93,15 +93,12 @@ customer's verification fails during a provider incident.
 2. **Scheduled discovery has never completed.** Its only scheduled run (2026-09-01) wrote 100
    candidates and 3 snapshots, then failed at the pull-request step. The repository does not
    let GitHub Actions create pull requests, and that setting is still off.
-3. **The catalog and SDK record will be signed on the next publish, but are not yet signed or
-   published, and nothing verifies them.** `registry-latest` still carries only
-   `llm-deprecations.json`, `manifest.json` and `manifest.sig`, last published 2026-09-17
-   05:34 UTC, before slices 1 and 2. The next scheduled publish follows the weekly verify
-   run, and only if that run passes. The cron is Mondays 06:00 UTC, and GitHub has started it
-   between 07:03 and 13:05 UTC. Any release tag pushed sooner also publishes. Every trigger
-   checks out `main`, so it would pick both files up. They sit in `registries/`, which the
-   npm package includes, so the next release will carry them; no release so far does. No
-   Mendr code checks either `.sig`.
+3. **The catalog and SDK record are published but nothing verifies them.** The first
+   publish carrying them ran on 2026-09-18 22:42 UTC (merge of #8), so `registry-latest`
+   now holds all seven files: the registry and its manifest and signature, plus
+   `model-catalog.json`, `sdk-releases.json` and their `.sig` files. No Mendr code checks
+   either `.sig` when it reads the catalog or the SDK record; `mendr resolve` reads the
+   copies bundled in the package.
 4. **The catalog and SDK record go stale, and only one of them says so.** No workflow reruns
    `mendr catalog` or `mendr sdk-releases`.
    - The SDK record passes 14 days on 2026-10-02. After that, `mendr resolve` reports
