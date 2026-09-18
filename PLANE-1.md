@@ -15,7 +15,7 @@ checks against the repo and the live sources, and both rounds of corrections are
 | Immutable source evidence | Built for deprecation pages: hashed and snapshotted. The catalog and SDK record carry a sha256 of each source's response but **no stored copy**, so the hash can show only that a source changed, not what it said. | `evidence.ts`, `registries/evidence/` |
 | Normalizer and change classifier | Normalizer: built. Classifier: **partial**. `discover.ts` labels a row retired (shutdown date on or before the run date) or deprecated (a later date) when it can read a shutdown date, and leaves the status unset when it cannot. `verify.ts` grades whether a replacement is safe to auto-apply. `claimCheck.ts` gates whether a deprecation claim is quote-backed. Nothing classifies an SDK release as breaking: slice 2 defers that to a human reading changelogs, a curation step that does not exist yet. | `normalize.ts`, `discover.ts`, `verify.ts`, `claimCheck.ts` |
 | Contract and change graph | Built, slices 3 (`911f62b`) and 4 (`ae3bdc4`) | `src/registry/graph.ts`, shown by `mendr resolve` |
-| Signed metadata feed | Deprecation registry: signed, published to `registry-latest`, and verified by the scanner before use when refresh is on. **But the repository is now private, so that fetch fails** and the scanner falls back to its bundled registry (open item 1). Catalog and SDK record: the publish script will sign each with a detached `.sig`, but it has not run since slices 1 and 2, so **neither is signed, published or verified yet** (open item 3). | `manifest.ts`, `scripts/publish-registry.mjs`, `.github/workflows/registry-publish.yml` |
+| Signed metadata feed | Deprecation registry: signed, published to `registry-latest`, and verified by the scanner before use when refresh is on (re-checked after open item 1 was resolved: the refresh grades it `fresh`). Catalog and SDK record: the publish script will sign each with a detached `.sig`, but it has not run since slices 1 and 2, so **neither is signed, published or verified yet** (open item 3). | `manifest.ts`, `scripts/publish-registry.mjs`, `.github/workflows/registry-publish.yml` |
 | OpenAPI, GraphQL, protobuf, SDK releases | SDK releases: built, slice 2 (`928326f`). OpenAPI: a pre-v2 differ exists (`src/detect/diffSpec.ts`, behind `mendr check` and `mendr fix`) that compares two local Stripe spec files, but no Plane 1 collector fetches provider specs. GraphQL, protobuf: not built. | `src/registry/sdkReleases.ts` → `registries/sdk-releases.json` |
 | Kubernetes, database, infrastructure contracts | Not built | — |
 
@@ -82,12 +82,14 @@ customer's verification fails during a provider incident.
 
 ## Open items
 
-1. **The repository is private, so the signed feed cannot be fetched.** `ajitheee/mendr` is
-   private, and an unauthenticated request for `registry-latest/manifest.json` returns HTTP
-   404. The scanner's refresh sends no credentials, so it falls back to the bundled
-   registry. The same change stops other repositories calling Mendr's reusable workflows.
-   `mendr-demo`'s scheduled runs have failed with "a workflow file issue" since 2026-09-17
-   20:22 UTC, after a last success at 17:05 UTC.
+1. **Resolved 2026-09-17: the repository had gone private.** Between 17:05 and 20:22 UTC
+   `ajitheee/mendr` became private. The signed feed returned HTTP 404 to the scanner, which
+   fell back to its bundled registry. Other repositories could not call Mendr's reusable
+   workflows, and `mendr-demo` failed with "a workflow file issue". The repository was made
+   public again the same day. After that, the feed, the pinned reusable workflow and the
+   source tarball all returned 200 without credentials, the scanner's refresh graded the
+   feed `fresh`, and `mendr-demo`'s audit and migrate jobs passed. **The install path
+   depends on the repository staying public.**
 2. **Scheduled discovery has never completed.** Its only scheduled run (2026-09-01) wrote 100
    candidates and 3 snapshots, then failed at the pull-request step. The repository does not
    let GitHub Actions create pull requests, and that setting is still off.
