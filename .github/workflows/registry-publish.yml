@@ -101,5 +101,7 @@ jobs:
             registry-dist/manifest.sig \
             registry-dist/model-catalog.json \
             registry-dist/model-catalog.sig \
+            registry-dist/sdk-releases.json \
+            registry-dist/sdk-releases.sig \
             --clobber
           echo "published: $(cat registry-dist/manifest.json)"

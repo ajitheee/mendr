@@ -134,5 +134,24 @@ try {
   if (e && e.code !== 'ENOENT') throw e;
 }
 
+// 7. The SDK release record, if one has been collected. Signed the same way as the
+// catalog and deliberately not factored together with it: that would be the second
+// instance of this shape, not the third.
+const sdkPath = join(root, 'registries', 'sdk-releases.json');
+let sdkNote = 'no sdk release record collected (run `mendr sdk-releases --write registries/sdk-releases.json`)';
+try {
+  const sdkBytes = readFileSync(sdkPath);
+  const parsedSdk = JSON.parse(sdkBytes.toString('utf8'));
+  if (parsedSdk.schema !== 'mendr-sdk-releases/v1') fail(`${sdkPath}: unexpected schema ${parsedSdk.schema}`);
+  const sdkSig = m.signManifest(sdkBytes, privatePem);
+  if (!m.verifyManifestSignature(sdkBytes, sdkSig, [publicPem])) fail('self-check failed: the sdk-releases signature does not verify');
+  writeFileSync(join(outDir, 'sdk-releases.json'), sdkBytes);
+  writeFileSync(join(outDir, 'sdk-releases.sig'), sdkSig + String.fromCharCode(10));
+  sdkNote = `sdk releases ${parsedSdk.count} packages fetched ${parsedSdk.fetchedAt}`;
+} catch (e) {
+  if (e && e.code !== 'ENOENT') throw e;
+}
+
 console.log(`published ${manifest.registryVersion} (${entries.length} entries) at ${publishedAt} from ${sourceCommit.slice(0, 12)} → ${outDir}`);
 console.log(`  ${catalogNote}`);
+console.log(`  ${sdkNote}`);

@@ -1987,6 +1987,41 @@ program
   });
 
 program
+  .command('sdk-releases')
+  .description('Collect what each provider SDK has published \u2014 latest version, and when each major first appeared.')
+  .option('--write <path>', 'write the release record to this file (default: print a summary)')
+  .option('--json', 'print the release record as JSON')
+  .action(async (opts: { write?: string; json?: boolean }) => {
+    // Plane 1, box two. A model id is not the only thing a provider changes: `openai`
+    // is at 7.x on npm, and a repo pinned to ^0.28 is six majors behind a rewritten API.
+    const { buildSdkReleases, serializeSdkReleases } = await import('./registry/sdkReleases.js');
+    let releases;
+    try {
+      releases = await buildSdkReleases();
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+      return;
+    }
+    if (opts.write) {
+      writeFileSync(opts.write, serializeSdkReleases(releases), 'utf8');
+      console.log(`wrote ${releases.count} SDK packages to ${opts.write}`);
+    }
+    if (opts.json) {
+      console.log(JSON.stringify(releases, null, 2));
+      return;
+    }
+    if (opts.write) return;
+    console.log(`SDK releases \u2014 fetched ${releases.fetchedAt}`);
+    for (const p of releases.packages) {
+      const majors = Object.keys(p.majorsFirstSeen).join(', ');
+      console.log(`  ${p.ecosystem.padEnd(5)} ${p.name.padEnd(24)} ${p.latest.padEnd(10)} majors: ${majors}`);
+    }
+    const failed = releases.sources.filter((s) => !s.ok);
+    for (const f of failed) console.log(`  [ ] ${f.note}`);
+  });
+
+program
   .command('catalog')
   .description('Collect the live model catalog from public sources — which model ids each provider currently publishes, not only the ones retiring.')
   .option('--write <path>', 'write the catalog to this file (default: print a summary)')
