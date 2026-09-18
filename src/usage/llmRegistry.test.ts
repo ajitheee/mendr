@@ -278,10 +278,13 @@ describe('hasSelfContradictingReasons (the CI lint)', () => {
 // be held back for real, in the file that actually ships -- and held back by
 // their STATUS, so the hold survives someone tidying the prose.
 describe('the shipped registry', () => {
-  it('quarantines the twelve records whose research contradicts a verified stamp', () => {
+  it('quarantines the twelve records whose research contradicts a verified stamp, and the restricted-access one', () => {
     const entries = modelIdEntries(loadLlmRegistry(resolveRegistryPath()));
     const quarantined = entries.filter((e) => e.verification?.status === 'quarantined');
-    expect(quarantined).toHaveLength(12);
+    // 12 held because their own research undercuts a verified stamp, plus gpt-5.4-cyber:
+    // its replacement needs separate provisioning, and only a quarantine survives a
+    // re-stamp that later finds gpt-5.6-cyber in a catalog.
+    expect(quarantined).toHaveLength(13);
     for (const entry of quarantined) {
       expect(isVerified(entry), entry.deprecated).toBe(false);
       // Every quarantine says what has to be resolved. A hold nobody can act
@@ -324,11 +327,11 @@ describe('the shipped registry', () => {
     // And the MEASURED shape of the shipped registry, so a re-stamp that moves
     // records between buckets has to be acknowledged here rather than landing
     // silently.
-    expect(provenance.activeEntries).toBe(154);
+    expect(provenance.activeEntries).toBe(157);
     expect(provenance.autoFixEligible).toBe(133);
-    expect(provenance.reviewOnlyCounts.quarantined).toBe(12);
-    expect(provenance.reviewOnlyCounts.unverified).toBe(4);
-    expect(provenance.reviewOnlyCounts.unverifiable).toBe(5);
+    expect(provenance.reviewOnlyCounts.quarantined).toBe(13);
+    expect(provenance.reviewOnlyCounts.unverified).toBe(5);
+    expect(provenance.reviewOnlyCounts.unverifiable).toBe(6);
     // Nothing ships in the defence-in-depth state; the validator forbids it.
     expect(provenance.reviewOnlyCounts.withheld).toBe(0);
   });
