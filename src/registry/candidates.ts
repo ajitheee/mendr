@@ -17,6 +17,12 @@
 // CLI's job, and only `mendr candidates promote <id...>` — which requires
 // explicit ids, never a bare "promote all" — calls it.
 //
+// The one other way into the active registry is a human adding a candidate by
+// hand as REVIEW-ONLY (status unverified, unverifiable or quarantined, with
+// autoApplyAllowed false and its evidence kept) when the gate cannot check it.
+// Such a record is flagged in customer code and never auto-applied; the
+// registry validator rejects autoApplyAllowed on any status but `verified`.
+//
 // (a) and (c) check OPPOSITE HALVES of the same sentence: classifyEntry judges
 // the REPLACEMENT ("use Y instead"), checkDeprecationClaim judges the SOURCE
 // ("X is dying"). Neither implies the other, which is exactly how a live model

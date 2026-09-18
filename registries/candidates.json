@@ -110,42 +110,6 @@
   {
     "provider": "google",
     "kind": "model_id",
-    "deprecated": "gemini-2.5-flash-image",
-    "replacement": "gemini-3.1-flash-image-preview",
-    "status": "deprecated",
-    "shutdownDate": "2026-10-02",
-    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-    "note": "discovered from the google deprecation table; row read as: gemini-2.5-flash-image | October 2, 2025 | October 2, 2026 | gemini-3.1-flash-image-preview",
-    "verification": {
-      "status": "unverifiable",
-      "officialSourceConfirmed": true,
-      "replacementConfirmed": false,
-      "autoApplyAllowed": false,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "\"gemini-2.5-flash-image\" is a image model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gemini-3.1-flash-image-preview\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)"
-      ]
-    },
-    "evidence": [
-      {
-        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-        "contentHash": "sha256:f634c61e6afb848a868052963eef89696dd7ae544aaac846f8d31514c61b9c36",
-        "retrievedAt": "2026-09-14T23:54:46.353Z",
-        "excerpt": "gemini-2.5-flash-image | October 2, 2025 | October 2, 2026 | gemini-3.1-flash-image-preview"
-      }
-    ],
-    "candidateId": "google:gemini-2-5-flash-image",
-    "proposedBy": "discovery",
-    "proposedAt": "2026-09-14T23:54:45.972Z"
-  },
-  {
-    "provider": "google",
-    "kind": "model_id",
     "deprecated": "gemini-2.5-flash-lite-preview-09-2025",
     "replacement": "gemini-3.1-flash-lite",
     "status": "retired",
@@ -572,42 +536,6 @@
   {
     "provider": "google",
     "kind": "model_id",
-    "deprecated": "gemini-omni-flash-preview",
-    "replacement": "gemini-omni-1.1-flash",
-    "status": "deprecated",
-    "shutdownDate": "2026-09-30",
-    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-    "note": "discovered from the google deprecation table; row read as: gemini-omni-flash-preview | June 30, 2026 | September 30, 2026 | gemini-omni-1.1-flash",
-    "verification": {
-      "status": "unverified",
-      "officialSourceConfirmed": true,
-      "replacementConfirmed": false,
-      "autoApplyAllowed": false,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "replacement \"gemini-omni-1.1-flash\" was not found live in any public catalog (models.dev / OpenRouter)"
-      ]
-    },
-    "evidence": [
-      {
-        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-        "contentHash": "sha256:f634c61e6afb848a868052963eef89696dd7ae544aaac846f8d31514c61b9c36",
-        "retrievedAt": "2026-09-14T23:54:46.353Z",
-        "excerpt": "gemini-omni-flash-preview | June 30, 2026 | September 30, 2026 | gemini-omni-1.1-flash"
-      }
-    ],
-    "candidateId": "google:gemini-omni-flash-preview",
-    "proposedBy": "discovery",
-    "proposedAt": "2026-09-14T23:54:45.972Z"
-  },
-  {
-    "provider": "google",
-    "kind": "model_id",
     "deprecated": "gemini-robotics-er-1.6-preview",
     "replacement": "gemini-robotics-er-2-preview",
     "status": "retired",
@@ -676,42 +604,6 @@
     "candidateId": "google:gemini-robotics-er-1-5-preview",
     "proposedBy": "discovery",
     "proposedAt": "2026-09-14T23:54:45.972Z"
-  },
-  {
-    "provider": "openai",
-    "kind": "model_id",
-    "deprecated": "gpt-5.4-cyber",
-    "replacement": "gpt-5.6-cyber",
-    "status": "deprecated",
-    "shutdownDate": "2026-10-01",
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "discovered from the openai deprecation table; row read as: Oct 1, 2026 | gpt-5.4-cyber | gpt-5.6-cyber",
-    "verification": {
-      "status": "unverified",
-      "officialSourceConfirmed": true,
-      "replacementConfirmed": false,
-      "autoApplyAllowed": false,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "replacement \"gpt-5.6-cyber\" was not found live in any public catalog (models.dev / OpenRouter)"
-      ]
-    },
-    "evidence": [
-      {
-        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
-        "retrievedAt": "2026-09-14T23:54:48.968Z",
-        "excerpt": "Oct 1, 2026 | gpt-5.4-cyber | gpt-5.6-cyber"
-      }
-    ],
-    "candidateId": "openai:gpt-5-4-cyber",
-    "proposedBy": "discovery",
-    "proposedAt": "2026-09-14T23:54:48.821Z"
   },
   {
     "provider": "openai",

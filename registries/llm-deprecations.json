@@ -4607,5 +4607,120 @@
         "excerpt": "2023-03-23 | code-cushman-001 | gpt-4o"
       }
     ]
+  },
+  {
+    "entryId": "google.gemini-omni-flash-preview.retirement-2026-09-30",
+    "provider": "google",
+    "kind": "model_id",
+    "deprecated": "gemini-omni-flash-preview",
+    "replacement": "gemini-omni-1.1-flash",
+    "status": "deprecated",
+    "shutdownDate": "2026-09-30",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "note": "gemini-omni-flash-preview shuts down 2026-09-30; Google names gemini-omni-1.1-flash, GA since 2026-08-27 on the same Interactions API. Detect-only: the public catalogs do not list the GA id yet.",
+    "verification": {
+      "status": "unverified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-18",
+      "sources": [
+        "provider pages"
+      ],
+      "reasons": [
+        "Google deprecation page (live 2026-09-18, updated 2026-09-17) matches the stored row: shutdown September 30, 2026, replacement gemini-omni-1.1-flash",
+        "gemini-omni-1.1-flash is GA per the Google changelog (2026-08-27), the model page (\"Stable\") and pricing (\"now generally available\"); the models overview lists the endpoint but still shows the Gemini Omni Flash card under Preview; its own deprecation row says \"No shutdown date announced\"",
+        "not catalog-verified: OpenRouter and models.dev do not list gemini-omni-1.1-flash yet, so the gate refuses it; re-run `mendr verify-registry` once they do",
+        "paid tier only, like the preview it replaces; video generation and editing model"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:f634c61e6afb848a868052963eef89696dd7ae544aaac846f8d31514c61b9c36",
+        "retrievedAt": "2026-09-14T23:54:46.353Z",
+        "excerpt": "gemini-omni-flash-preview | June 30, 2026 | September 30, 2026 | gemini-omni-1.1-flash"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-5.4-cyber.retirement-2026-10-01",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-5.4-cyber",
+    "replacement": "gpt-5.6-cyber",
+    "status": "deprecated",
+    "shutdownDate": "2026-10-01",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "gpt-5.4-cyber is removed from the API on 2026-10-01; OpenAI names gpt-5.6-cyber. The replacement requires separate Daybreak Red (Trusted Access for Cyber) approval and provisioning, so a caller of 5.4 is not guaranteed access to 5.6. Detect-only.",
+    "verification": {
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": "restricted access: gpt-5.6-cyber needs separate Daybreak Red (Trusted Access for Cyber) approval and provisioning; the model id alone does not grant access, so an automatic edit can break a caller who is not provisioned",
+      "checkedAt": "2026-09-18",
+      "sources": [
+        "provider pages"
+      ],
+      "reasons": [
+        "OpenAI deprecation page (live 2026-09-18, section \"2026-09-11: GPT-5.4-Cyber\") matches the stored row: removed from the API on Oct 1, 2026, migrate to gpt-5.6-cyber",
+        "gpt-5.6-cyber has a live OpenAI model page and no deprecation entry of its own",
+        "restricted access: \"This model requires separate approval and provisioning\" (gpt-5.6-cyber model page) and \"the model ID alone doesn’t grant access\" (API cybersecurity checks guide), so an automatic edit could break a caller who is not provisioned",
+        "not catalog-verified: neither OpenRouter nor models.dev lists gpt-5.4-cyber or gpt-5.6-cyber (checked 2026-09-18)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "Oct 1, 2026 | gpt-5.4-cyber | gpt-5.6-cyber"
+      }
+    ]
+  },
+  {
+    "entryId": "google.gemini-2.5-flash-image.retirement-2026-10-02",
+    "provider": "google",
+    "kind": "model_id",
+    "deprecated": "gemini-2.5-flash-image",
+    "replacement": "gemini-3.1-flash-image",
+    "status": "deprecated",
+    "shutdownDate": "2026-10-02",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "note": "gemini-2.5-flash-image shuts down 2026-10-02. Google's table names gemini-3.1-flash-image-preview, but the same page shut that preview down on 2026-06-25 in favour of gemini-3.1-flash-image, so this entry follows the chain to the GA model. Google's pages name two successors: the pricing page says to migrate to \"Gemini 3.1 Flash Image or Gemini 3.1 Flash Lite Image\", and the image guide strongly recommends Nano Banana 2 Lite (gemini-3.1-flash-lite-image), the cheaper, 1K-only model. Detect-only.",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-09-18",
+      "sources": [
+        "provider pages"
+      ],
+      "reasons": [
+        "Google deprecation page (live 2026-09-18) matches the stored row: shutdown October 2, 2026; the pricing page also says it \"will be shut down on October 2, 2026\"",
+        "replacement CORRECTED from the table's gemini-3.1-flash-image-preview, which the same page shut down on June 25, 2026 with replacement gemini-3.1-flash-image (second evidence ref)",
+        "gemini-3.1-flash-image is GA (\"Stable\") with no shutdown date; paid tier only, like the model it replaces",
+        "not catalog-verified: Mendr's gate treats image-class ids as out-of-class and does not check them against catalogs (OpenRouter and models.dev do list gemini-3.1-flash-image as of 2026-09-18)",
+        "successor is ambiguous across Google's pages (table chain and pricing: gemini-3.1-flash-image; image guide: gemini-3.1-flash-lite-image), so the choice stays with a human"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:f634c61e6afb848a868052963eef89696dd7ae544aaac846f8d31514c61b9c36",
+        "retrievedAt": "2026-09-14T23:54:46.353Z",
+        "excerpt": "gemini-2.5-flash-image | October 2, 2025 | October 2, 2026 | gemini-3.1-flash-image-preview"
+      },
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:f634c61e6afb848a868052963eef89696dd7ae544aaac846f8d31514c61b9c36",
+        "retrievedAt": "2026-09-14T23:54:46.353Z",
+        "excerpt": "gemini-3.1-flash-image-preview | February 26, 2026 | June 25, 2026 | gemini-3.1-flash-image"
+      }
+    ]
   }
 ]
