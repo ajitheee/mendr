@@ -231,7 +231,7 @@ const CONFIG_EXT = /\.(ya?ml|json|json5|toml|ini|cfg|conf|properties|env)$/i;
  * exposures. Generated output must never become input — the loop is
  * self-amplifying, and every run makes the next one worse.
  */
-const CONFIG_EXCLUDED_DIRS: ReadonlySet<string> = new Set([
+export const CONFIG_EXCLUDED_DIRS: ReadonlySet<string> = new Set([
   '.git', 'node_modules', '.venv', 'venv', '__pycache__',
   // build output
   'dist', 'build', 'out', '.next', '.nuxt', '.svelte-kit', '.turbo', '.parcel-cache', 'target',

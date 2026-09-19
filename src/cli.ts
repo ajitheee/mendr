@@ -3736,7 +3736,27 @@ program
         return;
       }
 
-      const meta: AuditMeta = { from, to, coverage, verbose: !!opts.verbose };
+      // Plane 2, slice 1: provider SDKs locked in the root package-lock.json. Computed HERE,
+      // after the --json branch has returned, and carried only in `meta`, so it cannot reach
+      // the JSON report, the App, the issue or the conclusion. The release record is always
+      // the BUNDLED copy: registry overrides and refreshed snapshots carry only the
+      // deprecation registry, and nothing verifies this record's signature on read yet.
+      const { readLockedSdks } = await import('./usage/lockedSdks.js');
+      let sdkReleases = null;
+      try {
+        sdkReleases = JSON.parse(readFileSync(join(dirname(resolveRegistryPath()), 'sdk-releases.json'), 'utf8'));
+      } catch {
+        sdkReleases = null;
+      }
+      // A failure here must cost the row, never the report: the audit above already ran.
+      let lockedSdks: import('./usage/lockedSdks.js').LockedSdkReport;
+      try {
+        lockedSdks = readLockedSdks(resolved, sdkReleases, now);
+      } catch {
+        lockedSdks = { state: 'failed', checked: 0, sdks: [], localPackagesNotRead: 0, otherLockfiles: {}, note: 'the repository walk failed' };
+      }
+
+      const meta: AuditMeta = { from, to, coverage, verbose: !!opts.verbose, lockedSdks };
       const rendered = renderAuditReport(investigations, meta);
       for (const line of shouldUsePlain(opts.plain) ? toPlainLines(rendered) : rendered) console.log(line);
       // Printed after the findings, never instead of them: a suppression the reader cannot see

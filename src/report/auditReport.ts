@@ -21,6 +21,7 @@ import {
   analyzedIsMinority,
 } from '../audit/investigation.js';
 import { RUNTIME_SOURCE_LABEL } from '../runtime/evidence.js';
+import type { LockedSdkReport } from '../usage/lockedSdks.js';
 
 export interface AuditMeta {
   /** Only set when a runtime window applies (a provider/export read). */
@@ -29,6 +30,12 @@ export interface AuditMeta {
   coverage: AuditCoverage;
   /** List every informational reference in full (default: a count and the first few). */
   verbose?: boolean;
+  /**
+   * Provider SDKs locked in the root package-lock.json (plane 2, slice 1). HUMAN REPORT
+   * ONLY: it lives here and not in `coverage`, so it cannot reach --json, the App, the
+   * issue or the conclusion. Absent = the row is not printed.
+   */
+  lockedSdks?: LockedSdkReport;
 }
 
 /** How many informational references the default report lists in full. */
@@ -122,6 +129,64 @@ export function decisionLines(inv: ModelInvestigation): string[] {
 const pad = (s: string, n = 18): string => (s.length >= n ? s : s + ' '.repeat(n - s.length));
 
 /**
+ * The "Provider SDKs" row and its per-SDK lines. Every line says it is information only:
+ * the conclusion below never reads it. The reason after each SDK is resolveSdk's own, word
+ * for word, so this row and `mendr resolve npm:<name>@<version>` cannot disagree.
+ */
+export function lockedSdkLines(
+  r: LockedSdkReport,
+  row: (mark: string, label: string, detail: string) => string,
+): string[] {
+  const LABEL = 'Provider SDKs';
+  const INFO = 'information only, never part of the conclusion';
+  const lines: string[] = [];
+  switch (r.state) {
+    case 'absent':
+      lines.push(row('○', LABEL, 'not read — no package-lock.json at the repository root'));
+      break;
+    case 'shrinkwrap':
+      lines.push(row('○', LABEL, 'not read — npm-shrinkwrap.json takes precedence over package-lock.json and is not read'));
+      break;
+    case 'unsupported':
+      lines.push(row('○', LABEL, 'not read — package-lock.json is lockfileVersion 1, which this build does not read'));
+      break;
+    case 'failed':
+      lines.push(row('✗', LABEL, `package-lock.json could not be read (${r.note ?? 'unreadable'}) — ${INFO}`));
+      break;
+    case 'read': {
+      // Count what was DECLARED, and say how many of those could not be resolved: a refusal
+      // is not a lock.
+      const unresolved = r.sdks.filter((s) => s.resolution === null).length;
+      lines.push(
+        r.sdks.length === 0
+          ? row('✓', LABEL, `the root project declares none of the ${r.checked} npm provider SDKs in package-lock.json — ${INFO}`)
+          : row(
+              '✓',
+              LABEL,
+              `${r.sdks.length} declared by the root project in package-lock.json${unresolved > 0 ? `, ${unresolved} not resolved` : ''} — ${INFO}`,
+            ),
+      );
+      for (const s of r.sdks) {
+        lines.push(`    · ${s.name}${s.version ? ` ${s.version}` : ''}${s.alias ? ` (as ${s.alias})` : ''} — ${s.reason}`);
+      }
+      break;
+    }
+  }
+  const notRead: string[] = [];
+  if (r.localPackagesNotRead > 0) {
+    notRead.push(
+      `${int(r.localPackagesNotRead)} local package${r.localPackagesNotRead === 1 ? '' : 's'} in package-lock.json (workspaces or linked directories)`,
+    );
+  }
+  for (const [name, n] of Object.entries(r.otherLockfiles).sort(([a], [b]) => a.localeCompare(b))) {
+    notRead.push(`${name} (${int(n)})`);
+  }
+  if (notRead.length > 0) lines.push(`    not read: ${notRead.join(', ')}`);
+  return lines;
+}
+
+
+/**
  * The coverage report — printed on EVERY run so the reader always sees which
  * surfaces ran. `✓` completed, `○` not run / not proven, `✗` attempted and failed.
  */
@@ -182,6 +247,7 @@ export function coverageReport(meta: AuditMeta): string[] {
           ? row('✗', 'Configuration', `${int(c.config.filesScanned)} files found but NONE could be read`)
           : row('✓', 'Configuration', `${int(cfgRead)} files scanned`),
   );
+  if (meta.lockedSdks) lines.push(...lockedSdkLines(meta.lockedSdks, row));
   // The registry row carries its FRESHNESS: silence is only evidence against
   // knowledge that is provably current, so a stale (or undated) registry wears
   // ✗ and the conclusion below is inconclusive. The reason and the fix appear
