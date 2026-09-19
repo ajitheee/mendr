@@ -69,7 +69,7 @@ an automatically fixable finding. Mendr only rewrites a call site when it can re
 client in the same file, and production code usually injects or wraps its client. Expect findings
 you review, not patches you merge. If you want the patch rate to be the pitch, it isn't.
 
-**2. It reads TypeScript/TS191b202ec20618d1, JavaScript and Python. Nothing else.** Go, Java, Kotlin, Rust, C#,
+**2. It reads TypeScript/TSX, JavaScript and Python. Nothing else.** Go, Java, Kotlin, Rust, C#,
 Ruby, PHP are counted and reported as unread, never analyzed. It does not read shell scripts — a
 model id set in a `.sh` and passed as a CLI argument is invisible.
 

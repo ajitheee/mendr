@@ -22,7 +22,7 @@ supposed to happen.
 | Registry version at first run | |
 | Date onboarded | |
 
-**Why the language % matters:** Mendr reads TypeScript/TS191b202ec20618d1, JavaScript and Python and nothing
+**Why the language % matters:** Mendr reads TypeScript/TSX, JavaScript and Python and nothing
 else. If 60% of the repo is Go, the denominator tells you what "no exposure" is actually worth.
 
 ---
@@ -49,7 +49,7 @@ Copy the denominator straight from the run output. Do not summarize it.
 | | count |
 |---|---|
 | discovered | |
-| analyzed (TS/TS191b202ec20618d1, JavaScript, Python) | |
+| analyzed (TS/TSX, JavaScript, Python) | |
 | test files | |
 | languages mendr does not read | |
 | parse failures | |
