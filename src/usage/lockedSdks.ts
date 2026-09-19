@@ -143,8 +143,12 @@ function fromRegistry(sdk: string, version: string, resolved: unknown): boolean 
   return path.endsWith(`/-/${basename}-${version}.tgz`);
 }
 
-/** An npm package name, safe to print. Anything else is described, not echoed. */
+/** An npm package name, safe to print (npm caps names at 214). Anything else is described, not echoed. */
 const NPM_NAME = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
+const printableName = (key: string): boolean => key.length <= 214 && NPM_NAME.test(key);
+
+/** A lock records an EXACT version. A range here ("1.*.*") is not a lock and is not printed as one. */
+const EXACT_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 
 /** Read the root lockfile and resolve each declared provider SDK against the release record. */
 export function readLockedSdks(repoPath: string, releases: SdkReleases | null, now: Date = new Date()): LockedSdkReport {
@@ -194,7 +198,7 @@ export function readLockedSdks(repoPath: string, releases: SdkReleases | null, n
     if (!keyIsSdk && !aliasOfSdk) continue;
 
     const name = keyIsSdk ? key : lockedName;
-    const alias = aliasOfSdk ? (NPM_NAME.test(key) ? key : 'another name') : undefined;
+    const alias = aliasOfSdk ? (printableName(key) ? key : 'another name') : undefined;
     const refuse = (reason: string): LockedSdk => ({ name, alias, version: null, resolution: null, reason });
     if (!entry) {
       sdks.push(refuse('declared, but the lockfile records no installed copy — NOT resolved'));
@@ -210,8 +214,15 @@ export function readLockedSdks(repoPath: string, releases: SdkReleases | null, n
       continue;
     }
     const version = typeof entry.version === 'string' ? entry.version.trim() : '';
-    const spec = parseSdkSpec(`npm:${name}@${version}`);
-    if (!spec || !fromRegistry(name, version, entry.resolved)) {
+    // 256 is npm semver's own MAX_LENGTH. Checked FIRST: a longer string is not a version, and
+    // bounding it keeps every regex that runs over it — the grammar here, and the redaction
+    // before the Action's upload — bounded too.
+    const spec = version.length <= 256 && EXACT_VERSION.test(version) ? parseSdkSpec(`npm:${name}@${version}`) : null;
+    if (!spec) {
+      sdks.push(refuse('the lockfile records no exact version — NOT resolved'));
+      continue;
+    }
+    if (!fromRegistry(name, version, entry.resolved)) {
       sdks.push(refuse('installed from git, a tarball or a local directory, not a registry release — NOT resolved'));
       continue;
     }

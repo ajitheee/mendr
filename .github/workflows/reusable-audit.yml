@@ -72,6 +72,10 @@ jobs:
           MENDR_APP_URL: ${{ inputs.app-url }}
           MENDR_AUDIENCE: ${{ inputs.audience }}
           MENDR_REGISTRY_REFRESH: ${{ inputs.registry-refresh }}
+          # The Provider SDKs section in this run's job summary: information only, written
+          # after the JSON is complete, never sent to Mendr. A CLI older than the one that
+          # writes it ignores this variable, so a mixed pin changes nothing.
+          MENDR_JOB_SUMMARY: 'on'
         run: |
           # Keep the audit's exit code (1 = scanner failure, 3 = inconclusive) so a
           # broken or inconclusive scan still fails this step — but only AFTER the

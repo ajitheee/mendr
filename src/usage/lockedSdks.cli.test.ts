@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { execa } from 'execa';
-import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,7 +41,7 @@ async function audit(dir: string, args: string[] = [], env: Record<string, strin
     reject: false,
     env: { ...process.env, ...env },
   });
-  return { exitCode: r.exitCode ?? 0, stdout: r.stdout };
+  return { exitCode: r.exitCode ?? 0, stdout: r.stdout, stderr: r.stderr };
 }
 const conclusion = (out: string): string | undefined => out.split('\n').find((l) => l.startsWith('Conclusion:'));
 
@@ -93,4 +93,81 @@ describe('the Provider SDKs row through the real CLI', () => {
     expect(conclusion(r.stdout)).toMatch(/INCONCLUSIVE/);
     expect(r.stdout).toMatch(/Provider SDKs:\s+package-lock\.json could not be read \(not valid JSON\)/);
   }, 180_000);
+});
+
+// ---------------------------------------------------------------------------------------
+// PLANE 2, SLICE 2 — the job-summary section the reusable audit workflow turns on with
+// MENDR_JOB_SUMMARY. It is appended AFTER the JSON is complete, so the JSON the App
+// receives, and the exit code, must be byte-for-byte what they were without it.
+
+// generatedAt and the registry's age (rounded to 0.1 day) move between two back-to-back runs.
+const WITHOUT_TIME = (json: string): string =>
+  json.replace(/"generatedAt": "[^"]+"/, '"generatedAt": "-"').replace(/"ageDays": [-0-9.]+/g, '"ageDays": -');
+
+function summaryFile(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'mendr-summary-'));
+  created.push(dir);
+  return join(dir, 'step-summary.md');
+}
+
+describe('the Provider SDKs section in the Actions job summary', () => {
+  it('is appended to GITHUB_STEP_SUMMARY and changes nothing in the JSON or the exit code', async () => {
+    for (const args of [['--json'], ['--json', '--fail-on-exposure']]) {
+      // One repo for both runs: the JSON names the repo directory.
+      const repoDir = fixture(LOCK);
+      const file = summaryFile();
+      const plain = await audit(repoDir, args);
+      const withSummary = await audit(repoDir, args, { MENDR_JOB_SUMMARY: 'on', GITHUB_STEP_SUMMARY: file });
+      expect(WITHOUT_TIME(withSummary.stdout)).toBe(WITHOUT_TIME(plain.stdout));
+      expect(withSummary.exitCode).toBe(plain.exitCode);
+      const md = readFileSync(file, 'utf8');
+      expect(md).toContain('### Mendr — provider SDKs (information only)');
+      expect(md).toContain('openai 4.24.7');
+      expect(md).not.toMatch(/[✓○✗]/);
+    }
+  }, 180_000);
+
+  it('writes nothing unless the workflow turns it on', async () => {
+    const file = summaryFile();
+    await audit(fixture(LOCK), ['--json'], { GITHUB_STEP_SUMMARY: file });
+    expect(existsSync(file)).toBe(false);
+  }, 180_000);
+
+  // Only the --json path the Action runs writes it; the human report already has the row.
+  it('is not written by the human report', async () => {
+    const file = summaryFile();
+    await audit(fixture(LOCK), [], { MENDR_JOB_SUMMARY: 'on', GITHUB_STEP_SUMMARY: file });
+    expect(existsSync(file)).toBe(false);
+  }, 180_000);
+
+  // A failure costs the section, never the audit: same JSON, same exit code, one stderr line.
+  it('survives an unwritable summary file', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mendr-summary-dir-'));
+    created.push(dir);
+    const repoDir = fixture(LOCK);
+    const plain = await audit(repoDir, ['--json']);
+    const broken = await audit(repoDir, ['--json'], { MENDR_JOB_SUMMARY: 'on', GITHUB_STEP_SUMMARY: dir });
+    expect(WITHOUT_TIME(broken.stdout)).toBe(WITHOUT_TIME(plain.stdout));
+    expect(broken.exitCode).toBe(plain.exitCode);
+    expect(broken.stderr).toContain('job summary not written');
+  }, 180_000);
+});
+
+// The reusable workflow turns the section on in the audit step's env, and leaves that
+// step's run block — which holds the only upload to Mendr — exactly as it was.
+describe('the reusable audit workflow', () => {
+  const yml = readFileSync(join(MENDR_ROOT, '.github', 'workflows', 'reusable-audit.yml'), 'utf8');
+  const step = yml.slice(yml.indexOf('- name: Audit and send findings to Mendr'));
+  const envBlock = step.slice(0, step.indexOf('run: |'));
+  const runBlock = step.slice(step.indexOf('run: |'));
+
+  it("sets MENDR_JOB_SUMMARY: 'on' in the audit step's env", () => {
+    // A real entry at the env block's indentation: a commented-out or mis-indented key
+    // would turn the section off, or break the workflow, and must fail here.
+    expect(envBlock).toMatch(/^ {10}MENDR_JOB_SUMMARY: 'on'\r?$/m);
+  });
+
+  it('does not touch the run block that sends the audit to Mendr', () => {
+    expect(runBlock).not.toMatch(/GITHUB_STEP_SUMMARY|MENDR_JOB_SUMMARY/);
+  });
 });

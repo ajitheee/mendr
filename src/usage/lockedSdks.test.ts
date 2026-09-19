@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseSdkSpec, resolveSdk } from '../registry/graph.js';
 import type { SdkReleases } from '../registry/sdkReleases.js';
-import { lockedSdkLines } from '../report/auditReport.js';
+import { JOB_SUMMARY_MAX_BYTES, lockedSdkLines, sdkJobSummaryMarkdown } from '../report/auditReport.js';
 import { readLockedSdks, type LockedSdkReport } from './lockedSdks.js';
 
 // PLANE 2, SLICE 1 — the root package-lock.json, read for the provider SDKs the ROOT project
@@ -284,5 +284,92 @@ describe('what the report may say', () => {
       expect(text).not.toMatch(/outdated|behind|upgrade|vulnerab|breaking change|EXPOSURE|up.to.date|\bclean\b|\bsafe\b/i);
       if (r.state === 'read' || r.state === 'failed') expect(text).toContain('information only, never part of the conclusion');
     }
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// PLANE 2, SLICE 2 — the same row as a GitHub Actions job-summary section, for customers who
+// only ever see the Action. It is a PUBLISHED surface (anyone who can read the run), so it
+// is redacted, carries no verdict glyph, cannot break out of its fence, and has a size cap.
+
+describe('the job-summary section', () => {
+  const read = (files: Record<string, string | object>) => readLockedSdks(repo(files), RELEASES, NOW);
+
+  it('carries the same lines as the human row, without a verdict glyph', () => {
+    const md = sdkJobSummaryMarkdown(read({ 'package-lock.json': lock({ openai: '4' }, { openai: { version: '4.24.7' } }) }));
+    expect(md).toContain('### Mendr — provider SDKs (information only)');
+    expect(md).toContain('Provider SDKs: 1 declared by the root project in package-lock.json');
+    expect(md).toContain('openai 4.24.7 — 3 newer major lines seen');
+    expect(md).not.toMatch(/[✓○✗]/);
+  });
+
+  // "✓ … declares none" alone on a run page would read as a clean verdict.
+  it('never shows a tick beside "declares none"', () => {
+    const md = sdkJobSummaryMarkdown(read({ 'package-lock.json': lock({}, {}) }));
+    expect(md).toContain('declares none');
+    expect(md).not.toMatch(/[✓○✗]/);
+  });
+
+  // A prerelease tag may look like a key; the exact-version grammar allows it.
+  it('redacts a secret-shaped version before it is published', () => {
+    const md = sdkJobSummaryMarkdown(
+      read({ 'package-lock.json': lock({ openai: '4' }, { openai: { version: '4.0.0-sk-abcdefgh12345678ABCDEFGH' } }) }),
+    );
+    expect(md).not.toContain('sk-abcdefgh12345678ABCDEFGH');
+    expect(md).toContain('***REDACTED***');
+  });
+
+  it('cannot be closed early by a backtick fence in any line', () => {
+    const r: LockedSdkReport = {
+      state: 'read',
+      checked: 4,
+      sdks: [{ name: 'openai', version: null, resolution: null, reason: 'x ``` injected' }],
+      localPackagesNotRead: 0,
+      otherLockfiles: {},
+    };
+    const md = sdkJobSummaryMarkdown(r);
+    expect(md.match(/```/g)).toHaveLength(2); // only the section's own fence
+  });
+
+  it(`replaces a section larger than ${JOB_SUMMARY_MAX_BYTES / 1024} KB with one line`, () => {
+    const r: LockedSdkReport = {
+      state: 'read',
+      checked: 4,
+      sdks: Array.from({ length: 400 }, () => ({ name: 'openai', version: null, resolution: null, reason: 'y'.repeat(400) })),
+      localPackagesNotRead: 0,
+      otherLockfiles: {},
+    };
+    const md = sdkJobSummaryMarkdown(r);
+    expect(Buffer.byteLength(md)).toBeLessThan(1024);
+    expect(md).toContain('Not shown: this section would be larger than 64 KB.');
+  });
+});
+
+describe('what a lockfile must say before a version is printed as locked', () => {
+  // A lock records an exact version. A range there is not a lock.
+  it('refuses a range where an exact version belongs', () => {
+    const [sdk] = readLockedSdks(repo({ 'package-lock.json': lock({ openai: '*' }, { openai: { version: '1.*.*' } }) }), RELEASES, NOW).sdks;
+    expect(sdk!.resolution).toBeNull();
+    expect(sdk!.reason).toContain('records no exact version');
+  });
+
+  it('does not echo an alias name longer than npm allows', () => {
+    const key = 'a'.repeat(215);
+    const aliased = { name: 'openai', version: '4.24.7', resolved: 'https://registry.npmjs.org/openai/-/openai-4.24.7.tgz' };
+    const r = readLockedSdks(repo({ 'package-lock.json': lock({ [key]: 'npm:openai@4' }, { [key]: aliased }) }), RELEASES, NOW);
+    expect(r.sdks[0]!.alias).toBe('another name');
+    expect(render(r)).not.toContain(key);
+  });
+});
+
+describe('a bounded version', () => {
+  // npm semver caps a version at 256 characters. Anything longer is refused before any regex
+  // runs over it, so a crafted lockfile cannot slow the audit before the Action's upload.
+  it('refuses a version longer than npm allows, quickly', () => {
+    const huge = `4.0.0-${'a'.repeat(50_000)}`;
+    const started = Date.now();
+    const [sdk] = readLockedSdks(repo({ 'package-lock.json': lock({ openai: '*' }, { openai: { version: huge } }) }), RELEASES, NOW).sdks;
+    expect(sdk!.reason).toContain('records no exact version');
+    expect(Date.now() - started).toBeLessThan(2_000);
   });
 });

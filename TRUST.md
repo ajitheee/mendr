@@ -8,7 +8,9 @@ command reads, writes and sends, how the "no network" claim is enforced in code
 rather than in copy, what the threat model is, which permissions each surface
 needs, and where the known gaps are.
 
-Status: current for `v0.5.3-alpha` and `main`. Anything marked *planned* does not
+Status: current for `v0.5.3-alpha` and `main`. The job-summary *Provider SDKs*
+section (section 2, `MENDR_JOB_SUMMARY`) exists on `main` only: `v0.5.3-alpha`
+does not write it. Anything marked *planned* does not
 exist yet and is listed so the boundary is stated before it is built.
 
 ---
@@ -22,8 +24,7 @@ exist yet and is listed so the boundary is stated before it is built.
 | The CLI has no telemetry and needs no account; the default audit sends nothing anywhere. | The default audit has no endpoint to talk to. The outbound calls in the CLI source are the opt-in signed registry refresh (section 3; a GET of public files that carries nothing of yours), the optional provider usage read (section 3) — which goes to the provider you name, with a key you supply, from your machine — the `git clone` you ask for with a URL argument, and, only from the generated workflows, the POST of the report to the Mendr App (section 4). The App is the one Mendr-hosted component (Hono + Postgres on Render); it receives what your CI posts and never reaches into your repository. |
 | The GitHub App cannot read your code. | Its manifest requests `checks: write` and `metadata: read` only. It accepts what your CI posts — the audit document (`mendr audit --json`) and, from the migration workflow, the whitelisted migration report with its redacted diff hunk — re-redacts every string and re-caps every snippet server-side, and stores nothing beyond the inventory in section 4. The one optional addition is `actions: write`, which lets it *start* your migration workflow the moment you approve a migration — still no contents, no clone, no file reads. Tested against a GitHub-shaped fake in `app/src/app.test.ts`. |
 | Nothing edits your files unless you ask. | `fix-llm` prints a diff by default; `--write` is an explicit flag. `audit` never writes source. `--install` writes one workflow file you can read before committing. |
-| App-generated audit workflow (`.github/workflows/mendr-audit.yml` → `reusable-audit.yml`) | Your repository at the checked-out SHA, inside your GitHub Actions runner, on every push, pull request, the daily schedule and manual dispatch. | Nothing in your repository. | The pinned Mendr release from GitHub (`npx`), **one signed GET of the public registry files** (nothing of yours sent; a stale or unsigned registry makes the run inconclusive, never clean), and **one POST of the audit JSON to your Mendr App**, proven by the run's OIDC token. Permissions: `contents: read` + `id-token: write` only. |
-| Secrets do not leak through Mendr's own output. | Everything that could be published (the GitHub issue body, JSON snippets) passes through the same redaction (section 6). This is best-effort pattern matching and section 8 says what it does not cover. |
+| Secrets do not leak through Mendr's own output. | Everything that could be published (the GitHub issue body, the job-summary section, JSON snippets) passes through the same redaction (section 6). This is best-effort pattern matching and section 8 says what it does not cover. |
 
 ---
 
@@ -31,9 +32,11 @@ exist yet and is listed so the boundary is stated before it is built.
 
 | Command | Reads | Writes | Network |
 |---|---|---|---|
-| `mendr audit [path]` | Source files under `path` (TS/TSX/JS/Python, config formats, `.gitignore`), the bundled registry, `git rev-parse HEAD` via the local git binary. | stdout/stderr only. | **None.** |
+| App-generated audit workflow (`.github/workflows/mendr-audit.yml` → `reusable-audit.yml`) | Your repository at the checked-out SHA, inside your GitHub Actions runner, on every push, pull request, the daily schedule and manual dispatch. | Nothing in your repository. From the first release after `v0.5.3-alpha`, one information-only *Provider SDKs* section in the run's job summary (see `mendr audit [path] --json` with `MENDR_JOB_SUMMARY=on` below). | The pinned Mendr release from GitHub (`npx`), **one signed GET of the public registry files** (nothing of yours sent; a stale or unsigned registry makes the run inconclusive, never clean), and **one POST of the audit JSON to your Mendr App**, proven by the run's OIDC token. Permissions: `contents: read` + `id-token: write` only. |
+| `mendr audit [path]` | Source files under `path` (TS/TSX/JS/Python, config formats, `.gitignore`), the bundled registry, `git rev-parse HEAD` via the local git binary, and for the *Provider SDKs* row the root `package-lock.json` (other lockfiles are only named, never opened) and the bundled SDK release record. | stdout/stderr only. | **None.** |
 | `mendr audit [path] --refresh-registry` (or `MENDR_REGISTRY_REFRESH=on`, which the generated workflows set) | Same, plus the latest registry snapshot. | Same. | **One outbound HTTPS GET of three public files** — `manifest.json`, `manifest.sig`, `llm-deprecations.json` — from `github.com/ajitheee/mendr/releases/download/registry-latest/` (or `MENDR_REGISTRY_URL`). It sends nothing: no body, no header of yours, nothing about the repository. The snapshot is used only if its Ed25519 signature verifies against a key built into the release, its sha256 matches, and it is not older than the bundled copy; otherwise the bundled registry is used and the reason is disclosed. `--offline` wins. See [REGISTRY-FRESHNESS.md](REGISTRY-FRESHNESS.md). |
 | `mendr audit [path] --json` | Same. Adds a ±3-line, 160-character snippet around each reported line and a 16-hex-character SHA-256 prefix of the reported line. | stdout only. | **None.** |
+| `mendr audit [path] --json` with `MENDR_JOB_SUMMARY=on` (the reusable audit workflow sets it) | Same, plus the root `package-lock.json` and the bundled SDK release record. | stdout; after the JSON is complete, appends one Markdown section to the file named by `GITHUB_STEP_SUMMARY`: each provider SDK the root project declares, its locked version, how it resolves against the bundled SDK release record, and the names of lockfiles not read. Never a dependency spec, `resolved` URL or integrity hash; secret-redacted (section 6); nothing is added to the JSON. | **None.** GitHub's runner shows the job summary on your own run's summary page: anyone who can read the run can read it (on a public repository, anyone), and it stays with the run until the run is deleted. |
 | `mendr audit [path] --issue-body <file>` | Same. | The Markdown issue body to the file you name. | **None.** |
 | `mendr audit [path] --install` | Same. | One workflow file at `.github/workflows/mendr-audit.yml`. | **None.** |
 | `mendr audit <path> <provider>` with a read-only key | Same, plus the provider's usage endpoint. | stdout, and `.mendr/exposure.json` in the repository. | **One outbound HTTPS GET to the provider you named** (OpenAI, Anthropic, Google, and so on), sent with the key you supplied from `MENDR_PROVIDER_KEY` or a flag. The key is never written to disk by Mendr and never sent anywhere else. Errors from the provider are redacted before printing. |
@@ -116,7 +119,9 @@ file path, line number, evidence type, tier, disposition (`patch` /
 snippet clipped to 160 characters per line, and a 16-character SHA-256 prefix of
 the trimmed reported line. The snippet is redacted (section 6). The hash lets a
 UI tell "same line, unchanged" from "line changed" without holding the line.
-The JSON contains no other file content.
+The JSON contains no other file content. The *Provider SDKs* section, read from
+your root `package-lock.json`, is written only to your run's job summary after the
+JSON is complete, and is never in the JSON.
 
 **The GitHub App (built, `app/`).** The scanner still runs inside your GitHub
 Actions. Your audit workflow posts **only the JSON described above** to the App, and your migration workflow posts the migration report of section 2 (outcome, branch, PR number, registry provenance and the redacted diff hunk of the swap),
@@ -431,7 +436,8 @@ catches new network behavior on the next build).
 
 ## 6. Secret redaction
 
-Applied to the entire rendered issue body and to every JSON snippet line, before
+Applied to the entire rendered issue body, to every line of the job-summary
+*Provider SDKs* section, and to every JSON snippet line, before
 clipping, so a truncated key cannot survive as a partial secret. Patterns:
 
 - `sk-`, `pk-`, `rk-` prefixed keys (OpenAI, Stripe and lookalikes), 8+ chars

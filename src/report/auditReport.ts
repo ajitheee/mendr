@@ -20,6 +20,7 @@ import {
   type ModelInvestigation,
   analyzedIsMinority,
 } from '../audit/investigation.js';
+import { redactSecrets } from '../audit/issueReport.js';
 import { RUNTIME_SOURCE_LABEL } from '../runtime/evidence.js';
 import type { LockedSdkReport } from '../usage/lockedSdks.js';
 
@@ -185,6 +186,33 @@ export function lockedSdkLines(
   return lines;
 }
 
+
+/** A section this large is not written: GitHub caps a step summary at 1 MiB and errors past it. */
+export const JOB_SUMMARY_MAX_BYTES = 64 * 1024;
+
+/**
+ * The Provider SDKs row as a GitHub Actions job-summary section (plane 2, slice 2), for the
+ * customers who only ever see the Action. The same lines as the human report, with three
+ * differences the surface demands:
+ *   * no ✓/○/✗ glyph — alone on a run page, "✓ … declares none" would read as a verdict;
+ *   * every line goes through redactSecrets, as the published issue body does;
+ *   * backticks cannot close the fence, and an oversized section is replaced by one line.
+ */
+export function sdkJobSummaryMarkdown(r: LockedSdkReport): string {
+  const lines = lockedSdkLines(r, (_mark, label, detail) => `${label}: ${detail}`).map((l) =>
+    redactSecrets(l).replace(/`/g, "'"),
+  );
+  const head = [
+    '### Mendr — provider SDKs (information only)',
+    '',
+    'About the root `package-lock.json` of this checkout; the line below says whether it was read. Never part of the audit conclusion, the exit code or anything sent to Mendr.',
+    '',
+  ];
+  const body = ['```text', ...lines, '```', ''];
+  const full = [...head, ...body, ''].join('\n');
+  if (Buffer.byteLength(full, 'utf8') <= JOB_SUMMARY_MAX_BYTES) return full;
+  return [...head, `Not shown: this section would be larger than ${JOB_SUMMARY_MAX_BYTES / 1024} KB.`, '', ''].join('\n');
+}
 
 /**
  * The coverage report — printed on EVERY run so the reader always sees which

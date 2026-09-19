@@ -2,7 +2,7 @@
 import { Command } from 'commander';
 import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -3733,6 +3733,27 @@ program
             2,
           ),
         );
+        // Plane 2, slice 2: the same Provider SDKs row, for Action customers, in their run's
+        // job summary. Written only AFTER the JSON above is complete, so it cannot be in the
+        // JSON the App receives; opted into by the reusable workflow with an env var (an old
+        // CLI ignores an unknown env var, where an unknown flag would fail the run). Nothing
+        // here touches stdout or the exit code: a failure costs the section, never the audit.
+        const summaryFile = process.env.GITHUB_STEP_SUMMARY;
+        if (/^(1|on|true|yes)$/i.test(process.env.MENDR_JOB_SUMMARY ?? '') && summaryFile) {
+          try {
+            const { readLockedSdks } = await import('./usage/lockedSdks.js');
+            const { sdkJobSummaryMarkdown } = await import('./report/auditReport.js');
+            let sdkReleases = null;
+            try {
+              sdkReleases = JSON.parse(readFileSync(join(dirname(resolveRegistryPath()), 'sdk-releases.json'), 'utf8'));
+            } catch {
+              sdkReleases = null;
+            }
+            appendFileSync(summaryFile, sdkJobSummaryMarkdown(readLockedSdks(resolved, sdkReleases, now)));
+          } catch (err) {
+            console.error(`mendr: job summary not written (${err instanceof Error ? err.message : String(err)}) — the audit result is unaffected`);
+          }
+        }
         return;
       }
 
