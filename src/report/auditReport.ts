@@ -24,6 +24,13 @@ import { redactSecrets } from '../audit/issueReport.js';
 import { RUNTIME_SOURCE_LABEL } from '../runtime/evidence.js';
 import type { LockedSdkReport } from '../usage/lockedSdks.js';
 import type { PythonReqReport } from '../usage/pinnedRequirements.js';
+import type { UvLockReport } from '../usage/uvLock.js';
+
+/** The Python dependency files this build reads at the root (plane 2, slices 3 and 4). */
+export interface PythonSurface {
+  reqs?: PythonReqReport;
+  uv?: UvLockReport;
+}
 
 export interface AuditMeta {
   /** Only set when a runtime window applies (a provider/export read). */
@@ -39,10 +46,10 @@ export interface AuditMeta {
    */
   lockedSdks?: LockedSdkReport;
   /**
-   * Python SDK pins in the root requirements*.txt (plane 2, slice 3). HUMAN REPORT ONLY, like
-   * lockedSdks. Absent = the root has no Python dependency file and no row is printed.
+   * Python SDKs at the root: requirements*.txt pins (slice 3) and uv.lock (slice 4). HUMAN
+   * REPORT ONLY, like lockedSdks. Absent = no Python dependency file, and no row is printed.
    */
-  pythonSdks?: PythonReqReport;
+  pythonSdks?: PythonSurface;
 }
 
 /** How many informational references the default report lists in full. */
@@ -198,12 +205,22 @@ export function lockedSdkLines(
  * read by the Python row there, so the npm row's "not read" list names only the nested ones.
  * The job summary has no Python row and keeps the list exactly as it was.
  */
-export function npmRowBesidePython(npm: LockedSdkReport, python: PythonReqReport | undefined): LockedSdkReport {
-  const all = npm.otherLockfiles['requirements*.txt'] ?? 0;
-  if (!python || python.failed || python.filesFound === 0 || all === 0) return npm;
-  const { 'requirements*.txt': _all, ...rest } = npm.otherLockfiles;
-  const nested = all - python.filesFound;
-  return { ...npm, otherLockfiles: nested > 0 ? { ...rest, 'requirements*.txt in subdirectories': nested } : rest };
+export function npmRowBesidePython(npm: LockedSdkReport, python: PythonSurface | undefined): LockedSdkReport {
+  let otherLockfiles = { ...npm.otherLockfiles };
+  const reqs = python?.reqs;
+  const allReq = otherLockfiles['requirements*.txt'] ?? 0;
+  if (reqs && !reqs.failed && reqs.filesFound > 0 && allReq > 0) {
+    delete otherLockfiles['requirements*.txt'];
+    const nested = allReq - reqs.filesFound;
+    if (nested > 0) otherLockfiles = { ...otherLockfiles, 'requirements*.txt in subdirectories': nested };
+  }
+  // The Python row speaks for the ROOT uv.lock, read or not; only nested ones stay here.
+  const allUv = otherLockfiles['uv.lock'] ?? 0;
+  if (python?.uv && python.uv.state !== 'absent' && allUv > 0) {
+    delete otherLockfiles['uv.lock'];
+    if (allUv - 1 > 0) otherLockfiles = { ...otherLockfiles, 'uv.lock in subdirectories': allUv - 1 };
+  }
+  return { ...npm, otherLockfiles };
 }
 
 /**
@@ -213,54 +230,84 @@ export function npmRowBesidePython(npm: LockedSdkReport, python: PythonReqReport
  * went unread, so a -r include or a pyproject.toml can never sit behind a clean-looking ✓.
  */
 export function pythonSdkLines(
-  r: PythonReqReport,
+  p: PythonSurface,
   row: (mark: string, label: string, detail: string) => string,
 ): string[] {
   const LABEL = 'Python SDKs';
   const INFO = 'information only, never part of the conclusion';
+  const r = p.reqs;
+  const uv = p.uv;
   const lines: string[] = [];
-  if (r.failed) {
+  if (r?.failed) {
     lines.push(row('✗', LABEL, `the root requirements*.txt could not be read (the reader failed) — ${INFO}`));
     return lines;
   }
-  const filesRead = r.filesFound - r.filesNotRead;
+  const reqFilesRead = r ? r.filesFound - r.filesNotRead : 0;
+  const uvRead = uv?.state === 'read';
+  const sdks = [
+    ...(r?.sdks ?? []).map((s) => ({ ...s, source: s.file })),
+    ...(uv?.sdks ?? []).map((s) => ({ ...s, source: 'uv.lock', viaOthersOnly: false })),
+  ];
+  // This row speaks for uv.lock itself — read or not — so slice 3's manifest list never repeats it.
+  const manifestsNotRead = (r?.rootManifestsNotRead ?? []).filter((m) => !(m === 'uv.lock' && uv !== undefined && uv.state !== 'absent'));
+  const sourceNames = [reqFilesRead > 0 ? 'the root requirements*.txt' : null, uvRead ? 'uv.lock' : null].filter(Boolean);
+  const sources = sourceNames.join(' and ');
+  const listVerb = sourceNames.length === 1 ? 'lists' : 'list';
+  const checked = r?.checked ?? uv?.checked ?? 0;
   const somethingUnread =
-    r.includes + r.editables + r.unreadableLines + r.filesNotRead > 0 || r.rootManifestsNotRead.length > 0;
+    (r ? r.includes + r.editables + r.unreadableLines + r.filesNotRead > 0 : false) ||
+    manifestsNotRead.length > 0 ||
+    (uv !== undefined && uv.state !== 'read' && uv.state !== 'absent') ||
+    (uv?.lockedNotDeclared.length ?? 0) > 0 ||
+    (uv?.localPackagesNotRead ?? 0) > 0;
 
-  if (r.filesFound === 0) {
-    lines.push(row('○', LABEL, 'not read — no requirements*.txt at the repository root'));
-  } else if (filesRead === 0) {
-    lines.push(row('✗', LABEL, `${int(r.filesFound)} root requirements*.txt file${r.filesFound === 1 ? '' : 's'} could not be read — ${INFO}`));
-  } else if (r.sdks.length === 0) {
+  if (reqFilesRead === 0 && !uvRead) {
+    const reqUnreadable = (r?.filesFound ?? 0) > 0;
+    const uvUnreadable = uv !== undefined && uv.state !== 'absent';
+    lines.push(
+      reqUnreadable || uvUnreadable
+        ? row(
+            '✗',
+            LABEL,
+            `${[reqUnreadable ? `${int(r!.filesFound)} root requirements*.txt file${r!.filesFound === 1 ? '' : 's'}` : null, uvUnreadable ? 'the root uv.lock' : null].filter(Boolean).join(' and ')} could not be read (below) — ${INFO}`,
+          )
+        : row('○', LABEL, 'not read — no requirements*.txt or uv.lock at the repository root'),
+    );
+  } else if (sdks.length === 0) {
     lines.push(
       somethingUnread
-        ? row('○', LABEL, `the root requirements*.txt list none of the ${r.checked} PyPI provider SDKs directly; part of the root was not read (below) — ${INFO}`)
-        : row('✓', LABEL, `the root requirements*.txt list none of the ${r.checked} PyPI provider SDKs — ${INFO}`),
+        ? row('○', LABEL, `${sources} ${listVerb} none of the ${checked} PyPI provider SDKs directly; part of the root was not read (below) — ${INFO}`)
+        : row('✓', LABEL, `${sources} ${listVerb} none of the ${checked} PyPI provider SDKs — ${INFO}`),
     );
   } else {
-    const unresolved = r.sdks.filter((s) => s.resolution === null).length;
-    lines.push(
-      row(
-        '✓',
-        LABEL,
-        `${r.sdks.length} listed in the root requirements*.txt${unresolved > 0 ? `, ${unresolved} not resolved` : ''} — ${INFO}`,
-      ),
-    );
-    for (const s of r.sdks) {
+    const unresolved = sdks.filter((s) => s.resolution === null).length;
+    lines.push(row('✓', LABEL, `${sdks.length} listed in ${sources}${unresolved > 0 ? `, ${unresolved} not resolved` : ''} — ${INFO}`));
+    for (const s of sdks) {
       const via = s.viaOthersOnly ? " — the file's own '# via' note names only other packages or constraint files" : '';
-      lines.push(`    · ${s.name}${s.version ? ` ${s.version}` : ''} (${s.file}) — ${s.reason}${via}`);
+      lines.push(`    · ${s.name}${s.version ? ` ${s.version}` : ''} (${s.source}) — ${s.reason}${via}`);
     }
+  }
+
+  // Locked, but by someone else's choice: named, never resolved, and never counted as "none".
+  if ((uv?.lockedNotDeclared.length ?? 0) > 0) {
+    lines.push(
+      `    · ${uv!.lockedNotDeclared.length} locked in uv.lock that the root project does not declare (${uv!.lockedNotDeclared.join(', ')}) — another package asked for them; NOT resolved`,
+    );
   }
 
   const notRead: string[] = [];
   const count = (n: number, one: string, many: string): void => {
     if (n > 0) notRead.push(`${int(n)} ${n === 1 ? one : many}`);
   };
-  count(r.includes, '-r/-c include', '-r/-c includes');
-  count(r.editables, 'editable or local install', 'editable or local installs');
-  count(r.unreadableLines, 'line this build could not read', 'lines this build could not read');
-  count(r.filesNotRead, 'requirements*.txt file that could not be read', 'requirements*.txt files that could not be read');
-  notRead.push(...r.rootManifestsNotRead);
+  if (r) {
+    count(r.includes, '-r/-c include', '-r/-c includes');
+    count(r.editables, 'editable or local install', 'editable or local installs');
+    count(r.unreadableLines, 'line this build could not read', 'lines this build could not read');
+    count(r.filesNotRead, 'requirements*.txt file that could not be read', 'requirements*.txt files that could not be read');
+  }
+  if (uv && uv.state !== 'read' && uv.state !== 'absent') notRead.push(`uv.lock (${uv.note ?? 'not read'})`);
+  if (uvRead) count(uv!.localPackagesNotRead, 'local package in uv.lock', 'local packages in uv.lock');
+  notRead.push(...manifestsNotRead);
   if (notRead.length > 0) lines.push(`    not read: ${notRead.join(', ')}`);
   return lines;
 }

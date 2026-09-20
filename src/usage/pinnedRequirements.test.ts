@@ -67,7 +67,7 @@ const RELEASES: SdkReleases = {
 
 const read = (files: Record<string, string | Buffer>): PythonReqReport => readPinnedRequirements(repo(files), RELEASES, NOW)!;
 const row = (mark: string, label: string, detail: string): string => `${mark} ${label}: ${detail}`;
-const render = (r: PythonReqReport): string => pythonSdkLines(r, row).join('\n');
+const render = (r: PythonReqReport): string => pythonSdkLines({ reqs: r }, row).join('\n');
 const one = (requirements: string) => read({ 'requirements.txt': requirements }).sdks;
 
 describe('an exact == pin', () => {
@@ -195,14 +195,14 @@ describe('what it does not read, and says so', () => {
 
   it('shows "not read" when the root has Python manifests but no requirements*.txt', () => {
     const r = read({ 'pyproject.toml': '[project]\n' });
-    expect(render(r)).toContain('○ Python SDKs: not read — no requirements*.txt at the repository root');
+    expect(render(r)).toContain('○ Python SDKs: not read — no requirements*.txt or uv.lock at the repository root');
   });
 });
 
 describe('a "none" is only clean when nothing at the root went unread', () => {
   it('ticks a "none" when every line and file was read', () => {
     expect(render(read({ 'requirements.txt': 'requests==2.31.0\n' }))).toContain(
-      '✓ Python SDKs: the root requirements*.txt list none of the 4 PyPI provider SDKs',
+      '✓ Python SDKs: the root requirements*.txt lists none of the 4 PyPI provider SDKs',
     );
   });
 
@@ -213,7 +213,7 @@ describe('a "none" is only clean when nothing at the root went unread', () => {
     ['a URL line', { 'requirements.txt': 'git+https://github.com/acme/x.git\n' }],
   ])('marks it partial beside %s', (_label, files) => {
     const text = render(read(files as Record<string, string>));
-    expect(text).toContain('○ Python SDKs: the root requirements*.txt list none of the 4 PyPI provider SDKs directly; part of the root was not read');
+    expect(text).toContain('○ Python SDKs: the root requirements*.txt lists none of the 4 PyPI provider SDKs directly; part of the root was not read');
     expect(text).not.toMatch(/✓/);
   });
 });
@@ -260,7 +260,7 @@ describe('how it sits beside the npm row', () => {
     writeFileSync(join(dir, 'svc', 'requirements.txt'), 'anthropic==0.39.0\n');
     const npm = readLockedSdks(dir, RELEASES, NOW);
     const python = readPinnedRequirements(dir, RELEASES, NOW);
-    const shown = lockedSdkLines(npmRowBesidePython(npm, python), row).join('\n');
+    const shown = lockedSdkLines(npmRowBesidePython(npm, { reqs: python }), row).join('\n');
     expect(shown).toContain('not read: requirements*.txt in subdirectories (1)');
     expect(shown).not.toMatch(/requirements\*\.txt \(2\)/);
   });
@@ -363,5 +363,13 @@ describe('the tick is earned', () => {
   it('shows a failed reader as ✗, never as "none"', () => {
     const failed: PythonReqReport = { checked: 4, filesFound: 0, filesNotRead: 0, sdks: [], includes: 0, editables: 0, unreadableLines: 0, rootManifestsNotRead: [], failed: true };
     expect(render(failed)).toBe('✗ Python SDKs: the root requirements*.txt could not be read (the reader failed) — information only, never part of the conclusion');
+  });
+});
+
+describe('a requirements version that hides text before an @', () => {
+  it('is refused, and its text never reaches the report', () => {
+    const r = read({ 'requirements.txt': 'openai==1.0\u001b[31mEVIL@1.40.6\n' });
+    expect(r.sdks[0]!.resolution).toBeNull();
+    expect(render(r)).not.toMatch(/EVIL|\u001b/);
   });
 });

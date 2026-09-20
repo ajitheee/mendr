@@ -268,8 +268,10 @@ export function readPinnedRequirements(repoPath: string, releases: SdkReleases |
         continue;
       }
       const version = pin[1]!;
+      // parseSdkSpec splits on the LAST '@': require the round trip to name this SDK, so a
+      // version carrying its own '@' cannot reach the report as raw file text.
       const spec = version.length <= 256 ? parseSdkSpec(`pypi:${name}@${version}`) : null;
-      if (!spec) {
+      if (!spec || spec.name !== name) {
         record(refuse('an exact == pin in a version form this build does not read — NOT resolved'));
         continue;
       }

@@ -3777,14 +3777,25 @@ program
         lockedSdks = { state: 'failed', checked: 0, sdks: [], localPackagesNotRead: 0, otherLockfiles: {}, note: 'the repository walk failed' };
       }
 
-      // Plane 2, slice 3: exact Python SDK pins in the root requirements*.txt. Human report only.
+      // Plane 2, slices 3 and 4: the root requirements*.txt pins and the root uv.lock. Human
+      // report only, and each reader is guarded on its own: a failure costs its own line.
       const { readPinnedRequirements } = await import('./usage/pinnedRequirements.js');
-      let pythonSdks: import('./usage/pinnedRequirements.js').PythonReqReport | undefined;
+      const { readUvLock } = await import('./usage/uvLock.js');
+      let reqs: import('./usage/pinnedRequirements.js').PythonReqReport | undefined;
       try {
-        pythonSdks = readPinnedRequirements(resolved, sdkReleases, now);
+        reqs = readPinnedRequirements(resolved, sdkReleases, now);
       } catch {
-        pythonSdks = { checked: 0, filesFound: 0, filesNotRead: 0, sdks: [], includes: 0, editables: 0, unreadableLines: 0, rootManifestsNotRead: [], failed: true };
+        reqs = { checked: 0, filesFound: 0, filesNotRead: 0, sdks: [], includes: 0, editables: 0, unreadableLines: 0, rootManifestsNotRead: [], failed: true };
       }
+      let uv: import('./usage/uvLock.js').UvLockReport | undefined;
+      try {
+        uv = readUvLock(resolved, sdkReleases, now);
+      } catch {
+        uv = { state: 'failed', checked: 0, sdks: [], lockedNotDeclared: [], localPackagesNotRead: 0, note: 'the reader failed' };
+      }
+      // No Python dependency file at the root at all: no row (readPinnedRequirements already
+      // counts uv.lock among the manifests it looks for).
+      const pythonSdks = reqs ? { reqs, uv } : undefined;
 
       const meta: AuditMeta = { from, to, coverage, verbose: !!opts.verbose, lockedSdks, pythonSdks };
       const rendered = renderAuditReport(investigations, meta);
