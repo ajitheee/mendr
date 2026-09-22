@@ -209,3 +209,58 @@ describe('the Python SDKs row through the real CLI', () => {
     expect(readFileSync(file, 'utf8')).not.toMatch(/Python SDKs|1\.40\.6/);
   }, 180_000);
 });
+
+// ---------------------------------------------------------------------------------------
+// PLANE 2, SLICE 4 — the root uv.lock, in the same human-only Python row.
+
+const UV_LOCK = [
+  'version = 1',
+  'revision = 3',
+  'requires-python = ">=3.11"',
+  '',
+  '[[package]]',
+  'name = "app"',
+  'version = "0.1.0"',
+  'source = { editable = "." }',
+  'dependencies = [',
+  '    { name = "openai" },',
+  ']',
+  '',
+  '[[package]]',
+  'name = "openai"',
+  'version = "2.29.0"',
+  'source = { registry = "https://pypi.org/simple" }',
+  '',
+].join('\n');
+
+function uvFixture(withLock: boolean): string {
+  const dir = mkdtempSync(join(tmpdir(), 'mendr-uv-cli-'));
+  created.push(dir);
+  writeFileSync(join(dir, 'app.py'), PY_EXPOSED);
+  if (withLock) writeFileSync(join(dir, 'uv.lock'), UV_LOCK);
+  return dir;
+}
+
+describe('the uv.lock part of the Python SDKs row', () => {
+  it('shows the locked SDK in the human report', async () => {
+    const r = await audit(uvFixture(true));
+    expect(r.stdout).toMatch(/Python SDKs:\s+1 listed in uv\.lock/);
+    expect(r.stdout).toContain('openai 2.29.0 (uv.lock)');
+  }, 180_000);
+
+  it('never changes the conclusion or the exit code', async () => {
+    for (const args of [[], ['--fail-on-exposure']]) {
+      const without = await audit(uvFixture(false), args);
+      const withLock = await audit(uvFixture(true), args);
+      expect(conclusion(withLock.stdout)).toBe(conclusion(without.stdout));
+      expect(withLock.exitCode).toBe(without.exitCode);
+    }
+  }, 180_000);
+
+  it('puts nothing about uv.lock into --json or the job summary', async () => {
+    const file = summaryFile();
+    const r = await audit(uvFixture(true), ['--json'], { MENDR_JOB_SUMMARY: 'on', GITHUB_STEP_SUMMARY: file });
+    expect(JSON.stringify(JSON.parse(r.stdout))).not.toMatch(/uv\.lock|2\.29\.0/);
+    expect(readFileSync(file, 'utf8')).not.toMatch(/Python SDKs|2\.29\.0/);
+  }, 180_000);
+});
