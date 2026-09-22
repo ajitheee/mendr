@@ -41,6 +41,39 @@ export interface TypeCheckResult {
   /** How many diagnostics the BASELINE (pre-patch) project already had — lets
    * the CLI say honestly that "pass" means "no NEW errors", not "zero errors". */
   baselineCount: number;
+  /**
+   * Third-party packages the baseline could not resolve at all, deduplicated
+   * and sorted — the checkout has no `node_modules` for them.
+   *
+   * This is a SCOPE statement, not a failure. A model-id swap is caught by
+   * this gate when the SDK types declare the argument as a union of literal
+   * ids; with the package unresolved that argument is `any` and no such error
+   * is possible. `fix-llm <url>` shallow-clones without installing, so the
+   * gate there is systematically blinder than the same gate run locally — and
+   * it said "passed" either way, which reads as "the SDK accepts this id".
+   * Naming the packages keeps the claim the size of the evidence.
+   */
+  unresolvedModules: string[];
+}
+
+/** TS2307 — "Cannot find module 'x' or its corresponding type declarations." */
+const CANNOT_FIND_MODULE = 2307;
+
+/**
+ * The module specifier out of a TS2307 message, when it names a PACKAGE.
+ *
+ * A relative specifier that cannot be found is the repository's own broken
+ * import and has nothing to do with whether dependencies are installed, so it
+ * is not reported as an unresolved package.
+ */
+function unresolvedPackageOf(info: DiagnosticInfo): string | undefined {
+  if (info.code !== CANNOT_FIND_MODULE) return undefined;
+  const specifier = /^Cannot find module '([^']+)'/.exec(info.message)?.[1];
+  if (!specifier || specifier.startsWith('.') || specifier.startsWith('/')) return undefined;
+  // Report the package, not the deep path: 'openai/resources/chat' is still
+  // the `openai` package missing, and a list of subpaths reads as many faults.
+  const parts = specifier.split('/');
+  return specifier.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0];
 }
 
 /**
@@ -75,7 +108,14 @@ function keyOf(info: DiagnosticInfo): string {
  */
 export function checkTypes(baselineProject: Project, patchedProject: Project): TypeCheckResult {
   const baselineDiagnostics = baselineProject.getPreEmitDiagnostics();
-  const baselineKeys = new Set(baselineDiagnostics.map((d) => keyOf(toInfo(d))));
+  const baselineInfos = baselineDiagnostics.map(toInfo);
+  const baselineKeys = new Set(baselineInfos.map(keyOf));
+  // Which packages were missing while this gate ran. Read from the BASELINE:
+  // the patch cannot install or remove a dependency, so this describes the
+  // checkout, not the change.
+  const unresolvedModules = [
+    ...new Set(baselineInfos.map(unresolvedPackageOf).filter((m): m is string => Boolean(m))),
+  ].sort();
 
   const newDiagnostics: DiagnosticInfo[] = [];
   const seen = new Set<string>();
@@ -91,7 +131,24 @@ export function checkTypes(baselineProject: Project, patchedProject: Project): T
     passed: newDiagnostics.length === 0,
     newDiagnostics,
     baselineCount: baselineDiagnostics.length,
+    unresolvedModules,
   };
+}
+
+/**
+ * One clause naming the packages this gate could not see, or `undefined` when
+ * it saw everything. Shared by every surface that reports the gate, so the
+ * terminal, the JSON and the pull-request body scope the claim identically.
+ */
+export function unresolvedScopeNote(result: TypeCheckResult): string | undefined {
+  const modules = result.unresolvedModules;
+  if (modules.length === 0) return undefined;
+  const shown = modules.slice(0, 3).join(', ');
+  const more = modules.length > 3 ? `, +${modules.length - 3} more` : '';
+  return (
+    `${modules.length} package${modules.length === 1 ? '' : 's'} not installed in this ` +
+    `checkout (${shown}${more}) -- their types were not checked`
+  );
 }
 
 /** One-line human summary of a diagnostic, e.g. for a downgrade reason. */

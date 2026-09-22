@@ -7,6 +7,7 @@ import { autoApplyVerification } from './llmRegistry.js';
 import {
   buildRegistryPrefilter,
   countAnalyzableSourceFiles,
+  ensureFilesLoaded,
   loadPrefilteredProject,
   loadProject,
 } from './scanRepo.js';
@@ -121,6 +122,67 @@ describe('loadPrefilteredProject', () => {
       expect(scan.matchedFiles).toBe(1);
       const loaded = scan.project.getSourceFiles().map((sf) => sf.getBaseName());
       expect(loaded).toEqual(['hit.ts']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// A tsconfig-driven load is not the last word on which files exist. maxun's
+// root config declares `include: ["src"]` and its retiring model id lives in
+// `server/` — so the gated pass held no such file, the codemod changed
+// nothing, and the summary reported a gate failure for a gate that never ran.
+describe('ensureFilesLoaded (files the tsconfig did not include)', () => {
+  it('adds a real file the project is missing, and reports nothing missing', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mendr-ensure-'));
+    try {
+      writeFileSync(
+        join(dir, 'tsconfig.json'),
+        JSON.stringify({ compilerOptions: { strict: true }, include: ['src'] }),
+      );
+      mkdirSync(join(dir, 'src'), { recursive: true });
+      writeFileSync(join(dir, 'src', 'in.ts'), 'export const IN = 1;\n');
+      mkdirSync(join(dir, 'server', 'src'), { recursive: true });
+      const outside = join(dir, 'server', 'src', 'out.ts');
+      writeFileSync(outside, 'export const OUT = 2;\n');
+
+      const project = loadProject(dir);
+      expect(project.getSourceFile(outside)).toBeUndefined();
+
+      const missing = ensureFilesLoaded(project, [outside]);
+      expect(missing).toEqual([]);
+      expect(project.getSourceFile(outside)).toBeDefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('returns the paths it could not load rather than silently dropping them', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mendr-ensure-missing-'));
+    try {
+      writeFileSync(join(dir, 'only.ts'), 'export const ONLY = 1;\n');
+      const project = loadProject(dir);
+      const gone = join(dir, 'vanished.ts');
+
+      // A file the scan saw and that is no longer readable is a fact the
+      // report has to be able to state: the alternative is an unexplained
+      // residual, which is how the gate-failure claim got invented.
+      expect(ensureFilesLoaded(project, [gone])).toEqual([gone]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('is a no-op for a file the project already has', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mendr-ensure-noop-'));
+    try {
+      const file = join(dir, 'here.ts');
+      writeFileSync(file, 'export const HERE = 1;\n');
+      const project = loadProject(dir);
+      const before = project.getSourceFiles().length;
+
+      expect(ensureFilesLoaded(project, [file])).toEqual([]);
+      expect(project.getSourceFiles().length).toBe(before);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

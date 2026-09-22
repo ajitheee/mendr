@@ -711,6 +711,20 @@ export interface SummaryDisposition {
    * applying once the model was swapped — distinct from a gate failure.
    */
   notApplicable?: number;
+  /**
+   * Sites the gated path never judged because their file could not be loaded
+   * at all (unreadable, or gone since the scan). Not a gate outcome: no gate
+   * ran on them.
+   */
+  notGated?: number;
+  /**
+   * Sites that survived every gate and still produced no edit. The honest
+   * label for a residual nobody can attribute: it says the codemod wrote
+   * nothing, and does not invent a reason. Anything landing here is a defect
+   * to chase, which is exactly why it must not be filed under "gates failed"
+   * — that wording sent a reader to debug a gate that never ran.
+   */
+  noChange?: number;
 }
 
 /**
@@ -719,8 +733,11 @@ export interface SummaryDisposition {
  * reports its disposition, because "2 tier A" alone cannot distinguish a patch
  * that landed on disk from one shown for review from one the gates rejected.
  *
- * The four dispositions sum to `counts.tierA`; only the non-zero ones print,
- * and a Tier A of zero still renders `0 auto-fixed` so the slot never vanishes.
+ * The dispositions sum to `counts.tierA`; only the non-zero ones print, and a
+ * Tier A of zero still renders `0 auto-fixed` so the slot never vanishes. They
+ * are kept separate because each one sends a reader somewhere different: a
+ * failing gate is a diff to inspect, an unloadable file is a scan problem, and
+ * an unattributable residual is a mendr defect.
  *
  * `applied` is a claim about the FILESYSTEM, so a caller may only pass it once
  * the write has actually returned. Computing this block from the intention to
@@ -748,6 +765,16 @@ export function formatSummaryLines(
     // a gate that never ran on it.
     (disposition.notApplicable ?? 0) > 0
       ? `${disposition.notApplicable} not applicable after the swap -- the new model does not need it`
+      : '',
+    // No gate ran on these, so no gate may be named. The file itself could not
+    // be read back for the gated pass.
+    (disposition.notGated ?? 0) > 0
+      ? `${disposition.notGated} not gated -- the file could not be loaded for verification`
+      : '',
+    // The residual nobody can attribute. Saying "gates failed" here is how the
+    // report claimed a gate failure on repositories where every gate passed.
+    (disposition.noChange ?? 0) > 0
+      ? `${disposition.noChange} not applied -- the codemod produced no change`
       : '',
     disposition.downgraded > 0
       ? `${disposition.downgraded} downgraded -- gates failed, not applied`

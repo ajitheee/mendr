@@ -40,6 +40,8 @@ export function loadProject(repoPath: string): Project {
   }
 
   // Fallback: no (usable) tsconfig. Add JS/TS files by glob under sane defaults.
+  // (See ensureFilesLoaded below for why a tsconfig load is not the last word
+  // on which files a gate may judge.)
   // We include .tsx/.mts/.cts (React/Next apps) AND .js/.jsx/.mjs/.cjs — a
   // JavaScript-only repo has no tsconfig, so without JS here it fell to the glob
   // loader and scanned nothing. `allowJs` puts .js files in the program (the
@@ -53,6 +55,39 @@ export function loadProject(repoPath: string): Project {
     `!${join(abs, '**/*.min.js')}`,
   ]);
   return project;
+}
+
+/**
+ * Make sure every path in `files` is part of `project`, adding the ones the
+ * tsconfig did not include. Returns the paths that still could not be loaded.
+ *
+ * WHY THIS EXISTS. The scan walks the whole repository, but the gated fix path
+ * re-loads it through the repo's own `tsconfig.json` — and a monorepo root
+ * config routinely compiles only one package of several. `getmaxun/maxun`
+ * declares `include: ["src", "vite-env.d.ts"]`, which does not cover its own
+ * `server/`, where its retiring model id lives. The gated project then held no
+ * such file, the codemod changed nothing, and the summary's residual bucket
+ * reported `1 downgraded -- gates failed` for a gate that had never run on it.
+ * A tool that invents a gate failure is worse than one that finds nothing.
+ *
+ * Adding the file back is sound because the type-check gate is
+ * BASELINE-RELATIVE: a file the build never included brings the same
+ * pre-existing diagnostics to the baseline load and the patched load, so they
+ * cancel, and only an error the patch itself introduces can fail the gate.
+ */
+export function ensureFilesLoaded(project: Project, files: readonly string[]): string[] {
+  const missing: string[] = [];
+  for (const file of files) {
+    if (project.getSourceFile(file)) continue;
+    try {
+      project.addSourceFileAtPath(file);
+    } catch {
+      // Unreadable or vanished since the scan. Report it rather than letting a
+      // silently absent file become an unexplained disposition downstream.
+      missing.push(file);
+    }
+  }
+  return missing;
 }
 
 /** Compiler options shared by the glob-based (no-tsconfig) loaders and the env-reader scan. */

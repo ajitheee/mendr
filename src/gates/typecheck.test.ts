@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Project } from 'ts-morph';
-import { checkTypes } from './typecheck.js';
+import { checkTypes, unresolvedScopeNote } from './typecheck.js';
 
 // Hermetic tests for the BASELINE-RELATIVE type-check gate. Everything is built
 // in-memory from source strings; no on-disk fixture or installed types needed.
@@ -84,5 +84,60 @@ describe('checkTypes (baseline-relative type-check gate)', { timeout: 60_000 }, 
     const result = checkTypes(baseline, patched);
     expect(result.passed).toBe(true);
     expect(result.newDiagnostics).toHaveLength(0);
+  });
+});
+
+// WHAT THE GATE COULD NOT SEE. `fix-llm <url>` shallow-clones and installs
+// nothing, so the SDK whose types would reject a bad model id is unresolved
+// and the argument it guards is `any`. The gate then passes because nothing
+// could fail it — and printed a bare "passed", which a reader takes to mean
+// "the SDK accepts this id". The packages are now named beside the pass.
+describe('unresolved packages are reported as scope, not as failure', { timeout: 60_000 }, () => {
+  const withImports = (body: string) =>
+    projectFrom(
+      'src/a.ts',
+      `import OpenAI from 'openai';\nimport { encoding_for_model } from 'tiktoken';\n${body}`,
+    );
+
+  it('collects the packages the baseline could not resolve', () => {
+    const result = checkTypes(withImports('export const A = 1;'), withImports('export const A = 2;'));
+
+    expect(result.passed).toBe(true);
+    expect(result.unresolvedModules).toEqual(['openai', 'tiktoken']);
+    expect(unresolvedScopeNote(result)).toContain('2 packages not installed in this checkout');
+    expect(unresolvedScopeNote(result)).toContain('their types were not checked');
+  });
+
+  it('reports a deep import as its package, once', () => {
+    const deep = (n: number) =>
+      projectFrom(
+        'src/a.ts',
+        `import type { X } from 'openai/resources/chat';\nimport OpenAI from 'openai';\nexport const A = ${n};`,
+      );
+    expect(checkTypes(deep(1), deep(2)).unresolvedModules).toEqual(['openai']);
+
+    const scoped = (n: number) =>
+      projectFrom(
+        'src/a.ts',
+        `import { Anthropic } from '@anthropic-ai/sdk/client';\nexport const A = ${n};`,
+      );
+    expect(checkTypes(scoped(1), scoped(2)).unresolvedModules).toEqual(['@anthropic-ai/sdk']);
+  });
+
+  it('does not call a repo\u2019s own broken relative import a missing package', () => {
+    const relative = (n: number) =>
+      projectFrom('src/a.ts', `import { gone } from './gone.js';\nexport const A = ${n} + gone;`);
+    const result = checkTypes(relative(1), relative(2));
+
+    expect(result.unresolvedModules).toEqual([]);
+    expect(unresolvedScopeNote(result)).toBeUndefined();
+  });
+
+  it('says nothing when every package resolved', () => {
+    const clean = (n: number) => projectFrom('src/a.ts', `export const A = ${n};`);
+    const result = checkTypes(clean(1), clean(2));
+
+    expect(result.unresolvedModules).toEqual([]);
+    expect(unresolvedScopeNote(result)).toBeUndefined();
   });
 });
