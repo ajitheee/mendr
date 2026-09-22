@@ -23,6 +23,7 @@ import {
 import { redactSecrets } from '../audit/issueReport.js';
 import { RUNTIME_SOURCE_LABEL } from '../runtime/evidence.js';
 import type { LockedSdkReport } from '../usage/lockedSdks.js';
+import type { PythonReqReport } from '../usage/pinnedRequirements.js';
 
 export interface AuditMeta {
   /** Only set when a runtime window applies (a provider/export read). */
@@ -37,6 +38,11 @@ export interface AuditMeta {
    * issue or the conclusion. Absent = the row is not printed.
    */
   lockedSdks?: LockedSdkReport;
+  /**
+   * Python SDK pins in the root requirements*.txt (plane 2, slice 3). HUMAN REPORT ONLY, like
+   * lockedSdks. Absent = the root has no Python dependency file and no row is printed.
+   */
+  pythonSdks?: PythonReqReport;
 }
 
 /** How many informational references the default report lists in full. */
@@ -187,6 +193,78 @@ export function lockedSdkLines(
 }
 
 
+/**
+ * The npm row as the HUMAN report shows it beside a Python row: root requirements*.txt are
+ * read by the Python row there, so the npm row's "not read" list names only the nested ones.
+ * The job summary has no Python row and keeps the list exactly as it was.
+ */
+export function npmRowBesidePython(npm: LockedSdkReport, python: PythonReqReport | undefined): LockedSdkReport {
+  const all = npm.otherLockfiles['requirements*.txt'] ?? 0;
+  if (!python || python.failed || python.filesFound === 0 || all === 0) return npm;
+  const { 'requirements*.txt': _all, ...rest } = npm.otherLockfiles;
+  const nested = all - python.filesFound;
+  return { ...npm, otherLockfiles: nested > 0 ? { ...rest, 'requirements*.txt in subdirectories': nested } : rest };
+}
+
+/**
+ * The "Python SDKs" row (plane 2, slice 3): PyPI provider SDKs pinned with an exact `==` in
+ * the root requirements*.txt. HUMAN REPORT ONLY in this slice. A pin is "listed", never
+ * "declared", "installed" or "used"; a "none" wears a tick only when nothing at the root
+ * went unread, so a -r include or a pyproject.toml can never sit behind a clean-looking ✓.
+ */
+export function pythonSdkLines(
+  r: PythonReqReport,
+  row: (mark: string, label: string, detail: string) => string,
+): string[] {
+  const LABEL = 'Python SDKs';
+  const INFO = 'information only, never part of the conclusion';
+  const lines: string[] = [];
+  if (r.failed) {
+    lines.push(row('✗', LABEL, `the root requirements*.txt could not be read (the reader failed) — ${INFO}`));
+    return lines;
+  }
+  const filesRead = r.filesFound - r.filesNotRead;
+  const somethingUnread =
+    r.includes + r.editables + r.unreadableLines + r.filesNotRead > 0 || r.rootManifestsNotRead.length > 0;
+
+  if (r.filesFound === 0) {
+    lines.push(row('○', LABEL, 'not read — no requirements*.txt at the repository root'));
+  } else if (filesRead === 0) {
+    lines.push(row('✗', LABEL, `${int(r.filesFound)} root requirements*.txt file${r.filesFound === 1 ? '' : 's'} could not be read — ${INFO}`));
+  } else if (r.sdks.length === 0) {
+    lines.push(
+      somethingUnread
+        ? row('○', LABEL, `the root requirements*.txt list none of the ${r.checked} PyPI provider SDKs directly; part of the root was not read (below) — ${INFO}`)
+        : row('✓', LABEL, `the root requirements*.txt list none of the ${r.checked} PyPI provider SDKs — ${INFO}`),
+    );
+  } else {
+    const unresolved = r.sdks.filter((s) => s.resolution === null).length;
+    lines.push(
+      row(
+        '✓',
+        LABEL,
+        `${r.sdks.length} listed in the root requirements*.txt${unresolved > 0 ? `, ${unresolved} not resolved` : ''} — ${INFO}`,
+      ),
+    );
+    for (const s of r.sdks) {
+      const via = s.viaOthersOnly ? " — the file's own '# via' note names only other packages or constraint files" : '';
+      lines.push(`    · ${s.name}${s.version ? ` ${s.version}` : ''} (${s.file}) — ${s.reason}${via}`);
+    }
+  }
+
+  const notRead: string[] = [];
+  const count = (n: number, one: string, many: string): void => {
+    if (n > 0) notRead.push(`${int(n)} ${n === 1 ? one : many}`);
+  };
+  count(r.includes, '-r/-c include', '-r/-c includes');
+  count(r.editables, 'editable or local install', 'editable or local installs');
+  count(r.unreadableLines, 'line this build could not read', 'lines this build could not read');
+  count(r.filesNotRead, 'requirements*.txt file that could not be read', 'requirements*.txt files that could not be read');
+  notRead.push(...r.rootManifestsNotRead);
+  if (notRead.length > 0) lines.push(`    not read: ${notRead.join(', ')}`);
+  return lines;
+}
+
 /** A section this large is not written: GitHub caps a step summary at 1 MiB and errors past it. */
 export const JOB_SUMMARY_MAX_BYTES = 64 * 1024;
 
@@ -275,7 +353,8 @@ export function coverageReport(meta: AuditMeta): string[] {
           ? row('✗', 'Configuration', `${int(c.config.filesScanned)} files found but NONE could be read`)
           : row('✓', 'Configuration', `${int(cfgRead)} files scanned`),
   );
-  if (meta.lockedSdks) lines.push(...lockedSdkLines(meta.lockedSdks, row));
+  if (meta.lockedSdks) for (const l of lockedSdkLines(npmRowBesidePython(meta.lockedSdks, meta.pythonSdks), row)) lines.push(l);
+  if (meta.pythonSdks) for (const l of pythonSdkLines(meta.pythonSdks, row)) lines.push(l);
   // The registry row carries its FRESHNESS: silence is only evidence against
   // knowledge that is provably current, so a stale (or undated) registry wears
   // ✗ and the conclusion below is inconclusive. The reason and the fix appear

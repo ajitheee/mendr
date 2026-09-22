@@ -171,3 +171,41 @@ describe('the reusable audit workflow', () => {
     expect(runBlock).not.toMatch(/GITHUB_STEP_SUMMARY|MENDR_JOB_SUMMARY/);
   });
 });
+
+// ---------------------------------------------------------------------------------------
+// PLANE 2, SLICE 3 — the Python SDKs row (root requirements*.txt). Human report only: it
+// cannot move the conclusion or the exit code, and none of it reaches --json or the job summary.
+
+const PY_EXPOSED = 'from openai import OpenAI\nclient = OpenAI()\nclient.chat.completions.create(model="gpt-4", messages=[])\n';
+
+function pyFixture(requirements: string | null): string {
+  const dir = mkdtempSync(join(tmpdir(), 'mendr-pyreq-cli-'));
+  created.push(dir);
+  writeFileSync(join(dir, 'app.py'), PY_EXPOSED);
+  if (requirements !== null) writeFileSync(join(dir, 'requirements.txt'), requirements);
+  return dir;
+}
+
+describe('the Python SDKs row through the real CLI', () => {
+  it('shows a pinned SDK in the human report', async () => {
+    const r = await audit(pyFixture('openai==1.40.6\n'));
+    expect(r.stdout).toMatch(/Python SDKs:\s+1 listed in the root requirements\*\.txt/);
+    expect(r.stdout).toContain('openai 1.40.6 (requirements.txt)');
+  }, 180_000);
+
+  it('never changes the conclusion or the exit code', async () => {
+    for (const args of [[], ['--fail-on-exposure']]) {
+      const without = await audit(pyFixture(null), args);
+      const withPins = await audit(pyFixture('openai==1.40.6\n'), args);
+      expect(conclusion(withPins.stdout)).toBe(conclusion(without.stdout));
+      expect(withPins.exitCode).toBe(without.exitCode);
+    }
+  }, 180_000);
+
+  it('puts nothing about Python SDKs into --json or the job summary', async () => {
+    const file = summaryFile();
+    const r = await audit(pyFixture('openai==1.40.6\n'), ['--json'], { MENDR_JOB_SUMMARY: 'on', GITHUB_STEP_SUMMARY: file });
+    expect(JSON.stringify(JSON.parse(r.stdout))).not.toMatch(/Python SDKs|1\.40\.6/);
+    expect(readFileSync(file, 'utf8')).not.toMatch(/Python SDKs|1\.40\.6/);
+  }, 180_000);
+});

@@ -8,9 +8,10 @@ command reads, writes and sends, how the "no network" claim is enforced in code
 rather than in copy, what the threat model is, which permissions each surface
 needs, and where the known gaps are.
 
-Status: current for `v0.5.3-alpha` and `main`. The job-summary *Provider SDKs*
-section (section 2, `MENDR_JOB_SUMMARY`) exists on `main` only: `v0.5.3-alpha`
-does not write it. Anything marked *planned* does not
+Status: current for `v0.5.3-alpha` and `main`. The *Provider SDKs* row (in the
+human report, and in the job summary through `MENDR_JOB_SUMMARY`, section 2) and
+the *Python SDKs* row (root `requirements*.txt`) exist on `main` only:
+`v0.5.3-alpha` has none of them. Anything marked *planned* does not
 exist yet and is listed so the boundary is stated before it is built.
 
 ---
@@ -33,7 +34,7 @@ exist yet and is listed so the boundary is stated before it is built.
 | Command | Reads | Writes | Network |
 |---|---|---|---|
 | App-generated audit workflow (`.github/workflows/mendr-audit.yml` → `reusable-audit.yml`) | Your repository at the checked-out SHA, inside your GitHub Actions runner, on every push, pull request, the daily schedule and manual dispatch. | Nothing in your repository. From the first release after `v0.5.3-alpha`, one information-only *Provider SDKs* section in the run's job summary (see `mendr audit [path] --json` with `MENDR_JOB_SUMMARY=on` below). | The pinned Mendr release from GitHub (`npx`), **one signed GET of the public registry files** (nothing of yours sent; a stale or unsigned registry makes the run inconclusive, never clean), and **one POST of the audit JSON to your Mendr App**, proven by the run's OIDC token. Permissions: `contents: read` + `id-token: write` only. |
-| `mendr audit [path]` | Source files under `path` (TS/TSX/JS/Python, config formats, `.gitignore`), the bundled registry, `git rev-parse HEAD` via the local git binary, and for the *Provider SDKs* row the root `package-lock.json` (other lockfiles are only named, never opened) and the bundled SDK release record. | stdout/stderr only. | **None.** |
+| `mendr audit [path]` | Source files under `path` (TS/TSX/JS/Python, config formats, `.gitignore`), the bundled registry, `git rev-parse HEAD` via the local git binary. On `main` (not `v0.5.3-alpha`), also: for the *Provider SDKs* row the root `package-lock.json` and the bundled SDK release record, and for the *Python SDKs* row the root `requirements*.txt` files, of which it prints only the provider SDK's name, an exact `==` version, the file name and fixed reasons (`-r`/`-c` includes, editable installs and the other Python manifests are only named). Every other lockfile is only named, never opened. | stdout/stderr only. | **None.** |
 | `mendr audit [path] --refresh-registry` (or `MENDR_REGISTRY_REFRESH=on`, which the generated workflows set) | Same, plus the latest registry snapshot. | Same. | **One outbound HTTPS GET of three public files** — `manifest.json`, `manifest.sig`, `llm-deprecations.json` — from `github.com/ajitheee/mendr/releases/download/registry-latest/` (or `MENDR_REGISTRY_URL`). It sends nothing: no body, no header of yours, nothing about the repository. The snapshot is used only if its Ed25519 signature verifies against a key built into the release, its sha256 matches, and it is not older than the bundled copy; otherwise the bundled registry is used and the reason is disclosed. `--offline` wins. See [REGISTRY-FRESHNESS.md](REGISTRY-FRESHNESS.md). |
 | `mendr audit [path] --json` | Same. Adds a ±3-line, 160-character snippet around each reported line and a 16-hex-character SHA-256 prefix of the reported line. | stdout only. | **None.** |
 | `mendr audit [path] --json` with `MENDR_JOB_SUMMARY=on` (the reusable audit workflow sets it) | Same, plus the root `package-lock.json` and the bundled SDK release record. | stdout; after the JSON is complete, appends one Markdown section to the file named by `GITHUB_STEP_SUMMARY`: each provider SDK the root project declares, its locked version, how it resolves against the bundled SDK release record, and the names of lockfiles not read. Never a dependency spec, `resolved` URL or integrity hash; secret-redacted (section 6); nothing is added to the JSON. | **None.** GitHub's runner shows the job summary on your own run's summary page: anyone who can read the run can read it (on a public repository, anyone), and it stays with the run until the run is deleted. |

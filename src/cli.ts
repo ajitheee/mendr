@@ -3777,7 +3777,16 @@ program
         lockedSdks = { state: 'failed', checked: 0, sdks: [], localPackagesNotRead: 0, otherLockfiles: {}, note: 'the repository walk failed' };
       }
 
-      const meta: AuditMeta = { from, to, coverage, verbose: !!opts.verbose, lockedSdks };
+      // Plane 2, slice 3: exact Python SDK pins in the root requirements*.txt. Human report only.
+      const { readPinnedRequirements } = await import('./usage/pinnedRequirements.js');
+      let pythonSdks: import('./usage/pinnedRequirements.js').PythonReqReport | undefined;
+      try {
+        pythonSdks = readPinnedRequirements(resolved, sdkReleases, now);
+      } catch {
+        pythonSdks = { checked: 0, filesFound: 0, filesNotRead: 0, sdks: [], includes: 0, editables: 0, unreadableLines: 0, rootManifestsNotRead: [], failed: true };
+      }
+
+      const meta: AuditMeta = { from, to, coverage, verbose: !!opts.verbose, lockedSdks, pythonSdks };
       const rendered = renderAuditReport(investigations, meta);
       for (const line of shouldUsePlain(opts.plain) ? toPlainLines(rendered) : rendered) console.log(line);
       // Printed after the findings, never instead of them: a suppression the reader cannot see
