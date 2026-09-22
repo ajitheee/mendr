@@ -161,7 +161,13 @@ export function readLockedSdks(repoPath: string, releases: SdkReleases | null, n
 
   let lock: { lockfileVersion?: unknown; packages?: unknown };
   try {
-    lock = JSON.parse(readFileSync(lockPath, 'utf8'));
+    // Strip a leading BOM before parsing. RFC 8259 forbids EMITTING one but
+    // allows a parser to ignore it, and `JSON.parse` does not — so a lockfile
+    // written by Windows PowerShell 5.1 (`Set-Content -Encoding utf8` always
+    // adds one) was reported to its owner as "not valid JSON" when it is
+    // perfectly valid. Found while scripting a demo on Windows; the same file
+    // reads fine for npm.
+    lock = JSON.parse(readFileSync(lockPath, 'utf8').replace(/^﻿/, ''));
   } catch {
     return { state: 'failed', ...empty, note: 'not valid JSON' };
   }

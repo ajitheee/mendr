@@ -373,3 +373,26 @@ describe('a bounded version', () => {
     expect(Date.now() - started).toBeLessThan(2_000);
   });
 });
+
+// A BOM is legal in a JSON document — RFC 8259 forbids emitting one but lets a
+// parser ignore it — and `JSON.parse` does not. Windows PowerShell 5.1 adds one
+// to every file it writes, so a lockfile npm reads happily was reported to its
+// own owner as "not valid JSON". Found while scripting a demo on Windows.
+describe('a byte-order mark does not make a lockfile unreadable', () => {
+  it('reads a package-lock.json written with a UTF-8 BOM', () => {
+    const body = JSON.stringify(lock({ openai: '^4.104.0' }, { openai: { version: '4.104.0' } }), null, 2);
+    const dir = repo({ 'package-lock.json': `\uFEFF${body}` });
+
+    const r = readLockedSdks(dir, RELEASES, NOW);
+    expect(r.state).not.toBe('failed');
+    expect(r.sdks.map((s) => s.name)).toContain('openai');
+  });
+
+  it('still refuses a lockfile that is genuinely not JSON', () => {
+    const dir = repo({ 'package-lock.json': '\uFEFFthis is not json' });
+
+    const r = readLockedSdks(dir, RELEASES, NOW);
+    expect(r.state).toBe('failed');
+    expect(r.note).toBe('not valid JSON');
+  });
+});

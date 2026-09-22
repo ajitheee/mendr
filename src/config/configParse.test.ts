@@ -171,3 +171,23 @@ describe('an empty file is not malformed configuration', () => {
     expect(configParseIssue('a.json', '{')).toBe('malformed_json');
   });
 });
+
+// Windows PowerShell 5.1 writes a UTF-8 BOM into every file it creates, and
+// `JSON.parse` rejects a BOM that RFC 8259 explicitly allows a parser to
+// ignore. So a valid config written on Windows was classified malformed — and
+// the fail-closed rule then turns a CLEAN repository `inconclusive`, which is
+// the same failure shape as the zero-byte-output bug, reached through a
+// different door and only on Windows.
+describe('configParseIssue — a byte-order mark is not malformed content', () => {
+  it('accepts valid JSON that begins with a BOM', () => {
+    expect(configParseIssue('a.json', '\uFEFF{ "model": "gpt-4" }')).toBeNull();
+  });
+
+  it('accepts a BOM in front of JSON with comments', () => {
+    expect(configParseIssue('tsconfig.json', '\uFEFF{\n // comment\n "compilerOptions": {},\n}')).toBeNull();
+  });
+
+  it('still fails closed on malformed JSON that happens to carry a BOM', () => {
+    expect(configParseIssue('a.json', '\uFEFF{ "model": "gpt-4", ')).toBe('malformed_json');
+  });
+});

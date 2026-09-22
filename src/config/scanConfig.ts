@@ -804,7 +804,11 @@ export function configParseIssue(file: string, text: string): 'malformed_json' |
   if (text.trim() === '') return null;
   if (/\.json5?$/i.test(file)) {
     try {
-      JSON.parse(stripJsonComments(text));
+      // A leading BOM is legal in a JSON document (RFC 8259 forbids emitting
+      // one but allows a parser to ignore it) and `JSON.parse` rejects it. The
+      // read site strips it too; this function is exported and judged on its
+      // own, so it must not call a valid document malformed either.
+      JSON.parse(stripJsonComments(text.replace(/^﻿/, '')));
     } catch {
       return 'malformed_json';
     }
@@ -857,7 +861,13 @@ export function scanConfigFiles(repoPath: string, registry: LlmRegistry): {
   for (const file of files) {
     let text: string;
     try {
-      text = readFileSync(file, 'utf8');
+      // Strip a leading BOM. `JSON.parse` rejects one, so a perfectly valid
+      // config written on Windows (PowerShell 5.1 adds a BOM to every file it
+      // writes) was classified `malformed_json` — and the fail-closed rule
+      // then turns a CLEAN repository `inconclusive`. Same shape as the
+      // zero-byte-output bug above, through a different door, and it strikes
+      // Windows users only. The Python readers already strip it.
+      text = readFileSync(file, 'utf8').replace(/^﻿/, '');
       filesRead++;
     } catch {
       filesUnreadable++;
