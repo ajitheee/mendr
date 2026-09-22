@@ -30,8 +30,8 @@ commit SHA rather than a tag, because a tag can be moved and a moved tag is indi
 the original.
 
 ```yaml
-uses: ajitheee/mendr/.github/workflows/reusable-audit.yml@ff86f14e18165a984d5e5297b68504190d09f93f
-uses: ajitheee/mendr/.github/workflows/reusable-migrate.yml@ff86f14e18165a984d5e5297b68504190d09f93f
+uses: ajitheee/mendr/.github/workflows/reusable-audit.yml@8b21bc5226806c0887f26decf35ab04946a23c84
+uses: ajitheee/mendr/.github/workflows/reusable-migrate.yml@8b21bc5226806c0887f26decf35ab04946a23c84
 ```
 
 Set the repository variable `MENDR_SPEC` to the same SHA so the CLI it fetches is pinned too.
@@ -56,6 +56,10 @@ Full provenance — artifact hash, registry hash and signature, validator result
   is actually worth.
 - One of four conclusions. **A general "clean" is not one of them.** If a file could not be parsed
   or opened, the run is `inconclusive`, not clean.
+- A **provider SDKs** section in the run's job summary (new in v0.5.4-alpha): which provider SDK
+  your root project declares, the version your root lockfile pins for it, and whether newer major
+  lines exist. Information only — it never changes the conclusion or the exit code, and none of it
+  is sent to Mendr. If a lockfile cannot be read in full it says so rather than saying "none".
 - Probably a **report rather than a patch**. See the first limitation below.
 
 ---
