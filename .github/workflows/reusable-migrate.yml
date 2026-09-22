@@ -60,9 +60,9 @@ jobs:
       # path is therefore governed by that tag, which the repository owner can move. The
       # real fix is to rewrite both refs to the release's own commit SHA at release time
       # (the test already accepts a 40-character ref). See RC-2026-09-16.md, limitation 9.
-      - uses: ajitheee/mendr/mendr-action@v0.5.3-alpha
+      - uses: ajitheee/mendr/mendr-action@v0.5.4-alpha
         with:
-          mendr-spec: github:ajitheee/mendr#v0.5.3-alpha
+          mendr-spec: github:ajitheee/mendr#v0.5.4-alpha
           app-url: ${{ inputs.app-url }}
           approval-gated: 'true'
           approval: ${{ inputs.approval }}

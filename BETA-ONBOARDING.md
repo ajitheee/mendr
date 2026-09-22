@@ -39,7 +39,7 @@ changing anything.
   monitoring is active or quiet.
 - **Run page:** each finding as six parts — possible cause, evidence linked into
   the code, confidence boundary, migration evidence, next action, ownership.
-- **Provider SDKs** (from the first release after `v0.5.3-alpha`): the Actions run's
+- **Provider SDKs** (from `v0.5.4-alpha`): the Actions run's
   job summary lists the provider SDKs your root project declares, the version your
   root `package-lock.json` locks for each, and whether the SDK release record bundled
   with that Mendr release has seen newer major versions. Information only: it never

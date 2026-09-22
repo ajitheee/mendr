@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.5.4-alpha — 2026-09-22
+
+- **Mendr now names the SDK you are pinned to, not only the model id.** The human
+  report gains a *Provider SDKs* row (root `package-lock.json`) and a *Python SDKs*
+  row (root `requirements*.txt` and root `uv.lock`): which provider SDK the root
+  project declares, the exact version locked for it, and whether newer major lines
+  exist in the dated SDK release record bundled with this release. Information only —
+  never in `--json`, the GitHub issue, the POST to your App, the conclusion or the
+  exit code. Every other lockfile in the tree is named, never opened.
+- **The rows fail closed.** A file the reader cannot fully understand is reported as
+  NOT READ, never as "none" — one missed line would otherwise become a confident "no
+  provider SDK in this repository". Only a registry-sourced copy of an SDK the root
+  project declares is resolved (git, tarball, directory, URL and editable installs are
+  named and skipped), an SDK locked but not declared is counted apart ("another package
+  asked for them"), and only a name, a version, a file name and fixed reasons are
+  printed — a version that does not round-trip back to its SDK is dropped, not shown.
+- **The npm section also appears in the Actions job summary**, switched on by
+  `MENDR_JOB_SUMMARY: 'on'` in the reusable workflow. It stays inside your CI: nothing
+  about your SDKs is added to the JSON, the issue or the POST. An environment variable
+  rather than a flag, so an older pinned CLI ignores it instead of failing the run; it
+  is written after the JSON report, and a failure costs the section and nothing else.
+- **Registry: 161 entries, up from 158** (`sha256:e5f920c0fe57840f`). Three models
+  retiring Sep 30 – Oct 2 were added review-only: one unverified (no catalog lists the
+  replacement yet), one QUARANTINED (`gpt-5.4-cyber` → `gpt-5.6-cyber` needs separate
+  approval and provisioning, so an automatic edit could break an unprovisioned caller —
+  quarantine survives a later `verify-registry --write`), and one unverifiable, whose
+  stored replacement was corrected because the source table pointed at a model shut down
+  in June. 51 further discovered candidates await review in `registries/candidates.json`.
+- **Bundled stamp regenerated** (`2026-09-22T03:28:07Z`) — unlike 0.5.3-alpha, the
+  bundled registry genuinely changed, and `registry-publish` runs on the tag so a signed
+  snapshot at least that new exists within minutes.
+- Maintainer-side: the provider model catalog (152 models) and SDK release record (8
+  packages) are collected, published and signed with the snapshot, `mendr resolve` walks
+  a retiring id to a live successor, and `scripts/check-pins.mjs` fails CI if any SHA a
+  customer pastes is not the verified pin. Nothing verifies the SDK record's signature
+  on read yet; that gap is stated in TRUST.md.
+
 ## 0.5.3-alpha — 2026-09-17
 
 - **A clean repository no longer reads as `inconclusive`.** The generated audit
