@@ -335,3 +335,39 @@ describe('renderAuditReport — matches the intended per-model report shape', ()
     expect(out).toContain('every config change stays under human review');
   });
 });
+
+// The count line sits directly under the conclusion and is the first thing a
+// reader parses after it — and the SINGLE-finding case is the common one, since
+// most exposed repositories are exposed once. It read "1 deprecated model ids:
+// ... 1 need human review", which is the first sentence of the product a demo
+// puts on screen.
+describe('renderAuditReport — the count line reads correctly at one finding', () => {
+  const meta: AuditMeta = { from: null, to: null, coverage: fullCoverage() };
+  const oneFinding = foldConfigExposure(
+    scanConfigText('config/app.yaml', 'llm:\n  model: gpt-4\n', REGISTRY),
+  );
+
+  it('says "1 deprecated model id" and "1 needs human review"', () => {
+    const out = renderAuditReport(buildInvestigations(NO_RUNTIME_EVIDENCE, oneFinding, NOW), meta).join('\n');
+
+    expect(out).toContain('1 deprecated model id:');
+    expect(out).not.toContain('1 deprecated model ids');
+    expect(out).toMatch(/1 needs? human review/);
+    expect(out).not.toContain('1 need human review');
+  });
+
+  it('still pluralises at two findings', () => {
+    // Two SEPARATE files. Two ids inside one file read as a catalog, which is
+    // a data role rather than a selector — correctly so, and not what is under
+    // test here.
+    const twoFindings = foldConfigExposure([
+      ...scanConfigText('config/app.yaml', 'llm:\n  model: gpt-4\n', REGISTRY),
+      ...scanConfigText('config/worker.yaml', 'llm:\n  model: gpt-3.5-turbo\n', REGISTRY),
+    ]);
+    const out = renderAuditReport(buildInvestigations(NO_RUNTIME_EVIDENCE, twoFindings, NOW), meta).join('\n');
+
+    expect(out).toContain('2 deprecated model ids:');
+    expect(out).toContain('need human review');
+    expect(out).not.toContain('needs human review');
+  });
+});

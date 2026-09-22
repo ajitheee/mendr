@@ -634,8 +634,16 @@ export function renderAuditReport(investigations: readonly ModelInvestigation[],
   lines.push('');
   for (const line of plainSummary(investigations, meta.coverage)) lines.push(line);
   lines.push('');
+  // The single-finding case is the COMMON one — most repositories that are
+  // exposed at all are exposed once — and it is the first line a reader sees
+  // after the conclusion, so it reads as written: "1 deprecated model ids ...
+  // 1 need human review".
+  const reviewCount = count('review');
   lines.push(
-    `${investigations.length} deprecated model ids: ${count('patch')} patch-eligible (no change applied), ${count('review')} need human review, ${count('monitor')} informational`,
+    `${investigations.length} deprecated model id${investigations.length === 1 ? '' : 's'}: ` +
+      `${count('patch')} patch-eligible (no change applied), ` +
+      `${reviewCount} need${reviewCount === 1 ? 's' : ''} human review, ` +
+      `${count('monitor')} informational`,
   );
 
   // Every exposure in full. Informational references are NOT dependencies and
