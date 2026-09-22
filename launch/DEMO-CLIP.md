@@ -102,7 +102,52 @@ honest half of the product and the half worth filming.
   name in the path — the prompt will be on screen the whole time.
 - `cd ~\demo\support-bot` **before** you record, so the first frame is a clean prompt.
 
-### 3. Warm the cache — this is the step people skip
+### 3. What to record with
+
+**Xbox Game Bar**, which is already installed. `Win` + `G` opens it, `Win` + `Alt` + `R` starts and
+stops recording, and the file lands in `~VideosCaptures` as MP4. It records **the focused
+window only**, which is what you want: no desktop, no taskbar, no second monitor, nothing to crop.
+
+Two settings to check once, in Game Bar → Settings → Capturing:
+
+- **Microphone off.** It defaults to off, but a hot mic on a silent screencast is the most common
+  way a take is wasted.
+- **60fps** if it is offered. Text scrolling at 30fps smears; at 60 it stays readable.
+
+Then turn on **Do Not Disturb** (`Win` + `N` → toggle). A Teams popup across the conclusion line
+means re-recording the whole thing.
+
+If you want more control later, ShareX or OBS both do region capture and better encoding. Neither
+is worth installing for a 45-second clip.
+
+### 4. Window size, and why it decides your aspect ratio
+
+The terminal window IS the video frame, so its shape is the clip’s shape. At 120 columns:
+
+| rows | roughly | fits the whole report? | good for |
+|---|---|---|---|
+| 36 | 3:2 landscape | no — scroll (Option B) | X, LinkedIn, anywhere |
+| 45 | 7:6, nearly square | no — scroll (Option B) | square social posts |
+| 60 | portrait | yes — no scrolling (Option A) | a doc or a wide monitor, not social |
+
+**Use 120 × 36 unless you have a reason not to.** It is landscape, the font can stay large, and
+the scroll in Option B is three keypresses. A 60-row window fits everything at once but produces a
+portrait video that needs letterboxing before anyone can post it.
+
+Set it in Windows Terminal → Settings → Startup → Launch size, or in `settings.json`:
+
+```json
+"initialCols": 120,
+"initialRows": 36
+```
+
+Confirm it took, in the terminal you are about to record:
+
+```powershell
+$Host.UI.RawUI.WindowSize
+```
+
+### 5. Warm the cache — this is the step people skip
 
 The first `npx` of a git ref downloads and builds: about a minute, with install noise. The second
 is 7 seconds and silent. Run it once, then clear:
@@ -145,14 +190,15 @@ phone).** Same start; after the report prints, the screen sits at the bottom.
 |---|---|
 | 0:00–0:11 | type, Enter, seven-second wait |
 | 0:11–0:14 | report prints; screen is at the bottom of it |
-| 0:14–0:17 | scroll to the **top** in one motion (Ctrl+Home in Windows Terminal) |
+| 0:14–0:17 | jump to the **top**: **Ctrl+Shift+Home** (plain Ctrl+Home does nothing here) |
 | 0:17–0:26 | hold: `mendr audit (preview)` and the coverage block (beats 1, 2) |
-| 0:26–0:34 | scroll down **slowly**, one notch at a time, to `Conclusion: EXPOSURE DETECTED`; hold (beats 3, 5, 6) |
-| 0:34–0:44 | continue slowly to `Decision: REVIEW REQUIRED`; hold (beat 4) |
+| 0:26–0:34 | scroll down with **Ctrl+Shift+Down** — one line per press, no mouse — to `Conclusion: EXPOSURE DETECTED`; hold (beats 3, 5, 6) |
+| 0:34–0:44 | keep pressing Ctrl+Shift+Down to `Decision: REVIEW REQUIRED`; hold (beat 4) |
 | 0:44–0:45 | stop on a still frame |
 
-Scroll in single notches with a pause between. Continuous scrolling turns into unreadable smear
-at 30fps and cannot be fixed in the edit.
+Keyboard scrolling beats the mouse wheel here: one line per press, evenly paced, with a beat of
+stillness between presses. A wheel spin turns into unreadable smear at 30fps and cannot be fixed
+in the edit.
 
 ## Before you send it to me — check the take
 
