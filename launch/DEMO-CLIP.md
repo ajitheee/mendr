@@ -100,7 +100,12 @@ honest half of the product and the half worth filming.
 - **Width 120 columns.** Narrower wraps the `Reason:` line into a paragraph.
 - Dark theme, font 16–18pt. Turn off notifications and hide anything with your name or a client's
   name in the path — the prompt will be on screen the whole time.
-- `cd ~\demo\support-bot` **before** you record, so the first frame is a clean prompt.
+- **PowerShell, not cmd.** The setup block below is PowerShell syntax, and `~` is a PowerShell
+  convenience — cmd answers `The system cannot find the path specified.` If your prompt reads
+  `C:\Users\you>` you are in cmd, and the report will render `[x]` instead of `✓` as well.
+  Windows Terminal opens PowerShell by default.
+- `cd $HOME\demo\support-bot` **before** you record, so the first frame is a clean prompt. The
+  cmd spelling is `cd %USERPROFILE%\demo\support-bot`.
 
 ### 3. What to record with
 
