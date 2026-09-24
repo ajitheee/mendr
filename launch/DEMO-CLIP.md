@@ -159,7 +159,7 @@ The first `npx` of a git ref downloads and builds: about a minute, with install 
 is 7 seconds and silent. Run it once, then clear:
 
 ```powershell
-npx github:ajitheee/mendr#v0.5.5-alpha audit .
+npx github:ajitheee/mendr#v0.5.6-alpha audit .
 clear
 ```
 
@@ -171,7 +171,7 @@ a stale registry changes the conclusion, and the clip would be showing a differe
 Type this, exactly — it is the command from the README, so anyone who pauses the video can run it:
 
 ```
-npx github:ajitheee/mendr#v0.5.5-alpha audit .
+npx github:ajitheee/mendr#v0.5.6-alpha audit .
 ```
 
 The report is 57 rows at 120 columns and all six beats land in the first 40, so pick by how tall
@@ -284,7 +284,7 @@ The day count on the `Retirement:` line moves with the calendar — `31d left` o
 ## Two things to know before this goes anywhere public
 
 **The command in the clip only works because the package is not on npm yet.** `npx
-github:ajitheee/mendr#v0.5.5-alpha` is the real install path today and it works for anyone
+github:ajitheee/mendr#v0.5.6-alpha` is the real install path today and it works for anyone
 watching. `npx mendr audit .` would be shorter and better, and it will be a lie until
 `npm publish` runs. Do not film the shorter one first.
 

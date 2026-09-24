@@ -17,14 +17,14 @@ version (and no stale npx cache).
 Run this in any repo you want to check:
 
 ```bash
-npx github:ajitheee/mendr#v0.5.5-alpha watch .
+npx github:ajitheee/mendr#v0.5.6-alpha watch .
 ```
 
 You can also point it straight at a GitHub URL, which scans a read-only copy so
 you do not have to clone it yourself:
 
 ```bash
-npx github:ajitheee/mendr#v0.5.5-alpha watch https://github.com/you/your-repo
+npx github:ajitheee/mendr#v0.5.6-alpha watch https://github.com/you/your-repo
 ```
 
 It groups what it finds, highest risk first: models needing a look (Tier A or B)
@@ -39,7 +39,7 @@ repo. It runs in your own CI. There is no server, and none of your code leaves
 your repo.
 
 ```bash
-npx github:ajitheee/mendr#v0.5.5-alpha watch --install
+npx github:ajitheee/mendr#v0.5.6-alpha watch --install
 ```
 
 Then commit and push the workflow file. It is pinned to the Mendr release
