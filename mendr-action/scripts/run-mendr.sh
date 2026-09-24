@@ -117,6 +117,29 @@ REPORT_STATUS=$?
 npx --yes "$MENDR_SPEC" migrate . --write --json --pr-body "$PRBODY" "${ONLY_ARGS[@]}" ${MENDR_EVAL:+--eval-command "$MENDR_EVAL"} >"$ARTIFACT" 2>/dev/null
 WRITE_STATUS=$?
 set -e
+
+# SANITIZE BEFORE ANY PUBLICATION, AND FAIL CLOSED.
+#
+# $REPORT is published three ways below — the Actions log, the job summary, and
+# the body of a PUBLIC pull request — and the capture above used 2>&1, so it
+# holds whatever the process wrote to stderr: node's own stack traces and any
+# thrown Error, neither of which passes through mendr's report renderer. The
+# renderer sanitizes what it renders; this covers what it never saw.
+#
+# If the filter cannot run, the report is WITHHELD rather than published raw.
+# Keeping it would fail open on a security control to preserve a convenience,
+# which is the trade this product refuses everywhere else: an unreadable report
+# costs a reviewer one click into the job log, while an unsanitized one is
+# published to a public pull request and cannot be recalled. The migration
+# itself is unaffected — only this text is withheld.
+if npx --yes "$MENDR_SPEC" redact "$REPORT" >"$REPORT.clean" 2>/dev/null && [ -s "$REPORT.clean" ]; then
+  mv "$REPORT.clean" "$REPORT"
+else
+  rm -f "$REPORT.clean"
+  echo "::warning::Mendr: the report could not be sanitized, so it was withheld rather than published. The migration and its gates are unaffected; re-run with a mendr build that provides \`mendr redact\`."
+  printf 'Mendr withheld this report.\n\nIt could not be passed through the output sanitizer, and this text is published to a public pull request, so it is withheld rather than published unchecked. The migration and its verification are unaffected — see the machine-readable artifact for the result.\n' >"$REPORT"
+fi
+
 cat "$REPORT"
 
 {

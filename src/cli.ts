@@ -176,6 +176,7 @@ import {
 } from './suppress/suppress.js';
 import { fingerprint as fingerprintOf, identityOf, normalizePath } from './audit/fingerprint.js';
 import { EMPTY_STATE, parseAuditState, redactSecrets, renderAuditIssue } from './audit/issueReport.js';
+import { sanitize, secretValuesFromEnv } from './redact/sanitize.js';
 import { installOfflineGuard } from './net/offlineGuard.js';
 import { installAuditWorkflow } from './audit/installAuditWorkflow.js';
 import { unanalyzedCensus } from './audit/languages.js';
@@ -1215,7 +1216,17 @@ program
     if (evalCommand && !opts.skipGates && codeGatesPassed && anyTierA) {
       // Progress goes to STDERR (an eval can take minutes, and with --json
       // stdout must carry only the document).
-      console.error(`Running your evaluation against the patched code: ${evalCommand}`);
+      //
+      // SANITIZED, because this line is PUBLISHED. mendr-action captures this
+      // process's stderr into its report file (`migrate … >"$REPORT" 2>&1`) and
+      // then cats that file into the Actions log, the job summary and the body
+      // of a public pull request. An eval command is a command line, and a
+      // command line is where a key gets inlined:
+      //   eval-command: "OPENAI_API_KEY=sk-… npm run evals"
+      // printed that key to three public surfaces.
+      console.error(
+        `Running your evaluation against the patched code: ${sanitize(evalCommand, secretValuesFromEnv(process.env))}`,
+      );
       evalResult = await runRepoEval(
         resolved,
         [...tsPatchedFiles, ...pyResult.patchedFiles],
@@ -3949,5 +3960,32 @@ program
       if (!opts.write && result.verification.verdict === 'failed') process.exit(1);
     },
   );
+
+program
+  .command('redact')
+  .argument('[file]', 'file to sanitize; reads stdin when omitted')
+  .description('Sanitize text bound for a public surface (removes credential-shaped values)')
+  .action(async (file?: string) => {
+    // THE BELT, for output this process did not render.
+    //
+    // mendr-action captures the migrate run with `2>&1`, so a thrown Error and
+    // its stack trace land in the same file that is published to the Actions
+    // log, the job summary and a public pull-request body. Those never pass
+    // through renderMigrationReport, so sanitizing at the render boundary
+    // cannot reach them — the action pipes the whole file through this instead.
+    //
+    // Reads a file or stdin so it composes either way, and writes to stdout so
+    // the caller decides where it lands.
+    const text = file
+      ? readFileSync(file, 'utf8')
+      : await new Promise<string>((resolve, reject) => {
+          let buf = '';
+          process.stdin.setEncoding('utf8');
+          process.stdin.on('data', (chunk) => (buf += chunk));
+          process.stdin.on('end', () => resolve(buf));
+          process.stdin.on('error', reject);
+        });
+    process.stdout.write(sanitize(text, secretValuesFromEnv(process.env)));
+  });
 
 program.parse();
