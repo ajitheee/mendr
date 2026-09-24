@@ -1,7 +1,8 @@
 # Demo clip — recording script
 
 A 30–45 second raw take of one `mendr audit` run, showing six things. Every line quoted below is
-real output from the shipped `v0.5.4-alpha` build, captured on 2026-09-22 — not a mock-up. If your
+real output from the shipped build — captured 2026-09-22, re-checked for `v0.5.5-alpha`. Not a
+mock-up. If your
 screen says something different, the take is wrong and the checklist at the bottom will catch it.
 
 The run itself takes **7 seconds** warm. Everything else is reading time, so the clip is paced by
@@ -110,7 +111,7 @@ honest half of the product and the half worth filming.
 ### 3. What to record with
 
 **Xbox Game Bar**, which is already installed. `Win` + `G` opens it, `Win` + `Alt` + `R` starts and
-stops recording, and the file lands in `~VideosCaptures` as MP4. It records **the focused
+stops recording, and the file lands in `~\Videos\Captures` as MP4. It records **the focused
 window only**, which is what you want: no desktop, no taskbar, no second monitor, nothing to crop.
 
 Two settings to check once, in Game Bar → Settings → Capturing:
@@ -158,7 +159,7 @@ The first `npx` of a git ref downloads and builds: about a minute, with install 
 is 7 seconds and silent. Run it once, then clear:
 
 ```powershell
-npx github:ajitheee/mendr#v0.5.4-alpha audit .
+npx github:ajitheee/mendr#v0.5.5-alpha audit .
 clear
 ```
 
@@ -170,7 +171,7 @@ a stale registry changes the conclusion, and the clip would be showing a differe
 Type this, exactly — it is the command from the README, so anyone who pauses the video can run it:
 
 ```
-npx github:ajitheee/mendr#v0.5.4-alpha audit .
+npx github:ajitheee/mendr#v0.5.5-alpha audit .
 ```
 
 The report is 57 rows at 120 columns and all six beats land in the first 40, so pick by how tall
@@ -252,7 +253,7 @@ One is a code default or call that could not be traced to a provider request —
 Production usage was not measured.
 No changes were applied.
 
-1 deprecated model ids: 0 patch-eligible (no change applied), 1 need human review, 0 informational
+1 deprecated model id: 0 patch-eligible (no change applied), 1 needs human review, 0 informational
 
 Deprecated model dependency located
 
@@ -271,7 +272,11 @@ proven) and a config selector candidate (reader tie-back not proven). Production
 Human review required before any change.
 ```
 
-**One line reads wrong on the published tag, and it is the line under the conclusion.** `v0.5.4-alpha` prints `1 deprecated model ids: ... 1 need human review` — singular count, plural noun. It is fixed on `main` (`1 deprecated model id: ... 1 needs human review`) but a tag is immutable, so it will be on camera unless you record after the next release. Your call: it is a small blemish on an otherwise clean report, and the six beats are unaffected.
+**Fixed since the first take.** `v0.5.4-alpha` printed `1 deprecated model ids: ... 1 need human
+review` — singular count, plural noun — and it sat directly under the conclusion, which is the
+worst place in the report for a blemish. `v0.5.5-alpha` prints `1 deprecated model id: ... 1 needs
+human review`. A take recorded against v0.5.4-alpha still carries the old line; a tag is immutable,
+so re-record if you want it clean.
 
 The day count on the `Retirement:` line moves with the calendar — `31d left` on 2026-09-22, `0d` on
 2026-10-23. Everything else is stable.
@@ -279,7 +284,7 @@ The day count on the `Retirement:` line moves with the calendar — `31d left` o
 ## Two things to know before this goes anywhere public
 
 **The command in the clip only works because the package is not on npm yet.** `npx
-github:ajitheee/mendr#v0.5.4-alpha` is the real install path today and it works for anyone
+github:ajitheee/mendr#v0.5.5-alpha` is the real install path today and it works for anyone
 watching. `npx mendr audit .` would be shorter and better, and it will be a lie until
 `npm publish` runs. Do not film the shorter one first.
 

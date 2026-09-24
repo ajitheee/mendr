@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.5.5-alpha — 2026-09-23
+
+Three fixes, all found by USING the shipped build rather than by testing it — one while hunting a
+pull request worth opening, two while filming a demo on Windows. No new features; the registry is
+unchanged.
+
+- **Mendr reported a gate failure for a gate that never ran.** The gated pass re-loads a repository
+  through its own tsconfig, and a monorepo root config routinely compiles one package of several
+  (`getmaxun/maxun` declares `include: ["src"]` while its retiring id lives in `server/`). The gated
+  project held no such file, the codemod changed nothing, and the summary announced
+  `1 downgraded -- gates failed`. That was the ONLY confirmed auto-fixable finding across 40 scanned
+  repositories, reported to its own operator as a rejection. Fixed on both sides: located files are
+  unioned into both gated loads (sound because the type-check is baseline-relative), and
+  `downgraded` stopped being a blind residual — it now splits into `not gated` (the file could not
+  be loaded, so no gate ran) and `not applied -- the codemod produced no change` (an unattributable
+  remainder, mendr's defect to chase rather than the customer's diff to debug). **"Gates failed" now
+  requires a gate to have actually blocked.**
+- **The type-check gate said "passed" when it could not see the SDK.** `fix-llm <url>`
+  shallow-clones without installing, so the package whose types would reject a bad model id is
+  unresolved and the argument it guards is `any` — the check passed because nothing could fail it
+  (69 unresolved packages on `swan-io/swan-partner-frontend`, behind one word). The gate now names
+  what it could not see, in the gate row, in the one-line Tier A verdict that gets skimmed and
+  quoted, and in the pull-request body that reaches a stranger. Deliberately NOT failed closed: the
+  crash this was found beside is a runtime validation error that full type coverage would not have
+  caught either, and refusing the stamp would downgrade every fixture in this suite while preventing
+  none of that class.
+- **A byte-order mark is not malformed content.** Windows PowerShell 5.1 writes a UTF-8 BOM into
+  every file `Set-Content` creates; RFC 8259 forbids emitting one in JSON and explicitly allows a
+  parser to ignore it, and `JSON.parse` does not. `package-lock.json` read as "not valid JSON", and
+  — far worse — any `.json` config classified as `malformed_json`, which the fail-closed rule then
+  turns into `inconclusive` on a CLEAN repository. Same failure shape as the zero-byte-output bug of
+  0.5.3-alpha, reached through a different door, Windows users only, and invisible from here because
+  every fixture in this suite is written by Node, which emits no BOM. Genuinely malformed content
+  still fails closed, BOM or not.
+- **The count line reads correctly at one finding**: `1 deprecated model id: ... 1 needs human
+  review`, not `1 deprecated model ids: ... 1 need human review`. It sits directly under the
+  conclusion, the single-finding case is the common one, and every real report ever shown outside
+  this project carried it. Found by filming it.
+- Registry unchanged at 161 entries (`sha256:e5f920c0fe57840f`), deliberately NOT re-stamped: the
+  rollback floor already sits below the published snapshot, and raising it would make every install
+  read the live registry as a rollback until the next publish completed.
+
 ## 0.5.4-alpha — 2026-09-22
 
 - **Mendr now names the SDK you are pinned to, not only the model id.** The human
