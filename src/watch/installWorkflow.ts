@@ -12,7 +12,7 @@ import { dirname, join } from 'node:path';
 export const WATCH_WORKFLOW_PATH = '.github/workflows/mendr-watch.yml';
 
 /** The immutable Mendr release the generated workflow pins to by default. */
-export const MENDR_RELEASE = 'v0.1.0';
+export const MENDR_RELEASE = 'v0.5.5-alpha';
 
 /**
  * The workflow file content. It is pinned to an immutable Mendr RELEASE

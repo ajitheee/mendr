@@ -9,7 +9,7 @@ on Mendr infrastructure, never modifies the default branch, and cannot bypass
 Mendr's deterministic safety gate. Nothing here touches your default
 `mendr fix-llm` install.
 
-The commands below pin to the release `v0.1.0`, so you always get the same tested
+The commands below pin to the release `v0.5.5-alpha`, so you always get the same tested
 version (and no stale npx cache).
 
 ## See your exposure (about 30 seconds, no setup)
@@ -17,14 +17,14 @@ version (and no stale npx cache).
 Run this in any repo you want to check:
 
 ```bash
-npx github:ajitheee/mendr#v0.1.0 watch .
+npx github:ajitheee/mendr#v0.5.5-alpha watch .
 ```
 
 You can also point it straight at a GitHub URL, which scans a read-only copy so
 you do not have to clone it yourself:
 
 ```bash
-npx github:ajitheee/mendr#v0.1.0 watch https://github.com/you/your-repo
+npx github:ajitheee/mendr#v0.5.5-alpha watch https://github.com/you/your-repo
 ```
 
 It groups what it finds, highest risk first: models needing a look (Tier A or B)
@@ -39,11 +39,11 @@ repo. It runs in your own CI. There is no server, and none of your code leaves
 your repo.
 
 ```bash
-npx github:ajitheee/mendr#v0.1.0 watch --install
+npx github:ajitheee/mendr#v0.5.5-alpha watch --install
 ```
 
 Then commit and push the workflow file. It is pinned to the Mendr release
-`v0.1.0` out of the box — an immutable tag, never a branch — so there is nothing
+`v0.5.5-alpha` out of the box — an immutable tag, never a branch — so there is nothing
 else to configure. On the next run it opens one issue titled "Mendr Watch". After
 that it edits that same issue in place. It never opens a second one and never
 spams you. When your exposure clears it closes the issue, and if exposure comes

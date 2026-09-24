@@ -211,18 +211,41 @@ Human steps are marked ⚑; everything else is scripted.
    commit it.
 3. ⚑ Paste the PUBLIC key into `src/registry/trustedKeys.ts`.
 4. `npm run validate:registry` then `node scripts/stamp-bundled-registry.mjs`;
-   commit the stamp. Bump `package.json`, `AUDIT_MENDR_RELEASE`
-   (`src/audit/installAuditWorkflow.ts`), the App's `MENDR_CLI_SPEC` default
-   (`app/src/config.ts`) and `render.yaml` to `v0.4.0-alpha`.
+   commit the stamp. Bump `package.json`'s `version`, then run
+   **`node scripts/check-pins.mjs`** and fix everything it names.
+
+   > This step used to list three files by hand — `AUDIT_MENDR_RELEASE`, the
+   > App's `MENDR_CLI_SPEC`, and `render.yaml`. There are **ten** code and YAML
+   > pins plus five doc paste positions, `render.yaml` has carried no pin for
+   > several releases, and the two refs that actually decide whether a customer
+   > runs the new `mendr-action`
+   > (`.github/workflows/reusable-migrate.yml`, the `uses:` ref and
+   > `mendr-spec:`) were on neither list. A partial bump is how PR #12's
+   > sanitizer shipped to nobody. `check-pins.mjs` is now the complete list and
+   > the only one worth maintaining; do not re-enumerate it here.
 5. Tag `v0.4.0-alpha` and push the tag — `registry-publish` runs on the tag, so a
    snapshot at least as new as the stamp exists the moment the scanner does.
 6. Confirm the release assets exist and a refresh verifies:
    `MENDR_REGISTRY_REFRESH=on npx github:ajitheee/mendr#v0.4.0-alpha audit .`
    shows `Registry: … snapshot <today> (fresh, 0 d)`.
-7. Existing connected repositories move by setting the repository variable
-   `MENDR_SPEC=v0.4.0-alpha` (no workflow edit) — their committed workflow
-   already carries `MENDR_REGISTRY_REFRESH: 'on'` if generated after 2026-09-06;
-   older ones add the line or re-run the one-click setup.
+7. Existing connected repositories move as follows — and the two paths differ,
+   which this step used to get wrong:
+
+   * **Audit** — set the repository variable `MENDR_SPEC=<new tag>`, no workflow
+     edit. `reusable-audit.yml` reads `vars.MENDR_SPEC || inputs.mendr-spec`.
+   * **Migrate** — **a workflow edit is required.** `reusable-migrate.yml`
+     deliberately does *not* honour `vars.MENDR_SPEC` (see the comment at its
+     `uses:` step): GitHub forbids an expression in `uses:`, so honouring a
+     caller's spec would pin the CLI while leaving the wrapper on a tag,
+     decoupling exactly what must stay coupled. The customer bumps the `@<tag>`
+     in their own `mendr-migrate.yml`, or re-runs the one-click setup.
+
+   Saying "no workflow edit" for both is how a release can look delivered and
+   not be. Release notes must carry the migrate line explicitly.
+
+   Either way their committed workflow already carries
+   `MENDR_REGISTRY_REFRESH: 'on'` if generated after 2026-09-06; older ones add
+   the line or re-run the one-click setup.
 
 ## Not in v1
 
