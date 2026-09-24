@@ -31,26 +31,30 @@ function makeRepo(evalScript: string): string {
 }
 
 describe('runRepoEval (the behavioral gate)', () => {
-  it('is not-configured when no command was supplied -- never a silent pass', async () => {
+  it('is not_run when no command was supplied -- never a silent pass', async () => {
+    // `not_run` is the word for "there was nothing to run", and it is a
+    // DIFFERENT fact from `inconclusive` ("we tried and cannot say", below for
+    // the timeout and infra cases). Asserted with toEqual so an unconfigured
+    // gate cannot start smuggling in an exitCode or output that implies a run.
     const repo = makeRepo('process.exit(0)');
-    expect(await runRepoEval(repo, [], {})).toEqual({ status: 'not-configured' });
+    expect(await runRepoEval(repo, [], {})).toEqual({ status: 'not_run' });
     // A blank/whitespace command is the same fact, not an empty shell line.
-    expect(await runRepoEval(repo, [], { command: '   ' })).toEqual({ status: 'not-configured' });
+    expect(await runRepoEval(repo, [], { command: '   ' })).toEqual({ status: 'not_run' });
   });
 
-  it('passes when the configured command exits 0, echoing the command and code', async () => {
+  it('is passed when the configured command exits 0, echoing the command and code', async () => {
     const repo = makeRepo('console.log("eval ok"); process.exit(0)');
     const result = await runRepoEval(repo, [], { command: 'node eval.js' });
-    expect(result.status).toBe('pass');
+    expect(result.status).toBe('passed');
     expect(result.command).toBe('node eval.js');
     expect(result.exitCode).toBe(0);
     expect(result.output).toContain('eval ok');
   });
 
-  it('fails when the configured command exits non-zero', async () => {
+  it('is failed when the configured command exits non-zero', async () => {
     const repo = makeRepo('console.log("quality regressed"); process.exit(3)');
     const result = await runRepoEval(repo, [], { command: 'node eval.js' });
-    expect(result.status).toBe('fail');
+    expect(result.status).toBe('failed');
     expect(result.exitCode).toBe(3);
     expect(result.output).toContain('quality regressed');
   });
@@ -69,7 +73,7 @@ describe('runRepoEval (the behavioral gate)', () => {
     const result = await runRepoEval(repo, [{ absPath: modelPath, newText: 'module.exports = "gpt-5.6-sol";\n' }], {
       command: 'node eval.js',
     });
-    expect(result.status).toBe('pass');
+    expect(result.status).toBe('passed');
     expect(readFileSync(modelPath, 'utf8')).toContain('gpt-4-0613');
   });
 
@@ -92,7 +96,7 @@ describe('runRepoEval (the behavioral gate)', () => {
       [{ absPath: modelPath, newText: 'module.exports = "gpt-5.6-sol";\n' }],
       { command: 'node eval.js' },
     );
-    expect(result.status).toBe('pass');
+    expect(result.status).toBe('passed');
     // Still never mutated: the read-only original is exactly as it was.
     expect(readFileSync(modelPath, 'utf8')).toContain('gpt-4-0613');
 
@@ -121,6 +125,6 @@ describe('runRepoEval (the behavioral gate)', () => {
   it('runs a shell command line, not a bare argv (npm-style commands work)', async () => {
     const repo = makeRepo('process.exit(process.argv[2] === "--strict" ? 0 : 1)');
     const result = await runRepoEval(repo, [], { command: 'node eval.js --strict' });
-    expect(result.status).toBe('pass');
+    expect(result.status).toBe('passed');
   });
 });

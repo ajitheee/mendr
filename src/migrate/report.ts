@@ -1,3 +1,4 @@
+import { CHECK_LABEL, CHECK_MARK, type CheckStatus } from '../gates/status.js';
 import { sanitize, secretValuesFromEnv } from '../redact/sanitize.js';
 import type { GateOutcome, MigrationResult, MigrationVerdict } from './migrate.js';
 
@@ -5,12 +6,7 @@ import type { GateOutcome, MigrationResult, MigrationVerdict } from './migrate.j
 // "verified" or "failed" before the diff), then the swaps, then each gate's
 // outcome, the honest caveats, and finally the diff.
 
-const MARK: Record<GateOutcome['status'], string> = {
-  pass: '✓',
-  fail: '✗',
-  inconclusive: '○',
-  'not-configured': '·',
-};
+const MARK: Record<CheckStatus, string> = CHECK_MARK;
 
 const VERDICT_LINE: Record<MigrationVerdict, string> = {
   verified: 'VERIFIED — a build and/or the existing tests passed in the sandbox and no gate rejected the migration. Ready to open as a reviewed PR (never auto-merged).',
@@ -20,7 +16,7 @@ const VERDICT_LINE: Record<MigrationVerdict, string> = {
 };
 
 function gateRow(label: string, g: GateOutcome): string {
-  const status = g.status === 'not-configured' ? 'not configured' : g.status;
+  const status = CHECK_LABEL[g.status];
   const detail = g.command ? ` [${g.command}]` : '';
   return `  ${MARK[g.status]} ${label.padEnd(11)} ${status}${detail}`;
 }

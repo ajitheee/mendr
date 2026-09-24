@@ -177,6 +177,7 @@ import {
 import { fingerprint as fingerprintOf, identityOf, normalizePath } from './audit/fingerprint.js';
 import { EMPTY_STATE, parseAuditState, redactSecrets, renderAuditIssue } from './audit/issueReport.js';
 import { sanitize, secretValuesFromEnv } from './redact/sanitize.js';
+import { CHECK_LABEL, type CheckStatus } from './gates/status.js';
 import { installOfflineGuard } from './net/offlineGuard.js';
 import { installAuditWorkflow } from './audit/installAuditWorkflow.js';
 import { unanalyzedCensus } from './audit/languages.js';
@@ -299,31 +300,35 @@ function assertAnalyzable(tsFileCount: number, pyFileCount: number, resolved: st
  * the same as the one they never can.
  */
 function testGateEvaluation(result: TestGateResult): GateEvaluation {
+  // The gate now says what happened in its own status word, so this no longer
+  // recovers the distinction by comparing `output` against a string literal —
+  // a contract that no test pinned on either side, and that silently
+  // reclassified a non-blocking run into a blocking one if either side was
+  // reworded.
+  if (result.status === 'not_run') {
+    return { gate: 'tests', outcome: 'not_run', detail: 'no "test" script in package.json' };
+  }
   if (result.status === 'inconclusive') {
-    return result.output === 'no test script'
-      ? { gate: 'tests', outcome: 'not-configured', detail: 'no "test" script in package.json' }
-      : { gate: 'tests', outcome: 'inconclusive', detail: result.output };
+    return { gate: 'tests', outcome: 'inconclusive', detail: result.note ?? result.output };
   }
   const detail = result.counts
     ? `npm test, ${result.counts.passed} passed, ${result.counts.failed} failed`
-    : 'npm test, exit code only -- counts not parsed';
+    : 'npm test';
   return { gate: 'tests', outcome: result.status, detail };
 }
 
-/** Row states for the gate outcomes, one word each — see GateRowState. */
-const OUTCOME_STATE = {
-  pass: 'passed',
-  fail: 'failed',
-  inconclusive: 'inconclusive',
-  'not-configured': 'not configured',
-  'not-applicable': 'n/a',
-} as const;
-
-/** Render one gate evaluation as a summary row, tagged when policy requires it. */
+/**
+ * Render one gate evaluation as a summary row, tagged when policy requires it.
+ *
+ * There used to be a translation table here, mapping five gate outcomes onto
+ * five row words. It is gone: the row now renders the status itself, so the
+ * word a reader sees in the report is the same word the policy reasoned about
+ * and the same word the JSON carries.
+ */
 function gateRowOf(label: string, evaluation: GateEvaluation, required: boolean): GateRow {
   return {
     label,
-    state: OUTCOME_STATE[evaluation.outcome],
+    state: CHECK_LABEL[evaluation.outcome],
     ...(evaluation.detail ? { detail: evaluation.detail } : {}),
     ...(required ? { required } : {}),
   };
@@ -1020,6 +1025,9 @@ program
     // the gated block so the one-line Tier A verdict can scope itself too: the
     // gate rows are exact, but the headline is what gets skimmed and quoted.
     let tsUnresolvedPackages = 0;
+    // The gate's STATE, carried out so the headline and the one-line verdict
+    // quote the gate instead of re-deriving a claim from the raw boolean.
+    let tsTypeOutcome: CheckStatus = 'not_run';
     if (tsSwapCandidates > 0) {
       if (opts.skipGates) {
         // Fast local mode: assert Tier A without verifying. Reuses the scan
@@ -1067,31 +1075,44 @@ program
           originalText: baselineProject.getSourceFileOrThrow(absPath).getFullText(),
         }));
         const testResult = await runRepoTests(resolved, tsPatchedFiles);
-        tsTestsPassed = testResult.status === 'pass';
+        tsTestsPassed = testResult.status === 'passed';
 
         // "pass" here means BASELINE-RELATIVE pass. When the repo already had
         // type errors before the patch, say so — a bare "pass" would overclaim.
         const firstDiagnostic = typeResult.newDiagnostics[0];
         const newErrors = typeResult.newDiagnostics.length;
-        // What the gate could NOT see, said in the same breath as what it did.
+        // A CHECK THAT RAN BLIND IS INCONCLUSIVE, NOT PASSED.
+        //
         // A shallow clone has no node_modules, so the SDK whose types would
-        // reject a bad model id is unresolved and the argument is `any` — the
-        // check passes because nothing could fail it. Reporting a bare
-        // "passed" there reads as "the SDK accepts this id", which is the one
-        // thing it did not establish.
+        // reject a bad model id is unresolved and the argument it guards is
+        // `any`. The check runs to completion and reports no new errors —
+        // because nothing could have produced one. The part of it that mattered
+        // did not happen.
+        //
+        // This was previously reported as `passed` with the unresolved packages
+        // named in the detail string. That was not enough: a detail is dropped
+        // by downstream renderers (the PR-body gate row suppressed it, the App
+        // discarded it entirely), so the only surface an external reviewer sees
+        // printed a bare pass. A STATE cannot be dropped. `required: true` on
+        // the typecheck gate then blocks Tier A, which is the honest outcome:
+        // install dependencies and re-run to earn the pass.
         const scopeClause = unresolvedScopeNote(typeResult);
         const scopeNote = scopeClause ? `; ${scopeClause}` : '';
         tsUnresolvedPackages = typeResult.unresolvedModules.length;
+        const ranBlind = typeResult.passed && typeResult.unresolvedModules.length > 0;
         const typeEvaluation: GateEvaluation = {
           gate: 'typecheck',
-          outcome: typeResult.passed ? 'pass' : 'fail',
-          detail: typeResult.passed
-            ? (typeResult.baselineCount > 0
+          outcome: typeResult.passed ? (ranBlind ? 'inconclusive' : 'passed') : 'failed',
+          detail: ranBlind
+            ? `ran without the types that would reject a bad model id -- ${scopeClause}`
+            : typeResult.passed
+              ? typeResult.baselineCount > 0
                 ? `no new errors; ${typeResult.baselineCount} pre-existing ignored`
-                : 'no new errors') + scopeNote
-            : `${newErrors} new type error${newErrors === 1 ? '' : 's'}` +
-              (firstDiagnostic ? ` -- ${formatDiagnostic(firstDiagnostic)}` : ''),
+                : 'no new errors'
+              : `${newErrors} new type error${newErrors === 1 ? '' : 's'}` +
+                (firstDiagnostic ? ` -- ${formatDiagnostic(firstDiagnostic)}` : ''),
         };
+        tsTypeOutcome = typeEvaluation.outcome;
         const testEvaluation = testGateEvaluation(testResult);
 
         // ONE decision, from the policy: every non-passing gate the policy
@@ -1118,7 +1139,7 @@ program
           },
           {
             label: 'syntax',
-            state: 'n/a',
+            state: 'skipped',
             detail: 'typescript -- the type-check gate below subsumes parsing',
           },
           gateRowOf('type-check', typeEvaluation, policy.typecheck.required),
@@ -1197,7 +1218,7 @@ program
     // anyway, which is the worst of both worlds: the user asked for behavioral
     // verification, did not get it, and got the write regardless. "I could not
     // check" is not a reason to proceed; it is the reason not to.
-    let evalResult: EvalGateResult = { status: 'not-configured' };
+    let evalResult: EvalGateResult = { status: 'not_run' };
     /**
      * Why the eval did not run, when a command WAS configured. Without this the
      * report printed "behavioral evaluation: not configured" over a repo whose
@@ -1242,13 +1263,13 @@ program
     const evalEvaluation: GateEvaluation = {
       gate: 'eval',
       outcome:
-        evalResult.status === 'not-configured'
+        evalResult.status === 'not_run'
           ? evalNotRunReason
             ? 'inconclusive'
-            : 'not-configured'
+            : 'not_run'
           : evalResult.status,
       detail:
-        evalResult.status === 'fail'
+        evalResult.status === 'failed'
           ? `${evalResult.command}, exit ${evalResult.exitCode}`
           : // Names the CASE, not just the outcome: "timed out" and "could not
             // be spawned" send a user to completely different fixes, and both
@@ -1276,7 +1297,7 @@ program
         // Also on stderr, where it survives --json (stdout is the document).
         console.error(`mendr: eval gate could not run -- ${evalResult.output}`);
         console.error('mendr: the fix is NOT applied -- an eval that did not run verifies nothing.');
-      } else if (evalResult.status === 'not-configured') {
+      } else if (evalResult.status === 'not_run') {
         console.error(
           `mendr: ${reason}`,
         );
@@ -1289,7 +1310,7 @@ program
      * nothing, and must not read as a softer kind of pass.
      */
     const behavioral: BehavioralVerificationView =
-      evalResult.status === 'pass' || evalResult.status === 'fail'
+      evalResult.status === 'passed' || evalResult.status === 'failed'
         ? { status: evalResult.status, command: evalResult.command, exitCode: evalResult.exitCode }
         : {
             status: 'not-tested',
@@ -1314,7 +1335,9 @@ program
         tsTier === 'A'
           ? opts.skipGates
             ? '=== Tier A: auto-fixable model-id + param codemod ==='
-            : '=== Tier A: auto-fixable model-id + param codemod (VERIFIED) ==='
+            : tsTypeOutcome === 'passed'
+              ? '=== Tier A: auto-fixable model-id + param codemod (VERIFIED) ==='
+              : '=== Tier A: auto-fixable model-id + param codemod (NOT type-verified) ==='
           : // NOT "downgraded to Tier C": under the three-tier vocabulary Tier C
             // means an informational DATA occurrence, and a reader who counted
             // the Tier C findings would never find these among them. A gate
@@ -1333,21 +1356,27 @@ program
             `${tsResult.changedFiles.length} file${tsResult.changedFiles.length === 1 ? '' : 's'}. ` +
             (opts.skipGates
               ? '(gates skipped -- tier asserted, not verified)'
-              : `(verified: type-check passes${tsTestsPassed ? ' + tests pass' : ''}` +
-                // The ONLY behavioral phrase Tier A is allowed: the team's own
-                // eval passed. Not "the model is equivalent", not "safe to
-                // ship" — mendr has no idea what their eval measures.
-                `${behavioral.status === 'pass' ? ' + your eval command passed' : ''}` +
-                // ...and what the type-check could not see, in the same line
-                // that claims it passed. A checkout with no dependencies makes
-                // the model argument `any`, so an id the SDK would reject
-                // cannot fail this gate — the rows above say so, but this is
-                // the line that gets skimmed, quoted and pasted.
-                `${
-                  tsUnresolvedPackages > 0
-                    ? `; ${tsUnresolvedPackages} package${tsUnresolvedPackages === 1 ? '' : 's'} ` +
-                      `unresolved -- their types were not checked`
-                    : ''
+              : // THIS LINE READS THE GATE'S STATE, NOT THE RAW BOOLEAN.
+                //
+                // It used to say "verified: type-check passes" off
+                // `typeResult.passed` while the gate row above it — computed
+                // from the same run — said `inconclusive`. Two surfaces
+                // disagreeing about one check is the exact failure the single
+                // vocabulary exists to kill, and it survived here longest
+                // because this is prose rather than a status field. It is also
+                // the line that gets skimmed, quoted and pasted, so it was the
+                // worst possible place for it to survive.
+                `(${
+                  tsTypeOutcome === 'passed'
+                    ? `verified: type-check passes${tsTestsPassed ? ' + tests pass' : ''}` +
+                      // The ONLY behavioral phrase Tier A is allowed: the
+                      // team's own eval passed. Not "the model is equivalent",
+                      // not "safe to ship" — mendr has no idea what their eval
+                      // measures.
+                      `${behavioral.status === 'passed' ? ' + your eval command passed' : ''}`
+                    : `NOT verified by the type-check: ${CHECK_LABEL[tsTypeOutcome]}` +
+                      `${tsUnresolvedPackages > 0 ? ` -- ${tsUnresolvedPackages} package${tsUnresolvedPackages === 1 ? '' : 's'} unresolved` : ''}` +
+                      `${tsTestsPassed ? '; tests pass' : ''}`
                 })`),
         );
       } else {
@@ -1407,7 +1436,7 @@ program
             // the honest word -- and it is why `gates.typecheck.required` does
             // not block a python-only repo (see gates/policy.ts).
             label: 'type-check',
-            state: 'n/a',
+            state: 'skipped',
             detail: 'mendr runs no type checker for python',
           },
           pyTestRow,
@@ -1429,7 +1458,7 @@ program
             (opts.skipGates
               ? '(gates skipped -- tier asserted, not verified; syntax re-parse still ran)'
               : '(gates: verified mapping + sink-verified usage + syntax re-parse -- weaker than the TS type gate' +
-                `${behavioral.status === 'pass' ? '; your eval command passed' : ''})`),
+                `${behavioral.status === 'passed' ? '; your eval command passed' : ''})`),
         );
       } else {
         say(
@@ -1874,7 +1903,7 @@ program
             // tell "no eval configured" from "the eval was attempted": the
             // inconclusive case still reports behavioralVerification
             // "not-tested", and this object carries the reason it is.
-            ...(evalResult.status === 'not-configured'
+            ...(evalResult.status === 'not_run'
               ? {}
               : {
                   eval: {
@@ -2757,7 +2786,7 @@ program
         const testResult = await runRepoTests(resolved, patchedFiles);
 
         const typeLabel = typeResult.passed ? 'pass' : 'fail';
-        const gatesPassed = typeResult.passed && testResult.status === 'pass';
+        const gatesPassed = typeResult.passed && testResult.status === 'passed';
         renameTier = gatesPassed ? 'A' : 'C';
 
         if (!gatesPassed) {
@@ -2767,7 +2796,7 @@ program
             downgradeReason =
               `patched code introduces ${n} new type error${n === 1 ? '' : 's'}` +
               (first ? `: ${formatDiagnostic(first)}` : '');
-          } else if (testResult.status === 'fail') {
+          } else if (testResult.status === 'failed') {
             downgradeReason = 'repo tests failed against the patched code';
           } else if (testResult.output === 'no test script') {
             downgradeReason = 'no test script — could not verify';

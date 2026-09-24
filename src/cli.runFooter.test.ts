@@ -17,6 +17,18 @@ import { tmpdir } from 'node:os';
 // is only worth printing if it RECONCILES with the tier counts above it, so the
 // identity `unique occurrences == tierA + tierB + tierC` is asserted here
 // against what the CLI actually prints, not against a unit fixture.
+//
+// WHY THE TIER A FIXTURE CARRIES A CONFIG. `files modified: 1` can only be
+// observed on a run that reaches the write step, and the write step only runs
+// for a Tier A patch the gates cleared. A temp fixture has no node_modules, so
+// the type-check runs blind — the `openai` types that would reject a bad model
+// id are unresolved, so nothing could have failed — and that is now
+// `inconclusive`, not `passed`. The typecheck gate is required by default, so
+// an unconfigured fixture is refused by the gates three steps before the write,
+// and the WRITE-side half of this footer is never exercised. makeTierARepo
+// therefore opts the typecheck gate out of BLOCKING and leaves its verdict word
+// alone; `blindTypecheckRepo()` keeps a fixture on the DEFAULT policy, and the
+// last test in this file pins what the footer says there.
 
 const MENDR_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -45,21 +57,44 @@ function repoDir(prefix: string): string {
   return dir;
 }
 
-/** One verified Tier A swap in one file. */
+/** One deprecated model argument: the Tier A site every fixture below shares. */
+const TIER_A_SOURCE = [
+  'import OpenAI from "openai";',
+  'const client = new OpenAI();',
+  'export async function chat() {',
+  "  return client.chat.completions.create({ model: 'gpt-4-0613', messages: [] });",
+  '}',
+  '',
+].join('\n');
+
+/**
+ * One verified Tier A swap in one file, on a repo whose policy lets a blind
+ * type-check through.
+ *
+ * Advisory, not passing: the type-check row still reads `inconclusive` here — it
+ * just no longer blocks, so the patch reaches the write step the `mode` /
+ * `files modified` pair is about. See the header.
+ */
 function makeTierARepo(): { dir: string; file: string } {
   const dir = repoDir('mendr-footer-a-');
-  const file = join(dir, 'src', 'chat.ts');
   writeFileSync(
-    file,
-    [
-      'import OpenAI from "openai";',
-      'const client = new OpenAI();',
-      'export async function chat() {',
-      "  return client.chat.completions.create({ model: 'gpt-4-0613', messages: [] });",
-      '}',
-      '',
-    ].join('\n'),
+    join(dir, 'mendr.config.json'),
+    JSON.stringify({ gates: { typecheck: { required: false } } }, null, 2),
   );
+  const file = join(dir, 'src', 'chat.ts');
+  writeFileSync(file, TIER_A_SOURCE);
+  return { dir, file };
+}
+
+/**
+ * The same Tier A site on the DEFAULT gate policy — no config, no node_modules,
+ * so the required type-check gate runs blind, comes back `inconclusive`, and
+ * blocks the patch. The one fixture here that does NOT opt out.
+ */
+function makeBlindTypecheckRepo(): { dir: string; file: string } {
+  const dir = repoDir('mendr-footer-blind-');
+  const file = join(dir, 'src', 'chat.ts');
+  writeFileSync(file, TIER_A_SOURCE);
   return { dir, file };
 }
 
@@ -153,6 +188,10 @@ describe('the run footer', () => {
       expect(stdout).toContain('mode: WRITE');
       expect(stdout).toContain('files modified: 1');
       expect(readFileSync(file, 'utf8')).toContain('gpt-5.6-sol');
+      // The fixture's opt-out changed whether the blind type-check BLOCKS, not
+      // what it is called: the row still reads `inconclusive`, so a passing
+      // write test here can never be read as a repo that type-checked.
+      expect(stdout.replace(/\s+/g, ' ')).toContain('type-check: inconclusive');
     },
     120_000,
   );
@@ -310,7 +349,11 @@ describe('the run footer', () => {
     120_000,
   );
 
-  // ...and LOOK keeps it, because there the sentence is simply true.
+  // ...and LOOK keeps it, because there the sentence is simply true. True only
+  // of a candidate the gates cleared, though: a LOOK run whose required
+  // type-check came back `inconclusive` has nothing to promise, and its row
+  // reads `tier A candidate -- gates failed, no patch applied` instead. Hence
+  // the fixture's gate opt-out; the test below covers the blocked case.
   it(
     'keeps the forward statement on a LOOK run',
     async () => {
@@ -352,6 +395,38 @@ describe('the run footer', () => {
       expect(stdout).toContain('usage verdict:         unverified -- sits under a deployment key,');
       expect(stdout).not.toContain('not a model id');
       expect(stdout).not.toContain('platform alias,');
+    },
+    120_000,
+  );
+
+  // THE OTHER WAY THE TWO LINES COME APART, and the newer one. Nothing was
+  // refused by the filesystem here and no flag suppressed the write: the
+  // REQUIRED type-check gate ran blind (no node_modules, so the `openai` types
+  // that would reject a bad model id were never loaded) and is therefore
+  // `inconclusive`, which blocks Tier A. `--write` was still the intent, so the
+  // mode line says WRITE and the outcome line says 0 — and the gate row says
+  // `inconclusive`, not the bare `passed` this path used to print.
+  it(
+    'says WRITE and zero when a blind required type-check blocks the patch',
+    async () => {
+      const { dir, file } = makeBlindTypecheckRepo();
+      const { stdout } = await runFixLlm([dir, '--write']);
+
+      expect(stdout).toContain('mode: WRITE');
+      expect(stdout).toContain('files modified: 0');
+      expect(stdout).not.toContain('files modified: 1');
+      // The claim is checkable: the deprecated id is still on disk.
+      expect(readFileSync(file, 'utf8')).toContain('gpt-4-0613');
+      // A check that could not have failed is never reported as passed...
+      // (Flattened, because the row is column-aligned with its neighbours.)
+      expect(stdout.replace(/\s+/g, ' ')).toContain('type-check: inconclusive');
+      expect(stdout.replace(/\s+/g, ' ')).not.toContain('type-check: passed');
+      // ...and the unresolved package is named on the surface a reviewer reads,
+      // not only in a detail string that downstream renderers drop.
+      expect(stdout).toContain('openai');
+      // The footer still reconciles with the tier counts above it.
+      const counts = foundCounts(stdout);
+      expect(printedOccurrences(stdout)).toBe(counts.tierA + counts.tierB + counts.tierC);
     },
     120_000,
   );

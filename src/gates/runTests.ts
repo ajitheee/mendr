@@ -1,3 +1,4 @@
+import type { CheckStatus } from './status.js';
 import { execa } from 'execa';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -20,8 +21,13 @@ import { gateEnv, truncateOutput, withPatchedSandbox, type PatchedFile } from '.
 
 export type { PatchedFile } from './sandbox.js';
 
-/** Outcome of running the repo's test suite against the patched sources. */
-export type TestStatus = 'pass' | 'fail' | 'inconclusive';
+/**
+ * Outcome of running the repo's test suite against the patched sources —
+ * {@link CheckStatus}, the one vocabulary. This was its own three-word union,
+ * and the caller had to re-split it by comparing `output` against the literal
+ * string `'no test script'` to recover what had actually happened.
+ */
+export type TestStatus = CheckStatus;
 
 /** Parsed pass/fail totals from a recognized test runner's output. */
 export interface TestCounts {
@@ -36,6 +42,12 @@ export interface TestGateResult {
   output: string;
   /** Parsed pass/fail totals, when the runner's summary was recognizable. */
   counts?: TestCounts;
+  /**
+   * Why a status is what it is, when the captured `output` does not say so by
+   * itself. Carries the one case a reader would otherwise misread: a command
+   * that exited 0 without demonstrably running anything.
+   */
+  note?: string;
 }
 
 /**
@@ -83,7 +95,10 @@ export async function runRepoTests(
     return { status: 'inconclusive', output: `could not read package.json: ${String(err)}` };
   }
   if (!hasTestScript) {
-    return { status: 'inconclusive', output: 'no test script' };
+    // NOT_RUN, not inconclusive: there is nothing to run, so no amount of
+    // retrying or installing changes it. The caller used to recover this by
+    // string-matching the output field.
+    return { status: 'not_run', output: 'no test script' };
   }
 
   // 2. `npm test` runs the repo's OWN devDependencies (vitest, jest, ...), so
@@ -117,10 +132,27 @@ export async function runRepoTests(
     return { status: 'inconclusive', output: `test run timed out after ${TEST_TIMEOUT_MS}ms` };
   }
   const output = truncateOutput(result.all ?? `${result.stdout ?? ''}\n${result.stderr ?? ''}`);
-  const status: TestStatus = result.exitCode === 0 ? 'pass' : 'fail';
-  // Best-effort measurability: real counts when the runner's summary is
-  // recognizable, so gate lines can say "N passed, M failed" instead of a
-  // bare unverifiable "pass".
   const counts = parseTestCounts(output);
-  return counts ? { status, output, counts } : { status, output };
+
+  // A NON-ZERO EXIT IS A REJECTION, and needs no corroboration.
+  if (result.exitCode !== 0) return counts ? { status: 'failed', output, counts } : { status: 'failed', output };
+
+  // EXIT 0 MEANS THE COMMAND SUCCEEDED. It does not mean a test ran.
+  //
+  // `"test": "exit 0"` — and every `"test": "echo no tests yet"` in the wild —
+  // exits 0 having verified nothing. This used to return `pass`, and that one
+  // word was enough to make a migration `verified` and PR-ready, with a pull
+  // request whose body told the reviewer "your tests: passed". Nobody's tests
+  // had passed, because nobody's tests had run.
+  //
+  // So `passed` now requires EVIDENCE that the suite ran: a parseable summary
+  // with at least one test in it. Without that the honest state is
+  // `inconclusive` — the command was fine, and we cannot say the suite was.
+  const total = counts ? counts.passed + counts.failed : 0;
+  if (total > 0) return { status: 'passed', output, counts: counts! };
+  return {
+    status: 'inconclusive',
+    output,
+    note: 'the test command exited 0, but no test results could be parsed from its output, so it is not proven that any test ran',
+  };
 }

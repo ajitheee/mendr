@@ -24,21 +24,29 @@ function repo(files: Record<string, string>): string {
   return dir;
 }
 const CALL = 'import OpenAI from "openai";\nconst client = new OpenAI();\nexport async function ask(){\n  return client.chat.completions.create({ model: "gpt-4", messages: [] });\n}\n';
+// Gate statuses are THE one vocabulary (src/gates/status.ts):
+//   passed | failed | skipped | not_run | inconclusive
+// The words migrate used to speak privately — `pass`, `fail`, `not-configured` —
+// no longer exist, here or on any other surface.
 const g = (status: GateOutcome['status']): GateOutcome => ({ status });
 
 describe('computeVerdict — a PR-ready verdict needs a real run, not just a type-check', () => {
   it('any failing gate is failed', () => {
-    expect(computeVerdict(g('pass'), g('pass'), g('fail'), g('pass'))).toBe('failed');
-    expect(computeVerdict(g('fail'), g('pass'), g('pass'), g('not-configured'))).toBe('failed');
+    expect(computeVerdict(g('passed'), g('passed'), g('failed'), g('passed'))).toBe('failed');
+    expect(computeVerdict(g('failed'), g('passed'), g('passed'), g('not_run'))).toBe('failed');
   });
   it('a real run passing (build/tests/eval) with no failure is verified', () => {
-    expect(computeVerdict(g('pass'), g('pass'), g('inconclusive'), g('not-configured'))).toBe('verified');
-    expect(computeVerdict(g('pass'), g('not-configured'), g('pass'), g('not-configured'))).toBe('verified');
-    expect(computeVerdict(g('inconclusive'), g('not-configured'), g('not-configured'), g('pass'))).toBe('verified');
+    expect(computeVerdict(g('passed'), g('passed'), g('inconclusive'), g('not_run'))).toBe('verified');
+    expect(computeVerdict(g('passed'), g('not_run'), g('passed'), g('not_run'))).toBe('verified');
+    expect(computeVerdict(g('inconclusive'), g('not_run'), g('not_run'), g('passed'))).toBe('verified');
   });
   it('type-check passing while nothing executable ran is inconclusive, not verified', () => {
-    expect(computeVerdict(g('pass'), g('not-configured'), g('inconclusive'), g('not-configured'))).toBe('inconclusive');
-    expect(computeVerdict(g('inconclusive'), g('inconclusive'), g('inconclusive'), g('not-configured'))).toBe('inconclusive');
+    expect(computeVerdict(g('passed'), g('not_run'), g('inconclusive'), g('not_run'))).toBe('inconclusive');
+    expect(computeVerdict(g('inconclusive'), g('inconclusive'), g('inconclusive'), g('not_run'))).toBe('inconclusive');
+    // `skipped` — we CHOSE not to run the gate (--skip-gates, policy) — is a
+    // different silence from `not_run`, and neither may ever stand in for the
+    // real pass a `verified` verdict requires.
+    expect(computeVerdict(g('passed'), g('skipped'), g('skipped'), g('skipped'))).toBe('inconclusive');
   });
 });
 
@@ -74,6 +82,10 @@ describe('runMigration — plan without touching the working tree', () => {
 });
 
 describe('runMigration — sandbox verification with real build/test scripts', () => {
+  // The passing test script PRINTS A PARSEABLE SUMMARY ("1 passed") on purpose,
+  // and that is now load-bearing: a command that merely exits 0 proves nothing
+  // and is `inconclusive` (see the exit-0 test below). This fixture is the case
+  // where a suite demonstrably ran, which is the only thing `passed` may mean.
   function verifiableRepo(testExit: 0 | 1): string {
     const dir = repo({
       'client.ts': CALL,
@@ -95,8 +107,8 @@ describe('runMigration — sandbox verification with real build/test scripts', (
 
   it('VERIFIED and PR-ready when the sandbox build and tests pass', async () => {
     const r = await runMigration(verifiableRepo(0), REG, {});
-    expect(r.verification.build.status).toBe('pass');
-    expect(r.verification.tests.status).toBe('pass');
+    expect(r.verification.build.status).toBe('passed');
+    expect(r.verification.tests.status).toBe('passed');
     expect(r.verification.verdict).toBe('verified');
     expect(r.prReady).toBe(true);
     expect(r.verification.behavioralTested).toBe(false); // no eval command
@@ -104,7 +116,7 @@ describe('runMigration — sandbox verification with real build/test scripts', (
 
   it('FAILED and not PR-ready when the sandbox tests fail', async () => {
     const r = await runMigration(verifiableRepo(1), REG, {});
-    expect(r.verification.tests.status).toBe('fail');
+    expect(r.verification.tests.status).toBe('failed');
     expect(r.verification.verdict).toBe('failed');
     expect(r.prReady).toBe(false);
   }, 120_000);
@@ -133,6 +145,45 @@ describe('runMigration — sandbox verification with real build/test scripts', (
     expect(r.applied).toEqual([]);
     expect(require('node:fs').readFileSync(join(dir, 'client.ts'), 'utf8')).toContain('"gpt-4"');
   });
+
+  // BEHAVIOUR CHANGE: a test command that exits 0 without parseable results is
+  // `inconclusive`, never `passed`. `"test": "exit 0"` used to be enough to make
+  // a migration `verified` and PR-ready, with a pull-request body that told the
+  // reviewer "your tests: passed" — when nobody's tests had run. `passed` now
+  // requires a parsed summary with at least one test in it, and the gate carries
+  // a `note` saying why it could not conclude.
+  it('a test script that exits 0 without running a test is INCONCLUSIVE, so the migration is never PR-ready on it', async () => {
+    const dir = repo({
+      'client.ts': CALL,
+      'package.json': JSON.stringify({ name: 't', version: '1.0.0', scripts: { test: 'node -e "process.exit(0)"' } }),
+    });
+    // node_modules so the command genuinely RUNS: the inconclusive below has to
+    // come from its unparseable output, not from a missing dependency tree
+    // (which is inconclusive for an entirely different reason).
+    mkdirSync(join(dir, 'node_modules'), { recursive: true });
+    writeFileSync(join(dir, 'node_modules', '.keep'), '');
+    const r = await runMigration(dir, REG, {});
+    expect(r.verification.tests.status).toBe('inconclusive');
+    expect(r.verification.tests.detail).toContain('no test results could be parsed');
+    expect(r.verification.verdict).not.toBe('verified');
+    expect(r.prReady).toBe(false);
+  }, 120_000);
+
+  // BEHAVIOUR CHANGE: "no test script" is `not_run` — there was nothing to run,
+  // and no amount of installing or retrying changes it — which is a different
+  // state from `inconclusive` ("we tried and cannot say"). The two used to be
+  // folded together here, and the caller recovered the difference by comparing
+  // the gate's output against the literal string 'no test script'.
+  it('a repo with no test script reports the test gate as NOT RUN, not inconclusive', async () => {
+    const dir = repo({ 'client.ts': CALL, 'package.json': '{"name":"t"}' });
+    const r = await runMigration(dir, REG, {});
+    expect(r.verification.tests.status).toBe('not_run');
+    expect(r.verification.tests.detail).toBe('no test script');
+    expect(r.verification.build.status).toBe('not_run'); // no build script either
+    // Nothing executable ran, so nothing was proven — whatever the type-check said.
+    expect(r.verification.verdict).toBe('inconclusive');
+    expect(r.prReady).toBe(false);
+  }, 120_000);
 });
 
 describe('the registry the plan used rides in the artifact, and a stale one is called out', () => {
@@ -165,4 +216,34 @@ describe('the registry the plan used rides in the artifact, and a stale one is c
     expect(r.registry).toEqual(stale);
     expect(r.notes.some((n) => /STALE/.test(n))).toBe(true);
   });
+});
+
+// LEFT FAILING ON PURPOSE — a half-applied behaviour change, not a wording slip.
+//
+// V4 of MILESTONE-EXTERNAL-VALIDATION.md: a type-check that ran with the SDK
+// types unresolved could not have failed, so it is `inconclusive`, never
+// `passed`. `fix-llm` implements exactly that (`src/cli.ts:1102` —
+// `typeResult.passed ? (ranBlind ? 'inconclusive' : 'passed') : 'failed'`).
+// `migrate` was renamed into the new vocabulary but NOT converted: it still does
+// `typeResult.passed ? 'passed' : 'failed'` (`src/migrate/migrate.ts:448`) and
+// leaves the scope in a DETAIL string — the one surface V4 says gets dropped
+// downstream (suppressed on the PR-body row, discarded by the App). So the two
+// paths still print opposite words for the same dependency-less checkout, which
+// V2 says they must not.
+//
+// Closing it is a one-line change in src/migrate/migrate.ts, which this agent is
+// not permitted to make. The test states the rule the milestone requires rather
+// than pinning the behaviour the milestone calls wrong.
+describe('SUSPECTED GAP — migrate still reports a BLIND type-check as passed', () => {
+  it('the type-check on a dependency-less checkout is inconclusive, with the unresolved package still named', async () => {
+    // No node_modules: the `openai` types that would reject a bad model id are
+    // not loaded, so nothing this gate looked at could have failed.
+    const dir = repo({ 'client.ts': CALL, 'package.json': '{"name":"t"}' });
+    const r = await runMigration(dir, REG, {});
+    expect(r.verification.typeCheck.status).toBe('inconclusive');
+    // Whatever the state, the packages stay named — the state must carry what
+    // the detail string used to.
+    expect(`${r.verification.typeCheck.detail ?? ''}\n${r.notes.join('\n')}`).toContain('openai');
+    expect(r.verification.verdict).not.toBe('verified');
+  }, 120_000);
 });

@@ -1,3 +1,4 @@
+import type { CheckStatus } from '../gates/status.js';
 import { basename } from 'node:path';
 import { relative } from 'node:path';
 import type { LlmModelIdDeprecation, LlmRegistry } from '../types.js';
@@ -72,7 +73,8 @@ export interface MigrationEvidence {
   excerpts: { sourceUrl: string; excerpt: string }[];
 }
 
-export type GateStatus = 'pass' | 'fail' | 'inconclusive' | 'not-configured';
+/** {@link CheckStatus}. Was a fourth private union that disagreed with fix-llm's. */
+export type GateStatus = CheckStatus;
 
 export interface GateOutcome {
   status: GateStatus;
@@ -352,9 +354,9 @@ function outcome(status: GateStatus, detail?: string, command?: string): GateOut
  * `failed`; type-check passing while nothing executable ran is `inconclusive`.
  */
 export function computeVerdict(typeCheck: GateOutcome, build: GateOutcome, tests: GateOutcome, evalOut: GateOutcome): MigrationVerdict {
-  if ([typeCheck, build, tests, evalOut].some((g) => g.status === 'fail')) return 'failed';
-  const anyRealPass = build.status === 'pass' || tests.status === 'pass' || evalOut.status === 'pass';
-  return anyRealPass && typeCheck.status !== 'fail' ? 'verified' : 'inconclusive';
+  if ([typeCheck, build, tests, evalOut].some((g) => g.status === 'failed')) return 'failed';
+  const anyRealPass = build.status === 'passed' || tests.status === 'passed' || evalOut.status === 'passed';
+  return anyRealPass && typeCheck.status !== 'failed' ? 'verified' : 'inconclusive';
 }
 
 /**
@@ -396,10 +398,10 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
       changedFiles: [],
       diff: '',
       verification: {
-        typeCheck: outcome('not-configured'),
-        build: outcome('not-configured'),
-        tests: outcome('not-configured'),
-        eval: outcome('not-configured'),
+        typeCheck: outcome('not_run'),
+        build: outcome('not_run'),
+        tests: outcome('not_run'),
+        eval: outcome('not_run'),
         behavioralTested: false,
         verdict: 'no_migration',
       },
@@ -418,10 +420,10 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
       changedFiles: planned.changedFiles,
       diff: planned.diff,
       verification: {
-        typeCheck: outcome('not-configured'),
-        build: outcome('not-configured'),
-        tests: outcome('not-configured'),
-        eval: outcome('not-configured'),
+        typeCheck: outcome('not_run'),
+        build: outcome('not_run'),
+        tests: outcome('not_run'),
+        eval: outcome('not_run'),
         behavioralTested: false,
         verdict: 'inconclusive',
       },
@@ -443,22 +445,32 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
   // this check. This sentence travels into the pull-request body, which is
   // where overclaiming would cost a reviewer's trust rather than ours.
   const typeScope = unresolvedScopeNote(typeResult);
+  // A BLIND TYPE-CHECK IS INCONCLUSIVE HERE TOO.
+  //
+  // Applying this rule on the fix-llm path alone is how the two paths came to
+  // print opposite verdicts for the same repository — the defect the single
+  // vocabulary exists to close. The scope used to live only in the detail
+  // string, which is the surface that gets dropped downstream: suppressed on
+  // the PR-body gate row, discarded entirely by the App.
+  const ranBlind = typeResult.passed && typeResult.unresolvedModules.length > 0;
   const typeCheck = outcome(
-    typeResult.passed ? 'pass' : 'fail',
-    typeResult.passed
-      ? typeScope
-      : `${typeResult.newDiagnostics.length} new type error(s) introduced by the migration`,
+    typeResult.passed ? (ranBlind ? 'inconclusive' : 'passed') : 'failed',
+    ranBlind
+      ? `ran without the types that would reject a bad model id -- ${typeScope}`
+      : typeResult.passed
+        ? typeScope
+        : `${typeResult.newDiagnostics.length} new type error(s) introduced by the migration`,
   );
 
   const buildResult = await runRepoBuild(repoPath, planned.patchedFiles, opts.buildTimeoutMs);
   const build = outcome(buildResult.status, buildResult.output, buildResult.command);
 
   const testResult = await runRepoTests(repoPath, planned.patchedFiles);
-  const tests = outcome(testResult.status === 'pass' ? 'pass' : testResult.status === 'fail' ? 'fail' : 'inconclusive', testResult.output);
+  const tests = outcome(testResult.status, testResult.note ?? testResult.output);
 
   const evalResult = await runRepoEval(repoPath, planned.patchedFiles, { command: opts.evalCommand });
   const evalOut = outcome(evalResult.status, evalResult.output, evalResult.command);
-  const behavioralTested = evalResult.status === 'pass';
+  const behavioralTested = evalResult.status === 'passed';
 
   const verdict = computeVerdict(typeCheck, build, tests, evalOut);
   const prReady = verdict === 'verified';
@@ -476,12 +488,13 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
         're-run to strengthen this gate.',
     );
   }
-  if (build.status === 'not-configured') notes.push('No build script found (package.json has no `build`); the build gate did not run.');
+  if (build.status === 'not_run') notes.push('No build script found (package.json has no `build`); the build gate did not run.');
   if (build.status === 'inconclusive') notes.push('The build gate was inconclusive; see its detail.');
-  if (tests.status === 'inconclusive') notes.push('The test gate was inconclusive (no test script, or no installed dependencies to run one).');
+  if (tests.status === 'not_run') notes.push('No test script found (package.json has no `test`); the test gate did not run.');
+  if (tests.status === 'inconclusive') notes.push('The test gate was inconclusive; see its detail.');
   if (verdict === 'inconclusive') {
     notes.push(
-      typeCheck.status === 'pass'
+      typeCheck.status === 'passed'
         ? 'The in-memory type-check passed, but no build, test or eval actually ran in the sandbox — that alone is not a PR-ready proof. Run this in CI (with dependencies installed) or add a build/test script.'
         : 'No build, test or eval ran in the sandbox, so nothing was proven. Run this in CI with dependencies installed.',
     );

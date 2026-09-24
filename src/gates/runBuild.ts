@@ -1,3 +1,4 @@
+import type { CheckStatus } from './status.js';
 import { execa } from 'execa';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -10,7 +11,7 @@ import { gateEnv, truncateOutput, withPatchedSandbox, type PatchedFile } from '.
 // migration is never blamed for a failure it did not cause. Nothing in the
 // customer's working tree is ever touched (see gates/sandbox.ts).
 
-export type BuildStatus = 'pass' | 'fail' | 'inconclusive' | 'not-configured';
+export type BuildStatus = CheckStatus;
 
 export interface BuildGateResult {
   status: BuildStatus;
@@ -43,7 +44,7 @@ export async function runRepoBuild(
   timeoutMs = DEFAULT_BUILD_TIMEOUT_MS,
 ): Promise<BuildGateResult> {
   const detected = detectBuildCommand(repoPath);
-  if (!detected) return { status: 'not-configured' };
+  if (!detected) return { status: 'not_run' };
   if (!existsSync(join(repoPath, 'node_modules'))) {
     return { status: 'inconclusive', command: detected.label, output: 'repo has no installed node_modules to link — cannot build' };
   }
@@ -74,7 +75,7 @@ export async function runRepoBuild(
   const patched = await build(patchedFiles);
   if (!patched.ok) return { status: 'inconclusive', command: detected.label, output: `build gate infra error: ${patched.reason}` };
   return {
-    status: patched.value.exitCode === 0 ? 'pass' : 'fail',
+    status: patched.value.exitCode === 0 ? 'passed' : 'failed',
     command: detected.label,
     exitCode: patched.value.exitCode,
     output: truncateOutput(patched.value.all ?? ''),

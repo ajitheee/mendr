@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { LlmModelIdDeprecation } from '../types.js';
+import { CHECK_LABEL, CHECK_STATUSES } from '../gates/status.js';
 import {
   formatCatalogLine,
   formatDataFileGroupLine,
@@ -242,7 +243,14 @@ describe('formatGateSummary (one row per check, one outcome per row)', () => {
       state: 'confirmed',
       detail: 'live model argument at the call site',
     },
-    { label: 'syntax', state: 'n/a', detail: 'typescript -- the type-check gate subsumes parsing' },
+    // A check that does not apply to this language is `skipped`. It was `n/a`;
+    // `n/a` now survives only on a registry attribution row (no record exists
+    // to attribute), never over a check.
+    {
+      label: 'syntax',
+      state: 'skipped',
+      detail: 'typescript -- the type-check gate subsumes parsing',
+    },
     {
       label: 'type-check',
       state: 'passed',
@@ -273,7 +281,7 @@ describe('formatGateSummary (one row per check, one outcome per row)', () => {
       /^ {2}replacement verdict: +verified \(stamped 2026-08-14\)$/m,
     );
     expect(text).toMatch(/^ {2}official source: +confirmed$/m);
-    expect(text).toMatch(/^ {2}syntax: +n\/a \(typescript/m);
+    expect(text).toMatch(/^ {2}syntax: +skipped \(typescript/m);
     expect(text).toMatch(/^ {2}type-check: +passed \(no new errors; 3 pre-existing ignored\)/m);
     // The one that matters most: the tests gate could not RUN, and nothing on
     // that line reads as a pass.
@@ -292,7 +300,9 @@ describe('formatGateSummary (one row per check, one outcome per row)', () => {
 
   it('itemizes the behavioral gate too, in the same table', () => {
     const lines = formatGateSummary(TS_ROWS);
-    expect(lines).toContain('  behavioral evaluation:  not configured');
+    // "nothing to run" is `not run` -- the one word the whole vocabulary uses
+    // for it. It read `not configured` here, which was a sixth spelling of it.
+    expect(lines).toContain('  behavioral evaluation:  not run');
     // Every value -- code rows and the behavioral row alike -- starts at one
     // column, so the checks read as one list rather than two vocabularies.
     const LABELS =
@@ -302,18 +312,46 @@ describe('formatGateSummary (one row per check, one outcome per row)', () => {
     expect(new Set(valueRows.map((row) => LABELS.exec(row)![0].length)).size).toBe(1);
   });
 
-  it('renders the python row set with its own n/a and passed outcomes', () => {
+  // ONE VOCABULARY, ACROSS THE MODULE BOUNDARY. gates/status.ts owns the five
+  // check words; this module's GateRowState has to spell them identically or
+  // the report grows a private sixth word for a state that already had one --
+  // which is exactly what `not configured` (for not_run) and a check-row `n/a`
+  // (for skipped) were. Nothing type-checks these test files (tsconfig excludes
+  // them), so the agreement is asserted at runtime.
+  it('spells every check word exactly as gates/status.ts defines it', () => {
+    const text = CHECK_STATUSES.map((status): GateRow => ({
+      label: 'tests',
+      state: CHECK_LABEL[status],
+    }))
+      .map(formatGateRow)
+      .join('\n');
+    for (const status of CHECK_STATUSES) {
+      expect(text, status).toMatch(new RegExp(`^ {2}tests: +${CHECK_LABEL[status]}$`, 'm'));
+    }
+    // The retired spellings, in the only place a reader would meet them.
+    expect(text).not.toContain('not configured');
+    expect(text).not.toContain('not-configured');
+    expect(text).not.toContain('not-applicable');
+    expect(text).not.toContain('n/a');
+  });
+
+  it('renders the python row set with its own skipped and passed outcomes', () => {
     const py = formatGateSummary([
       { label: 'usage verdict', state: 'confirmed', detail: 'python sink rule' },
       { label: 'syntax', state: 'passed', detail: 'baseline-relative re-parse' },
-      { label: 'type-check', state: 'n/a', detail: 'mendr runs no type checker for python' },
+      { label: 'type-check', state: 'skipped', detail: 'mendr runs no type checker for python' },
       { label: 'tests', state: 'inconclusive', detail: 'mendr has no python test runner' },
     ]).join('\n');
     expect(py).toMatch(/^ {2}syntax: +passed \(baseline-relative re-parse\)$/m);
-    // A gate that does not EXIST here is n/a -- never a silent pass, and never
-    // the same word as a gate that exists and could not run.
-    expect(py).toMatch(/^ {2}type-check: +n\/a \(mendr runs no type checker for python\)$/m);
+    // A gate that does not EXIST here is `skipped` (it was `n/a`) -- never a
+    // silent pass, and still never the same word as a gate that exists and
+    // could not run. That distinction is the point; only the spelling moved.
+    expect(py).toMatch(/^ {2}type-check: +skipped \(mendr runs no type checker for python\)$/m);
     expect(py).toMatch(/^ {2}tests: +inconclusive \(mendr has no python test runner\)$/m);
+    // `skipped` is not `not run` either: `not run` means the repo had nothing
+    // to run (no test script), while mendr has no python type checker to run
+    // at all. Four of the five words are silence, and they are different ones.
+    expect(py).not.toMatch(/^ {2}type-check: +(not run|n\/a|passed)/m);
   });
 });
 
@@ -412,15 +450,22 @@ describe('registryVerdictRows (two claims, two rows)', () => {
   });
 });
 
+// The view's own status words moved with everything else: `pass`/`fail` are
+// now `passed`/`failed`, the words gates/status.ts defines. `not-tested` stays
+// as the eval gate's INPUT (no verdict reached), and this row is what decides
+// which of the two silences -- `not run` or `inconclusive` -- that was.
 describe('behavioralGateRow (the sixth check, itemized)', () => {
-  it('separates "nothing configured" from "configured but no verdict"', () => {
+  it('separates "nothing to run" (not run) from "configured but no verdict"', () => {
+    // No eval command exists, so there was nothing to run: `not run`. The word
+    // was `not configured`, which was this module's own spelling of the same
+    // state -- the distinction below is what the row exists for, not the word.
     expect(behavioralGateRow({ status: 'not-tested' })).toEqual({
       label: 'behavioral evaluation',
-      state: 'not configured',
+      state: 'not run',
       required: false,
     });
-    // An eval that timed out is INCONCLUSIVE. Reporting it as "not configured"
-    // would hide a gate that tried and failed to run; reporting it as anything
+    // An eval that timed out is INCONCLUSIVE. Reporting it as `not run` would
+    // hide a gate that tried and failed to run; reporting it as anything
     // passing would be a lie about behavior.
     expect(behavioralGateRow({ status: 'not-tested', reason: 'timed out after 1500ms' })).toEqual({
       label: 'behavioral evaluation',
@@ -432,16 +477,16 @@ describe('behavioralGateRow (the sixth check, itemized)', () => {
 
   it('reports a completed run with its command and exit code', () => {
     expect(
-      behavioralGateRow({ status: 'pass', command: 'npm run eval', exitCode: 0 }, true),
+      behavioralGateRow({ status: 'passed', command: 'npm run eval', exitCode: 0 }, true),
     ).toEqual({
       label: 'behavioral evaluation',
       state: 'passed',
       detail: 'your eval command: npm run eval, exit 0',
       required: true,
     });
-    expect(behavioralGateRow({ status: 'fail', command: 'npm run eval', exitCode: 3 }).state).toBe(
-      'failed',
-    );
+    expect(
+      behavioralGateRow({ status: 'failed', command: 'npm run eval', exitCode: 3 }).state,
+    ).toBe('failed');
   });
 });
 
@@ -449,7 +494,7 @@ describe('behavioralVerificationLines (the configurable-eval boundary)', () => {
   it('not-tested keeps the disclaimer AND says how to switch it on', () => {
     const text = behavioralVerificationLines({ status: 'not-tested' }).join('\n');
     expect(text).toContain('Behavioral verification (NOT checked):');
-    expect(text).toContain('behavioral evaluation:  not configured');
+    expect(text).toContain('behavioral evaluation:  not run');
     expect(text).toMatch(/output quality, latency, cost and response/);
     // The actionable half: the limit is a CHOICE the user can reverse.
     expect(text).toContain('"evalCommand" in mendr.config.json');
@@ -473,9 +518,9 @@ describe('behavioralVerificationLines (the configurable-eval boundary)', () => {
     expect(text).not.toContain('to check it: set "evalCommand"');
   });
 
-  it('pass reports the command and exit code, and caps the claim there', () => {
+  it('passed reports the command and exit code, and caps the claim there', () => {
     const text = behavioralVerificationLines({
-      status: 'pass',
+      status: 'passed',
       command: 'npm run eval',
       exitCode: 0,
     }).join('\n');
@@ -488,9 +533,9 @@ describe('behavioralVerificationLines (the configurable-eval boundary)', () => {
     expect(text).not.toMatch(/equivalent|safe to ship/i);
   });
 
-  it('fail says the fix is blocked, in the same terms as a failed test gate', () => {
+  it('failed says the fix is blocked, in the same terms as a failed test gate', () => {
     const text = behavioralVerificationLines({
-      status: 'fail',
+      status: 'failed',
       command: 'npm run eval',
       exitCode: 1,
     }).join('\n');
@@ -514,7 +559,7 @@ describe('behavioralVerificationLines (the configurable-eval boundary)', () => {
         { label: 'type-check', state: 'passed' },
         { label: 'tests', state: 'passed' },
       ],
-      { status: 'pass', command: 'npm run eval', exitCode: 0 },
+      { status: 'passed', command: 'npm run eval', exitCode: 0 },
     ).join('\n');
     expect(text).toContain('Behavioral verification (your own evaluation):');
     expect(text).not.toContain('Behavioral verification (NOT checked):');
@@ -526,14 +571,14 @@ describe('behavioralVerificationLines (the configurable-eval boundary)', () => {
 describe('behavioralVerificationNote (the closing line)', () => {
   it('keeps the untested wording for everything except a passing eval', () => {
     expect(behavioralVerificationNote({ status: 'not-tested' })).toBe(BEHAVIORAL_VERIFICATION_NOTE);
-    expect(behavioralVerificationNote({ status: 'fail', command: 'x', exitCode: 1 })).toBe(
+    expect(behavioralVerificationNote({ status: 'failed', command: 'x', exitCode: 1 })).toBe(
       BEHAVIORAL_VERIFICATION_NOTE,
     );
   });
 
   it('names the passing eval but still refuses to generalize from it', () => {
     const note = behavioralVerificationNote({
-      status: 'pass',
+      status: 'passed',
       command: 'npm run eval',
       exitCode: 0,
     });
@@ -549,7 +594,7 @@ describe('behavioralVerificationNote (the closing line)', () => {
   it('refuses to say anything was verified when the gates were skipped', () => {
     for (const view of [
       { status: 'not-tested' } as const,
-      { status: 'pass', command: 'npm run eval', exitCode: 0 } as const,
+      { status: 'passed', command: 'npm run eval', exitCode: 0 } as const,
     ]) {
       const note = behavioralVerificationNote(view, true);
       expect(note).toContain('mendr verified NOTHING on this run');

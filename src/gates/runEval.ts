@@ -1,3 +1,4 @@
+import type { CheckStatus } from './status.js';
 import { execa } from 'execa';
 import { DEFAULT_EVAL_TIMEOUT_MS } from '../config/repoConfig.js';
 import { gateEnv, truncateOutput, withPatchedSandbox, type PatchedFile } from './sandbox.js';
@@ -28,7 +29,7 @@ import { gateEnv, truncateOutput, withPatchedSandbox, type PatchedFile } from '.
  *   not-configured — no evalCommand: the honest default, never a pass
  *   inconclusive   — the gate could not run it (timeout, spawn/copy failure)
  */
-export type EvalStatus = 'pass' | 'fail' | 'not-configured' | 'inconclusive';
+export type EvalStatus = CheckStatus;
 
 /** Result of the eval gate. */
 export interface EvalGateResult {
@@ -120,7 +121,7 @@ export async function runRepoEval(
   opts: EvalGateOptions,
 ): Promise<EvalGateResult> {
   const command = opts.command?.trim();
-  if (!command) return { status: 'not-configured' };
+  if (!command) return { status: 'not_run' };
 
   const timeoutMs = opts.timeoutMs ?? DEFAULT_EVAL_TIMEOUT_MS;
   const sandbox = await withPatchedSandbox(repoPath, patchedFiles, (dir) =>
@@ -163,5 +164,5 @@ export async function runRepoEval(
   // execa reports a null/undefined exit code only for signals, which `timedOut`
   // above already covers; anything else that got here without a 0 is a failure.
   const exitCode = result.exitCode ?? 1;
-  return { status: exitCode === 0 ? 'pass' : 'fail', command, exitCode, output };
+  return { status: exitCode === 0 ? 'passed' : 'failed', command, exitCode, output };
 }
