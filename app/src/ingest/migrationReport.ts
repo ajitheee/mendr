@@ -1,4 +1,5 @@
 import { redactSecrets } from '../redact.js';
+import { toGateStatus, type GateStatus } from './gateStatus.js';
 
 // The second document the App accepts: what mendr-action DID, sent from the
 // customer's own CI run (schema mendr-migration-report/v1): outcome, PR url,
@@ -16,8 +17,7 @@ export const MIGRATION_OUTCOMES = ['clean', 'migration-proposed', 'pr-blocked', 
 export type MigrationOutcome = (typeof MIGRATION_OUTCOMES)[number];
 export const MIGRATION_VERDICTS = ['verified', 'failed', 'inconclusive', 'no_migration'] as const;
 export type MigrationVerdict = (typeof MIGRATION_VERDICTS)[number];
-export const GATE_STATUSES = ['pass', 'fail', 'inconclusive', 'not-configured'] as const;
-export type GateStatus = (typeof GATE_STATUSES)[number];
+export { GATE_STATUSES, type GateStatus } from './gateStatus.js';
 
 export const MAX_MIGRATIONS = 100;
 export const MAX_FILES = 200;
@@ -154,7 +154,11 @@ export function validateMigrationReport(raw: string, maxBytes: number): Migratio
 
   let gates: MigrationGates | null = null;
   if (isRecord(parsed.gates)) {
-    const g = (k: string): GateStatus => oneOf(parsed.gates && (parsed.gates as Record<string, unknown>)[k], GATE_STATUSES) ?? 'not-configured';
+    // toGateStatus, not oneOf: a report may come from a CLI older than the
+    // vocabulary merge, and its four words are still meaningful. See
+    // ./gateStatus.ts for the mapping and for why an unknown word lands on
+    // `inconclusive` rather than on a word that claims something.
+    const g = (k: string): GateStatus => toGateStatus((parsed.gates as Record<string, unknown>)[k]);
     gates = { typeCheck: g('typeCheck'), build: g('build'), tests: g('tests'), eval: g('eval') };
   }
 

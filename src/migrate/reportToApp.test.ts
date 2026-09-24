@@ -34,10 +34,15 @@ function artifact(): MigrationResult {
     changedFiles: ['src/ai.ts'],
     diff: 'diff --git a/src/ai.ts b/src/ai.ts\n--- a/src/ai.ts\n+++ b/src/ai.ts\n-  model: "gpt-4",\n+  model: "gpt-5.6-sol",\n',
     verification: {
-      typeCheck: { status: 'pass' },
-      build: { status: 'not-configured', detail: 'no build script' },
-      tests: { status: 'pass', command: 'npm test' },
-      eval: { status: 'not-configured' },
+      // The words the CLI ACTUALLY emits (src/gates/status.ts). These were
+      // hand-written in the old four-word vocabulary for a full release cycle
+      // after the CLI stopped using it — and because tsconfig.json excludes
+      // test files, tsc never saw the mismatch. That is how a cross-package
+      // contract test stayed green over a broken contract.
+      typeCheck: { status: 'passed' },
+      build: { status: 'not_run', detail: 'no build script' },
+      tests: { status: 'passed', command: 'npm test' },
+      eval: { status: 'not_run' },
       behavioralTested: false,
       verdict: 'verified',
     },
@@ -67,11 +72,38 @@ describe('mendr-action → App migration report', () => {
       prUrl: 'https://github.com/acme/api/pull/12',
       sha: 'a'.repeat(40),
       verdict: 'verified',
-      gates: { typeCheck: 'pass', build: 'not-configured', tests: 'pass', eval: 'not-configured' },
+      gates: { typeCheck: 'passed', build: 'not_run', tests: 'passed', eval: 'not_run' },
       behavioralTested: false,
       migrations: [{ provider: 'openai', from: 'gpt-4', to: 'gpt-5.6-sol', language: 'ts', sites: 2, files: ['src/ai.ts'] }],
       changedFiles: ['src/ai.ts'],
     });
+  });
+
+  it('carries a FAILED gate all the way to the App, as a failure', () => {
+    // The regression this file exists to catch and did not. The CLI's five
+    // words landed in src/ only; the App kept its own four-word list and
+    // coerced everything it did not recognize to `not-configured`, which it
+    // renders as "—". A build that ran and REJECTED the change was shown to
+    // the customer as "there was nothing to run" — on the one surface an
+    // external reviewer logs into. Every one of the five words must survive
+    // the artifact → build-report.mjs → validator chain intact.
+    const dir = mkdtempSync(join(tmpdir(), 'mendr-report-'));
+    created.push(dir);
+    const path = join(dir, 'mendr-migration.json');
+    const a = artifact();
+    a.verification = {
+      ...a.verification,
+      typeCheck: { status: 'passed' },
+      build: { status: 'failed', detail: 'tsc exited 2' },
+      tests: { status: 'inconclusive', detail: 'no installed node_modules' },
+      eval: { status: 'skipped' },
+      verdict: 'failed',
+    };
+    writeFileSync(path, JSON.stringify(a));
+    const v = validateMigrationReport(JSON.stringify(build(path, 'pr-blocked', '')), 1_000_000);
+    expect(v.ok).toBe(true);
+    if (!v.ok) return;
+    expect(v.report.gates).toEqual({ typeCheck: 'passed', build: 'failed', tests: 'inconclusive', eval: 'skipped' });
   });
 
   it('carries the swap\'s diff for display — and the App keeps it as a diff — but never the CLI\'s internals', () => {

@@ -360,7 +360,23 @@ export interface CardContext {
 }
 
 const GATE_LABEL = { typeCheck: 'type-check', build: 'build', tests: 'tests', eval: 'eval' } as const;
-const GATE_GLYPH: Record<string, string> = { pass: '✓', fail: '✗', inconclusive: '?', 'not-configured': '—' };
+// Both vocabularies, deliberately. The five current words are what a report
+// carries now; the four legacy ones are still sitting in `migrations.report`
+// JSONB for every row stored before the merge, and rendering those as '?'
+// would rewrite history rather than read it. Do not "clean up" the legacy keys
+// without a backfill. `skipped` and `not_run` share a glyph, as they do in the
+// CLI's own CHECK_MARK — neither ran, and the row's label says which.
+const GATE_GLYPH: Record<string, string> = {
+  passed: '✓',
+  failed: '✗',
+  inconclusive: '?',
+  not_run: '—',
+  skipped: '—',
+  // legacy, pre-vocabulary-merge reports
+  pass: '✓',
+  fail: '✗',
+  'not-configured': '—',
+};
 
 function gatesLine(m: MigrationRecord): string {
   const g = m.report.gates;
