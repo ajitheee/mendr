@@ -2,7 +2,7 @@ import type { CheckStatus } from './status.js';
 import { execa } from 'execa';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { gateEnv, truncateOutput, withPatchedSandbox, type PatchedFile } from './sandbox.js';
+import { describeFsFailure, gateEnv, truncateOutput, withPatchedSandbox, type PatchedFile } from './sandbox.js';
 
 // Phase 5: the test gate.
 //
@@ -78,6 +78,19 @@ export function parseTestCounts(output: string): TestCounts | undefined {
 const TEST_TIMEOUT_MS = 120_000;
 
 /**
+ * The reason this gate gives up on a repository it has no runner for.
+ *
+ * mendr's only test runner is `npm test`. On a repo without a package.json it
+ * has not proven there are no tests — only that it cannot reach them — so this
+ * pairs with `inconclusive`, never with `not_run`.
+ *
+ * Exported because `fix-llm` prints the same row for a python repository and
+ * `migrate` reaches it through this gate. While each surface held its own copy,
+ * they described the same repository in different words.
+ */
+export const NO_TEST_RUNNER = 'mendr has no python test runner -- only `npm test` is supported';
+
+/**
  * Run the target repo's test suite against `patchedFiles` in an isolated temp
  * copy. Never touches the original working tree. See file header for the full
  * isolation strategy.
@@ -86,13 +99,42 @@ export async function runRepoTests(
   repoPath: string,
   patchedFiles: PatchedFile[],
 ): Promise<TestGateResult> {
-  // 1. Bail early if the repo declares no test script — nothing to verify.
+  // 1. Bail early when there is nothing to verify. THREE cases, not one:
+  //
+  //    no package.json    this is not a Node project.      NOT_RUN
+  //    no `test` script   it is, and declares no suite.    NOT_RUN
+  //    unreadable         it is there and we could not read it. INCONCLUSIVE
+  //
+  // The first two used to be the first and third. A missing package.json fell
+  // into the catch and came back `inconclusive` carrying the raw ENOENT —
+  // Error, message, and the CI runner's ABSOLUTE PATH — which mendr-action
+  // published verbatim in the body of a public pull request as the test gate's
+  // reason. On a Python-only repository that fired on every single run.
+  //
+  // The honest status for a repository that is not a Node project is the one
+  // "no test script" already gets: there is nothing to run, and no amount of
+  // installing or retrying changes it.
+  const pkgPath = join(repoPath, 'package.json');
+  if (!existsSync(pkgPath)) {
+    // INCONCLUSIVE, not `not_run`. `not_run` means "there was nothing to run",
+    // and this gate is in no position to claim that: a repository with no
+    // package.json may well have a pytest or go test suite mendr simply cannot
+    // reach. Saying so would tell a reader their project has no tests.
+    //
+    // This is the same call `fix-llm` already made on its python path, and
+    // using its exact sentence is the point — the two surfaces described the
+    // same repository in different words before.
+    return { status: 'inconclusive', output: NO_TEST_RUNNER };
+  }
   let hasTestScript = false;
   try {
-    const pkg = JSON.parse(readFileSync(join(repoPath, 'package.json'), 'utf8'));
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
     hasTestScript = Boolean(pkg?.scripts?.test);
   } catch (err) {
-    return { status: 'inconclusive', output: `could not read package.json: ${String(err)}` };
+    // Present but unreadable IS inconclusive — re-running might work. The
+    // reason goes through describeFsFailure for the same reason the sandbox's
+    // does: this string is published.
+    return { status: 'inconclusive', output: `could not read package.json: ${describeFsFailure(err)}` };
   }
   if (!hasTestScript) {
     // NOT_RUN, not inconclusive: there is nothing to run, so no amount of

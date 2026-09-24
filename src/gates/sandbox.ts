@@ -99,6 +99,41 @@ export function truncateOutput(text: string): string {
 export type SandboxResult<T> = { ok: true; value: T } | { ok: false; reason: string };
 
 /**
+ * Why a filesystem operation failed, WITHOUT the path it failed on.
+ *
+ * `String(err)` on a Node fs error reads
+ *
+ *     Error: ENOENT: no such file or directory, open 'D:\a\acme-api\acme-api\package.json'
+ *
+ * and every gate detail in this directory is PUBLISHED: mendr-action writes the
+ * migrate report and the evidence block into the body of a public pull request.
+ * That string hands an external reviewer the CI runner's directory layout and
+ * the checkout's on-disk name, and tells them nothing they needed. The failure
+ * CODE is the useful half; the path is the half that leaks.
+ *
+ * THE CENTRAL SANITIZER DOES NOT COVER THIS, in two independent ways.
+ * src/redact/sanitize.ts matches secret SHAPES and known values, and has no
+ * rule for an absolute path — nor should it, since a path is not a credential
+ * and a rule broad enough to catch one would mangle ordinary output. And the
+ * pull-request evidence block never reaches the sanitizer at all: run-mendr.sh
+ * pipes the REPORT through `mendr redact` and cats the pr-body file in
+ * directly. So the only reliable place to not leak a path is to not build the
+ * string in the first place.
+ */
+export function describeFsFailure(err: unknown): string {
+  const code = (err as NodeJS.ErrnoException | null)?.code;
+  if (typeof code === 'string' && code.length > 0) {
+    const syscall = (err as NodeJS.ErrnoException).syscall;
+    return syscall ? `${code} on ${syscall}` : code;
+  }
+  // Not an errno error. Keep the message, drop anything that looks like a
+  // path: a bare name is still useful ("Unexpected token }"), a rooted one is
+  // the customer's filesystem.
+  const message = err instanceof Error ? err.message : String(err);
+  return message.replace(/(?:[A-Za-z]:)?[\\/][^\s'"]{2,}/g, '<path>').slice(0, 200);
+}
+
+/**
  * Build the patched copy, hand its directory to `run`, and tear it down.
  *
  * `node_modules` is linked only when the original repo HAS one. A repo without
@@ -148,7 +183,11 @@ export async function withPatchedSandbox<T>(
 
     return { ok: true, value: await run(tempDir) };
   } catch (err) {
-    return { ok: false, reason: String(err) };
+    // NO PATH. This `reason` is interpolated into three published gate details
+    // — `test gate infra error: …`, `build gate infra error: …` and `eval gate
+    // infra error: …` — and the paths it would carry are the CI runner's temp
+    // directory AND the customer's checkout root.
+    return { ok: false, reason: describeFsFailure(err) };
   } finally {
     // 4. Always tear down. Remove the junction first (unlinks the LINK only,
     //    never the original node_modules it points at), then the temp copy.

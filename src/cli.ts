@@ -23,8 +23,8 @@ import { buildUsageMap, formatUsageMap } from './usage/usageMap.js';
 import { intersect, formatAffectedSites } from './intersect/intersect.js';
 import { applyRenames, applyRenamesToProject } from './fix/apply.js';
 import { formatChange } from './detect/changeModel.js';
-import { checkTypes, formatDiagnostic, unresolvedScopeNote } from './gates/typecheck.js';
-import { runRepoTests } from './gates/runTests.js';
+import { checkTypes, formatDiagnostic, NO_TYPE_CHECK, unresolvedScopeNote } from './gates/typecheck.js';
+import { NO_TEST_RUNNER, runRepoTests } from './gates/runTests.js';
 import { runRepoEval, type EvalGateResult } from './gates/runEval.js';
 import {
   loadRepoConfig,
@@ -1160,7 +1160,7 @@ program
     let pyTestRow: GateRow = {
       label: 'tests',
       state: 'inconclusive',
-      detail: 'mendr has no python test runner -- only `npm test` is supported',
+      detail: NO_TEST_RUNNER,
     };
     let pyDowngradeReason = '';
     if (pyResult.siteCount > 0) {
@@ -1171,7 +1171,7 @@ program
       let testEvaluation: GateEvaluation = {
         gate: 'tests',
         outcome: 'inconclusive',
-        detail: 'mendr has no python test runner -- only `npm test` is supported',
+        detail: NO_TEST_RUNNER,
       };
       if (opts.skipGates) {
         // No evaluation is recorded: `--skip-gates` asserts the tier instead of
@@ -1432,12 +1432,16 @@ program
           },
           {
             // NOT "not configured": mendr does not run mypy/pyright at all, so
-            // there is no type-check gate here to configure. Calling it n/a is
-            // the honest word -- and it is why `gates.typecheck.required` does
+            // there is no type-check gate here to configure, and `skipped` is
+            // the honest word -- which is why `gates.typecheck.required` does
             // not block a python-only repo (see gates/policy.ts).
+            //
+            // The status and the sentence live in gates/typecheck.ts because
+            // `migrate` has to say exactly this too. While they were a literal
+            // here, it said "type-check: passed" instead -- for the same repo.
             label: 'type-check',
-            state: 'skipped',
-            detail: 'mendr runs no type checker for python',
+            state: CHECK_LABEL[NO_TYPE_CHECK.status],
+            detail: NO_TYPE_CHECK.detail,
           },
           pyTestRow,
         ],

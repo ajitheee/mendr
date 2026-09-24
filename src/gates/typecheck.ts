@@ -1,5 +1,6 @@
 import { ts } from 'ts-morph';
 import type { Diagnostic, Project } from 'ts-morph';
+import type { CheckStatus } from './status.js';
 
 // Phase 5: the type-check gate.
 //
@@ -155,3 +156,29 @@ export function unresolvedScopeNote(result: TypeCheckResult): string | undefined
 export function formatDiagnostic(info: DiagnosticInfo): string {
   return `TS${info.code}: ${info.message}`;
 }
+
+/**
+ * THE OUTCOME FOR CODE THIS GATE CANNOT JUDGE, in one place.
+ *
+ * mendr's only type checker is the in-memory ts-morph gate above. It reads
+ * TypeScript and JavaScript and nothing else — there is no mypy, no pyright, no
+ * subprocess. A patch that touches no .ts/.js file therefore has no type-check
+ * to run, and every surface must say so in the SAME words.
+ *
+ * WHY THIS IS A CONSTANT AND NOT A COMMENT. `fix-llm` got it right by accident
+ * of structure: its whole gate block sits behind `tsSwapCandidates > 0`, and
+ * its Python section printed this row as an object literal. `migrate` called
+ * checkTypes unconditionally, and on a Python-only repository the baseline and
+ * the patched project are the same — often EMPTY — project, so the gate
+ * returned `passed` with zero new diagnostics and the pull-request body
+ * published "type-check: **passed**" for a repo containing no TypeScript at
+ * all. Two surfaces, two answers, one repository: the exact thing the single
+ * vocabulary exists to prevent.
+ *
+ * `skipped`, not `not_run`: mendr made a decision here — it does not type-check
+ * this language — rather than looking for something and finding nothing.
+ */
+export const NO_TYPE_CHECK: { readonly status: CheckStatus; readonly detail: string } = {
+  status: 'skipped',
+  detail: 'mendr runs no type checker for python',
+};

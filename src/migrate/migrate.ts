@@ -1,6 +1,6 @@
 import type { CheckStatus } from '../gates/status.js';
-import { basename } from 'node:path';
-import { relative } from 'node:path';
+import { existsSync } from 'node:fs';
+import { basename, join, relative } from 'node:path';
 import type { LlmModelIdDeprecation, LlmRegistry } from '../types.js';
 import { loadProject } from '../usage/scanRepo.js';
 import { applyLlmFixesToProject } from '../fix/llmFix.js';
@@ -9,7 +9,7 @@ import { isVerified } from '../usage/llmRegistry.js';
 import { normalizePath } from '../audit/fingerprint.js';
 import { collectPythonFiles, readPythonSources } from '../python/scanPy.js';
 import { applyPyModelIdFixesToSources } from '../python/fixPy.js';
-import { checkTypes, unresolvedScopeNote } from '../gates/typecheck.js';
+import { checkTypes, NO_TYPE_CHECK, unresolvedScopeNote } from '../gates/typecheck.js';
 import { runRepoTests } from '../gates/runTests.js';
 import { runRepoEval } from '../gates/runEval.js';
 import { runRepoBuild } from '../gates/runBuild.js';
@@ -195,6 +195,17 @@ export interface SkippedItem {
 
 interface PlannedMigration {
   patchedFiles: PatchedFile[];
+  /**
+   * The TypeScript/JavaScript half of `patchedFiles`, kept separate because it
+   * is the ONLY honest signal for whether the type-check gate has anything to
+   * judge.
+   *
+   * `migrations[].language` is NOT that signal: a parameter transform patches a
+   * .ts file without producing a ModelMigration row, so a guard written against
+   * it would skip a type-check that was genuinely needed — a worse bug than the
+   * one it set out to fix.
+   */
+  tsPatchedFiles: PatchedFile[];
   /** The same files with their pre-migration text, for a drift-checked --write. */
   writes: PendingWrite[];
   changedFiles: string[];
@@ -332,6 +343,7 @@ async function plan(repoPath: string, registry: LlmRegistry, now: Date): Promise
   ];
   return {
     patchedFiles,
+    tsPatchedFiles,
     writes,
     changedFiles,
     diff,
@@ -439,7 +451,25 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
   }
 
   // --- verify in the sandbox ---
-  const typeResult = checkTypes(planned.baselineProject, planned.patchedProject);
+
+  // A TYPE-CHECK THAT HAD NOTHING TO CHECK IS NOT A PASS.
+  //
+  // checkTypes compares two ts-morph projects. When the migration patched no
+  // .ts/.js file they are the SAME project — often an empty one — so it
+  // returned `passed` with zero new diagnostics, and prBody published
+  // "type-check: **passed**" into the body of a public pull request for a
+  // repository containing no TypeScript at all. `fix-llm` said `skipped` for
+  // the very same repository.
+  //
+  // THE SIGNAL IS THE PATCH, NOT THE REPOSITORY. In a repo holding both
+  // languages whose swap happens to be Python-only, the TS project is
+  // unchanged and the gate manufactures the same empty pass — so asking "does
+  // this repo contain TypeScript" would leave the bug in place for exactly the
+  // mixed repositories the ICP has most of.
+  const hasTsPatch = planned.tsPatchedFiles.length > 0;
+  const typeResult = hasTsPatch
+    ? checkTypes(planned.baselineProject, planned.patchedProject)
+    : { passed: false, newDiagnostics: [], baselineCount: 0, unresolvedModules: [] };
   // A pass earns its detail too when the gate ran blind: with the SDK absent,
   // the model argument is `any` and an id the SDK would reject cannot fail
   // this check. This sentence travels into the pull-request body, which is
@@ -453,14 +483,16 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
   // string, which is the surface that gets dropped downstream: suppressed on
   // the PR-body gate row, discarded entirely by the App.
   const ranBlind = typeResult.passed && typeResult.unresolvedModules.length > 0;
-  const typeCheck = outcome(
-    typeResult.passed ? (ranBlind ? 'inconclusive' : 'passed') : 'failed',
-    ranBlind
-      ? `ran without the types that would reject a bad model id -- ${typeScope}`
-      : typeResult.passed
-        ? typeScope
-        : `${typeResult.newDiagnostics.length} new type error(s) introduced by the migration`,
-  );
+  const typeCheck = !hasTsPatch
+    ? outcome(NO_TYPE_CHECK.status, NO_TYPE_CHECK.detail)
+    : outcome(
+        typeResult.passed ? (ranBlind ? 'inconclusive' : 'passed') : 'failed',
+        ranBlind
+          ? `ran without the types that would reject a bad model id -- ${typeScope}`
+          : typeResult.passed
+            ? typeScope
+            : `${typeResult.newDiagnostics.length} new type error(s) introduced by the migration`,
+      );
 
   const buildResult = await runRepoBuild(repoPath, planned.patchedFiles, opts.buildTimeoutMs);
   const build = outcome(buildResult.status, buildResult.output, buildResult.command);
@@ -488,7 +520,29 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
         're-run to strengthen this gate.',
     );
   }
-  if (build.status === 'not_run') notes.push('No build script found (package.json has no `build`); the build gate did not run.');
+  if (typeCheck.status === 'skipped') {
+    // `typeScope` is undefined when the gate did not run, so the note above
+    // correctly disappears — and this one has to replace it, or the reader of
+    // a Python migration sees a dash beside "type-check" and no reason for it.
+    notes.push(
+      'No type-check was run: this migration patched no TypeScript or JavaScript file, and mendr ' +
+        'has no type checker for python. What stands behind a python swap is the registry mapping, ' +
+        'the recognized model sink, and a baseline-relative syntax re-parse -- not a type check.',
+    );
+  }
+  // These two used to assert a package.json that may not exist. On a repo that
+  // is not a Node project at all, "package.json has no `build`" sends the
+  // reader looking for a key in a file they do not have — and the test gate can
+  // now reach `not_run` on exactly that repo, because a missing package.json
+  // used to come back as an inconclusive carrying a raw ENOENT.
+  const hasPackageJson = existsSync(join(repoPath, 'package.json'));
+  if (build.status === 'not_run') {
+    notes.push(
+      hasPackageJson
+        ? 'No build script found (package.json has no `build`); the build gate did not run.'
+        : 'No package.json in this repository, so there was no `npm run build` for the build gate to run.',
+    );
+  }
   if (build.status === 'inconclusive') notes.push('The build gate was inconclusive; see its detail.');
   if (tests.status === 'not_run') notes.push('No test script found (package.json has no `test`); the test gate did not run.');
   if (tests.status === 'inconclusive') notes.push('The test gate was inconclusive; see its detail.');
@@ -496,7 +550,11 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
     notes.push(
       typeCheck.status === 'passed'
         ? 'The in-memory type-check passed, but no build, test or eval actually ran in the sandbox — that alone is not a PR-ready proof. Run this in CI (with dependencies installed) or add a build/test script.'
-        : 'No build, test or eval ran in the sandbox, so nothing was proven. Run this in CI with dependencies installed.',
+        : typeCheck.status === 'skipped'
+          ? // "Run this in CI with dependencies installed" would not change the
+            // outcome here: the missing gate is one mendr does not have.
+            'Nothing executable ran and there was no type-check to run, so NOTHING about this code was verified on this run. Pass --eval-command with a command mendr can run against the patched copy to earn more than the registry mapping.'
+          : 'No build, test or eval ran in the sandbox, so nothing was proven. Run this in CI with dependencies installed.',
     );
   }
   if (verdict === 'verified') notes.push('This migration is a reviewed PR candidate. Mendr never merges; a human approves.');

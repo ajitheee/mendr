@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { parseTestCounts, runRepoTests } from './runTests.js';
+import { NO_TEST_RUNNER, parseTestCounts, runRepoTests } from './runTests.js';
 import { isVerified } from './status.js';
 
 // Hermetic tests for the test gate. Each builds a throwaway "repo" in the OS
@@ -180,5 +180,32 @@ describe('parseTestCounts (measurable gate labels)', () => {
   it('returns undefined for unrecognizable output (never invents numbers)', () => {
     expect(parseTestCounts('ok\nall good\n')).toBeUndefined();
     expect(parseTestCounts('')).toBeUndefined();
+  });
+});
+
+describe('a repository this gate has no runner for', () => {
+  // The defect: a repo with no package.json fell through to the catch below
+  // and came back `inconclusive` carrying the raw ENOENT -- Error, message and
+  // the CI runner's ABSOLUTE PATH -- which mendr-action published verbatim in
+  // the body of a public pull request, on every run against a python repo.
+  it('says it has no runner, without naming a path', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mendr-nopkg-'));
+    created.push(dir);
+    writeFileSync(join(dir, 'app.py'), 'model = "gpt-4"\n');
+
+    const r = await runRepoTests(dir, []);
+
+    expect(r.output).toBe(NO_TEST_RUNNER);
+    // The published string must not carry the checkout root, a drive letter,
+    // or the node ENOENT shape it used to.
+    expect(r.output).not.toContain(dir);
+    expect(r.output).not.toMatch(/ENOENT|[A-Za-z]:[\/]|\/(?:home|Users|tmp)\//);
+  });
+
+  it('is inconclusive, not not_run -- it has not proven there are no tests', () => {
+    // `not_run` means "there was nothing to run". This gate cannot claim that
+    // about a repo whose suite may be pytest: it only knows it cannot reach it.
+    // The distinction is not cosmetic -- a required test gate must still block.
+    expect(NO_TEST_RUNNER).toMatch(/only `npm test` is supported/);
   });
 });

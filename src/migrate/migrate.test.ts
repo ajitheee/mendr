@@ -247,3 +247,58 @@ describe('SUSPECTED GAP — migrate still reports a BLIND type-check as passed',
     expect(r.verification.verdict).not.toBe('verified');
   }, 120_000);
 });
+
+describe('a migration that patches no TypeScript', () => {
+  const PY_REG: LlmRegistry = [
+    { provider: 'anthropic', kind: 'model_id', deprecated: 'claude-3-sonnet-20240229', replacement: 'claude-sonnet-4-6', status: 'retired', shutdownDate: '2026-07-21', verification: autoApplyVerification() },
+  ];
+  const PY_APP = [
+    'import anthropic',
+    'client = anthropic.Anthropic()',
+    'def summarize(text):',
+    '    return client.messages.create(model="claude-3-sonnet-20240229", messages=[])',
+  ].join('\n');
+
+  it('does not report a type-check it never ran', async () => {
+    // THE DEFECT. checkTypes compares two ts-morph projects; with no .ts file
+    // patched they are the same (empty) project, so it returned `passed` with
+    // zero new diagnostics and the pull-request body published
+    // "type-check: **passed**" for a repository containing no TypeScript at
+    // all. `fix-llm` said `skipped` for the very same repository.
+    const dir = repo({ 'app.py': PY_APP });
+    const r = await runMigration(dir, PY_REG, { now: new Date('2026-09-24T00:00:00Z') });
+
+    expect(r.migrations.length).toBe(1);
+    expect(r.verification.typeCheck.status).toBe('skipped');
+    expect(r.verification.typeCheck.status).not.toBe('passed');
+    expect(r.verification.typeCheck.detail).toContain('no type checker for python');
+  });
+
+  it('never lets a skipped type-check reach a verified verdict', async () => {
+    const dir = repo({ 'app.py': PY_APP });
+    const r = await runMigration(dir, PY_REG, { now: new Date('2026-09-24T00:00:00Z') });
+    expect(r.verification.verdict).not.toBe('verified');
+    expect(r.prReady).toBe(false);
+  });
+
+  it('publishes no filesystem path in any gate detail', async () => {
+    // The second half of the same bug: the test gate's detail was a raw
+    // Node ENOENT carrying the CI runner's absolute path, and it went straight
+    // into the body of a public pull request.
+    const dir = repo({ 'app.py': PY_APP });
+    const r = await runMigration(dir, PY_REG, { now: new Date('2026-09-24T00:00:00Z') });
+
+    const details = [r.verification.typeCheck, r.verification.build, r.verification.tests, r.verification.eval]
+      .map((g) => g.detail ?? '')
+      .join('\n');
+    expect(details).not.toContain(dir);
+    expect(details).not.toContain(tmpdir());
+    expect(details).not.toMatch(/ENOENT|[A-Za-z]:[\/]/);
+  });
+
+  it('tells the reader WHY there was no type-check, not just that there was none', async () => {
+    const dir = repo({ 'app.py': PY_APP });
+    const r = await runMigration(dir, PY_REG, { now: new Date('2026-09-24T00:00:00Z') });
+    expect(r.notes.join('\n')).toMatch(/no type checker for python/);
+  });
+});
