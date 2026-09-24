@@ -273,8 +273,15 @@ describe('the shipped github-script upsert (run against a GitHub mock)', () => {
 
 describe('the generated workflow is pinned and least-privilege', () => {
   it('defaults the Mendr spec to a pinned RELEASE tag, never a moving branch', () => {
-    // Pinned to an immutable release (vX.Y.Z), overridable via MENDR_SPEC.
-    expect(WATCH_WORKFLOW_YAML).toMatch(/vars\.MENDR_SPEC \|\| 'v\d+\.\d+\.\d+'/);
+    // Pinned to an immutable release (vX.Y.Z, with an optional -alpha suffix),
+    // overridable via MENDR_SPEC.
+    //
+    // The prerelease suffix used to be missing from this pattern, and the
+    // closing quote sat right after the patch digit — so it matched v0.1.0 and
+    // ONLY v0.1.0-shaped tags. Every release since has been `-alpha`, which is
+    // why this assertion happily guarded a pin five releases stale: it was
+    // testing the shape of the version that happened to be there, not the rule.
+    expect(WATCH_WORKFLOW_YAML).toMatch(/vars\.MENDR_SPEC \|\| 'v\d+\.\d+\.\d+(?:-[\w.]+)?'/);
     // Never a branch/main as the default.
     expect(WATCH_WORKFLOW_YAML).not.toContain("|| 'github:ajitheee/mendr'");
     expect(WATCH_WORKFLOW_YAML).not.toContain("|| 'main'");

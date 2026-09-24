@@ -18,6 +18,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # check-pins.mjs asks whether the release the pins name actually
+          # carries today's mendr-action/ and CLI. That needs tags and history;
+          # the default shallow checkout has neither, and the check degrades to
+          # a printed NOTE rather than failing — a guard that silently does
+          # nothing is the thing it exists to prevent.
+          fetch-depth: 0
       - name: shellcheck the action scripts
         run: |
           shellcheck --version
