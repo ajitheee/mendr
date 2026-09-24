@@ -2785,8 +2785,18 @@ program
         }));
         const testResult = await runRepoTests(resolved, patchedFiles);
 
-        const typeLabel = typeResult.passed ? 'pass' : 'fail';
-        const gatesPassed = typeResult.passed && testResult.status === 'passed';
+        // The third caller of checkTypes, and the one the vocabulary merge
+        // missed: it printed its own two words ('pass'/'fail') and the test
+        // gate's raw union member. A reader comparing this against `fix-llm`
+        // or `migrate` saw three spellings of the same fact.
+        //
+        // `ranBlind` is the same rule the other two callers apply: a
+        // type-check against a tree whose SDK types never loaded runs to
+        // completion and reports nothing, but the part that would have
+        // rejected a bad rename was never there. That is not `passed`.
+        const ranBlind = typeResult.passed && typeResult.unresolvedModules.length > 0;
+        const typeOutcome: CheckStatus = typeResult.passed ? (ranBlind ? 'inconclusive' : 'passed') : 'failed';
+        const gatesPassed = typeOutcome === 'passed' && testResult.status === 'passed';
         renameTier = gatesPassed ? 'A' : 'C';
 
         if (!gatesPassed) {
@@ -2796,6 +2806,11 @@ program
             downgradeReason =
               `patched code introduces ${n} new type error${n === 1 ? '' : 's'}` +
               (first ? `: ${formatDiagnostic(first)}` : '');
+          } else if (typeOutcome === 'inconclusive') {
+            downgradeReason =
+              `the type-check ran without the types that would reject a bad rename ` +
+              `(${typeResult.unresolvedModules.length} package${typeResult.unresolvedModules.length === 1 ? '' : 's'} not installed in this checkout) ` +
+              `— nothing could have failed, so nothing was proven`;
           } else if (testResult.status === 'failed') {
             downgradeReason = 'repo tests failed against the patched code';
           } else if (testResult.output === 'no test script') {
@@ -2813,8 +2828,8 @@ program
         console.log('');
         console.log(diff);
         console.log('Gate summary:');
-        console.log(`  type-check: ${typeLabel}`);
-        console.log(`  tests:      ${testResult.status}`);
+        console.log(`  type-check: ${CHECK_LABEL[typeOutcome]}`);
+        console.log(`  tests:      ${CHECK_LABEL[testResult.status]}`);
         console.log('');
 
         if (renameTier === 'A') {
@@ -2822,7 +2837,12 @@ program
             `Tier A: ${renames.length} rename${renames.length === 1 ? '' : 's'} ` +
               `(${renameLabels}) applied at ${siteCount} site${siteCount === 1 ? '' : 's'} ` +
               `across ${changedFiles.length} file${changedFiles.length === 1 ? '' : 's'}. ` +
-              `(verified: type-check + tests pass)`,
+              // Read off the gates rather than asserted alongside them: this
+              // line used to claim "type-check + tests pass" unconditionally
+              // in the Tier A branch, which is true only because `gatesPassed`
+              // happens to require it. Naming the outcomes keeps the sentence
+              // honest if either rule ever changes.
+              `(verified: type-check ${CHECK_LABEL[typeOutcome]}, tests ${CHECK_LABEL[testResult.status]})`,
           );
         } else {
           console.log(

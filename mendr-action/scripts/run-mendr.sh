@@ -161,7 +161,35 @@ if [ "$REPORT_STATUS" -ne 0 ] || [ "$WRITE_STATUS" -ne 0 ] || [ ! -s "$ARTIFACT"
 fi
 
 VERDICT="$(jq -r '.verification.verdict' "$ARTIFACT")"
-GATES="$(jq -r '.verification | "type-check \(.typeCheck.status) · build \(.build.status) · tests \(.tests.status) · eval \(.eval.status)"' "$ARTIFACT" 2>/dev/null || echo '')"
+# The gate words go straight into the App's approval timeline, where a human
+# reads them. Spell them the way every other surface does (src/gates/status.ts
+# CHECK_LABEL) instead of posting the raw union member — `not_run`, underscore
+# and all, is a machine token, and the identical bug was fixed in the
+# pull-request body at src/report/prBody.ts.
+#
+# The mapping lives in shell rather than in the jq program so it can be tested
+# without jq installed; an unnoticed jq syntax error here would be swallowed by
+# the `|| echo ''` below and silently drop the gate line from the timeline.
+gate_label() {
+  case "$1" in
+    passed) printf 'passed' ;;
+    failed) printf 'FAILED' ;;
+    skipped) printf 'skipped' ;;
+    not_run) printf 'not run' ;;
+    inconclusive) printf 'could not run' ;;
+    # An unknown word is printed as-is rather than guessed at: a sixth state
+    # should look wrong in the timeline, not be quietly renamed to a fifth.
+    *) printf '%s' "$1" ;;
+  esac
+}
+GATES=''
+if GATE_RAW="$(jq -r '.verification | "\(.typeCheck.status) \(.build.status) \(.tests.status) \(.eval.status)"' "$ARTIFACT" 2>/dev/null)"; then
+  # shellcheck disable=SC2086
+  set -- $GATE_RAW
+  if [ "$#" -eq 4 ]; then
+    GATES="type-check $(gate_label "$1") · build $(gate_label "$2") · tests $(gate_label "$3") · eval $(gate_label "$4")"
+  fi
+fi
 case "$VERDICT" in
   verified) post_event verified "$GATES" ;;
   no_migration) ;;

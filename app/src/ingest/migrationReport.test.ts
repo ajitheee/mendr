@@ -13,7 +13,7 @@ function full(over: Record<string, unknown> = {}): Record<string, unknown> {
     sha: SHA,
     generatedAt: '2026-09-07T07:00:00Z',
     verdict: 'verified',
-    gates: { typeCheck: 'pass', build: 'not-configured', tests: 'pass', eval: 'not-configured' },
+    gates: { typeCheck: 'passed', build: 'not_run', tests: 'passed', eval: 'not_run' },
     behavioralTested: false,
     migrations: [{ provider: 'openai', from: 'gpt-4', to: 'gpt-5.6-sol', language: 'ts', sites: 2, files: ['src/ai.ts', 'src/summarize.ts'] }],
     changedFiles: ['src/ai.ts', 'src/summarize.ts'],
@@ -37,7 +37,7 @@ describe('validateMigrationReport', () => {
       sha: SHA,
       generatedAt: '2026-09-07T07:00:00Z',
       verdict: 'verified',
-      gates: { typeCheck: 'pass', build: 'not-configured', tests: 'pass', eval: 'not-configured' },
+      gates: { typeCheck: 'passed', build: 'not_run', tests: 'passed', eval: 'not_run' },
       behavioralTested: false,
       migrations: [{ provider: 'openai', from: 'gpt-4', to: 'gpt-5.6-sol', language: 'ts', sites: 2, files: ['src/ai.ts', 'src/summarize.ts'] }],
       changedFiles: ['src/ai.ts', 'src/summarize.ts'],
@@ -98,7 +98,18 @@ describe('validateMigrationReport', () => {
   it('tolerates a minimal error report (no artifact) and normalizes odd values', () => {
     const r = ok(validateMigrationReport(JSON.stringify({ schema: MIGRATION_REPORT_SCHEMA, outcome: 'error', sha: 'not-a-sha', generatedAt: 'yesterday', gates: { typeCheck: 'bogus' }, migrations: [{ provider: 'x' }, 'junk'] }), 1_000_000));
     expect(r).toMatchObject({ outcome: 'error', prUrl: null, sha: null, generatedAt: null, verdict: null, behavioralTested: false, migrations: [], changedFiles: [], notes: [] });
-    expect(r.gates).toEqual({ typeCheck: 'not-configured', build: 'not-configured', tests: 'not-configured', eval: 'not-configured' });
+    // An unrecognized word and three absent ones all land on `inconclusive`,
+    // not on `not_run`. The App cannot know there was nothing to run; it only
+    // knows the report did not say. The old default claimed the former.
+    expect(r.gates).toEqual({ typeCheck: 'inconclusive', build: 'inconclusive', tests: 'inconclusive', eval: 'inconclusive' });
+  });
+
+  it('still accepts a report from a CLI that predates the vocabulary merge', () => {
+    // Customers pin the CLI in a workflow file committed to their own repo, so
+    // the old four words keep arriving long after the tag moves. Dropping them
+    // would blank a real dashboard.
+    const r = ok(validateMigrationReport(JSON.stringify(full({ gates: { typeCheck: 'pass', build: 'not-configured', tests: 'fail', eval: 'inconclusive' } })), 1_000_000));
+    expect(r.gates).toEqual({ typeCheck: 'passed', build: 'not_run', tests: 'failed', eval: 'inconclusive' });
   });
 
   it.each([

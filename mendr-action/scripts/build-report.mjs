@@ -23,7 +23,12 @@ if (a !== null && (typeof a !== 'object' || Array.isArray(a))) a = null;
 
 const str = (v) => (typeof v === 'string' && v.length > 0 ? v : null);
 const list = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []);
-const gate = (g) => (g && typeof g === 'object' && typeof g.status === 'string' ? g.status : 'not-configured');
+// A missing or malformed gate object falls back to `inconclusive`, never to a
+// word that claims something. `not-configured`/`not_run` asserts "there was
+// nothing to run", which this script cannot know when the artifact did not say
+// — and coercing to the most reassuring word one hop upstream of the App is
+// the same defect the App's own ingest had. See app/src/ingest/gateStatus.ts.
+const gate = (g) => (g && typeof g === 'object' && typeof g.status === 'string' ? g.status : 'inconclusive');
 const verification = a && a.verification && typeof a.verification === 'object' ? a.verification : null;
 
 const report = {
