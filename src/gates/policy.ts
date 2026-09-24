@@ -1,3 +1,4 @@
+import type { CheckStatus } from './status.js';
 import type { GateName, RepoConfig } from '../config/repoConfig.js';
 
 // THE GATE POLICY: which gates must pass before mendr calls a fix Tier A.
@@ -17,18 +18,14 @@ import type { GateName, RepoConfig } from '../config/repoConfig.js';
 // whether it is renamed.
 
 /**
- * What a gate returned on this run.
+ * What a gate returned on this run — {@link CheckStatus}, the one vocabulary.
  *
- *   pass           — the check ran and was satisfied
- *   fail           — the check ran and was violated (always blocks, required or not)
- *   inconclusive   — the check COULD NOT RUN (no installed deps, timeout, infra)
- *   not-configured — there is nothing to run (no test script, no eval command)
- *   not-applicable — this gate does not exist for this language (no type-check
- *                    gate for Python). Distinct from `inconclusive`: nothing
- *                    was attempted and nothing could be, so requiring the gate
- *                    cannot make it run and must not block the language.
+ * This used to be its own five-word union, and four others existed elsewhere.
+ * The name survives because it reads correctly at these call sites; the meaning
+ * now comes from src/gates/status.ts, so a word cannot mean one thing here and
+ * another in `migrate`.
  */
-export type GateOutcome = 'pass' | 'fail' | 'inconclusive' | 'not-configured' | 'not-applicable';
+export type GateOutcome = CheckStatus;
 
 /** One gate's result for this run, as the policy sees it. */
 export interface GateEvaluation {
@@ -94,8 +91,8 @@ export function resolveGatePolicy(
 /** A gate that stops this fix from being Tier A. */
 export interface GateBlock {
   gate: GateName;
-  /** Never `pass` and never `not-applicable` — those do not block. */
-  outcome: Exclude<GateOutcome, 'pass' | 'not-applicable'>;
+  /** Never `passed` and never `skipped` — those do not block. */
+  outcome: Exclude<GateOutcome, 'passed' | 'skipped'>;
   /** True when the policy REQUIRED this gate; false for an always-blocking hard fail. */
   required: boolean;
   detail?: string;
@@ -104,11 +101,14 @@ export interface GateBlock {
 /**
  * Which of these gate results block Tier A.
  *
- *   fail                          — always blocks, required or not. A check
- *                                   that RAN and came back negative is the one
- *                                   signal no policy may wave through.
- *   inconclusive / not-configured — blocks IFF the gate is required.
- *   pass / not-applicable         — never blocks.
+ *   failed                 — always blocks, required or not. A check that RAN
+ *                            and came back negative is the one signal no policy
+ *                            may wave through.
+ *   inconclusive / not_run — blocks IFF the gate is required.
+ *   passed                 — never blocks.
+ *   skipped                — never blocks. We chose not to run it, so requiring
+ *                            it cannot make it run; blocking here would punish
+ *                            the operator for their own explicit instruction.
  *
  * Order is preserved, so the caller reports the first blocker in the order the
  * gates ran rather than in whatever order a map iterated.
@@ -120,9 +120,9 @@ export function gateBlocks(
   const blocks: GateBlock[] = [];
   for (const evaluation of evaluations) {
     const { gate, outcome, detail } = evaluation;
-    if (outcome === 'pass' || outcome === 'not-applicable') continue;
+    if (outcome === 'passed' || outcome === 'skipped') continue;
     const required = policy[gate].required;
-    if (outcome !== 'fail' && !required) continue;
+    if (outcome !== 'failed' && !required) continue;
     blocks.push({ gate, outcome, required, ...(detail ? { detail } : {}) });
   }
   return blocks;
@@ -144,7 +144,7 @@ const GATE_LABEL: Readonly<Record<GateName, string>> = {
 export function describeGateBlock(block: GateBlock): string {
   const label = GATE_LABEL[block.gate];
   const detail = block.detail ? `: ${block.detail}` : '';
-  if (block.outcome === 'fail') {
+  if (block.outcome === 'failed') {
     // The eval gate keeps its own sentence: the thing that failed is the
     // command the USER wrote, and naming it (with its exit code) is what sends
     // them to the right place. "the behavioral evaluation gate failed" names
@@ -153,7 +153,14 @@ export function describeGateBlock(block: GateBlock): string {
       ? `your eval command failed against the patched code (${block.detail ?? 'no detail'})`
       : `the ${label} gate failed against the patched code${detail}`;
   }
-  const state = block.outcome === 'inconclusive' ? 'could not run' : 'is not configured';
+  // Each remaining state gets its own clause, because "did not pass" covers
+  // three different situations and sends the reader somewhere different in each.
+  const state =
+    block.outcome === 'inconclusive'
+      ? 'could not run'
+      : block.outcome === 'not_run'
+        ? 'had nothing to run'
+        : 'did not run';
   return (
     `required gate "${block.gate}" did not pass -- the ${label} gate ${state}${detail}` +
     ` (set "gates.${block.gate}": { "required": false } in mendr.config.json to allow it)`

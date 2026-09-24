@@ -250,16 +250,21 @@ export function formatCatalogLine(catalog: { file: string; ids: string[] }): str
  *   n/a              the check does not exist for this language.
  */
 export type GateRowState =
+  // Registry verdicts — a claim about a RECORD, not about a run.
   | 'verified'
   | 'not verified'
   | 'confirmed'
   | 'not confirmed'
+  // A record that does not exist to attribute. Not a check outcome.
+  | 'n/a'
+  // Check outcomes — CHECK_LABEL from gates/status.ts, and nothing else. The
+  // old 'not configured' and 'n/a' were a sixth and seventh spelling of
+  // not_run and skipped.
   | 'passed'
   | 'failed'
-  | 'inconclusive'
-  | 'not configured'
   | 'skipped'
-  | 'n/a';
+  | 'not run'
+  | 'inconclusive';
 
 /** One line of the gate summary: one check, one outcome, one optional why. */
 export interface GateRow {
@@ -294,7 +299,7 @@ export function formatGateRow(row: GateRow): string {
  * fact, and only one of them may ever be dressed up as a result.
  */
 export interface BehavioralVerificationView {
-  status: 'not-tested' | 'pass' | 'fail';
+  status: 'not-tested' | 'passed' | 'failed';
   /** The eval command that ran (absent when nothing ran). */
   command?: string;
   exitCode?: number;
@@ -349,11 +354,11 @@ export function behavioralGateRow(
 ): GateRow {
   const label = 'behavioral evaluation';
   const detail = `your eval command: ${view.command ?? 'unknown'}, exit ${view.exitCode ?? '?'}`;
-  if (view.status === 'pass') return { label, state: 'passed', detail, required };
-  if (view.status === 'fail') return { label, state: 'failed', detail, required };
+  if (view.status === 'passed') return { label, state: 'passed', detail, required };
+  if (view.status === 'failed') return { label, state: 'failed', detail, required };
   return view.reason
     ? { label, state: 'inconclusive', detail: view.reason, required }
-    : { label, state: 'not configured', required };
+    : { label, state: 'not run', required };
 }
 
 export function behavioralVerificationLines(
@@ -378,7 +383,7 @@ export function behavioralVerificationLines(
       '  was applied: mendr will not apply a fix it could not behaviorally verify.',
     ];
   }
-  if (view.status === 'pass') {
+  if (view.status === 'passed') {
     return [
       'Behavioral verification (your own evaluation):',
       row,
@@ -439,7 +444,7 @@ export function behavioralVerificationNote(
   gatesSkipped = false,
 ): string {
   if (gatesSkipped) return SKIPPED_GATES_NOTE;
-  if (view.status !== 'pass') return BEHAVIORAL_VERIFICATION_NOTE;
+  if (view.status !== 'passed') return BEHAVIORAL_VERIFICATION_NOTE;
   return (
     'note: mendr verified the CODE (see the gate summary above) and ran YOUR eval ' +
     `command (${view.command}), which passed. That is the only behavioral claim it ` +

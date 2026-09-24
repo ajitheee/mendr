@@ -26,9 +26,9 @@ describe('detectBuildCommand', () => {
 });
 
 describe('runRepoBuild', () => {
-  it('is not-configured when the repo declares no build', async () => {
+  it('is not_run when the repo declares no build (nothing to run, as distinct from inconclusive)', async () => {
     const r = await runRepoBuild(repo({ name: 't' }, true), []);
-    expect(r.status).toBe('not-configured');
+    expect(r.status).toBe('not_run');
   });
 
   it('is inconclusive when there are no installed dependencies to link', async () => {
@@ -41,7 +41,7 @@ describe('runRepoBuild', () => {
     const dir = repo({ scripts: { build: 'node -e "process.exit(0)"' } }, true);
     writeFileSync(join(dir, 'a.ts'), 'export const x = 1;\n');
     const r = await runRepoBuild(dir, [{ absPath: join(dir, 'a.ts'), newText: 'export const x = 2;\n' }]);
-    expect(r.status).toBe('pass');
+    expect(r.status).toBe('passed');
   }, 120_000);
 
   it('is inconclusive (not fail) when the repo did not build even BEFORE the change', async () => {

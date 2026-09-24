@@ -1,3 +1,4 @@
+import type { CheckStatus } from '../gates/status.js';
 import type { MigrationResult, ModelMigration, SkippedItem } from '../migrate/migrate.js';
 
 // THE PULL REQUEST BODY.
@@ -62,11 +63,16 @@ function swapLines(m: ModelMigration): string[] {
   return out;
 }
 
-const GATE_WORD: Record<string, string> = {
-  pass: 'passed',
-  fail: 'FAILED',
+// Keyed by CheckStatus. When these keys went stale, `failed` fell through to a
+// lowercase word (the shout is deliberate: it must not be skimmed past in a
+// column of bolded words) and `not_run` printed the raw machine token,
+// underscore and all, to an external reviewer.
+const GATE_WORD: Record<CheckStatus, string> = {
+  passed: 'passed',
+  failed: 'FAILED',
   inconclusive: 'could not run',
-  'not-configured': 'not configured',
+  not_run: 'not run',
+  skipped: 'skipped',
 };
 
 function gateLines(v: MigrationResult['verification']): string[] {
@@ -74,13 +80,17 @@ function gateLines(v: MigrationResult['verification']): string[] {
   // nothing executable could be built. Printing four identical rows invites the reader to think
   // four checks happened and found nothing to do.
   const all = [v.typeCheck, v.build, v.tests, v.eval];
-  if (all.every((g) => g.status === 'not-configured')) {
+  if (all.every((g) => g.status === 'not_run')) {
     return ['- **nothing was verified on this run** — no type-check, no build, no tests, no eval'];
   }
-  const row = (label: string, g: { status: string; detail?: string; command?: string }): string =>
-    `- ${label}: **${GATE_WORD[g.status] ?? g.status}**` +
+  // Typed to CheckStatus, so a future rename is a compile error rather than a
+  // fall-through to the raw token. That fall-through is exactly how `failed`
+  // stopped shouting and how `not_run` — underscore and all — reached the body
+  // of a pull request an external reviewer reads.
+  const row = (label: string, g: { status: CheckStatus; detail?: string; command?: string }): string =>
+    `- ${label}: **${GATE_WORD[g.status]}**` +
     (g.command ? ` (\`${g.command}\`)` : '') +
-    (g.detail && g.status !== 'pass' ? ` — ${g.detail}` : '');
+    (g.detail && g.status !== 'passed' ? ` — ${g.detail}` : '');
   return [
     row('type-check', v.typeCheck),
     row('build', v.build),

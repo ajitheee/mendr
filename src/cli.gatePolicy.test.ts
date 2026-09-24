@@ -14,6 +14,11 @@ import { tmpdir } from 'node:os';
 // Hermetic: temp-dir fixtures, no network, and deliberately NO installed
 // node_modules — which is exactly the state that makes the test gate
 // inconclusive, the case this whole feature exists to let a repo decide about.
+// The same missing node_modules now makes the TYPE-CHECK gate inconclusive too
+// (it runs blind: the types that would reject a bad model id are unresolved),
+// and that gate is required by default — so a fixture that wants some OTHER
+// gate to be the deciding one says `gates: { typecheck: { required: false } }`
+// and says why. See makeRepo below.
 
 const MENDR_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -43,6 +48,12 @@ const CALL_SITE = [
  * declares `npm test` but nothing is installed, so the test gate comes back
  * `inconclusive` — a real suite that exists and could not be executed, which is
  * not the same fact as "this repo has no tests".
+ *
+ * The missing node_modules costs the TYPE-CHECK gate its verdict too: with the
+ * SDK unresolved, the model argument is `any` and nothing could have failed, so
+ * that gate is `inconclusive` as well — and it is required by default, so any
+ * test here that needs a gate OTHER than the type-check to be the deciding one
+ * must pass `gates: { typecheck: { required: false } }`.
  */
 function makeRepo(config?: Record<string, unknown>): string {
   const dir = mkdtempSync(join(tmpdir(), 'mendr-gate-policy-'));
@@ -99,13 +110,32 @@ describe('a required gate that cannot run blocks Tier A', () => {
     async () => {
       // The same repo, same un-runnable suite, opposite policy. The OUTCOME
       // word does not change with the policy -- only whether it blocks.
-      const repo = makeRepo({ gates: { tests: { required: false } } });
+      //
+      // `typecheck: { required: false }` is here for the SAME reason the suite
+      // is un-runnable: with no node_modules the type-check runs BLIND (the SDK
+      // types that would reject a bad model id are unresolved, so nothing could
+      // have failed), which is now `inconclusive` rather than `passed`. The
+      // type-check gate is required by default, so at the default policy it
+      // would block this run before the TESTS policy could be observed at all.
+      // Opting it out isolates the gate this test is about.
+      const repo = makeRepo({
+        gates: { typecheck: { required: false }, tests: { required: false } },
+      });
       const { exitCode, stdout } = await runFixLlm([repo]);
 
-      expect(stdout).toContain('=== Tier A: auto-fixable model-id + param codemod (VERIFIED) ===');
+      // NOT "(VERIFIED)". The patch is applied — neither gate is required here,
+      // so nothing blocks it — but the type-check ran blind, and the heading
+      // says which of those two things happened. Asserting `(VERIFIED)` over an
+      // `inconclusive` type-check row is the contradiction this milestone
+      // exists to remove: one run, one check, two surfaces disagreeing.
+      expect(stdout).toContain('=== Tier A: auto-fixable model-id + param codemod (NOT type-verified) ===');
+      expect(stdout).not.toContain('(VERIFIED)');
       expect(stdout).toMatch(/^ {2}tests: +inconclusive \(.*node_modules.*\)$/m);
-      expect(stdout).not.toMatch(/^ {2}tests: +(passed|not configured)/m);
-      expect(stdout).not.toContain('[required]  ');
+      expect(stdout).not.toMatch(/^ {2}tests: +(passed|not run)/m);
+      // The blind type-check names itself as blind, in its own state word.
+      expect(stdout).toMatch(/^ {2}type-check: +inconclusive \(ran without the types.*\)$/m);
+      // Neither gate is required under this policy, so no row wears the tag.
+      expect(stdout).not.toContain('[required]');
       expect(stdout).not.toContain('required gate "tests"');
       expect(exitCode).toBe(0);
     },
@@ -113,12 +143,34 @@ describe('a required gate that cannot run blocks Tier A', () => {
   );
 
   it(
-    'the default policy leaves tests advisory (unchanged behavior for an unconfigured repo)',
+    'the default policy leaves tests advisory -- but a BLIND type-check now blocks',
     async () => {
+      // BEHAVIOUR CHANGE. This used to assert "unchanged behavior for an
+      // unconfigured repo": Tier A (VERIFIED), exit 0. It cannot any more, and
+      // the reason is the point of the change rather than an accident of it.
+      //
+      // A type-check against a checkout with no node_modules completes and
+      // reports no new errors -- but the SDK types that would have rejected a
+      // bad model id were never loaded, so the model argument is `any` and
+      // nothing could have failed. That is `inconclusive`, not `passed`, and
+      // because the type-check gate is REQUIRED BY DEFAULT it blocks Tier A on
+      // a dependency-less checkout. Install dependencies to earn the pass.
+      //
+      // What this test still guards is the TESTS half of the default policy:
+      // an un-runnable suite stays advisory. It reports `inconclusive`, it
+      // carries no [required] tag, and it is not the gate the block names.
       const { exitCode, stdout } = await runFixLlm([makeRepo()]);
-      expect(stdout).toContain('=== Tier A: auto-fixable model-id + param codemod (VERIFIED) ===');
       expect(stdout).toMatch(/^ {2}tests: +inconclusive/m);
-      expect(exitCode).toBe(0);
+      expect(stdout).not.toMatch(/^ {2}tests:.*\[required\]$/m);
+      expect(stdout).not.toContain('required gate "tests"');
+      // ...and the type-check is: required by default, inconclusive, blocking.
+      expect(stdout).toContain('=== Tier A candidate -> NOT APPLIED (gates failed, review only) ===');
+      expect(stdout).toMatch(
+        /^ {2}type-check: +inconclusive \(ran without the types.*\) {2}\[required\]$/m,
+      );
+      expect(stdout).toContain('required gate "typecheck" did not pass');
+      expect(stdout).toContain('the type-check gate could not run');
+      expect(exitCode).toBe(1);
     },
     180_000,
   );
@@ -128,8 +180,17 @@ describe('a required eval gate', () => {
   it(
     'a FAILING required eval blocks Tier A and names the command',
     async () => {
+      // `typecheck: { required: false }`: the eval gate only runs AFTER the code
+      // gates pass, and a blind type-check is now `inconclusive` (required by
+      // default) in this dependency-less fixture -- which would stop mendr ever
+      // starting the eval, and this test is about what the eval's own failure
+      // reports.
       const repo = makeRepo({
-        gates: { tests: { required: false }, eval: { command: 'node eval.js', required: true } },
+        gates: {
+          typecheck: { required: false },
+          tests: { required: false },
+          eval: { command: 'node eval.js', required: true },
+        },
       });
       writeFileSync(join(repo, 'eval.js'), 'process.exit(3);\n');
       const { exitCode, stdout } = await runFixLlm([repo, '--write']);
@@ -148,7 +209,11 @@ describe('a required eval gate', () => {
   it(
     'gates.eval.command is the same setting as the legacy evalCommand',
     async () => {
-      const repo = makeRepo({ gates: { eval: { command: 'node eval.js' } } });
+      // typecheck opted out for the same reason as above: an eval that mendr
+      // never started cannot prove the two settings are the same setting.
+      const repo = makeRepo({
+        gates: { typecheck: { required: false }, eval: { command: 'node eval.js' } },
+      });
       writeFileSync(join(repo, 'eval.js'), 'process.exit(0);\n');
       const { exitCode, stdout } = await runFixLlm([repo]);
       expect(stdout).toMatch(
@@ -165,10 +230,22 @@ describe('a required eval gate', () => {
       // `required: false` is not "ignore the result". A gate that RAN and came
       // back negative always blocks; the flag only governs the cases where the
       // gate could not produce a verdict at all.
-      const repo = makeRepo({ gates: { eval: { command: 'node eval.js', required: false } } });
+      //
+      // typecheck opted out deliberately: left at its default this test would
+      // still go green on the blind type-check's block alone, and would no
+      // longer prove anything about a failing-but-advisory eval.
+      const repo = makeRepo({
+        gates: { typecheck: { required: false }, eval: { command: 'node eval.js', required: false } },
+      });
       writeFileSync(join(repo, 'eval.js'), 'process.exit(1);\n');
       const { exitCode, stdout } = await runFixLlm([repo]);
       expect(stdout).toContain('=== Tier A candidate -> NOT APPLIED (gates failed, review only) ===');
+      // The eval RAN, and its own verdict -- not a required-gate tag -- is what
+      // blocked: no [required] on the row, and the reason names their command.
+      expect(stdout).toMatch(
+        /^ {2}behavioral evaluation: +failed \(your eval command: node eval\.js, exit 1\)$/m,
+      );
+      expect(stdout).toContain('your eval command failed against the patched code (node eval.js, exit 1)');
       expect(exitCode).toBe(1);
     },
     180_000,
@@ -177,10 +254,16 @@ describe('a required eval gate', () => {
   it(
     'a required eval with NO command blocks rather than dropping the requirement',
     async () => {
-      const repo = makeRepo({ gates: { eval: { required: true } } });
+      // typecheck opted out so the MISSING EVAL COMMAND is the only thing that
+      // can block: at the default policy the blind type-check would block too,
+      // and this test would pass even if the eval requirement were dropped.
+      const repo = makeRepo({ gates: { typecheck: { required: false }, eval: { required: true } } });
       const { exitCode, stdout, stderr } = await runFixLlm([repo]);
       expect(stdout).toContain('=== Tier A candidate -> NOT APPLIED (gates failed, review only) ===');
-      expect(stdout).toMatch(/^ {2}behavioral evaluation: +not configured {2}\[required\]$/m);
+      // The row word is `not run` (there was nothing to run), not the old
+      // "not configured": one vocabulary, and "n/a" now survives only for a
+      // registry attribution row -- never for a check.
+      expect(stdout).toMatch(/^ {2}behavioral evaluation: +not run {2}\[required\]$/m);
       expect(`${stdout}${stderr}`).toContain('required gate "eval" did not pass');
       expect(exitCode).toBe(1);
     },
@@ -207,9 +290,24 @@ describe('the gate policy in --json', () => {
       expect(tests.outcome).toBe('inconclusive');
       expect(tests.required).toBe(true);
       expect(tests.blocking).toBe(true);
-      // The type-check ran and passed; it is not what blocked the fix.
+      // BEHAVIOUR CHANGE: the type-check used to be `pass`/non-blocking here.
+      // In a checkout with no node_modules it ran BLIND -- the SDK types that
+      // would reject a bad model id were never loaded -- so it is now
+      // `inconclusive`, and being required by default it blocks as well. The
+      // machine surface carries that as a STATE, which nothing downstream can
+      // drop, where it used to carry a bare pass plus a detail string that the
+      // PR body suppressed and the App discarded.
       const typecheck = doc.gates.outcomes.find((o: { gate: string }) => o.gate === 'typecheck');
-      expect(typecheck).toMatchObject({ outcome: 'pass', required: true, blocking: false });
+      expect(typecheck).toMatchObject({
+        outcome: 'inconclusive',
+        required: true,
+        blocking: true,
+      });
+      expect(typecheck.detail).toContain('not installed in this checkout');
+      // `blocking` is still per-gate and not a blanket over every non-pass row:
+      // the unconfigured eval is `not_run`, unrequired, and blocks nothing.
+      const evaluation = doc.gates.outcomes.find((o: { gate: string }) => o.gate === 'eval');
+      expect(evaluation).toMatchObject({ outcome: 'not_run', required: false, blocking: false });
       expect(exitCode).toBe(1);
     },
     180_000,

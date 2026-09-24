@@ -23,6 +23,19 @@ import { tmpdir } from 'node:os';
 //
 // Hermetic: a temp-dir fixture with one deprecated model arg, made read-only.
 // The CLI runs from source through tsx — the same entry point `mendr` ships.
+//
+// WHY THE FIXTURE CARRIES A CONFIG. This is a subject-under-test that lives
+// DOWNSTREAM of the gates: the write step only runs for a Tier A patch the
+// gates cleared. A temp fixture has no node_modules, so the type-check runs
+// blind — the `openai` types that would reject a bad model id are unresolved —
+// and that is now `inconclusive`, not `passed`. Since the typecheck gate is
+// required by default, an unconfigured fixture never reaches the write at all;
+// it is refused three steps earlier, by the gates, and the refused-write report
+// this file exists for is never produced. So the fixture opts the typecheck
+// gate out of BLOCKING (`gates.typecheck.required: false`) while leaving its
+// verdict word alone: the row below still reads `inconclusive`, and the tests
+// assert that, so the opt-out cannot quietly become a claim that the repo
+// type-checked.
 
 const MENDR_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -50,6 +63,13 @@ function makeReadOnlyRepo(): { dir: string; file: string } {
   const dir = mkdtempSync(join(tmpdir(), 'mendr-writerefusal-'));
   created.push(dir);
   writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'write-refusal' }, null, 2));
+  // Advisory, not passing: the blind type-check still reports `inconclusive`,
+  // it just no longer blocks, so the patch reaches the write step this file
+  // is about. See the header.
+  writeFileSync(
+    join(dir, 'mendr.config.json'),
+    JSON.stringify({ gates: { typecheck: { required: false } } }, null, 2),
+  );
   mkdirSync(join(dir, 'src'));
   const file = join(dir, 'src', 'chat.ts');
   writeFileSync(
@@ -104,6 +124,11 @@ describe('fix-llm --write against a file it cannot write', () => {
       expect(readFileSync(file, 'utf8')).toBe(before);
       expect(readFileSync(file, 'utf8')).toContain('gpt-4-0613');
 
+      // (2b) THE GATE ROW, so the fixture's `required: false` can never be read
+      // as "this checkout type-checked". A blind run says so in its STATE.
+      expect(stdout).toMatch(/^ {2}type-check: +inconclusive \(.*openai.*\)$/m);
+      expect(stdout).not.toMatch(/^ {2}type-check: +passed/m);
+
       // (3) The existing signals still fire — this fix adds to them.
       expect(exitCode).toBe(1);
       expect(stderr).toContain('--write aborted');
@@ -121,6 +146,7 @@ describe('fix-llm --write against a file it cannot write', () => {
       const report = JSON.parse(stdout) as {
         summary: { tierA: number };
         write: { attempted: boolean; applied: boolean; filesWritten: number; reason: string | null };
+        gates: { outcomes: { gate: string; outcome: string; detail: string | null }[] };
       };
 
       // A machine consumer reading `summary.tierA` alone would conclude a fix
@@ -131,6 +157,13 @@ describe('fix-llm --write against a file it cannot write', () => {
       expect(report.write.reason).toContain('not writable');
       expect(exitCode).toBe(1);
       expect(readFileSync(file, 'utf8')).toContain('gpt-4-0613');
+
+      // And on the machine surface too: the fixture made the blind type-check
+      // advisory, never passing. A consumer reading `outcome` learns the patch
+      // was written against unresolved SDK types.
+      const typecheck = report.gates.outcomes.find((o) => o.gate === 'typecheck');
+      expect(typecheck?.outcome).toBe('inconclusive');
+      expect(typecheck?.detail).toContain('openai');
     },
     120_000,
   );

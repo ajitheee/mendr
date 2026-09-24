@@ -14,6 +14,11 @@ import {
 //      not, eval required the moment a command exists);
 //   2. an inconclusive gate is never treated as a pass -- `required` decides
 //      whether it BLOCKS, never what it is CALLED.
+//
+// The outcome words below are CheckStatus from ./status.ts, the single
+// verification vocabulary: passed | failed | skipped | not_run | inconclusive.
+// This file used to spell them `pass` / `fail` / `not-applicable` /
+// `not-configured`; only the spellings changed here, not which outcomes block.
 
 describe('resolveGatePolicy (defaults, and what a repo may override)', () => {
   it('reproduces the pre-policy behavior when nothing is configured', () => {
@@ -78,22 +83,26 @@ describe('gateBlocks (what stops a fix from being Tier A)', () => {
 
   const evaluation = (over: Partial<GateEvaluation>): GateEvaluation => ({
     gate: 'tests',
-    outcome: 'pass',
+    outcome: 'passed',
     ...over,
   });
 
-  it('never blocks on pass, and never blocks on a gate that does not apply', () => {
-    expect(gateBlocks(DEFAULTS, [evaluation({ outcome: 'pass' })])).toEqual([]);
-    // n/a is not a weaker pass -- it is "this gate does not exist for this
-    // language", so requiring it cannot make it run and must not block.
-    expect(gateBlocks(strict, [evaluation({ outcome: 'not-applicable' })])).toEqual([]);
+  it('never blocks on passed, and never blocks on a gate that does not apply', () => {
+    expect(gateBlocks(DEFAULTS, [evaluation({ outcome: 'passed' })])).toEqual([]);
+    // What used to be spelled `not-applicable` is now `skipped`: the one
+    // vocabulary folds "this gate does not exist for this language" together
+    // with "we chose not to run it", because the policy owes them the same
+    // answer. Neither is a weaker pass, and requiring either cannot make it
+    // run, so neither may block. ("n/a" survives only on registry attribution
+    // rows, for a record that does not exist -- never for a check.)
+    expect(gateBlocks(strict, [evaluation({ outcome: 'skipped' })])).toEqual([]);
   });
 
-  it('blocks on a hard FAIL whether or not the gate was required', () => {
-    const [block] = gateBlocks(DEFAULTS, [evaluation({ outcome: 'fail', detail: '1 failed' })]);
+  it('blocks on a hard FAILED whether or not the gate was required', () => {
+    const [block] = gateBlocks(DEFAULTS, [evaluation({ outcome: 'failed', detail: '1 failed' })]);
     // The default policy does NOT require tests, and a suite that ran and
     // failed still blocks: no policy may wave through a negative result.
-    expect(block).toEqual({ gate: 'tests', outcome: 'fail', required: false, detail: '1 failed' });
+    expect(block).toEqual({ gate: 'tests', outcome: 'failed', required: false, detail: '1 failed' });
   });
 
   it('blocks an INCONCLUSIVE gate only where the repo required it', () => {
@@ -104,16 +113,38 @@ describe('gateBlocks (what stops a fix from being Tier A)', () => {
     ]);
   });
 
-  it('treats "nothing to run" as a block for a required gate too', () => {
-    // A required gate with no test script is not satisfied. Reporting it as
-    // met because there was nothing to run is how "required" becomes decorative.
-    expect(gateBlocks(strict, [evaluation({ outcome: 'not-configured' })])).toHaveLength(1);
-    expect(gateBlocks(DEFAULTS, [evaluation({ outcome: 'not-configured' })])).toEqual([]);
+  it('treats "nothing to run" (not_run) as a block for a required gate too', () => {
+    // `not-configured` is now `not_run`, and it still means "there was nothing
+    // to run" -- distinct from `inconclusive`, which means we tried and cannot
+    // say. A required gate with no test script is not satisfied either way.
+    // Reporting it as met because there was nothing to run is how "required"
+    // becomes decorative.
+    expect(gateBlocks(strict, [evaluation({ outcome: 'not_run' })])).toHaveLength(1);
+    expect(gateBlocks(DEFAULTS, [evaluation({ outcome: 'not_run' })])).toEqual([]);
+  });
+
+  it('blocks a blind type-check by default, because typecheck is required', () => {
+    // The consequence, at the policy layer, of a type-check that ran without
+    // node_modules now reporting `inconclusive` instead of `passed`: typecheck
+    // is required by DEFAULT, so a dependency-less checkout no longer yields
+    // Tier A off a check that could not have failed. This blocking is intended.
+    expect(
+      gateBlocks(DEFAULTS, [
+        { gate: 'typecheck', outcome: 'inconclusive', detail: 'unresolved: @anthropic-ai/sdk' },
+      ]),
+    ).toEqual([
+      {
+        gate: 'typecheck',
+        outcome: 'inconclusive',
+        required: true,
+        detail: 'unresolved: @anthropic-ai/sdk',
+      },
+    ]);
   });
 
   it('keeps gate order, so the report names the first blocker that ran', () => {
     const blocks = gateBlocks(strict, [
-      evaluation({ gate: 'typecheck', outcome: 'fail' }),
+      evaluation({ gate: 'typecheck', outcome: 'failed' }),
       evaluation({ gate: 'tests', outcome: 'inconclusive' }),
     ]);
     expect(blocks.map((b) => b.gate)).toEqual(['typecheck', 'tests']);
@@ -136,10 +167,17 @@ describe('describeGateBlock (naming which gate did not pass)', () => {
     expect(text).not.toMatch(/\bpassed\b|\bfailed\b/);
   });
 
-  it('says "is not configured" when there was nothing to run', () => {
-    const text = describeGateBlock({ gate: 'eval', outcome: 'not-configured', required: true });
+  it('says "had nothing to run" for not_run, and keeps it distinct from inconclusive', () => {
+    // `not-configured` is now `not_run`, and the sentence moved with the word:
+    // "is not configured" named a missing SETTING, while not_run names a
+    // missing THING TO RUN. The clause must stay different from the
+    // `inconclusive` one above ("could not run"), because the two send the
+    // reader to different places -- write an eval command, versus find out why
+    // the one you have could not be run.
+    const text = describeGateBlock({ gate: 'eval', outcome: 'not_run', required: true });
     expect(text).toContain('required gate "eval" did not pass');
-    expect(text).toContain('the behavioral evaluation gate is not configured');
+    expect(text).toContain('the behavioral evaluation gate had nothing to run');
+    expect(text).not.toContain('could not run');
   });
 
   it('keeps the eval gate\'s own sentence on a hard failure', () => {
@@ -148,7 +186,7 @@ describe('describeGateBlock (naming which gate did not pass)', () => {
     expect(
       describeGateBlock({
         gate: 'eval',
-        outcome: 'fail',
+        outcome: 'failed',
         required: true,
         detail: 'npm run eval, exit 1',
       }),
@@ -159,7 +197,7 @@ describe('describeGateBlock (naming which gate did not pass)', () => {
     expect(
       describeGateBlock({
         gate: 'typecheck',
-        outcome: 'fail',
+        outcome: 'failed',
         required: true,
         detail: '2 new type errors',
       }),
