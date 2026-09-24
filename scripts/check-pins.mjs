@@ -62,7 +62,7 @@ const TAG_PINS = [
  * workflow `@<ref>` count. Prose that merely mentions a version has no paste syntax and is
  * skipped by construction.
  */
-const TAG_DOCS = ['README.md', 'mendr-action/README.md', 'WATCH-TESTERS.md', 'launch/DEMO-CLIP.md', 'site/index.html'];
+const TAG_DOCS = ['README.md', 'mendr-action/README.md', 'WATCH-TESTERS.md', 'launch/DEMO-CLIP.md', 'site/index.html', 'TRUST.md'];
 const PASTE = /(?:github:ajitheee\/mendr#|ajitheee\/mendr\/mendr-action@|mendr\/\.github\/workflows\/[a-z-]+\.yml@)(v[\w.-]+)/g;
 
 /** Deliberately frozen pins, each with the reason. Empty is the correct state. */

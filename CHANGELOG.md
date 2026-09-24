@@ -1,5 +1,54 @@
 # Changelog
 
+## 0.5.6-alpha — 2026-09-24
+
+**The release that delivers 0.5.5-alpha's security fix**, which had reached no execution path at
+all. Three of these four are mendr describing work it had not done; the fourth is the machinery
+that let the first one ship to nobody. No new features; the registry content is unchanged.
+
+- **The sanitizer reached nobody.** 0.5.5-alpha's headline fix rewrote `run-mendr.sh` to pipe the
+  report through a new `mendr redact` and withhold it rather than publish it unchecked — but
+  `.github/workflows/reusable-migrate.yml` hardcodes `uses: ajitheee/mendr/mendr-action@<tag>` and
+  GitHub forbids an expression in `uses:`, so even `@main` runs the TAGGED script.
+  `git show v0.5.5-alpha:mendr-action/scripts/run-mendr.sh | grep -c redact` returns 0. Every
+  migrate run through every shipped path published the report unsanitized, exactly as before the
+  fix — fail-open, not fail-closed. Nothing caught it because `check-pins` compared 40-hex SHAs
+  in three documents and could not see a release tag anywhere. It now has three rules: the SHA
+  rule, a tag rule anchored on `package.json`, and a staleness rule that prints which commits
+  touch `mendr-action/` or the CLI since the pinned tag — i.e. what is merged and undelivered.
+  It also fails when a guarded position VANISHES, which is how `REGISTRY-FRESHNESS.md` kept naming
+  `render.yaml` as a bump target for several releases after `render.yaml` stopped carrying a pin.
+  Thirty-three pin positions now move together; the old runbook listed three, one of which does
+  not exist.
+- **A failed gate was displayed as "nothing to run".** The five-word verification vocabulary
+  landed in `src/` only; the App still declared the old four and coerced everything else to
+  `not-configured`, rendered as an em dash. A build or test gate that RAN AND REJECTED the change
+  was stored, and shown to the customer, as an absence — on the one surface an external reviewer
+  logs into. 1,480 tests stayed green over it: the cross-package contract test hand-wrote the old
+  words into a value typed `MigrationResult`, and `tsconfig.json` excludes test files so `tsc`
+  never saw it. The App now accepts BOTH vocabularies and stores the five (customers pin the CLI
+  in their own committed workflow, so the old words arrive indefinitely), and a drift test reads
+  `src/gates/status.ts` and fails if the lists diverge.
+- **`migrate` reported a type-check it never ran.** On a repository with no TypeScript, the
+  baseline and patched ts-morph projects are the same — often empty — project, so the gate
+  returned `passed` with zero new diagnostics and the pull-request body published
+  `type-check: **passed**`. `fix-llm` said `skipped` for the same repository. The guard is now the
+  PATCH, not the repository: a mixed repo whose swap is python-only hit the identical bug, and
+  `migrations[].language` would not have caught it either, because a parameter transform patches a
+  `.ts` file without producing a migration row.
+- **The test gate published the CI runner's absolute path.** A repo with no `package.json` came
+  back `inconclusive` carrying a raw Node ENOENT — error, message and
+  `'D:\a\acme-api\acme-api\package.json'` — straight into a public pull-request body, on every
+  run against a non-Node project. Neither defence covered it: the central sanitizer matches secret
+  SHAPES and has no absolute-path rule, and the pr-body file never reaches the sanitizer at all.
+  Fixed by not building the string. The status stays `inconclusive`, not `not_run`: the gate has
+  not proven there are no tests, only that it cannot reach a pytest suite.
+
+Also: `MENDR_RELEASE` had sat at `v0.1.0` for five releases, baking a five-release-old CLI into
+every workflow `mendr watch --install` scaffolds, with `WATCH-TESTERS.md` telling testers the same.
+The test guarding it asserted `/'v\d+\.\d+\.\d+'/` — a closing quote right after the patch digit —
+so it could only ever match the stale value it was guarding.
+
 ## 0.5.5-alpha — 2026-09-23
 
 Three fixes, all found by USING the shipped build rather than by testing it — one while hunting a
