@@ -8,7 +8,7 @@ import { isVerified } from '../usage/llmRegistry.js';
 import { normalizePath } from '../audit/fingerprint.js';
 import { collectPythonFiles, readPythonSources } from '../python/scanPy.js';
 import { applyPyModelIdFixesToSources } from '../python/fixPy.js';
-import { checkTypes } from '../gates/typecheck.js';
+import { checkTypes, unresolvedScopeNote } from '../gates/typecheck.js';
 import { runRepoTests } from '../gates/runTests.js';
 import { runRepoEval } from '../gates/runEval.js';
 import { runRepoBuild } from '../gates/runBuild.js';
@@ -438,7 +438,17 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
 
   // --- verify in the sandbox ---
   const typeResult = checkTypes(planned.baselineProject, planned.patchedProject);
-  const typeCheck = outcome(typeResult.passed ? 'pass' : 'fail', typeResult.passed ? undefined : `${typeResult.newDiagnostics.length} new type error(s) introduced by the migration`);
+  // A pass earns its detail too when the gate ran blind: with the SDK absent,
+  // the model argument is `any` and an id the SDK would reject cannot fail
+  // this check. This sentence travels into the pull-request body, which is
+  // where overclaiming would cost a reviewer's trust rather than ours.
+  const typeScope = unresolvedScopeNote(typeResult);
+  const typeCheck = outcome(
+    typeResult.passed ? 'pass' : 'fail',
+    typeResult.passed
+      ? typeScope
+      : `${typeResult.newDiagnostics.length} new type error(s) introduced by the migration`,
+  );
 
   const buildResult = await runRepoBuild(repoPath, planned.patchedFiles, opts.buildTimeoutMs);
   const build = outcome(buildResult.status, buildResult.output, buildResult.command);
@@ -457,6 +467,13 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
   if (!behavioralTested) {
     notes.push(
       'Behaviour was NOT verified: the throwaway copy proves the migration builds and existing tests pass, not that the replacement model matches the old one on quality, latency, cost or response shape. Pass --eval-command to test behaviour, and review the swap either way.',
+    );
+  }
+  if (typeScope) {
+    notes.push(
+      `The type-check ran against a copy where ${typeScope}. A model id the SDK itself would ` +
+        'reject is exactly the error those types would have caught, so install dependencies and ' +
+        're-run to strengthen this gate.',
     );
   }
   if (build.status === 'not-configured') notes.push('No build script found (package.json has no `build`); the build gate did not run.');

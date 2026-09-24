@@ -960,3 +960,59 @@ describe('multiTierNotes', () => {
     expect(notes[1]).toContain('"zeta-1"');
   });
 });
+
+// THE RESIDUAL MUST NOT INVENT A GATE. `downgraded` used to absorb every Tier
+// A site without another disposition, and it prints "gates failed" — so a
+// repository whose gates all passed, whose finding simply sat outside the
+// project the gated pass loaded, was told a gate had rejected its patch. The
+// residual is now attributed: a file that could not be loaded is not a gate
+// outcome, and an unattributable remainder is mendr's defect to chase.
+describe('tier A dispositions that are not gate outcomes', () => {
+  it('reports an unloadable file without naming a gate', () => {
+    const summary = formatSummaryLines(
+      { tierA: 1, tierB: 0, tierC: 0 },
+      { applied: 0, ready: 0, downgraded: 0, notGated: 1 },
+    ).join('\n');
+
+    expect(summary).toContain('1 not gated -- the file could not be loaded for verification');
+    expect(summary).not.toContain('gates failed');
+  });
+
+  it('reports an unattributable residual as "no change", never as a gate failure', () => {
+    const summary = formatSummaryLines(
+      { tierA: 2, tierB: 0, tierC: 0 },
+      { applied: 1, ready: 0, downgraded: 0, noChange: 1 },
+    ).join('\n');
+
+    expect(summary).toContain('1 not applied -- the codemod produced no change');
+    expect(summary).not.toContain('gates failed');
+  });
+
+  it('still says "gates failed" when a gate actually blocked', () => {
+    const summary = formatSummaryLines(
+      { tierA: 1, tierB: 0, tierC: 0 },
+      { applied: 0, ready: 0, downgraded: 1 },
+    ).join('\n');
+
+    expect(summary).toContain('1 downgraded -- gates failed, not applied');
+  });
+
+  it('keeps every disposition summing to the tier count', () => {
+    const summary = formatSummaryLines(
+      { tierA: 6, tierB: 0, tierC: 0 },
+      { applied: 1, ready: 1, refused: 1, notApplicable: 1, notGated: 1, noChange: 1 },
+    ).join('\n');
+
+    expect(summary).toContain('tier A 6');
+    for (const part of [
+      '1 auto-fixed',
+      '1 ready to apply',
+      '1 not written -- write refused',
+      '1 not applicable after the swap',
+      '1 not gated',
+      '1 not applied -- the codemod produced no change',
+    ]) {
+      expect(summary).toContain(part);
+    }
+  });
+});

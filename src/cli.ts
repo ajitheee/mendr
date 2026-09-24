@@ -15,6 +15,7 @@ import {
   collectTsSourceFiles,
   countScriptFilesByLanguage,
   countTsTestFiles,
+  ensureFilesLoaded,
   loadPrefilteredProject,
   loadProject,
 } from './usage/scanRepo.js';
@@ -22,7 +23,7 @@ import { buildUsageMap, formatUsageMap } from './usage/usageMap.js';
 import { intersect, formatAffectedSites } from './intersect/intersect.js';
 import { applyRenames, applyRenamesToProject } from './fix/apply.js';
 import { formatChange } from './detect/changeModel.js';
-import { checkTypes, formatDiagnostic } from './gates/typecheck.js';
+import { checkTypes, formatDiagnostic, unresolvedScopeNote } from './gates/typecheck.js';
 import { runRepoTests } from './gates/runTests.js';
 import { runRepoEval, type EvalGateResult } from './gates/runEval.js';
 import {
@@ -1010,6 +1011,14 @@ program
     // and the eval gate cannot run until the code gates below have passed.
     let tsGateRows: GateRow[] | undefined;
     let tsTestsPassed = false;
+    // Located files the gated load could not take at all (unreadable, or gone
+    // since the scan). Kept so the summary can say THAT rather than blaming a
+    // gate — see the disposition block near `formatSummaryLines`.
+    let tsUnloadableFiles: string[] = [];
+    // How many packages the type-check gate could not resolve. Carried out of
+    // the gated block so the one-line Tier A verdict can scope itself too: the
+    // gate rows are exact, but the headline is what gets skimmed and quoted.
+    let tsUnresolvedPackages = 0;
     if (tsSwapCandidates > 0) {
       if (opts.skipGates) {
         // Fast local mode: assert Tier A without verifying. Reuses the scan
@@ -1024,6 +1033,22 @@ program
         // is actually something to swap.
         const baselineProject = loadProject(resolved);
         const patchedProject = loadProject(resolved);
+
+        // ...but a tsconfig-driven load is not the last word on WHICH files
+        // exist. A monorepo root config often compiles one package of several
+        // (maxun's `include: ["src"]` does not cover its own `server/`), so the
+        // file the locator just found can be absent here — the codemod then
+        // changes nothing and the summary's residual reports "gates failed" for
+        // a gate that never ran. Union the located files into BOTH loads: the
+        // type-check gate is baseline-relative, so a file the build never
+        // included cancels its own pre-existing diagnostics and only an error
+        // the patch introduces can fail.
+        const locatedFiles = [
+          ...new Set(swapMatches.map((m) => m.node.getSourceFile().getFilePath() as string)),
+        ];
+        ensureFilesLoaded(baselineProject, locatedFiles);
+        tsUnloadableFiles = ensureFilesLoaded(patchedProject, locatedFiles);
+
         tsResult = applyLlmFixesToProject(patchedProject, registry, resolved);
 
         // Gate 1: baseline-relative type-check (in-memory, no subprocess).
@@ -1047,13 +1072,22 @@ program
         // type errors before the patch, say so — a bare "pass" would overclaim.
         const firstDiagnostic = typeResult.newDiagnostics[0];
         const newErrors = typeResult.newDiagnostics.length;
+        // What the gate could NOT see, said in the same breath as what it did.
+        // A shallow clone has no node_modules, so the SDK whose types would
+        // reject a bad model id is unresolved and the argument is `any` — the
+        // check passes because nothing could fail it. Reporting a bare
+        // "passed" there reads as "the SDK accepts this id", which is the one
+        // thing it did not establish.
+        const scopeClause = unresolvedScopeNote(typeResult);
+        const scopeNote = scopeClause ? `; ${scopeClause}` : '';
+        tsUnresolvedPackages = typeResult.unresolvedModules.length;
         const typeEvaluation: GateEvaluation = {
           gate: 'typecheck',
           outcome: typeResult.passed ? 'pass' : 'fail',
           detail: typeResult.passed
-            ? typeResult.baselineCount > 0
-              ? `no new errors; ${typeResult.baselineCount} pre-existing ignored`
-              : 'no new errors'
+            ? (typeResult.baselineCount > 0
+                ? `no new errors; ${typeResult.baselineCount} pre-existing ignored`
+                : 'no new errors') + scopeNote
             : `${newErrors} new type error${newErrors === 1 ? '' : 's'}` +
               (firstDiagnostic ? ` -- ${formatDiagnostic(firstDiagnostic)}` : ''),
         };
@@ -1292,7 +1326,18 @@ program
                 // The ONLY behavioral phrase Tier A is allowed: the team's own
                 // eval passed. Not "the model is equivalent", not "safe to
                 // ship" — mendr has no idea what their eval measures.
-                `${behavioral.status === 'pass' ? ' + your eval command passed' : ''})`),
+                `${behavioral.status === 'pass' ? ' + your eval command passed' : ''}` +
+                // ...and what the type-check could not see, in the same line
+                // that claims it passed. A checkout with no dependencies makes
+                // the model argument `any`, so an id the SDK would reject
+                // cannot fail this gate — the rows above say so, but this is
+                // the line that gets skimmed, quoted and pasted.
+                `${
+                  tsUnresolvedPackages > 0
+                    ? `; ${tsUnresolvedPackages} package${tsUnresolvedPackages === 1 ? '' : 's'} ` +
+                      `unresolved -- their types were not checked`
+                    : ''
+                })`),
         );
       } else {
         say(
@@ -1478,6 +1523,21 @@ program
       0,
       paramMatches.length - ((tsResult?.paramsRemoved ?? 0) + (tsResult?.paramsRenamed ?? 0)),
     );
+    // The residual — Tier A sites with no disposition yet — used to be handed
+    // wholesale to `downgraded`, which prints "gates failed". That is an
+    // assertion about a gate, and it was made on repositories where every gate
+    // passed and no gate had run on the site at all. Attribute it instead:
+    // a file that could not be loaded is NOT a gate outcome, and a residual
+    // left when nothing blocked is a mendr defect, not the customer's diff.
+    const tierAResidual = Math.max(0, tierCounts.tierA - gatedSites - paramNotApplicable);
+    const notGated = Math.min(tierAResidual, tsUnloadableFiles.length);
+    const gatesBlockedTierA = (tsTier === 'C' && tsTotalSites > 0) || pyTier === 'C';
+    const unattributed = tierAResidual - notGated;
+    const tierADisposition = {
+      notGated,
+      downgraded: gatesBlockedTierA ? unattributed : 0,
+      noChange: gatesBlockedTierA ? 0 : unattributed,
+    };
     // "auto-fixed" means the working tree CHANGED, so it may only be claimed by
     // a run that actually writes: --write, with the gates really run. Without
     // it the patch exists only on screen, and the Summary used to print
@@ -1550,7 +1610,7 @@ program
       // because the swapped-to model does not need the transform never reached a gate, and
       // attributing it to one sent readers to debug a gate that never ran.
       notApplicable: paramNotApplicable,
-      downgraded: Math.max(0, tierCounts.tierA - gatedSites - paramNotApplicable),
+      ...tierADisposition,
     })) {
       say(line);
     }
