@@ -1,3 +1,4 @@
+import { sanitize, secretValuesFromEnv } from '../redact/sanitize.js';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -68,20 +69,14 @@ export function gateEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEn
  * then the value has crossed the network and passed through Mendr's own process. A product
  * whose promise is that the scan runs in your CI and only findings leave should clean its
  * output at the source, and keep the far-end redaction as a second line rather than the only
- * one. Patterns are kept in step with app/src/redact.ts.
+ * one. The rules live in src/redact/sanitize.ts; this adds the by-value pass, because a gate
+ * subprocess is exactly where an INPUT_* value gets echoed back by someone else's script.
  */
 export function redactCaptured(text: string): string {
-  return text
-    .replace(/\b(sk|pk|rk)-[A-Za-z0-9_-]{8,}/g, '$1-***REDACTED***')
-    .replace(/\bgh[pousr]_[A-Za-z0-9]{16,}\b/g, 'gh*_***REDACTED***')
-    .replace(/\bgithub_pat_[A-Za-z0-9_]{20,}\b/g, 'github_pat_***REDACTED***')
-    .replace(/\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g, 'xox*-***REDACTED***')
-    .replace(/\bAKIA[0-9A-Z]{16}\b/g, 'AKIA***REDACTED***')
-    .replace(/\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, 'jwt.***REDACTED***')
-    .replace(
-      /\b([A-Z][A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API_?KEY|ACCESS_?KEY|CREDENTIAL)S?)\s*[:=]\s*["']?[^\s"'<>]{6,}/gi,
-      '$1=***REDACTED***',
-    );
+  // One owner (src/redact/sanitize.ts). This was a second copy of the same
+  // seven patterns, kept "in step" by a comment rather than by a test — and it
+  // was the copy the App's drift test did not cover.
+  return sanitize(text, secretValuesFromEnv(process.env));
 }
 
 /**

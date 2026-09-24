@@ -1,3 +1,4 @@
+import { sanitize, secretValuesFromEnv } from '../redact/sanitize.js';
 import type { GateOutcome, MigrationResult, MigrationVerdict } from './migrate.js';
 
 // The human view of a migration result. Verdict first (a reader must see
@@ -61,5 +62,17 @@ export function renderMigrationReport(r: MigrationResult): string[] {
     lines.push('');
     for (const l of r.diff.split('\n')) lines.push(l);
   }
-  return lines;
+  // ONE CHOKEPOINT, and the last thing this function does.
+  //
+  // What this report becomes: mendr-action writes it to a file, then publishes
+  // that same file to the Actions log, the job summary AND the body of a public
+  // pull request. So everything above — the diff's verbatim source lines and
+  // their three lines of context, each gate's captured command output, every
+  // note — is published. Sanitizing at the render boundary covers all of it at
+  // once, including fields added later by someone who never read this comment.
+  //
+  // Safe here precisely because this is the HUMAN rendering. The machine copies
+  // are untouched: `--patch` and the `--write` path use `r.diff` directly, and
+  // a redacted diff would not apply.
+  return sanitize(lines.join('\n'), secretValuesFromEnv(process.env)).split('\n');
 }

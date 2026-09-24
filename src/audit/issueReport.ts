@@ -88,23 +88,15 @@ export function sanitizeRepoText(s: string): string {
 }
 
 /**
- * Scrub anything credential-shaped before it reaches a public issue body. Applied
- * to the WHOLE rendered body, so no future field can leak by being added without
- * remembering this.
+ * Scrub anything credential-shaped before it reaches a public issue body.
+ *
+ * This used to BE the implementation, and two more copies of it existed (the
+ * sandbox's captured output and the App's ingest). It is now one re-export of
+ * src/redact/sanitize.ts, so a pattern added for one surface protects all of
+ * them — which is what the migrate path needed and did not have.
  */
-export function redactSecrets(text: string): string {
-  return text
-    .replace(/\b(sk|pk|rk)-[A-Za-z0-9_\-]{8,}/g, '$1-***REDACTED***')
-    .replace(/\bgh[pousr]_[A-Za-z0-9]{16,}\b/g, 'gh*_***REDACTED***')
-    .replace(/\bgithub_pat_[A-Za-z0-9_]{20,}\b/g, 'github_pat_***REDACTED***')
-    .replace(/\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g, 'xox*-***REDACTED***')
-    .replace(/\bAKIA[0-9A-Z]{16}\b/g, 'AKIA***REDACTED***')
-    .replace(/\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, 'jwt.***REDACTED***')
-    .replace(
-      /\b([A-Z][A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API_?KEY|ACCESS_?KEY|CREDENTIAL)S?)\s*[:=]\s*["']?[^\s"'<>]{6,}/gi,
-      '$1=***REDACTED***',
-    );
-}
+import { redactSecrets } from '../redact/sanitize.js';
+export { redactSecrets };
 
 // --- state (de)serialization ------------------------------------------------
 
