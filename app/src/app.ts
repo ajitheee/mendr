@@ -22,6 +22,12 @@ export interface AppDeps {
   verifyActionsToken: ActionsTokenVerifier;
   now?: () => Date;
   log?: (message: string, extra?: Record<string, unknown>) => void;
+  /**
+   * Deadline for an outbound call made while a person is watching a spinner.
+   * Defaults to {@link INTERACTIVE_GITHUB_MS}; overridden in tests so asserting the
+   * timeout does not cost the suite eight real seconds.
+   */
+  interactiveTimeoutMs?: number;
 }
 
 const SETUP_STATE_COOKIE = 'mendr_setup_state';
@@ -52,28 +58,97 @@ function safeNext(v: string | undefined): string {
 }
 
 /**
- * Mark a return path so the page it lands on can explain what happened. The path usually carries a
- * fragment (the finding it came from), and a flag appended after that would be part of the fragment,
- * so it goes in before it.
+ * Mark the return path AND send the browser to the explanation rather than to the finding.
+ *
+ * The redirect used to keep the caller's fragment on purpose, and `back` always carries one
+ * (`#f-<provider>-<model>`, set on the card). The notice, meanwhile, renders at the top of
+ * the page. So the flag arrived, the notice rendered — and the browser jumped straight past
+ * it to the finding, which still showed an un-clicked Approve button.
+ *
+ * The page a person gets back is then byte-for-byte the page they left, with the reason
+ * scrolled off the top of the viewport. That is how "your session expired, so nothing was
+ * approved" reads as "it spun and nothing happened": the App did say it, somewhere the
+ * browser was instructed not to look.
+ *
+ * Anchoring on the notice keeps the finding immediately below it, because the notice sits
+ * directly above the list it is about — the reader loses nothing and gains the sentence.
  */
-function withFlag(path: string, flag: string): string {
+function atNotice(path: string, flag: string): string {
   const h = path.indexOf('#');
   const base = h === -1 ? path : path.slice(0, h);
-  const frag = h === -1 ? '' : path.slice(h);
-  return `${base}${base.includes('?') ? '&' : '?'}${flag}=1${frag}`;
+  return `${base}${base.includes('?') ? '&' : '?'}${flag}=1#${flag}`;
 }
 
 function isSha(v: unknown): v is string {
   return typeof v === 'string' && /^[0-9a-f]{40}$/.test(v);
 }
 
+/**
+ * How long an OUTBOUND call may take while a person is watching a spinner.
+ *
+ * The shared GitHub client retries three times with a 30s timeout each, which is right for CI
+ * — a migration is worth waiting 92 seconds for. It is wrong for a button press: the browser
+ * spins past every reasonable patience and, on a proxy with a shorter idle timeout, the answer
+ * never arrives at all.
+ */
+const INTERACTIVE_GITHUB_MS = 8_000;
+
+/**
+ * Resolve `p`, or reject once `ms` has passed.
+ *
+ * The underlying request is NOT cancelled — this is a deadline on the ANSWER, not on the work.
+ * That is deliberate and safe here: the only caller is a read (`getRepoAsUser`), so an
+ * abandoned attempt changes nothing. Never wrap a write in this.
+ */
+async function withDeadline<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      p,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`no answer within ${ms}ms`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export function createApp(deps: AppDeps): Hono {
   const { config, store, github } = deps;
   const now = deps.now ?? (() => new Date());
   const log = deps.log ?? ((message, extra) => console.log(extra ? `${message} ${JSON.stringify(extra)}` : message));
+  const interactiveMs = deps.interactiveTimeoutMs ?? INTERACTIVE_GITHUB_MS;
   const app = new Hono();
   const secure = config.appUrl.startsWith('https://');
   const cookieOpts = { httpOnly: true, secure, sameSite: 'Lax' as const, path: '/' };
+
+  // THE APP HAD NO ERROR HANDLER AT ALL, so an exception anywhere fell through to Hono's
+  // default: `console.error(err)` and the bare text "Internal Server Error". That stack
+  // carries no route, no repository and no actor, which is why a failed Approve could not be
+  // told afterwards from a click that never arrived.
+  //
+  // Two jobs, and the logging one is the point. The page is a courtesy; the log line is what
+  // makes the next failure diagnosable instead of a mystery.
+  app.onError((err, c) => {
+    log('unhandled error', {
+      method: c.req.method,
+      path: new URL(c.req.url).pathname,
+      error: err instanceof Error ? `${err.name}: ${err.message}` : String(err).slice(0, 200),
+    });
+    if (err instanceof Error && err.stack) console.error(err.stack);
+    // A machine caller gets JSON; a person gets a sentence. Neither gets a stack trace: the
+    // audit and migrate endpoints are reached by a customer's CI, and this App's whole claim
+    // is that what leaves it is bounded.
+    if (new URL(c.req.url).pathname.startsWith('/api/')) return c.json({ ok: false, error: 'internal error' }, 500);
+    return c.html(
+      errorPage(
+        'Something went wrong',
+        'Mendr hit an unexpected error handling that request. Nothing was changed. If you were approving a migration, no approval was created and no workflow was started — press the button again.',
+      ),
+      500,
+    );
+  });
 
   const session = async (c: Context): Promise<Session | null> => {
     const raw = getCookie(c, SESSION_COOKIE);
@@ -448,20 +523,69 @@ export function createApp(deps: AppDeps): Hono {
 
   app.post('/r/:owner/:name/approve', async (c) => {
     const fullName = `${c.req.param('owner')}/${c.req.param('name')}`;
+    // EVERY EXIT FROM THIS HANDLER SAYS SOMETHING, and every one of them is logged.
+    //
+    // It used to log exactly once, at the end, after the dispatch. So the four early
+    // returns below wrote nothing anywhere: not to the audit log, not to the approvals
+    // table, not to the page. A click that died here left the finding looking untouched,
+    // `GET /api/approvals` empty, and the Render log holding at best an anonymous stack —
+    // which is how a real approval came to be reported as "it spun and nothing happened",
+    // with no way to tell afterwards whether the click had even arrived.
+    //
+    // This is the money path. Audit lands, finding shows, APPROVE, pull request opens.
+    // A silent failure anywhere on it is worse than a loud one.
     // Read the form BEFORE the session check. A click made with an expired session used to redirect to
     // the repository overview, so the approval was never created and nothing said so: the intent vanished.
     // Coming back to the finding itself means the un-clicked Approve button is the signal.
     const f = await approveForm(c);
     const sess = await session(c);
+    log('approve clicked', { repo: fullName, by: sess?.login ?? null, model: f ? `${f.provider}/${f.model}` : null });
     // Coming back is not enough on its own: an un-clicked button looks the same as one never pressed.
     // The flag makes the page say it outright.
-    if (!sess) return c.redirect(`/auth/login?next=${encodeURIComponent(withFlag(f?.back ?? `/r/${fullName}`, 'signedout'))}`);
-    const repo = await accessibleRepo(sess, fullName);
-    if (!repo) return c.html(errorPage('Not found', 'No such repository is visible to you here.'), 404);
-    if (!f) return c.html(errorPage('Bad request', 'An approval names the provider and model of the finding it is about.'), 400);
+    if (!sess) {
+      log('approve refused', { repo: fullName, why: 'signed out' });
+      return c.redirect(`/auth/login?next=${encodeURIComponent(atNotice(f?.back ?? `/r/${fullName}`, 'signedout'))}`);
+    }
+    // THE ACCESS CHECK IS AN OUTBOUND GITHUB CALL, and on this path a person is watching a
+    // spinner. Left bare it inherits the shared retry budget — 30s x 3 attempts plus backoff,
+    // about 92 seconds — and any non-404 failure rethrew into a handler with no try/catch and
+    // an app with no onError, so the browser got Hono's bare "Internal Server Error", or
+    // nothing at all if the proxy hung up first. Either way the approval was never reached.
+    let repo: Repo | null;
+    try {
+      repo = await withDeadline(accessibleRepo(sess, fullName), interactiveMs);
+    } catch (err) {
+      log('approve failed', { repo: fullName, by: sess.login, why: 'github access check', error: String(err).slice(0, 200) });
+      return c.html(
+        errorPage(
+          'GitHub did not answer',
+          'Mendr could not check your access to this repository in time, so nothing was approved and no workflow was started. Nothing has changed. Press Approve again.',
+        ),
+        503,
+      );
+    }
+    if (!repo) {
+      log('approve refused', { repo: fullName, by: sess.login, why: 'repository not visible' });
+      return c.html(errorPage('Not found', 'No such repository is visible to you here.'), 404);
+    }
+    if (!f) {
+      log('approve refused', { repo: fullName, by: sess.login, why: 'malformed form' });
+      return c.html(errorPage('Bad request', 'An approval names the provider and model of the finding it is about.'), 400);
+    }
     const key = `${f.provider}/${f.model}`;
     // One in flight per finding: a second click while it runs changes nothing.
-    if ((await store.activeApprovals(repo.id)).has(key)) return c.redirect(f.back, 303);
+    //
+    // It used to return a bare 303 to a page that looked identical, which is indistinguishable
+    // from a click that vanished. Worse, this guard reads `activeApprovals` (queued OR running)
+    // while the page decides whether to draw the button from `listApprovals` (newest per model,
+    // any status) — so the button can legitimately be on screen while this line discards the
+    // press. A `running` approval is the sharp case: it blocks the click here and is invisible
+    // to `GET /api/approvals`, which lists `queued` only. The flag makes the page say so; the
+    // two sets still disagree and that is tracked separately.
+    if ((await store.activeApprovals(repo.id)).has(key)) {
+      log('approve ignored', { repo: fullName, by: sess.login, model: key, why: 'one already in flight' });
+      return c.redirect(atNotice(f.back, 'inflight'), 303);
+    }
     const approval = await store.createApproval({ repoId: repo.id, provider: f.provider, model: f.model, replacement: f.replacement, mode: f.mode, approvedBy: sess.login });
     const at = now().toISOString();
     let dispatched = false;
@@ -497,7 +621,7 @@ export function createApp(deps: AppDeps): Hono {
     const id = Number(form.id);
     const back = safeNext(typeof form.back === 'string' ? form.back : '/');
     const sess = await session(c);
-    if (!sess) return c.redirect(`/auth/login?next=${encodeURIComponent(withFlag(back === '/' ? `/r/${fullName}` : back, 'signedout'))}`);
+    if (!sess) return c.redirect(`/auth/login?next=${encodeURIComponent(atNotice(back === '/' ? `/r/${fullName}` : back, 'signedout'))}`);
     const repo = await accessibleRepo(sess, fullName);
     if (!repo) return c.html(errorPage('Not found', 'No such repository is visible to you here.'), 404);
     const approval = Number.isInteger(id) ? await store.getApproval(id) : null;
@@ -660,6 +784,7 @@ export function createApp(deps: AppDeps): Hono {
         now: now(),
         autoMerge: config.autoMerge,
         signedOut: c.req.query('signedout') === '1',
+        inFlight: c.req.query('inflight') === '1',
       }),
     );
   });

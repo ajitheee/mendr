@@ -692,13 +692,25 @@ export interface RunPageOptions {
   autoMerge?: boolean;
   /** The visitor arrived here from a click their session was too old to carry. */
   signedOut?: boolean;
+  /** The visitor pressed Approve on a finding that already had one in flight. */
+  inFlight?: boolean;
 }
 
 /**
  * Said out loud because the alternative is silence: an un-clicked Approve button looks exactly like
  * one that was never pressed, so a returning visitor has no way to tell a lost click from a fresh page.
  */
-const SIGNED_OUT_NOTICE = `<div class="notice"><strong>You were signed out, so nothing was approved.</strong><p>Your session had expired by the time the click arrived. No approval was created and no workflow was started. You are signed in now — press the button again below.</p></div>`;
+const SIGNED_OUT_NOTICE = `<div class="notice" id="signedout" tabindex="-1"><strong>You were signed out, so nothing was approved.</strong><p>Your session had expired by the time the click arrived. No approval was created and no workflow was started. You are signed in now — press the button again below.</p></div>`;
+
+/**
+ * The same silence, one branch over.
+ *
+ * "One approval in flight per finding" is the right rule, and it used to enforce itself with a
+ * bare redirect to a page that looked identical — so a press that was deliberately ignored was
+ * indistinguishable from one that vanished. It is also the branch a person is most likely to
+ * hit twice, because an approval waiting on a scheduled CI run can sit there for hours.
+ */
+const IN_FLIGHT_NOTICE = `<div class="notice" id="inflight" tabindex="-1"><strong>That finding already has an approval in flight, so this click changed nothing.</strong><p>Mendr allows one at a time per finding. The existing approval is listed below with its status — it is either waiting for your CI's next scheduled run or running now. Cancel it there if you want to approve it again.</p></div>`;
 
 export function runPage(repo: Repo, run: RunRecord, login: string, opts: RunPageOptions): string {
   const invs = [...run.report.investigations].sort((a, b) => rank(a.decision) - rank(b.decision));
@@ -742,7 +754,7 @@ export function runPage(repo: Repo, run: RunRecord, login: string, opts: RunPage
 <div class="bar">${pill(run.counts, run.conclusion)} <span class="muted">conclusion <code>${esc(run.conclusion)}</code> · received ${esc(run.receivedAt.slice(0, 19).replace('T', ' '))}${run.actor ? ` · by ${esc(run.actor)}` : ''}</span>${regChip}</div>
 <div class="bar">${run.checkRunUrl ? `<a class="btn" href="${esc(run.checkRunUrl)}" target="_blank" rel="noopener">Check run on GitHub ↗</a>` : ''}<a class="btn" href="${esc(opts.workflowUrl)}" target="_blank" rel="noopener">Rerun audit ↗</a><a class="tlink" href="/api/runs/${run.id}">Evidence JSON</a></div>`;
 
-  const notice = opts.signedOut ? SIGNED_OUT_NOTICE : '';
+  const notice = `${opts.signedOut ? SIGNED_OUT_NOTICE : ''}${opts.inFlight ? IN_FLIGHT_NOTICE : ''}`;
   const body = actionable.length
     ? `${header}${notice}${migration}<h2>Action needed (${actionable.length})</h2>${actionable.map(card).join('')}${info.length ? `<h2>Informational (${info.length})</h2><p class="muted">Catalog, documentation or fixture references — not dependencies. No migration action; monitor the provider.</p>${info.map(card).join('')}` : ''}`
     : `${header}${notice}${migration}${quiet}${info.map(card).join('')}`;

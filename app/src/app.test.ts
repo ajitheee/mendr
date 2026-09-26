@@ -95,7 +95,21 @@ function harness(userRepos: Record<string, number> = {}, over: Partial<AppConfig
   const store = new MemoryStore();
   const gh = fakeGitHub(userRepos);
   const logs: string[] = [];
-  const app = createApp({ config, store, github: gh.api, verifyActionsToken: verify, log: (m) => logs.push(m) });
+  // The full records too, not only the message. Half this suite's point is that an early exit
+  // now says WHICH repository and WHY, and a string[] cannot assert that.
+  const logEvents: { message: string; extra?: Record<string, unknown> }[] = [];
+  const app = createApp({
+    config,
+    store,
+    github: gh.api,
+    verifyActionsToken: verify,
+    log: (m, extra) => {
+      logs.push(m);
+      logEvents.push(extra ? { message: m, extra } : { message: m });
+    },
+    // Real value is 8s; asserting the deadline should not cost the suite eight seconds.
+    interactiveTimeoutMs: 40,
+  });
   const webhook = (event: string, payload: unknown) => {
     const body = JSON.stringify(payload);
     return app.request('/webhooks/github', {
@@ -110,7 +124,7 @@ function harness(userRepos: Record<string, number> = {}, over: Partial<AppConfig
   const migrations = (token: string, body: unknown, headers: Record<string, string> = {}) =>
     app.request('/api/migrations', { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body) });
   const sessionCookie = async () => `${SESSION_COOKIE}=${await sealSession({ userId: 7, login: 'octocat', token: 'user-token', exp: Math.floor(Date.now() / 1000) + 3600 }, config.sessionSecret)}`;
-  return { app, store, gh, config, logs, webhook, install, ingest, migrations, sessionCookie };
+  return { app, store, gh, config, logs, logEvents, webhook, install, ingest, migrations, sessionCookie };
 }
 
 /** What mendr-action would send after a verified migration of the sample report's gpt-4 finding — with a diff the App must drop. */
@@ -516,13 +530,17 @@ describe('approvals: decided in Mendr, carried out by the customer\'s own CI', (
   // Regression: the session was checked BEFORE the form was read, so a click made with an expired
   // session was answered with a redirect to the repository overview — the finding it came from was
   // lost, no approval was created, and nothing said so. It looked like it had worked.
-  it('a signed-out Approve click comes back to the finding it was made on, and creates nothing', async () => {
+  it('a signed-out Approve click comes back to the REASON it failed, and creates nothing', async () => {
     const h = harness({ 'acme/api': REPO.id });
     await h.install();
     await h.ingest(await actionsToken(), sampleReport());
     const res = await post(h, '/r/acme/api/approve', { ...finding, mode: 'pr' }); // no session cookie
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe(`/auth/login?next=${encodeURIComponent('/r/acme/api/runs/1?signedout=1')}`);
+    // Anchored on the NOTICE, not the finding. The fragment used to be the finding's, so the
+    // browser jumped past the explanation to a card whose Approve button still looked un-clicked
+    // -- a page byte-for-byte identical to the one the click was made on. That is the whole
+    // difference between "nothing happened" and "your session expired, so nothing was approved".
+    expect(res.headers.get('location')).toBe(`/auth/login?next=${encodeURIComponent('/r/acme/api/runs/1?signedout=1#signedout')}`);
     expect(await h.store.getApproval(1)).toBeFalsy();
     expect(h.gh.dispatches).toEqual([]);
   });
@@ -540,11 +558,11 @@ describe('approvals: decided in Mendr, carried out by the customer\'s own CI', (
     expect(clean).not.toContain('You were signed out');
   });
 
-  it('a signed-out Cancel click comes back the same way, and cancels nothing', async () => {
+  it('a signed-out Cancel click comes back to the reason too, and cancels nothing', async () => {
     const { h } = await approved();
     const res = await post(h, '/r/acme/api/approve/cancel', { id: '1', back: '/r/acme/api/runs/1#f-openai-gpt-4' }); // no session cookie
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe(`/auth/login?next=${encodeURIComponent('/r/acme/api/runs/1?signedout=1#f-openai-gpt-4')}`);
+    expect(res.headers.get('location')).toBe(`/auth/login?next=${encodeURIComponent('/r/acme/api/runs/1?signedout=1#signedout')}`);
     expect((await h.store.getApproval(1))?.status).not.toBe('cancelled');
   });
 
@@ -792,5 +810,93 @@ describe('reading evidence requires sign-in AND GitHub access to the repository'
     expect(loc.searchParams.get('client_id')).toBe('Iv1.test');
     expect(loc.searchParams.get('redirect_uri')).toBe('https://app.example/auth/callback');
     expect(res.headers.get('set-cookie')).toContain('mendr_login_state=');
+  });
+});
+
+// Every exit from the Approve handler says something, and every one is logged.
+//
+// It used to log once, at the end, after the dispatch — so the four early returns wrote
+// nothing anywhere. A click that died there left the finding looking untouched, the
+// approvals list empty, and the Render log holding at best an anonymous stack. That is
+// how a real approval came to be reported as "it spun and nothing happened", with no way
+// to tell afterwards whether the click had even arrived.
+describe('an Approve click that does not create an approval still says so', () => {
+  const post = (h: ReturnType<typeof harness>, path: string, fields: Record<string, string>, cookie?: string) =>
+    h.app.request(path, {
+      method: 'POST',
+      headers: { ...(cookie ? { cookie } : {}), 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(fields).toString(),
+    });
+  const finding = { provider: 'openai', model: 'gpt-4', replacement: 'gpt-4.1', back: '/r/acme/api/runs/1' };
+
+  it('logs the click on arrival, before anything can fail', async () => {
+    const h = harness({ 'acme/api': REPO.id });
+    const lines = h.logEvents;
+    await h.install();
+    await h.ingest(await actionsToken(), sampleReport());
+    await post(h, '/r/acme/api/approve', finding, await h.sessionCookie());
+    const clicked = lines.find((l) => l.message === 'approve clicked');
+    expect(clicked).toBeDefined();
+    expect(clicked?.extra).toMatchObject({ repo: 'acme/api', by: 'octocat' });
+  });
+
+  it('a second click while one is in flight is refused OUT LOUD, not with an identical page', async () => {
+    // The guard is right; its silence was not. It also reads a different set than the page
+    // uses to decide whether to draw the button (`activeApprovals` is queued|running, the
+    // page's map is newest-per-model whatever the status), so the button can be on screen
+    // while this branch discards the press.
+    const h = harness({ 'acme/api': REPO.id });
+    const lines = h.logEvents;
+    await h.install();
+    await h.ingest(await actionsToken(), sampleReport());
+    const cookie = await h.sessionCookie();
+    expect((await post(h, '/r/acme/api/approve', finding, cookie)).status).toBe(303);
+
+    const second = await post(h, '/r/acme/api/approve', finding, cookie);
+    expect(second.status).toBe(303);
+    expect(second.headers.get('location')).toContain('inflight=1');
+    expect(lines.some((l) => l.message === 'approve ignored')).toBe(true);
+    // Exactly one approval exists: the guard did its job.
+    expect(await h.store.getApproval(2)).toBeNull();
+
+    const html = await (await h.app.request(`/r/acme/api/runs/1?inflight=1`, { headers: { cookie } })).text();
+    expect(html).toContain('already has an approval in flight');
+    expect(html).toContain('this click changed nothing');
+  });
+
+  it('a GitHub access check that never answers is stated, not spun on', async () => {
+    // accessibleRepo is an outbound call on a path where a person is watching. Left bare it
+    // inherited the shared retry budget -- 30s x 3 plus backoff, about 92 seconds -- and any
+    // non-404 failure rethrew into a handler with no try/catch and an app with no onError.
+    const h = harness({ 'acme/api': REPO.id });
+    const lines = h.logEvents;
+    await h.install();
+    await h.ingest(await actionsToken(), sampleReport());
+    h.gh.api.getRepoAsUser = () => new Promise(() => {}); // never settles
+    const res = await post(h, '/r/acme/api/approve', finding, await h.sessionCookie());
+    expect(res.status).toBe(503);
+    const html = await res.text();
+    expect(html).toContain('GitHub did not answer');
+    expect(html).toContain('nothing was approved');
+    expect(lines.some((l) => l.message === 'approve failed')).toBe(true);
+    expect(await h.store.getApproval(1)).toBeNull();
+  });
+
+  it('an unexpected throw anywhere is logged with its route and shown as a sentence', async () => {
+    const h = harness({ 'acme/api': REPO.id });
+    const lines = h.logEvents;
+    await h.install();
+    await h.ingest(await actionsToken(), sampleReport());
+    h.gh.api.getRepoAsUser = async () => {
+      throw new Error('socket hang up');
+    };
+    const res = await post(h, '/r/acme/api/approve', finding, await h.sessionCookie());
+    // The approve path catches its own GitHub failures, so this asserts the STATED outcome
+    // rather than reaching onError -- what matters is that the person is told and the event
+    // is logged with the repository on it.
+    expect([500, 503]).toContain(res.status);
+    expect(await res.text()).toContain('nothing was approved');
+    const failed = lines.find((l) => l.message === 'approve failed');
+    expect(failed?.extra).toMatchObject({ repo: 'acme/api' });
   });
 });

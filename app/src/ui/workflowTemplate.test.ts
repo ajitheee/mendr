@@ -105,8 +105,16 @@ describe('auditWorkflowYaml — one short file, two jobs, each calling a reusabl
 });
 
 describe('the caller and the reusable workflows agree (the contract lives in this repository)', () => {
-  const audit = readFileSync(join(REPO_ROOT, '.github', 'workflows', 'reusable-audit.yml'), 'utf8');
-  const migrate = readFileSync(join(REPO_ROOT, '.github', 'workflows', 'reusable-migrate.yml'), 'utf8');
+  // Normalize line endings at the door. Git checks these files out with CRLF on Windows
+  // (core.autocrlf), so a newline escape in an assertion below silently stopped matching
+  // there -- the suite was green in CI on Linux and red on the machine this project is
+  // developed on, which is the least useful place for a test to disagree with itself.
+  // Same family as the UTF-8 BOM bug in scanConfig/lockedSdks: a Windows checkout is not
+  // a byte-identical one, and a test that reads a file off disk has to say so.
+  const read = (...p: string[]): string =>
+    readFileSync(join(REPO_ROOT, ...p), 'utf8').split('\r\n').join('\n');
+  const audit = read('.github', 'workflows', 'reusable-audit.yml');
+  const migrate = read('.github', 'workflows', 'reusable-migrate.yml');
   const yaml = auditWorkflowYaml(OPTS);
   const auditJob = yaml.slice(yaml.indexOf('\n  audit:'), yaml.indexOf('\n  migrate:'));
   const migrateJob = yaml.slice(yaml.indexOf('\n  migrate:'));
