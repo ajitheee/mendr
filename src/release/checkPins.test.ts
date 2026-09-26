@@ -76,11 +76,30 @@ describe('check-pins', () => {
 
     const { code, out } = run();
     expect(code).toBe(0);
-    const undelivered = execFileSync('git', ['log', '--oneline', `v${version()}..HEAD`, '--', 'mendr-action/', 'src/cli.ts'], {
-      cwd: ROOT,
-      encoding: 'utf8',
-    }).trim();
-    if (undelivered) {
+
+    // THREE states, and the test has to allow all three or it is asserting its own
+    // environment rather than the rule. The script itself already does exactly this.
+    //
+    // CI's build-and-test job checks out at the default shallow depth and has no tags,
+    // so `git log <tag>..HEAD` THROWS there — which is why the first version of this
+    // assertion went red in CI while passing locally. Only the `shell` job carries
+    // `fetch-depth: 0`, because that is the job the delivery rule actually guards.
+    let undelivered: string | null;
+    try {
+      undelivered = execFileSync('git', ['log', '--oneline', `v${version()}..HEAD`, '--', 'mendr-action/', 'src/cli.ts'], {
+        cwd: ROOT,
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim();
+    } catch {
+      undelivered = null; // no tag reachable here
+    }
+
+    if (undelivered === null) {
+      // The rule could not run. It must SAY so rather than pass quietly — a guard that
+      // silently does nothing is the thing check-pins exists to prevent.
+      expect(out).toMatch(/could not read git history/);
+    } else if (undelivered) {
       expect(out).toMatch(/NOTE — \d+ commit\(s\) touch/);
     } else {
       // Nothing is undelivered, so there must be no warning to read past.
