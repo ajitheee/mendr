@@ -29,6 +29,8 @@ describe('check-pins', () => {
     expect(code).toBe(0);
   });
 
+  const version = (): string => JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version as string;
+
   it('anchors every release pin on the version in package.json', () => {
     // The anchor matters: RC's SHA cannot be it, because the release commit's
     // SHA does not exist until the commit is made — yet every tag pin has to be
@@ -58,11 +60,50 @@ describe('check-pins', () => {
     expect(script).toMatch(/the position moved or was removed/);
   });
 
-  it('reports code that is merged but undelivered', () => {
-    // Rule 3. On main between releases this is expected and advisory, so it
-    // prints rather than exits non-zero — but it must PRINT, because a
-    // consistency check alone is green while a security fix reaches nobody.
-    const { out } = run();
-    expect(out).toMatch(/NOTE — (\d+ commit\(s\) touch|could not read git history)/);
+  it('carries the delivery-staleness rule, and does not cry wolf when nothing is undelivered', () => {
+    // Rule 3. On main between releases, unreleased work is expected, so this is
+    // advisory — it prints rather than exiting non-zero, because a consistency
+    // check alone is green while a security fix reaches nobody.
+    //
+    // THIS TEST USED TO ASSERT THE NOTE WAS ALWAYS PRESENT. It was written the day
+    // four commits sat undelivered, so it pinned that moment rather than the rule,
+    // and it went red the moment the release it was written for actually shipped —
+    // failing on the good state. A guard that only passes while something is broken
+    // is not a guard.
+    const script = readFileSync(SCRIPT, 'utf8');
+    expect(script).toContain('DELIVERY_PATHS');
+    expect(script).toMatch(/mendr-action\//);
+
+    const { code, out } = run();
+    expect(code).toBe(0);
+
+    // THREE states, and the test has to allow all three or it is asserting its own
+    // environment rather than the rule. The script itself already does exactly this.
+    //
+    // CI's build-and-test job checks out at the default shallow depth and has no tags,
+    // so `git log <tag>..HEAD` THROWS there — which is why the first version of this
+    // assertion went red in CI while passing locally. Only the `shell` job carries
+    // `fetch-depth: 0`, because that is the job the delivery rule actually guards.
+    let undelivered: string | null;
+    try {
+      undelivered = execFileSync('git', ['log', '--oneline', `v${version()}..HEAD`, '--', 'mendr-action/', 'src/cli.ts'], {
+        cwd: ROOT,
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim();
+    } catch {
+      undelivered = null; // no tag reachable here
+    }
+
+    if (undelivered === null) {
+      // The rule could not run. It must SAY so rather than pass quietly — a guard that
+      // silently does nothing is the thing check-pins exists to prevent.
+      expect(out).toMatch(/could not read git history/);
+    } else if (undelivered) {
+      expect(out).toMatch(/NOTE — \d+ commit\(s\) touch/);
+    } else {
+      // Nothing is undelivered, so there must be no warning to read past.
+      expect(out).not.toMatch(/commit\(s\) touch/);
+    }
   });
 });
