@@ -82,9 +82,25 @@ export function titleFor(report: AuditReport): string {
   return report.conclusion === 'inconclusive' ? `Inconclusive · ${base}` : base;
 }
 
-/** The scanner speaks command-line; the check on the commit speaks App: the fix is approved in Mendr, not run by hand. */
+/**
+ * The scanner speaks command-line; the check on the commit speaks App: the fix is approved
+ * in Mendr, not run by hand.
+ *
+ * The id is captured lazily up to a period that ENDS THE SENTENCE — one followed by
+ * whitespace or end of string. Model ids contain dots of their own (`gpt-5.6-sol`,
+ * `gpt-4.1-nano`), and the previous `[^\s.]+` stopped at the first one, so a real check run
+ * on mendr-demo read "migrate it to gpt-5 once you approve in your Mendr App.6-sol" — the
+ * replacement landed inside the identifier.
+ *
+ * `(it|them)` is matched too: the source says "them" when several ids are eligible, and the
+ * singular-only pattern left that branch untouched, publishing the internal tool name
+ * `fix-llm` to anyone reading the check.
+ */
 function appWording(reason: string): string {
-  return reason.replace(/fix-llm can rewrite it to ([^\s.]+)/g, 'Mendr can migrate it to $1 once you approve in your Mendr App');
+  return reason.replace(
+    /fix-llm can rewrite (it|them) to (\S+?)\.(?=\s|$)/g,
+    'Mendr can migrate $1 to $2 once you approve in your Mendr App.',
+  );
 }
 
 export function buildCheckRun(report: AuditReport, opts: { sha: string; detailsUrl: string; externalId: string }): CheckRunPayload {
