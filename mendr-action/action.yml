@@ -100,6 +100,15 @@ outputs:
   approvals:
     description: "Comma-separated ids of the App approvals this run carried out (approval-gated only)."
     value: ${{ steps.gate.outputs.ids }}
+  migrated:
+    description: >-
+      "true" when the approval gate found work and this run carried it out;
+      "false" when it found nothing approved and stopped. Empty when not
+      approval-gated. The JOB CONCLUSION cannot tell you this — GitHub reports a
+      job that started as `success` whether it migrated or did nothing, which is
+      how mendr-demo accumulated a long run of green `migrate` checks while the
+      migrate path had never executed. Branch on this, not on the conclusion.
+    value: ${{ steps.gate.outputs.proceed }}
 
 runs:
   using: "composite"
@@ -130,6 +139,18 @@ runs:
         if [ "$code" = "403" ]; then
           echo "proceed=false" >> "$GITHUB_OUTPUT"
           echo "::notice::Mendr: the Mendr App is not installed on this repository (or its installation is suspended), so there is nothing to carry out. Install it again to resume, or remove this workflow."
+          # The quietest failure of the three: the App no longer knows this
+          # repository, yet the hourly check keeps going green. Left unsaid, a
+          # disconnected repo looks exactly like a healthy one with nothing to do.
+          {
+            echo "### Mendr — migrate"
+            echo
+            echo "**No migration ran, and none can.** The Mendr App is not installed on this"
+            echo "repository, or its installation is suspended, so approvals cannot be read."
+            echo
+            echo "Install the App again to resume, or remove this workflow. Until then this job"
+            echo "will keep reporting green while doing nothing."
+          } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
           exit 0
         fi
         if [ "${code#2}" = "$code" ]; then echo "::error::Mendr: the App answered HTTP $code to the approvals check."; cat "$body"; exit 1; fi
@@ -138,6 +159,19 @@ runs:
         if [ -z "$ids" ]; then
           echo "proceed=false" >> "$GITHUB_OUTPUT"
           echo "Mendr: nothing is approved in the App for this repository${MENDR_APPROVAL_HINT:+ (hint: $MENDR_APPROVAL_HINT)}; nothing to do."
+          # SAY SO ON THE RUN PAGE, not only in the log. GitHub cannot mark a job
+          # "skipped" once it has started, so this job ends green whether it migrated
+          # or did nothing at all -- and on mendr-demo that produced 169 runs of
+          # `migrate / migrate: success` while the migrate path had never once
+          # executed. A green that means "nothing happened" is worse than a red.
+          {
+            echo "### Mendr — migrate"
+            echo
+            echo "**No migration ran.** Nothing is approved in the App for this repository, so the"
+            echo "approval gate stopped here and no code was read, changed, branched or proposed."
+            echo
+            echo "This job is green because the check itself succeeded — not because a migration did."
+          } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
           exit 0
         fi
         claimed="$(curl -sS --fail-with-body --retry 4 --retry-delay 5 --retry-all-errors --max-time 60 -X POST -H "Authorization: Bearer $token" -H "Content-Type: application/json" \
@@ -146,6 +180,12 @@ runs:
         if [ -z "$cids" ]; then
           echo "proceed=false" >> "$GITHUB_OUTPUT"
           echo "Mendr: another run already took these approvals; nothing to do."
+          {
+            echo "### Mendr — migrate"
+            echo
+            echo "**No migration ran here.** Another run claimed these approvals first and is carrying"
+            echo "them out; this job stopped so the same change is never proposed twice."
+          } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
           exit 0
         fi
         only="$(echo "$claimed" | jq -r '[.claimed[] | "\(.provider)/\(.model)"] | join(",")')"
