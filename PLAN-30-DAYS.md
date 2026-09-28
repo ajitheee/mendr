@@ -156,17 +156,54 @@ tools the buyer already runs; charge for the verified swap and the audit trail.
 
 ### The slices, in order
 
-**P1-G0 · Verify two facts before building on them.** ~1 hour, and it gates the rest.
-Does `llmstatus.ai` actually verify swaps or only open PRs? Has OpenAI shipped any deprecation
-notification for API consumers? If the first is yes, the differentiator is gone and this plan
-changes the same day. Not building a repositioning on two unverified facts.
+**P1-G0 · Verify two facts before building on them.**  —  **DONE 2026-09-28.** Both checked
+against primary sources, and one corrected a claim made earlier the same day.
+
+**`llmstatus.ai` does NOT verify the swap — the differentiator survives.** Their own docs:
+`mm fix` rewrites ids (boundary-safe, style-preserving, chain-aware) with a red/green dry-run
+preview. Nothing runs a type-check, build or test suite on a throwaway copy; it is a generated
+diff a human confirms. Their pricing page (Free / $5-yr / $29 lifetime) lists no PR automation
+at all — the GitHub App and "open fix PR" appear on marketing but are not corroborated there.
+And where their App does run, it runs **on their servers**, so Mendr's customer-CI-only
+guarantee is a real difference rather than a slogan.
+
+**CORRECTION — "no competitor has a deadline primitive" was WRONG.** Renovate has none.
+`llmstatus.ai` has them: Pro includes custom lead times at 90 / 30 / 7 / 1 day, and
+`ci . --fail-on retiring` fails the build — which is the arXiv paper's own recommendation,
+already shipped. They are also broader on detection: **16 providers / 599 models / 6-hour
+refresh** against Mendr's 3 providers / 161 entries, scanning `env`, `aws-secrets`, `k8s`,
+`helm` and `sql`, with a **chain-aware** fix that follows the replacement chain when the
+replacement is itself dying. Mendr does not do that.
+
+**OpenAI has NOT shipped a deprecation API, and formally declined to.** The request "Expose
+Model Deprecation Dates Through the API" was opened 2023-11-09 and **closed by OpenAI staff on
+2026-06-18**: *"We can't promise implementation or timing."* Best news in the research for the
+registry. Honest caveat: 7 replies over 2.5 years is a thin demand signal — it says they will
+not build it, not that anyone wants it. They notify **by email**, to whoever owns the API key
+rather than the team that owns the repo, which is the documented failure mode in every incident
+writeup the research found.
+
+**THE FINDING THAT CHANGES THE PRODUCT: the aliases are not redirected.** OpenAI's own table
+shows the rolling aliases themselves — `gpt-4`, `gpt-4-turbo`, `gpt-3.5-turbo`, `o1`, `o1-pro`,
+`o3-mini`, `o4-mini` — shutting down on 2026-10-23. So **a gateway alias pointing at `gpt-4`
+breaks exactly as hard as a hard-coded string.** The gateway layer does not dissolve this wave
+at all. That makes P1-G2 more valuable, not less: a LiteLLM `model_group_alias` pointing at a
+retiring id is a live bomb that nothing currently checks.
 
 **P1-G1 · The deadline becomes the headline.** The check run says
 `1 patch eligible · 0 review required · 0 informational`. It should say
 **`gpt-4-0613 stops serving in 25 days`**, with the provider quote and snapshot link inline.
-First because no competitor has a deadline primitive — it leans on the one thing that is
-structurally hard for the rest of the field to copy, and it is a small change in
-`app/src/ingest/checkRun.ts`, a path already walked twice today.
+
+*Rationale corrected by P1-G0.* "No competitor has a deadline primitive" is false —
+`llmstatus.ai` ships lead-time alerts and a `--fail-on` CI flag. The narrower claim that
+survives is the one worth building on: **nobody puts the deadline on the commit, inside the
+check the reviewer is already reading, with the provider's own sentence and a stored snapshot
+beside it.** llmstatus alerts by email and Slack, away from the code; Renovate has no date
+concept at all. Mendr can put the countdown where the decision is actually made, and back it
+with evidence neither of them holds.
+
+Still first because it is small and lands on a path already walked twice today
+(`app/src/ingest/checkRun.ts`).
 *Clickable:* the check run on `mendr-demo`, on a real finding.
 
 **P1-G2 · Scan gateway configs.** LiteLLM `config.yaml` (`model_list`,
