@@ -75,11 +75,69 @@ export function conclusionFor(report: AuditReport): CheckConclusion {
   return 'success';
 }
 
-export function titleFor(report: AuditReport): string {
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Whole days from `now` to a YYYY-MM-DD shutdown date, or null if unusable.
+ *
+ * COMPUTED HERE, NOT READ FROM THE REPORT. `retirementEvidence.daysUntil` is baked by the CLI
+ * at SCAN time (src/audit/investigation.ts), so a check run written from a report that sat in
+ * a queue — or re-rendered later — would count down from the wrong day. A countdown that is
+ * silently wrong is worse than no countdown, because it is the one number a reader will act on.
+ *
+ * Both sides are floored to UTC midnight so the answer is a count of calendar days, not of
+ * 24-hour periods: a shutdown "tomorrow" reads as 1 whether it is checked at 09:00 or 23:00.
+ */
+function daysToShutdown(shutdownDate: string | null | undefined, now: Date): number | null {
+  if (!shutdownDate) return null;
+  const at = Date.parse(`${shutdownDate}T00:00:00Z`);
+  if (Number.isNaN(at)) return null;
+  const today = Math.floor(now.getTime() / DAY_MS) * DAY_MS;
+  return Math.round((at - today) / DAY_MS);
+}
+
+/** The soonest-dying actionable model, which is the one a reader needs to see first. */
+function soonest(report: AuditReport, now: Date): { model: string; days: number } | null {
+  let best: { model: string; days: number } | null = null;
+  for (const inv of report.investigations) {
+    if (inv.decision !== 'patch' && inv.decision !== 'review') continue;
+    const days = daysToShutdown(inv.retirementEvidence?.shutdownDate, now);
+    if (days === null) continue;
+    if (!best || days < best.days) best = { model: inv.model, days };
+  }
+  return best;
+}
+
+/** The countdown, in the words a person would use. */
+function deadlinePhrase(model: string, days: number): string {
+  if (days < 0) return `${model} stopped serving ${-days} day${days === -1 ? '' : 's'} ago`;
+  if (days === 0) return `${model} stops serving today`;
+  if (days === 1) return `${model} stops serving tomorrow`;
+  return `${model} stops serving in ${days} days`;
+}
+
+/**
+ * LEAD WITH THE DEADLINE, not the tally.
+ *
+ * The title used to open with `1 patch eligible · 0 review required · 0 informational` — a
+ * count of Mendr's own verdicts, which means nothing to someone who has not read the summary.
+ * The fact that decides whether anyone acts is the date, so the date goes first and the tally
+ * follows it.
+ *
+ * This is also the one place a competitor structurally cannot follow cheaply: Renovate has no
+ * date concept anywhere in its config surface, and the trackers that do have lead times alert
+ * by email and Slack — away from the code. This puts the countdown on the commit, in the check
+ * the reviewer is already reading.
+ */
+export function titleFor(report: AuditReport, now: Date = new Date()): string {
   if (report.conclusion === 'audit_failed') return 'Audit failed: a surface did not complete';
   const c = countDecisions(report);
   const base = `${c.patch} patch eligible · ${c.review} review required · ${c.informational} informational`;
-  return report.conclusion === 'inconclusive' ? `Inconclusive · ${base}` : base;
+  const head = soonest(report, now);
+  // No actionable finding with a known shutdown date means there is no deadline to lead with,
+  // and inventing one would be the overclaim this product exists to avoid.
+  const lead = head ? `${deadlinePhrase(head.model, head.days)} · ${c.patch} patch eligible` : base;
+  return report.conclusion === 'inconclusive' ? `Inconclusive · ${lead}` : lead;
 }
 
 /**
@@ -103,7 +161,10 @@ function appWording(reason: string): string {
   );
 }
 
-export function buildCheckRun(report: AuditReport, opts: { sha: string; detailsUrl: string; externalId: string }): CheckRunPayload {
+export function buildCheckRun(
+  report: AuditReport,
+  opts: { sha: string; detailsUrl: string; externalId: string; now?: Date },
+): CheckRunPayload {
   const counts = countDecisions(report);
   const actionable = report.investigations.filter((i) => i.decision === 'patch' || i.decision === 'review');
   // Patch first, then review: never equal weight.
@@ -180,6 +241,6 @@ export function buildCheckRun(report: AuditReport, opts: { sha: string; detailsU
     conclusion: conclusionFor(report),
     details_url: opts.detailsUrl,
     external_id: opts.externalId,
-    output: { title: titleFor(report), summary: summaryLines.join('\n'), text, annotations },
+    output: { title: titleFor(report, opts.now ?? new Date()), summary: summaryLines.join('\n'), text, annotations },
   };
 }

@@ -303,7 +303,9 @@ export function createApp(deps: AppDeps): Hono {
     let checkRun: string | null = null;
     let checkRunError: string | null = null;
     try {
-      const payload = buildCheckRun(report, { sha, detailsUrl, externalId: `${repo.id}:${claims.runId}:${claims.runAttempt}` });
+      // The App's own clock, not the report's baked `daysUntil`: the countdown in the check
+      // title must be right at the moment it is WRITTEN, not at the moment the scan ran.
+      const payload = buildCheckRun(report, { sha, detailsUrl, externalId: `${repo.id}:${claims.runId}:${claims.runAttempt}`, now: now() });
       const res = await github.createCheckRun(repo.installationId, claims.repository, repo.id, payload);
       await store.setRunCheckUrl(run.id, res.html_url);
       checkRun = res.html_url;
