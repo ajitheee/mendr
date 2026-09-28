@@ -66,3 +66,44 @@ describe('foldConfigExposure — selectors split from catalog, actionable first'
     expect(exposure.replacement).toBe('gpt-4o');
   });
 });
+
+describe('a gateway selector carrying a provider prefix is a selector, not catalog', () => {
+  // MEASURED BEFORE THE FIX, on a five-line litellm config selecting gpt-4-0613:
+  //   Conclusion: INCONCLUSIVE — "We found no retiring AI dependencies in use."
+  // The same file with the prefix removed reported EXPOSURE DETECTED. `provider/model`
+  // is the canonical spelling in every litellm config in the wild, so the scanner was
+  // failing on the standard form and passing on the unusual one — the worst way round,
+  // because a confident false negative is worse than no scan at all.
+
+  it('reads `model: openai/gpt-4` as a runtime selector', () => {
+    expect(one('model: openai/gpt-4')).toMatchObject({ value: 'gpt-4', position: 'config_selector', purpose: 'gateway_prefixed', key: 'model' });
+  });
+
+  it('is capped at review, never auto-applied', () => {
+    // The successor may need a different prefix and the gateway may not accept it.
+    // Config is never Tier A anyway; this asserts the prefixed case did not sneak past.
+    expect(one('model: openai/gpt-4').tier).toBe('B');
+  });
+
+  it('works for the litellm_params idiom it exists for', () => {
+    const got = scan(['model_list:', '  - model_name: fast', '    litellm_params:', '      model: openai/gpt-4'].join('\n'));
+    expect(got.some((m) => m.value === 'gpt-4' && m.position === 'config_selector')).toBe(true);
+  });
+
+  it('still refuses a prefix under a key that is not model-like', () => {
+    // `label: openai/gpt-4` is describing something, not selecting it.
+    expect(one('label: openai/gpt-4').position).toBe('config_catalog');
+  });
+
+  it('does not match a DIFFERENT id that merely shares a prefix', () => {
+    // Exact-value discipline has to survive the prefix split: `openai/gpt-4o` is not
+    // `gpt-4`, and reporting it would be the substring matching this scanner forbids.
+    const got = scan('model: openai/gpt-4o');
+    expect(got.filter((m) => m.position === 'config_selector')).toEqual([]);
+  });
+
+  it('leaves a plain unprefixed selector exactly as it was', () => {
+    expect(one('model: gpt-4')).toMatchObject({ position: 'config_selector', key: 'model' });
+    expect(one('model: gpt-4').purpose).toBeUndefined();
+  });
+});
