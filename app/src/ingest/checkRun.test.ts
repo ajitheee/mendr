@@ -60,3 +60,40 @@ describe('buildCheckRun', () => {
     expect(cr.output.text).toContain('11 further locations');
   });
 });
+
+describe('the check speaks App, and does not break the model id doing it', () => {
+  // Regression: a real check run on ajitheee/mendr-demo published
+  //   "migrate it to gpt-5 once you approve in your Mendr App.6-sol"
+  // because the capture class excluded dots and stopped inside `gpt-5.6-sol`.
+  // That page is what the Gate 2 outreach sends strangers to look at.
+  const withReason = (reason: string) => {
+    const r = sampleReport();
+    const inv = r.investigations.find((i) => i.decision === 'patch')!;
+    inv.locations.selectors[0]!.reason = reason;
+    return buildCheckRun(r, opts).output.annotations[0]!.message;
+  };
+
+  it('keeps a dotted replacement id intact', () => {
+    const msg = withReason(
+      'A verified auto-fix exists for gpt-4-0613 — fix-llm can rewrite it to gpt-5.6-sol. Nothing is applied by the audit.',
+    );
+    expect(msg).toContain('Mendr can migrate it to gpt-5.6-sol once you approve in your Mendr App.');
+    expect(msg).toContain('Nothing is applied by the audit.');
+    expect(msg).not.toContain('App.6-sol');
+    expect(msg).not.toContain('fix-llm');
+  });
+
+  it('rewrites the plural branch too, so the internal tool name never reaches a reader', () => {
+    const msg = withReason(
+      'A verified auto-fix exists for gpt-4, o3-mini — fix-llm can rewrite them to gpt-5.6-sol. Nothing is applied by the audit.',
+    );
+    expect(msg).toContain('Mendr can migrate them to gpt-5.6-sol once you approve in your Mendr App.');
+    expect(msg).not.toContain('fix-llm');
+  });
+
+  it('still handles an id with no dot in it', () => {
+    const msg = withReason('A verified auto-fix exists for gpt-4 — fix-llm can rewrite it to gpt-5. Nothing is applied.');
+    expect(msg).toContain('Mendr can migrate it to gpt-5 once you approve in your Mendr App.');
+    expect(msg).not.toContain('fix-llm');
+  });
+});
