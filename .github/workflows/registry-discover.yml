@@ -20,6 +20,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  issues: write
 
 jobs:
   discover:
@@ -105,3 +106,64 @@ jobs:
 
             Rows the parser could not read unambiguously were **skipped, not guessed** — see the
             job log for each skip and its reason, and add those by hand if they matter.
+
+      # ---- health alarm ------------------------------------------------------
+      # registry-discover's scheduled run failed on 2026-09-01 and nobody knew for
+      # 27 days. A monthly job that fails silently is worse than no job: you
+      # believe you have change intelligence and you do not. Zero of eight
+      # workflows reported their own failure before this.
+      #
+      # ONE issue, found by its marker and edited in place forever, reopened when
+      # it breaks again and closed when it recovers. Same discipline as the Mendr
+      # Watch issue: the first duplicate is the start of the churn this product
+      # exists to avoid. Duplicated verbatim into registry-discover.yml rather
+      # than abstracted -- two copies is not yet a pattern.
+      - name: Registry health — raise the alarm
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const MARKER = '<!-- mendr-registry-health:v1 -->';
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const when = new Date().toISOString().slice(0, 16).replace('T', ' ');
+            const all = await github.paginate(github.rest.issues.listForRepo, {
+              ...context.repo, state: 'all', per_page: 100,
+            });
+            const issue = all.find((i) => !i.pull_request && (i.body || '').includes(MARKER));
+            const body = [
+              MARKER,
+              '**A scheduled registry collector is failing.** Plane 1 is not refreshing itself.',
+              '',
+              `- workflow: \`${context.workflow}\``,
+              `- last failure: ${when} UTC`,
+              `- run: ${run}`,
+              '',
+              'While this is open, treat the model catalog, the SDK record and the candidate',
+              'queue as **stale by an unknown amount**. A clean scan proves less than it looks.',
+              '',
+              'This issue closes itself on the next successful run of the same workflow.',
+            ].join('\n');
+            if (issue) {
+              await github.rest.issues.update({ ...context.repo, issue_number: issue.number, body, state: 'open' });
+              await github.rest.issues.createComment({ ...context.repo, issue_number: issue.number,
+                body: `Failed again — \`${context.workflow}\` at ${when} UTC. ${run}` });
+            } else {
+              await github.rest.issues.create({ ...context.repo,
+                title: 'Registry collectors are failing', body });
+            }
+
+      - name: Registry health — stand down
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const MARKER = '<!-- mendr-registry-health:v1 -->';
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const all = await github.paginate(github.rest.issues.listForRepo, {
+              ...context.repo, state: 'open', per_page: 100,
+            });
+            const issue = all.find((i) => !i.pull_request && (i.body || '').includes(MARKER));
+            if (!issue) return;
+            await github.rest.issues.createComment({ ...context.repo, issue_number: issue.number,
+              body: `Recovered — \`${context.workflow}\` completed. ${run}` });
+            await github.rest.issues.update({ ...context.repo, issue_number: issue.number, state: 'closed' });
