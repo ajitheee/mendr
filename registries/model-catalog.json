@@ -1,25 +1,24 @@
 {
   "schema": "mendr-model-catalog/v1",
-  "fetchedAt": "2026-09-18T01:49:10Z",
+  "fetchedAt": "2026-09-28T03:45:56Z",
   "sources": [
     {
       "url": "https://openrouter.ai/api/v1/models",
       "ok": true,
-      "sha256": "2d1ca5ea7b0735ebaa84d241bc6c315ebceaa64cefac50bfb596bc1bfa5e122a",
-      "contributed": 170,
-      "note": "446 models, 170 first-party"
+      "sha256": "c7e2f5a3cfa0c00ed3152ea8d4e1798dbabae5ea61a2c590aca9a4040deaa3cb",
+      "contributed": 179,
+      "note": "458 models, 179 first-party"
     },
     {
       "url": "https://models.dev/api.json",
       "ok": true,
-      "sha256": "eb799d0ee23b7b2e4d3774bf3daa89ce04ea9f07796f71811bd7836c5afda4ff",
-      "contributed": 101,
-      "note": "101 first-party models"
+      "sha256": "6e6acdfcd2de9d76e1a647f4acaebb49b8418e813cb930a9616f9e122a246250",
+      "contributed": 106,
+      "note": "106 first-party models"
     }
   ],
   "providers": {
     "anthropic": [
-      "claude-3-haiku",
       "claude-fable-5",
       "claude-fable-5-1",
       "claude-fable-5.1",
@@ -28,7 +27,6 @@
       "claude-haiku-4-5-20251001",
       "claude-haiku-4.5",
       "claude-haiku-latest",
-      "claude-opus-4",
       "claude-opus-4-5",
       "claude-opus-4-5-20251101",
       "claude-opus-4-6",
@@ -40,6 +38,8 @@
       "claude-opus-4.7",
       "claude-opus-4.8",
       "claude-opus-5",
+      "claude-opus-5-5",
+      "claude-opus-5.5",
       "claude-opus-latest",
       "claude-sonnet-4",
       "claude-sonnet-4-5",
@@ -148,10 +148,16 @@
       "gpt-5.6-terra-pro",
       "gpt-6-astra",
       "gpt-6-astra-pro",
+      "gpt-6-luna",
+      "gpt-6-luna-pro",
+      "gpt-6-sol",
+      "gpt-6-sol-pro",
       "gpt-astra-latest",
       "gpt-audio",
       "gpt-audio-mini",
       "gpt-chat-latest",
+      "gpt-daybreak-blue-latest",
+      "gpt-daybreak-red-latest",
       "gpt-image-1",
       "gpt-image-1-mini",
       "gpt-image-1.5",
@@ -177,5 +183,5 @@
       "text-embedding-ada-002"
     ]
   },
-  "count": 152
+  "count": 158
 }
