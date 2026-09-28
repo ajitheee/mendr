@@ -144,7 +144,11 @@ describe('runMigration — sandbox verification with real build/test scripts', (
     const r = await runMigration(dir, REG, { write: true, skipVerify: true });
     expect(r.applied).toEqual([]);
     expect(require('node:fs').readFileSync(join(dir, 'client.ts'), 'utf8')).toContain('"gpt-4"');
-  });
+    // 120s like every sibling in this block. `runMigration` copies a repo and shells out,
+    // so the default 5s was 24x less than its four neighbours got for the same kind of
+    // work. It passed alone and timed out under the parallel suite, which reads as a
+    // flaky product rather than an under-specified test.
+  }, 120_000);
 
   // BEHAVIOUR CHANGE: a test command that exits 0 without parseable results is
   // `inconclusive`, never `passed`. `"test": "exit 0"` used to be enough to make
