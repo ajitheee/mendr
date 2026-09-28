@@ -14,6 +14,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import type { LlmModelIdDeprecation, LlmRegistry } from '../types.js';
 import { displayEntryId } from '../registry/entryId.js';
+import { splitProviderPrefix } from '../usage/sharedRules.js';
 import { effectiveVerificationState, modelIdEntries } from '../usage/llmRegistry.js';
 import { isModelLikeName } from '../usage/scanLiterals.js';
 import type { Tier } from '../report/tiers.js';
@@ -28,7 +29,11 @@ export type ConfigPurpose =
   | 'catalog_entry'
   | 'generic'
   | 'catalog_definition'
-  | 'data_fixture';
+  | 'data_fixture'
+  /** `model: openai/gpt-4-0613` — a gateway selector carrying a provider prefix. Real, and
+      capped at review: the successor may need a different prefix and the gateway may not
+      accept it, so it is never auto-applied. */
+  | 'gateway_prefixed';
 
 /**
  * The provider SURFACE a config file belongs to. A model id under a non-direct
@@ -403,6 +408,25 @@ export function classifyConfigOccurrence(
       return isModelLikeName(parsed.key)
         ? { position: 'config_selector', key: parsed.key }
         : { position: 'config_catalog', purpose: 'catalog_entry', key: parsed.key };
+    }
+    // `model: openai/gpt-4-0613` — a GATEWAY selector, and the canonical spelling in
+    // every LiteLLM config in the wild. The exact-scalar test above rejects it because
+    // the value carries a provider prefix, so a router pointed straight at a retiring
+    // model was reported as a "config catalog reference": informational, no action.
+    //
+    // Measured before this fix, on a five-line litellm config selecting gpt-4-0613:
+    // `Conclusion: INCONCLUSIVE — We found no retiring AI dependencies in use.` The
+    // same file with the prefix removed reported EXPOSURE DETECTED. Failing on the
+    // standard spelling and passing on the unusual one is the worst way round.
+    //
+    // src/usage/scanLiterals.ts has resolved this for TS/JS since the gateway audit;
+    // this reuses its helper and its SAFETY CAP rather than inventing a second rule.
+    // The cap is not timidity: the successor may need a different prefix, and the
+    // gateway may not accept it, so a prefixed hit can be seen and reported but must
+    // never be auto-applied.
+    const split = splitProviderPrefix(value);
+    if (split?.id === id && isModelLikeName(parsed.key)) {
+      return { position: 'config_selector', purpose: 'gateway_prefixed', key: parsed.key };
     }
     // key: [gpt-4, ...] or a larger value — the id is embedded, not the whole value.
     return { position: 'config_catalog', purpose: 'catalog_entry', key: parsed.key };
