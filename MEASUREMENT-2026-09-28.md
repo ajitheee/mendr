@@ -410,8 +410,17 @@ What does not change either way:
    demote is the least legible, and the comment at the render site already says a reader "must
    be able to see WHY". Carrying the text needs a new field on `LocationRef`, which changes the
    `--json` shape this document's own harness parses. **Not fixed.**
-5. **`src/gates/runTests.test.ts` has no explicit timeouts.** All 16 tests run on vitest's 5 s
-   default; 4 fail under full-suite parallel load and pass in isolation, and the suite is green
-   with `--testTimeout=30000`. This is the defect that blocked the v0.5.7-alpha release, where
-   `--write with --skip-verify` carried the 5 s default while its four siblings had `}, 120_000)`.
-   It will produce a phantom red release gate. **Not fixed.**
+5. **`src/gates/runTests.test.ts` has no explicit timeouts — a thin margin, not a live defect.**
+   All 16 tests run on vitest's 5 s default. 4 of them failed here and passed in isolation,
+   which looked like the defect that blocked v0.5.7-alpha (`--write with --skip-verify` carried
+   the 5 s default while its four siblings had `}, 120_000)`).
+
+   **It was not. The cause was this session's own CPU contention:** the full suite was running
+   while twelve repository audits ran in the background. CI on this branch ran `build-and-test`
+   twice, green at 5 m 13 s and 5 m 29 s, on a smaller runner than this machine. So the claim
+   that it "will produce a phantom red release gate" — written before that evidence existed —
+   is withdrawn. Giving those tests explicit timeouts is still worth doing, because they spawn
+   real subprocesses on a 5 s budget, but it is a margin question and not urgent. **Not fixed.**
+
+   Recorded because the mistake is the same one this document opens with: a cause asserted from
+   a symptom without checking the cheap alternative explanation.
