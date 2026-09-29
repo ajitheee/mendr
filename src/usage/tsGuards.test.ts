@@ -416,3 +416,108 @@ describe('C5 — a model argument to a wrapper CLASS is real, and capped', () =>
     expect(t?.tier).toBe('C');
   });
 });
+
+// A FILE THAT CANNOT REACH A PROVIDER — the only demotion in tsSurface.ts.
+//
+// Measured 2026-09-28 (MEASUREMENT-2026-09-28.md): three of promptfoo's four new false
+// positives were `'model.name': 'gpt-3.5-turbo'` inside OpenTelemetry span attributes,
+// carried by `runInSpan`, a helper declared 100 lines above its own use in the same file.
+// `declarationsOf` collected imports, variables, parameters and class properties and never
+// function declarations, so the helper came back `unknown_wrapper (undeclared)` — the same
+// verdict an unresolvable provider wrapper gets, and a review-queue entry either way.
+//
+// The demotion is guarded by TWO lexical facts, and the tests below exist to keep both of
+// them load-bearing, because the failure mode on this side is a FALSE CLEAN.
+const OTEL = [
+  'const { trace } = require("@opentelemetry/api");',
+  'const tracer = trace.getTracer("t");',
+  'async function runInSpan(name, attributes, fn) {',
+  '  const span = tracer.startSpan(name, { attributes });',
+  '  try { return await fn(); } finally { span.end(); }',
+  '}',
+  'async function callApi(prompt) {',
+  '  return runInSpan("query", { "step.type": "pre", "model.name": "gpt-4" }, async () => prompt);',
+  '}',
+  'module.exports = { callApi };',
+].join('\n');
+
+describe('a model id recorded in a file that makes no provider request is informational', () => {
+  it('an OpenTelemetry span attribute carried by a local helper is Tier C, not review', () => {
+    const t = tierOf(OTEL, 'src/traced.js');
+    expect(t?.tier).toBe('C');
+    expect(t?.position).toBe('data');
+    expect(t?.purpose).toBe('not_provider_call');
+  });
+
+  it('the same helper written as an arrow const demotes too', () => {
+    const t = tierOf(OTEL.replace('async function runInSpan(name, attributes, fn) {', 'const runInSpan = async (name, attributes, fn) => {'), 'src/traced.js');
+    expect(t?.tier).toBe('C');
+  });
+
+  // --- the two guards. Each of these files WOULD demote but for one added line. ---
+
+  it('one fetch() anywhere in the file puts it back at review', () => {
+    const t = tierOf(OTEL.replace('module.exports', 'async function flush() { await fetch("http://collector/v1/traces", {}); }\nmodule.exports'), 'src/traced.js');
+    expect(t?.tier).toBe('B');
+  });
+
+  it('an unrecognised package import puts it back at review, even a non-provider one', () => {
+    // The allowlist is the point: `langchain`, `litellm` and a private gateway all reach a
+    // provider without naming one, so "not a first-party SDK" is not "inert".
+    const t = tierOf(OTEL.replace('const tracer', 'const { ChatOpenAI } = require("langchain/chat_models");\nconst tracer'), 'src/traced.js');
+    expect(t?.tier).toBe('B');
+  });
+
+  it('a RELATIVE import puts it back at review — the helper could forward to ./llm', () => {
+    // The false-clean case this guard exists for: nothing in this file names a provider, and
+    // the request happens one file over.
+    const t = tierOf(OTEL.replace('const tracer', 'const { send } = require("./llm");\nconst tracer'), 'src/traced.js');
+    expect(t?.tier).toBe('B');
+  });
+
+  it('seeing the declaration never PROMOTES: a local wrapper around a real client stays at review', () => {
+    // `declarationsOf` now finds function declarations, which must not turn an unresolvable
+    // wrapper into a verified call site. Nothing in tsSurface.ts may promote.
+    const t = tierOf(
+      [
+        'import OpenAI from "openai";',
+        'const client = new OpenAI();',
+        'async function ask(opts) { return client.chat.completions.create(opts); }',
+        'export async function run() { return ask({ model: "gpt-4", messages: [] }); }',
+      ].join('\n'),
+    );
+    expect(t?.tier).toBe('B');
+  });
+});
+
+// The false clean this rule nearly shipped with. Found by probing the rule against a shape
+// the measurement did not contain, BEFORE relying on it: a file with no imports passes the
+// import allowlist vacuously, so an injected client was demoted on a file making a real
+// request. Three guards, not two.
+describe('a file with no imports is not automatically inert', () => {
+  it('an injected client calling a real endpoint stays at review, not informational', () => {
+    const t = tierOf(
+      [
+        'export function ask(client: any, opts: any) {',
+        '  return client.chat.completions.create(opts);',
+        '}',
+        'export function go(client: any) {',
+        '  return ask(client, { model: "gpt-4", messages: [] });',
+        '}',
+      ].join('\n'),
+    );
+    expect(t?.tier).toBe('B');
+    expect(t?.position).toBe('surface_capped');
+  });
+
+  it('a model FACTORY name is disqualifying too, not just an endpoint chain', () => {
+    const t = tierOf(
+      [
+        'export function build(sdk: any, opts: any) { return sdk.languageModel(opts); }',
+        'export function go(sdk: any) { return build(sdk, { model: "gpt-4" }); }',
+      ].join('\n'),
+    );
+    expect(t?.tier).toBe('B');
+    expect(t?.position).toBe('surface_capped');
+  });
+});

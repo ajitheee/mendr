@@ -22,7 +22,7 @@ import { CATALOG_SIBLING_KEYS, isDefaultContainerName, isModelLikeName } from '.
 // authority". Nothing here can promote; it can only refuse to promote.
 
 export type TsProviderFamily = 'openai' | 'anthropic' | 'google';
-export type TsSurface = 'direct' | 'azure' | 'vertex' | 'proxy' | 'unknown_wrapper';
+export type TsSurface = 'direct' | 'azure' | 'vertex' | 'proxy' | 'unknown_wrapper' | 'not_provider';
 
 /** First-party provider packages and the surface each one is. */
 const FIRST_PARTY: ReadonlyArray<{ test: RegExp; family: TsProviderFamily; surface: TsSurface }> = [
@@ -58,6 +58,21 @@ export interface TsSurfaceVerdict {
 export const TS_MODULE_LEVEL_REASON =
   'module-level execution (fires at import); a real request, capped at review';
 export const TS_SURFACE_REASON = 'provider surface caps this call at review';
+/**
+ * The one verdict in this file that DEMOTES. Everything else here can only refuse to
+ * promote; this says a call is provably not a provider request at all, so a model id
+ * handed to it is a recorded value rather than a selection.
+ *
+ * Measured 2026-09-28: three of promptfoo's four new false positives were
+ * `'model.name': 'gpt-3.5-turbo'` inside OpenTelemetry span attributes, capped at review
+ * because the local helper carrying them (`runInSpan`, declared in the same file) came back
+ * `unknown_wrapper (undeclared)` — `declarationsOf` collected imports, variables, parameters
+ * and class properties, and never function declarations. Seeing the declaration is only half
+ * the fix: a local function still resolves to no provider, so the reason improved and the
+ * verdict did not. The demotion below is the other half, and it is deliberately narrow.
+ */
+export const TS_NOT_PROVIDER_REASON =
+  'recorded by a helper in a file that cannot reach a provider (no provider import, no network call, no provider endpoint): telemetry or logging, not a selection';
 export const TS_PREFIXED_REASON =
   'provider-prefixed selector (gateway / provider registry); the successor may need a different prefix, capped at review';
 export const TS_CLI_DEFAULT_REASON =
@@ -233,9 +248,81 @@ function resolveRoot(root: Node, hops: number): TsSurfaceVerdict {
 }
 
 /**
+ * Packages that cannot originate a model request. Deliberately an ALLOWLIST, not a denylist
+ * of provider SDKs: a gateway or aggregator (`langchain`, `litellm`, `openrouter`, a relative
+ * `./llm` module) reaches a provider without naming one, so "not in FIRST_PARTY" is nowhere
+ * near the same claim as "inert". Anything unrecognised keeps the review cap.
+ */
+const INERT_PACKAGE = /^(@opentelemetry\/|node:)/;
+const NODE_BUILTIN = new Set([
+  'assert', 'buffer', 'child_process', 'crypto', 'events', 'fs', 'os', 'path', 'process',
+  'stream', 'string_decoder', 'timers', 'url', 'util', 'zlib',
+]);
+
+/** Callees that put bytes on the wire. A file holding one of these is never inert. */
+const NETWORK_CALL = /^(fetch|axios|got|superagent|undici|XMLHttpRequest)$|\b(https?\.(request|get)|axios\.\w+)$/;
+
+/**
+ * Module specifiers a file pulls in, via `import` or `require()`. Takes the call list the
+ * caller already walked — this runs on every file in a repository, and litellm alone holds
+ * tens of thousands of call expressions.
+ */
+function moduleSpecifiersOf(sf: SourceFile, calls: readonly CallExpression[]): string[] {
+  const out = sf.getImportDeclarations().map((d) => d.getModuleSpecifierValue());
+  for (const call of calls) {
+    if (call.getExpression().getText() !== 'require') continue;
+    const arg = call.getArguments()[0];
+    if (arg && (Node.isStringLiteral(arg) || Node.isNoSubstitutionTemplateLiteral(arg))) {
+      out.push(arg.getLiteralValue());
+    }
+  }
+  return out;
+}
+
+const INERT_FILE = new WeakMap<SourceFile, boolean>();
+
+/**
+ * Can NOTHING in this file reach a model provider? True only when every module it imports is
+ * telemetry or the standard library AND no call puts bytes on the wire. Both halves are
+ * needed: without the import check a file could forward to `./llm`; without the network check
+ * it could hand-roll the HTTP request. A `false` here is the safe answer, and an unrecognised
+ * import always produces one — the failure this guards against is a false clean, which
+ * `tsGuards.test.ts` calls the one answer this product must never give.
+ */
+function fileCannotReachProvider(sf: SourceFile): boolean {
+  const cached = INERT_FILE.get(sf);
+  if (cached !== undefined) return cached;
+  const calls = sf.getDescendantsOfKind(SyntaxKind.CallExpression);
+  const inertImports = moduleSpecifiersOf(sf, calls).every(
+    (s) => INERT_PACKAGE.test(s) || NODE_BUILTIN.has(s),
+  );
+  const noNetwork = !calls.some((c) => NETWORK_CALL.test(c.getExpression().getText()));
+  // The import check alone is NOT enough, and this line is why. A file with no imports at all
+  // passes `inertImports` vacuously, so an injected client — `function ask(client, opts) {
+  // return client.chat.completions.create(opts) }` — was demoted to informational on a file
+  // that makes a real OpenAI request. Caught by probing the rule before shipping it; it is a
+  // FALSE CLEAN, the one answer this product must never give. A provider endpoint shape
+  // anywhere in the file disqualifies it regardless of how the client got there.
+  const noProviderEndpoint = !calls.some(
+    (c) => endpointFamily(c) !== null || TS_MODEL_FACTORIES.has(lastIdentifier(c) ?? ''),
+  );
+  const verdict = inertImports && noNetwork && noProviderEndpoint;
+  INERT_FILE.set(sf, verdict);
+  return verdict;
+}
+
+/** Is this declaration a function the caller could be invoking? */
+function isFunctionValued(decl: Node): boolean {
+  if (Node.isFunctionDeclaration(decl)) return true;
+  if (!Node.isVariableDeclaration(decl)) return false;
+  const init = decl.getInitializer();
+  return !!init && (Node.isArrowFunction(init) || Node.isFunctionExpression(init));
+}
+
+/**
  * Every declaration of `name` visible from `from`, found SYNTACTICALLY: import
- * bindings of the file, then variable declarations and parameters walking up the
- * scope chain. No type checker — `getSymbol()` forces a full semantic program
+ * bindings of the file, then function and variable declarations and parameters walking up
+ * the scope chain. No type checker — `getSymbol()` forces a full semantic program
  * and took lobe-chat from 22 s to 77 s. The contract only ever trusts an
  * in-file binding anyway, so a syntactic lookup loses nothing.
  */
@@ -256,6 +343,14 @@ function declarationsOf(from: Node, name: string): Node[] {
   while (scope) {
     if (Node.isBlock(scope) || Node.isSourceFile(scope) || Node.isModuleBlock(scope) || Node.isCaseClause(scope)) {
       for (const st of scope.getChildSyntaxList()?.getChildren() ?? []) {
+        // A hoisted `function foo() {}` is a binding like any other. Collecting only
+        // variable statements made every locally-declared helper read as `undeclared`,
+        // which is why an OpenTelemetry span helper was indistinguishable from an
+        // unresolvable provider wrapper. See TS_NOT_PROVIDER_REASON.
+        if (Node.isFunctionDeclaration(st) && st.getName() === name) {
+          out.push(st);
+          continue;
+        }
         if (!Node.isVariableStatement(st)) continue;
         for (const d of st.getDeclarations()) {
           if (Node.isIdentifier(d.getNameNode()) && d.getName() === name) out.push(d);
@@ -295,6 +390,17 @@ function resolveIdentifier(id: Identifier, hops: number): TsSurfaceVerdict {
     if (!fp) return { surface: 'unknown_wrapper', family: null, via: `imported from '${spec}'` };
     if (AZURE_CTORS.has(id.getText())) return { surface: 'azure', family: fp.family, via: `'${spec}'` };
     return { surface: fp.surface, family: fp.family, via: `'${spec}'` };
+  }
+  // The only DEMOTION in this file, and both halves of its test are lexical. A helper
+  // declared HERE (so it is not a cross-file wrapper we cannot read) in a file that can make
+  // no provider request (so nothing it calls is one either) does not select a model — it
+  // records one. Everything else below can still only refuse to promote.
+  if (isFunctionValued(decl) && fileCannotReachProvider(id.getSourceFile())) {
+    return {
+      surface: 'not_provider',
+      family: null,
+      via: `${id.getText()} declared in this file, which makes no provider request`,
+    };
   }
   if (Node.isVariableDeclaration(decl)) {
     const init = decl.getInitializer();
@@ -336,7 +442,8 @@ export function endpointFamily(call: CallExpression): TsProviderFamily | null {
 export type SurfaceClassification =
   | { position: 'model_arg' }
   | { position: 'surface_capped'; reason: string }
-  | { position: 'usage_unverified'; reason: string };
+  | { position: 'usage_unverified'; reason: string }
+  | { position: 'data'; purpose: 'not_provider_call'; reason: string };
 
 /**
  * G1 + G4 for one call: module-level execution and any non-direct surface cap
@@ -344,8 +451,14 @@ export type SurfaceClassification =
  * `model_arg`.
  */
 export function classifyCallSurface(call: CallExpression): SurfaceClassification {
-  if (isModuleLevel(call)) return { position: 'surface_capped', reason: TS_MODULE_LEVEL_REASON };
   const v = resolveCallSurface(call);
+  // Checked BEFORE the module-level cap: "this file cannot reach a provider" is the stronger
+  // fact of the two. Module-level execution caps at review because the call fires at import —
+  // which is only interesting if the call could be a request at all.
+  if (v.surface === 'not_provider') {
+    return { position: 'data', purpose: 'not_provider_call', reason: TS_NOT_PROVIDER_REASON };
+  }
+  if (isModuleLevel(call)) return { position: 'surface_capped', reason: TS_MODULE_LEVEL_REASON };
   if (v.surface !== 'direct') {
     return { position: 'surface_capped', reason: `${TS_SURFACE_REASON} (${v.surface}: ${v.via})` };
   }

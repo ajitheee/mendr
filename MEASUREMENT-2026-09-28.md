@@ -24,6 +24,13 @@ run 2 followed two recall fixes made the same day. Only the scanner changed betw
 | **Precision** | **93.5 %** | **88.0 %** |
 | **Recall** | **37.2 %** | **55.0 %** |
 
+> **Every number in the table above is wrong, and corrected in "Run 3" at the end of this
+> document.** litellm's per-repo row was counted in a different unit from the other eleven, so
+> it contributes 3 findings where it should contribute 12. Corrected: run 1 precision 94.7 %,
+> run 2 precision 89.8 %. The table is left as published so the error is visible rather than
+> quietly rewritten. The direction of every conclusion below survives it — run 2 still breached
+> the 90 % floor.
+
 **Run 1: the error budget was almost entirely on the recall side, which is the dangerous
 direction.** A noisy review is an annoyance. A missed live call is an outage.
 
@@ -237,6 +244,28 @@ same blindness will report a customer's own test doubles and observability wrapp
 the cause of librechat's two pre-existing false positives (a jest `FakeClient`, and a `model:`
 field the server destructures and discards) — so **one fix retires six of the six**.
 
+> ### CORRECTION, same day, before the slice was built
+>
+> **"One fix retires six of the six" was wrong, and "Mendr cannot tell a mock provider from a
+> live one" was the wrong diagnosis.** Both sentences above were written from reading the
+> findings, not from reproducing them. Reproducing them first — which is what the next slice
+> actually started with — gave four different causes for the six:
+>
+> | # | finding | what the scanner actually said | cause |
+> |---|---|---|---|
+> | 1–3 | promptfoo `provider-simple-traced.js:143,:266,:311` | `unknown_wrapper: runInSpan (undeclared)` | `declarationsOf` never collected **function declarations**, so a helper declared at line 39 of the same file read as unresolvable |
+> | 4 | promptfoo `server.js:234` | `unknown_wrapper: res (Parameter)` | a call on an injected parameter; the file has a real `fetch` at line 88 |
+> | 5 | librechat `FakeClient.js:33` | default-configuration object | the name-based test-file filter — **bug #2 above**, already written up |
+> | 6 | librechat `EditMessage.tsx:145` | `unknown_wrapper` | a React Query `mutateAsync` to librechat's **own** API, not a provider |
+>
+> No single rule spans those. "Mock vs live provider" describes #4 and #5 loosely and #1–3 not
+> at all: a span attribute is not a mock of anything, it is a recording. The slice that follows
+> fixes #1–3 only, and takes precision to **93.6 %**, not ~100 %.
+>
+> The general lesson is the one this document already records against the video work: a
+> diagnosis written from a summary is a guess. Four of these six had never been opened in their
+> source file when the sentence "one fix retires six of the six" was written.
+
 ## The decision this forces
 
 Reverting restores 93.5 % precision and puts back a **false clean on langgraph** — the answer
@@ -256,3 +285,133 @@ so it belongs to the founder rather than to whoever happened to run the measurem
 - The `?param=value` suffix still defeats the matcher.
 - Whether the **registry** is right remains a separate audit: three of librechat's true
   positives are image models, and tinytroupe's rest on `gpt-5-mini`, flagged unverified.
+
+---
+
+# Run 3 — the local-helper fix, and a counting defect in the table above
+
+Same twelve repositories, same commits. One scanner change, described below. Written the same
+day as runs 1 and 2, after the correction box earlier in this document replaced the diagnosis
+the slice had been queued on.
+
+## What changed in the scanner
+
+`declarationsOf` in `src/usage/tsSurface.ts` resolved identifiers syntactically by collecting
+import bindings, variable declarations, parameters and class properties — **and never function
+declarations.** So `runInSpan`, declared at line 39 of promptfoo's own telemetry file and called
+100 lines below, resolved to `unknown_wrapper (undeclared)`: the same verdict an unresolvable
+provider wrapper earns, and a review-queue entry either way.
+
+Collecting the declaration is only half the fix. A local function still resolves to no provider,
+so the reason string improved and the tier did not. The other half is the first and only
+**demotion** in a file whose header says "Nothing here can promote; it can only refuse to
+promote": a helper declared in this file, in a file that can reach no provider, records a model
+id rather than selecting one.
+
+Three guards decide "can reach no provider", all lexical, all verified by mutation — each one
+was broken on purpose and the test that should fail did:
+
+1. every module the file imports is telemetry or the standard library. An **allowlist**, because
+   `langchain`, `litellm`, `openrouter` and a relative `./llm` all reach a provider without
+   naming one, so "not a first-party SDK" is not "inert";
+2. no call in the file puts bytes on the wire;
+3. no call in the file has a provider endpoint or model-factory shape.
+
+**Guard 3 exists because the first version of this rule shipped a false clean.** A file with no
+imports at all passes guard 1 vacuously, so this was demoted to informational:
+
+```ts
+export function ask(client: any, opts: any) { return client.chat.completions.create(opts); }
+export function go(client: any) { return ask(client, { model: 'gpt-4', messages: [] }); }
+```
+
+A real OpenAI request, reported as data. It was found by probing the rule against a shape the
+measurement did not contain, before relying on it, and it is now a regression test. The
+measurement set is not a substitute for adversarial probing: nothing in twelve repositories
+would have caught it.
+
+## Result: eleven of twelve bit-for-bit identical
+
+Every actionable location in every repository, compared as
+`model|file:line -> role|tier|disposition`, plus the conclusion:
+
+| repo | run 2 → run 3 |
+|---|---|
+| chroma, fast-agent, guardrails, langgraph, librechat, litellm, llama_index, openai-cookbook, paper2code, sodaverse, tinytroupe | **identical** |
+| promptfoo | 8 actionable → **5** |
+
+The three removed are exactly the three targeted:
+
+```
+- gpt-3.5-turbo  examples/integration-opentelemetry/javascript/provider-simple-traced.js:143
+- gpt-4          examples/integration-opentelemetry/javascript/provider-simple-traced.js:266
+- gpt-4          examples/integration-opentelemetry/javascript/provider-simple-traced.js:311
+```
+
+promptfoo's fourth false positive — `examples/redteam-tracing-example/server.js:234`, a mock
+server's fabricated response body — is **deliberately unchanged**: that file has a real `fetch`
+at line 88, so guard 2 refuses it. librechat's two are unchanged for the reasons in the
+correction box: a test double the name-based filter misses, and a React Query mutation to
+librechat's own API.
+
+Conclusions are unchanged everywhere, promptfoo included — it still reports `EXPOSURE DETECTED`
+on its four real findings. Nothing was silently dropped: the three demoted lines are still
+reported, as informational references.
+
+The run spanned two builds of the scanner. Re-running chroma, librechat and promptfoo against
+the final build produced **byte-identical JSON** once `generatedAt`/`sha` are excluded, so the
+rebuild is proven non-semantic rather than assumed to be.
+
+## The counting defect: litellm's row is in different units
+
+Restating the headline precision figure meant recomputing it, and it does not reconcile.
+**Eleven of the twelve per-repo rows above count actionable LOCATIONS. litellm's row counts
+distinct MODELS.** Checked mechanically against both counts:
+
+| repo | recorded TP+FP | actionable locations | distinct models | unit |
+|---|---|---|---|---|
+| litellm | 3 | **12** | **3** | model |
+| chroma, langgraph, librechat, openai-cookbook, paper2code, promptfoo, tinytroupe | — | matches | fewer | **location** |
+| fast-agent, guardrails, llama_index, sodaverse | — | matches | matches | either (equal) |
+
+litellm therefore contributes 3 where it should contribute 12 in run 2, and 2 where it should
+contribute 9 in run 1. **Every published precision and recall number in this document is wrong.**
+
+Correcting the row, and carrying its own `0 FP` verdict:
+
+| | run 1 | run 2 | run 3 (this fix) |
+|---|---|---|---|
+| True positives | 29 → **36** | 44 → **53** | **53** |
+| False positives | 2 | 6 | **3** |
+| False negatives | 49 | 36 | 36 |
+| Precision | 93.5 % → **94.7 %** | 88.0 % → **89.8 %** | **94.6 %** |
+| Recall | 37.2 % → **42.4 %** | 55.0 % → **59.6 %** | **59.6 %** |
+
+**This is stated as conditional, not settled.** It assumes litellm's 12 locations (9 in run 1)
+are all true positives. The row asserts zero false positives, but that verdict was reached per
+model, so **nine locations in run 1 and twelve in run 2 were never individually read in source**
+— which is precisely the shortcut the Method section said it was not taking. Reading those
+twelve is the work that settles the table, and it is not part of this slice.
+
+What does not change either way:
+
+- **The floor was still breached.** Corrected run-2 precision is 89.8 %, under the 90 % this
+  document set for itself. The keep-or-revert decision stood on a real breach.
+- **This fix clears it.** 94.6 % is above the floor, with recall unmoved at 59.6 %.
+- Both corrected precision figures are *higher* than published, so nothing here was flattered.
+
+## Two defects found in passing and not fixed
+
+4. **The report never says why a reference was demoted.** The scanner computes a specific reason
+   for every informational demotion — `TS_EXAMPLE_REASON`, `PY_EXAMPLE_REASON` and the new
+   `TS_NOT_PROVIDER_REASON` — and `auditReport.ts` prints only the generic role label, "code
+   data reference". "It is under `examples/`" explains itself from the path Mendr already
+   prints; a reachability judgement about a file in `src/` does not. The one rule that can
+   demote is the least legible, and the comment at the render site already says a reader "must
+   be able to see WHY". Carrying the text needs a new field on `LocationRef`, which changes the
+   `--json` shape this document's own harness parses. **Not fixed.**
+5. **`src/gates/runTests.test.ts` has no explicit timeouts.** All 16 tests run on vitest's 5 s
+   default; 4 fail under full-suite parallel load and pass in isolation, and the suite is green
+   with `--testTimeout=30000`. This is the defect that blocked the v0.5.7-alpha release, where
+   `--write with --skip-verify` carried the 5 s default while its four siblings had `}, 120_000)`.
+   It will produce a phantom red release gate. **Not fixed.**

@@ -94,6 +94,7 @@ export type DataPurpose =
   | 'lookup_key' // object/dict key (pricing table, normalization map)
   | 'list_entry' // array element (model-picker list)
   | 'catalog_entry' // value in a standalone object (config/catalog shape)
+  | 'not_provider_call' // recorded by a helper in a file that can make no provider request
   | 'example' // examples/samples/demos/docs tree — informational by rule, never a dependency
   | 'generic'; // data, but no cheap structural story
 
