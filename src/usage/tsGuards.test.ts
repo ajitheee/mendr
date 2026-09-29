@@ -16,6 +16,7 @@ import {
   TS_EXAMPLE_CALL_REASON,
   TS_MODULE_LEVEL_REASON,
   TS_PREFIXED_REASON,
+  TS_WRAPPER_CTOR_REASON,
 } from './tsSurface.js';
 
 // THE TYPESCRIPT GUARDS — regression suite for the external-validation defects
@@ -372,5 +373,46 @@ describe('M2 — a CLI --model default is a real selector, not data', () => {
     const t = tierOf('export function register(program: any) {\n  program.option("-m, --model <model>", "Model ID", "dall-e-3");\n}\n', 'src/app.ts', 'dall-e-3');
     expect(t?.tier).toBe('B');
     expect(t?.reason).toBe(TS_CLI_DEFAULT_REASON);
+  });
+});
+
+describe('C5 — a model argument to a wrapper CLASS is real, and capped', () => {
+  // Measured 2026-09-28: first-party wrapper classes were the second-largest cause of the
+  // 37% recall, after the examples/ rule. `enclosingCallOfObject` matches CallExpression
+  // only, so `new OpenAiChat({ model })` had no enclosing call at all and fell through to
+  // plain DATA — silenced at monitor, not even surfaced for review.
+  it('`new Wrapper({ model })` is review, not data', () => {
+    const t = tierOf('import { OpenAiChat } from "./chat";\nexport const agent = new OpenAiChat({ model: "gpt-4" });\n');
+    expect(t?.tier).toBe('B');
+    expect(t?.reason).toBe(TS_WRAPPER_CTOR_REASON);
+  });
+
+  // The precision guard, and the reason this is a separate helper rather than a widening of
+  // enclosingCallOfObject: a constructor taking a model id ALONGSIDE catalog siblings is a
+  // model card being described, not a model being selected.
+  it('a catalog-shaped constructor argument is still data', () => {
+    const t = tierOf('import { ModelCard } from "./card";\nexport const card = new ModelCard({ model: "gpt-4", label: "GPT-4", pricing: 0.03 });\n');
+    expect(t?.tier).toBe('C');
+  });
+
+  it('a non-model key in a constructor argument is untouched', () => {
+    const t = tierOf('import { Client } from "./c";\nexport const c = new Client({ note: "gpt-4" });\n');
+    expect(t?.tier).toBe('C');
+  });
+
+  // The resolved first-party call must keep its Tier A: this change is consulted ONLY when
+  // there is no enclosing CALL, so nothing above it in the chain can shift.
+  it('a resolved provider SDK call is still Tier A', () => {
+    const t = tierOf(`${OPENAI}export async function ask() {\n  return client.chat.completions.create({ model: "gpt-4", messages: [] });\n}\n`);
+    expect(t?.tier).toBe('A');
+  });
+
+  // KNOWN GAP, asserted so it is visible rather than forgotten: the POSITIONAL form
+  // (promptfoo's `new OpenAiCompletionProvider(modelName || "gpt-4-turbo", {})`) is still
+  // data. A bare positional string to an arbitrary constructor carries no key to judge it by,
+  // and guessing there is where precision would go.
+  it('the positional constructor form is still missed (documented gap)', () => {
+    const t = tierOf('import { P } from "./p";\nexport function make(m?: string) {\n  return new P(m || "gpt-4", {});\n}\n');
+    expect(t?.tier).toBe('C');
   });
 });

@@ -533,6 +533,9 @@ export const PY_WRAPPER_FACTORY_REASON =
   'framework wrapper factory (LangChain), not a direct provider SDK request; the swap is not verified for this surface';
 export const PY_EXAMPLE_REASON =
   'example / sample / demo / docs tree: informational, not a dependency of the shipped product';
+/** The Python twin of TS_EXAMPLE_CALL_REASON. See the C3 narrowing, 2026-09-28. */
+export const PY_EXAMPLE_CALL_REASON =
+  'example / sample tree, but the id is passed to a real provider request here: runnable, so it breaks at retirement — review, never an unattended swap';
 export const PY_PREFIXED_REASON =
   'provider-prefixed selector (gateway / provider registry); the successor may need a different prefix, capped at review';
 
@@ -1260,9 +1263,24 @@ export async function findPyModelIdLiterals(
 
         // Position/purpose belong to the CST node, not the registry entry, so
         // classify once and emit one match per matching record (multimap).
-        let classification: { position: LiteralPosition; purpose?: DataPurpose; reason?: string } = example
-          ? { position: 'data', purpose: 'example', reason: PY_EXAMPLE_REASON }
-          : classifyPyLiteral(node, sinkNames, { surface, sinkTargets });
+        let classification: { position: LiteralPosition; purpose?: DataPurpose; reason?: string } =
+          classifyPyLiteral(node, sinkNames, { surface, sinkTargets });
+        // Rule C3, narrowed 2026-09-28 — the PYTHON half of the same change made in
+        // scanLiterals.ts. An example tree is informational BY DEFAULT, and everything the
+        // parser reads as data there still is. But a sample that actually reaches a provider
+        // request is runnable and breaks at retirement, so it is reported and capped at review.
+        //
+        // This half is why langgraph still reported NO EXPOSURE IN COMPLETED SURFACES after
+        // the TypeScript fix: its registered graph entrypoint, libs/cli/examples/graphs/
+        // agent.py, is Python, and the TS change could not reach it. Fixing one language and
+        // announcing the repository fixed is exactly the overclaim this codebase keeps
+        // correcting, so it is recorded here rather than quietly patched.
+        if (example) {
+          classification =
+            classification.position === 'data' || classification.position === 'usage_unverified'
+              ? { position: 'data', purpose: 'example', reason: PY_EXAMPLE_REASON }
+              : { position: 'surface_capped', reason: PY_EXAMPLE_CALL_REASON };
+        }
         // A prefixed id is a gateway SELECTOR only where a plain id would have
         // been one; in a list or a catalog dict it is data like any other.
         if (prefixed && !example && classification.position !== 'data') {
