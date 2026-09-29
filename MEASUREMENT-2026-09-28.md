@@ -12,19 +12,24 @@ precision or recall number had ever been published for this scanner. This is the
 
 ## The headline
 
-| | |
-|---|---|
-| Repositories scanned | **12 of 12** |
-| Actionable findings (`patch` + `review`) | 22 |
-| Informational findings (`monitor`) | 402 |
-| True positives | 29 |
-| False positives | **2** |
-| False negatives | **49** |
-| **Precision** | **93.5 %** |
-| **Recall** | **37.2 %** |
+Two runs, same twelve repositories, **same commits**, same definitions. Run 1 is the baseline;
+run 2 followed two recall fixes made the same day. Only the scanner changed between them.
 
-**The error budget is almost entirely on the recall side, which is the dangerous direction.**
-A noisy review is an annoyance. A missed live call is an outage.
+| | run 1 — baseline | run 2 — after the recall fixes |
+|---|---|---|
+| Repositories scanned | 12 of 12 | 12 of 12 |
+| True positives | 29 | **44** |
+| False positives | **2** | **6** |
+| False negatives | **49** | **36** |
+| **Precision** | **93.5 %** | **88.0 %** |
+| **Recall** | **37.2 %** | **55.0 %** |
+
+**Run 1: the error budget was almost entirely on the recall side, which is the dangerous
+direction.** A noisy review is an annoyance. A missed live call is an outage.
+
+**Run 2: recall +17.8 points, precision −5.5 — and precision now sits below the 90 % floor
+this document set for itself.** That breach is recorded in full further down rather than
+rounded away, and the keep-or-revert decision it forces is written up rather than taken.
 
 This inverts the assumption the work was queued on. The plan's P1-G3 was *"call-site-aware
 detection — a free Semgrep rule beats Mendr on precision until this is fixed."* Precision was
@@ -47,20 +52,28 @@ retirement. `monitor` findings are **not** counted as false positives even when 
 documentation: that is precisely what the bucket is for, and counting them would rig the
 measurement against Mendr's own design.
 
-| repo | actionable | informational | TP | FP | FN |
-|---|---|---|---|---|---|
-| chroma | 2 | 5 | 2 | 0 | 4 |
-| fast-agent | 2 | 28 | 2 | 0 | 2 |
-| guardrails | 1 | 14 | 1 | 0 | 0 |
-| langgraph | 0 | 2 | 0 | 0 | 4 |
-| librechat | 5 | 85 | 5 | 2 | 0 |
-| litellm | 2 | 101 | 2 | 0 | 2 |
-| llama_index | 0 | 4 | 0 | 0 | 1 |
-| openai-cookbook | 0 | 29 | 0 | 0 | **32** |
-| paper2code | 2 | 17 | 5 | 0 | 2 |
-| promptfoo | 2 | 107 | 3 | 0 | 2 |
-| sodaverse | 4 | 0 | 4 | 0 | 0 |
-| tinytroupe | 2 | 10 | 5 | 0 | 0 |
+TP / FP / FN per repository, both runs. Bold marks a row that moved.
+
+| repo | run 1 | run 2 | what changed |
+|---|---|---|---|
+| chroma | 2 / 0 / 4 | **4 / 0 / 2** | two sample-app call sites recovered |
+| fast-agent | 2 / 0 / 2 | 2 / 0 / 2 | — |
+| guardrails | 1 / 0 / 0 | 1 / 0 / 0 | — |
+| langgraph | 0 / 0 / 4 | **4 / 0 / 0** | the false clean is gone |
+| librechat | 5 / 2 / 0 | 5 / 2 / 0 | — (its 2 FPs are pre-existing) |
+| litellm | 2 / 0 / 2 | **3 / 0 / 2** | a cookbook script recovered |
+| llama_index | 0 / 0 / 1 | 0 / 0 / 1 | — (its miss is the positional form) |
+| openai-cookbook | 0 / 0 / **32** | **7 / 0 / 25** | 0 actionable → 7 |
+| paper2code | 5 / 0 / 2 | 5 / 0 / 2 | — |
+| promptfoo | 3 / 0 / 2 | **4 / 4 / 2** | +1 real, **+4 false** |
+| sodaverse | 4 / 0 / 0 | 4 / 0 / 0 | — |
+| tinytroupe | 5 / 0 / 0 | 5 / 0 / 0 | — |
+
+**Seven of twelve are bit-for-bit identical between runs** — same conclusion, same investigation
+count, same `file:line:disposition:tier` on every location, verified programmatically against
+the run-1 JSON. A narrow fix should change only what it targeted, and it did.
+
+Every regression is in **one repository, in one shape**. Every recovery is a live call site.
 
 ---
 
@@ -185,15 +198,8 @@ Same twelve repositories, **same commits** (`librechat@c8c5478`, `langgraph@07b3
 definitions, same clones. Only the scanner changed, so this is a controlled before/after rather
 than a fresh sample.
 
-| | before | after |
-|---|---|---|
-| True positives | 29 | **44** |
-| False positives | 2 | **6** |
-| False negatives | 49 | **36** |
-| **Precision** | 93.5 % | **88.0 %** |
-| **Recall** | 37.2 % | **55.0 %** |
-
 **Recall +17.8 points. Precision −5.5 points, and it breaks the floor this document set.**
+The numbers are in the headline table; what follows is why they moved.
 
 ## The floor was breached, and that is recorded rather than rounded
 
@@ -204,19 +210,7 @@ moving the bar after seeing the result — is the failure this file exists to pr
 
 ## Where it moved
 
-| repo | before TP/FP/FN | after TP/FP/FN |
-|---|---|---|
-| chroma | 2/0/4 | **4/0/2** |
-| langgraph | 0/0/4 | **4/0/0** |
-| litellm | 2/0/2 | **3/0/2** |
-| openai-cookbook | 0/0/32 | **7/0/25** |
-| promptfoo | 3/0/2 | **4/4/2** |
-| the other seven | unchanged | unchanged |
-
-Seven repositories are **bit-for-bit identical** before and after — same conclusion, same
-investigation count, same file:line:disposition:tier on every location, verified
-programmatically against the baseline JSON. The changes are confined to exactly the shapes they
-targeted, which is the result a narrow fix should produce.
+The per-repository breakdown is in the headline table above, so it is not repeated here.
 
 **langgraph's false clean is gone.** It reported `NO EXPOSURE IN COMPLETED SURFACES` while a
 registered graph entrypoint constructed a retiring model. It now reports four, at review.
