@@ -176,3 +176,89 @@ recognition (open), shell scripts (open), the `?param` suffix (open).
 **Re-run this after each recall change.** The number to defend is precision ≥ 90 % while recall
 climbs. A recall fix that drops precision below that has traded the strong claim for the weak
 one.
+
+---
+
+# Re-measured 2026-09-28, after the two recall fixes
+
+Same twelve repositories, **same commits** (`librechat@c8c5478`, `langgraph@07b3318`, …), same
+definitions, same clones. Only the scanner changed, so this is a controlled before/after rather
+than a fresh sample.
+
+| | before | after |
+|---|---|---|
+| True positives | 29 | **44** |
+| False positives | 2 | **6** |
+| False negatives | 49 | **36** |
+| **Precision** | 93.5 % | **88.0 %** |
+| **Recall** | 37.2 % | **55.0 %** |
+
+**Recall +17.8 points. Precision −5.5 points, and it breaks the floor this document set.**
+
+## The floor was breached, and that is recorded rather than rounded
+
+The closing line of the original write-up reads: *"The number to defend is precision >= 90%
+while recall climbs. A recall fix that drops precision below that has traded the strong claim
+for the weak one."* 88.0 % is below 90 %. Stating it plainly because the alternative — quietly
+moving the bar after seeing the result — is the failure this file exists to prevent.
+
+## Where it moved
+
+| repo | before TP/FP/FN | after TP/FP/FN |
+|---|---|---|
+| chroma | 2/0/4 | **4/0/2** |
+| langgraph | 0/0/4 | **4/0/0** |
+| litellm | 2/0/2 | **3/0/2** |
+| openai-cookbook | 0/0/32 | **7/0/25** |
+| promptfoo | 3/0/2 | **4/4/2** |
+| the other seven | unchanged | unchanged |
+
+Seven repositories are **bit-for-bit identical** before and after — same conclusion, same
+investigation count, same file:line:disposition:tier on every location, verified
+programmatically against the baseline JSON. The changes are confined to exactly the shapes they
+targeted, which is the result a narrow fix should produce.
+
+**langgraph's false clean is gone.** It reported `NO EXPOSURE IN COMPLETED SURFACES` while a
+registered graph entrypoint constructed a retiring model. It now reports four, at review.
+
+## Every new false positive is one shape, in one repository
+
+All four are `causedByTheFix`, all in promptfoo, all the same thing: a `model:` key inside a
+**simulated** provider under `examples/`.
+
+- `examples/integration-opentelemetry/javascript/provider-simple-traced.js:143, :266, :311` —
+  OpenTelemetry **span attributes** (`'model.name': 'gpt-3.5-turbo'`). The whole 415-line file
+  has no fetch, no SDK and no network call; the responses are hardcoded template literals.
+- `examples/redteam-tracing-example/server.js:234` — a field in a mock server's own fabricated
+  HTTP response body. The only outbound request in the file is to an OTLP trace endpoint.
+
+**The fix did not create this imprecision; it revealed it.** Those same lines would have been
+reported in `src/` before today. The blanket example rule was acting as a crude precision
+backstop over a real weakness: **Mendr cannot tell a mock provider from a live one.** A
+telemetry span that merely *records* which model was used, and a stub that *fabricates* a
+response, both look like a `model:` argument to a call.
+
+That is the next recall/precision slice, and it is worth more than the four findings here: the
+same blindness will report a customer's own test doubles and observability wrappers. It is also
+the cause of librechat's two pre-existing false positives (a jest `FakeClient`, and a `model:`
+field the server destructures and discards) — so **one fix retires six of the six**.
+
+## The decision this forces
+
+Reverting restores 93.5 % precision and puts back a **false clean on langgraph** — the answer
+`tsGuards.test.ts` calls "the one answer this product must never give". Keeping it accepts four
+review-queue entries in one repository's telemetry examples, none of them `patch`, so nothing
+auto-applies.
+
+Thirteen additional live call sites found, against four extra review items in mock files, is
+the right trade on the merits. But it is a product judgement and the floor was set in writing,
+so it belongs to the founder rather than to whoever happened to run the measurement.
+
+## Unchanged from the baseline
+
+- The **positional constructor form** is still missed (`new P(m || "gpt-4", {})`), asserted by
+  a test so it stays visible. It is llama_index's remaining miss.
+- Shell scripts are still unread; paper2code's entrypoint is `bash run.sh`.
+- The `?param=value` suffix still defeats the matcher.
+- Whether the **registry** is right remains a separate audit: three of librechat's true
+  positives are image models, and tinytroupe's rest on `gpt-5-mini`, flagged unverified.
