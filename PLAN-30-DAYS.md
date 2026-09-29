@@ -13,8 +13,15 @@ diagram that is empty or broken today; everything already built is named in
 
 | date | day | what it is |
 |---|---|---|
-| **2026-10-09** | 11 | The bundled registry grades itself stale. A zero-finding run then reads `inconclusive`. **Inside Part 1.** |
+| **2026-10-12** | 14 | The bundled registry grades itself stale. A zero-finding run then reads `inconclusive`. **Inside Part 1.** |
 | **2026-10-23** | 25 | OpenAI stops serving `gpt-4`, `gpt-4-turbo`, `gpt-3.5-turbo`, `o3-mini`, `o4-mini`. Gate 2. **Inside Part 2.** |
+
+> **Corrected 2026-09-29: the first date was 10-09 and is now 10-12.** It is not a calendar fact.
+> It is `BUNDLED_PUBLISHED_AT` in whichever **tag** a stranger installs, plus 14 days. 10-09 came
+> from `v0.5.6-alpha` (stamped 2026-09-24); `v0.5.7-alpha`, cut 2026-09-28, moves it to 10-12. So
+> this row moves every time a tag is cut with a re-stamped registry — and an ask that names an
+> **old** tag inherits the old, earlier cliff. `launch/GATE2-ASKS.md` pinned 0.5.6 and has been
+> repointed.
 
 Part 1 finishing on 10-13 leaves **ten days installed before the wave**. That is the whole
 strategic point, in the words already committed to `BETA-GATES.md`: *"a tool discovered on the
@@ -56,9 +63,38 @@ Next, in order, and the first is not an engineering task:
 
 **Nothing downstream of this is worth doing until it is fixed.**
 
-## P1-B · Close the loop once, end to end
+> **Updated 2026-09-29: the symptom stopped; the cause was never found.** Approval #8 fired on
+> 2026-09-28 and the loop closed (P1-B), so the "nothing downstream is worth doing" line above is
+> overtaken by events. But **no Render log line was ever captured**, so nothing was diagnosed —
+> the button went from dead for 170 runs to working, for reasons unknown.
+>
+> That is now a *worse* risk, not a closed one. Part 1's goal is a stranger's repository. An
+> intermittently dead Approve button costs nothing on `mendr-demo` and costs the entire verdict if
+> it fires on the one person who agreed to try it. Step 1 is still one click and one log line, and
+> still only Ajith can do it.
 
-The migrate path has **never executed**: 169 runs on `mendr-demo`, every one
+## P1-B · Close the loop once, end to end  —  **DONE 2026-09-28**
+
+**It closed.** Approval #8 fired at 06:11 on 2026-09-28 after 170 runs of `skipped`;
+`Run Mendr and open a PR` executed, the sandbox verify reported `✓ type-check passed`, and
+[`mendr-demo#5`](https://github.com/ajitheee/mendr-demo/pull/5) opened and **merged at
+06:12:12Z** — `gpt-4-0613` → `gpt-5.6-sol`, one line. All eight links ran for real, including
+the one that mattered: **the report sanitizer has now run on a customer path**, so the S1
+security deliverable is no longer test-only.
+
+Twenty-three minutes later, `698ed178` deliberately restored the id — *"demo: call gpt-4-0613
+again, so the repository demonstrates something"* — the same reset as 09-26 and 09-12. That is
+fixture maintenance, not a regression, and `mendr-demo` is a fixture. It does mean the repo's
+history shows a fix being undone, which `launch/GATE2-ASKS.md` now tells Ask 2 to disclose
+rather than let a reader discover.
+
+**What this does NOT close:** P1-A's root cause, and Part 1's actual goal. The loop closed on
+`mendr-demo`, which is Ajith's own repository. The goal is a repository that is not
+`mendr-demo`, owned by someone who is not Ajith. That still needs P1-F, and P1-F needs a send.
+
+The original text follows, since it records what was true for 170 runs:
+
+The migrate path had **never executed**: 169 runs on `mendr-demo`, every one
 `nothing is approved`, `Run Mendr and open a PR → skipped`.
 
 The consequence is not cosmetic. `run-mendr.sh` is where the report sanitizer is invoked, so
@@ -108,12 +144,19 @@ message on a broken button.
 Zero external repositories are onboarded. Zero findings have been reviewed by anyone who is not
 Ajith. The ask-to-verdict rate is not low, it is **undefined — the denominator is zero**.
 
-`launch/GATE2-ASKS.md` is written and unsent. Ask 1 must go **before 10-09** or its central
-claim goes stale.
+`launch/GATE2-ASKS.md` is written and unsent. Ask 1 must go **before 10-12** (was 10-09; the date
+moved with the tag — see the correction under "The two dates") or its central claim goes stale.
 
-Ask 2's blocker is already cleared: a logged-out stranger can see the finding, and the exact
-check-run URL to link is
-`https://github.com/ajitheee/mendr-demo/runs/108618583430`.
+**Re-verified 2026-09-29, and all three asks needed changes:** Ask 1 pinned the superseded
+`v0.5.6-alpha` and quoted a 98 s install that is now 54 s; Ask 2's check-run URL below is stale;
+**Ask 3's issue is closed with zero replies**, so its "one live public room" premise is void and a
+one-token PR is the only form that can now produce a verdict. All three are corrected in place.
+
+Ask 2's blocker is cleared — `mendr-demo` is public and a logged-out stranger can see the
+finding — but the URL here is **stale**. The current check run is
+`https://github.com/ajitheee/mendr-demo/runs/109424680822`, titled
+**`gpt-4-0613 stops serving in 24 days · 1 patch eligible`**. Scheduled runs replace it, so
+re-check it the hour it is sent rather than trusting this line.
 
 **Only Ajith can send.** This is the one item on the whole plan that engineering cannot do, and
 it is the item the last gate was lost on: *"the gate was not lost at the deadline; it was left

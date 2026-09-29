@@ -1,6 +1,28 @@
-# Gate 2 asks — drafted 2026-09-26, 27 days out
+# Gate 2 asks — drafted 2026-09-26, re-verified 2026-09-29, 24 days out
 
 Three drafts. Ajith sends; nothing here has been sent by anyone else.
+
+> ### Re-verified 2026-09-29 — what three days changed
+>
+> Every claim below was re-checked against the tag and the pages as they are today, because this
+> file's own rule is *"do not describe a page you haven't loaded."* Four things moved:
+>
+> 1. **The tag.** `v0.5.7-alpha` was cut 2026-09-28. Ask 1 pinned `v0.5.6-alpha`, which is the
+>    build where a no-op run writes **nothing** to the step summary — it "keeps reporting green
+>    while doing nothing". Sending 0.5.6 now ships a known-worse build.
+> 2. **The shelf life moved out, not in.** The deadline is not a calendar fact, it is the
+>    bundled registry stamp **in whichever tag the ask names**:
+>    `v0.5.6-alpha` → stamped `2026-09-24` → stale **2026-10-08**;
+>    `v0.5.7-alpha` → stamped `2026-09-28` → stale **2026-10-12**.
+>    Repointing the ask buys four days. Confirmed from the shipped tag, which prints
+>    `Registry: … bundled 2026-09-28 (fresh, 1 d)`.
+> 3. **It got faster.** 98 s → **54 s** cold. Re-timed on the new tag, method below.
+> 4. **The report now leads with the deadline.** P1-G1 shipped, so the check title is a
+>    countdown rather than a label. This is the strongest line in the product and no draft
+>    mentions it.
+>
+> Two asks need a decision before they can be sent, both recorded at their own headings:
+> **Ask 2's check-run URL is stale**, and **Ask 3's issue is closed with zero replies**.
 
 **What changed from September.** `ASKS.md` diagnosed the last campaign: five of seven touches
 were not questions, the two that were asked the maintainer to decide *for* Mendr, and six of
@@ -16,14 +38,18 @@ scoring notes below, and one of them says a likely reply does **not** score.
 
 ## Verified before writing, with the method
 
+All re-checked **2026-09-29** against `v0.5.7-alpha` and the live pages.
+
 | claim | checked |
 |---|---|
-| Cold install + scan = **98 s** | Timed today: empty `npm_config_cache`, 2-file TS repo, `npx --yes github:ajitheee/mendr#v0.5.6-alpha audit .` → 98 s, `EXPOSURE DETECTED`. Not a guess and not a warm run. |
+| Cold install + scan = **54 s** | Re-timed 2026-09-29 on the new tag: `npm_config_cache` pointed at an empty directory (**0 entries before, 4 after** — `_cacache`, `_npx`, `_logs`, so npx genuinely built from scratch), 2-file TS repo, `npx --yes github:ajitheee/mendr#v0.5.7-alpha audit .` → **54 s**, `EXPOSURE DETECTED`, exit 0. Not a guess and not a warm run. A second, warm run took **9 s**. |
+| The report **leads with a countdown** | The shipped tag prints `Retirement: deprecated - 24d left (2026-10-23)`, and the public check title on `mendr-demo` today reads **`gpt-4-0613 stops serving in 24 days · 1 patch eligible`**. Computed at write time, so it is correct whenever it is read. |
 | **Twelve** verified ids retire 2026-10-23 | `registries/llm-deprecations.json`: 13 rows carry that date, 12 are `verification.status: verified`, `gpt-image-1` is `unverifiable`. The five commonly named — `gpt-4`, `gpt-4-turbo`, `gpt-3.5-turbo`, `o3-mini`, `o4-mini` — are all in the verified twelve. **Say twelve, not thirteen.** |
-| `audit` writes nothing | `git status --porcelain` byte-identical before and after. No write site is reachable from a bare `audit .`. |
-| LibreChat line unchanged | `title.js:25` still `model: 'gpt-3.5-turbo'` on `main`, fetched today. |
-| **The issue URL moved** | `github.com/danny-avila/LibreChat/issues/16017` → **404**. `github.com/LibreChat-AI/LibreChat/issues/16017` → **200**. Post at the second. The old path is dead. |
-| Registry goes stale 2026-10-08 | Stamp `2026-09-24`, max age 14 days. After that a zero-finding run reads `inconclusive`, deliberately. **Ask 1 has a shelf life.** |
+| `audit` writes nothing | Re-verified on `v0.5.7-alpha`: `git status --porcelain` captured before and after, **byte-identical**. No write site is reachable from a bare `audit .`. |
+| `--offline` works | Re-verified on `v0.5.7-alpha`: exit 0, `EXPOSURE DETECTED`, registry line `bundled 2026-09-28 (fresh, 1 d)`. |
+| LibreChat line unchanged | `title.js:25` still `model: 'gpt-3.5-turbo'`, fetched from `LibreChat-AI/LibreChat` **2026-09-29**. Exact line 25, confirmed by line number and not by eye. |
+| ~~The issue URL moved~~ **The issue is CLOSED** | Corrected 2026-09-29. Both paths now resolve (`danny-avila` no longer 404s via the API), but `issues/16017` is **closed, `state_reason: completed`, closed 2026-09-17, 0 comments**, filed by `ajitheee`. It is not a live room and never had an audience. **See Ask 3 — its premise is void.** |
+| Registry goes stale **2026-10-12** | Corrected: `BUNDLED_PUBLISHED_AT = 2026-09-28T04:39:57Z` in `v0.5.7-alpha`, max age 14 days. The old `2026-10-08` was `v0.5.6-alpha`'s stamp. **Ask 1 still has a shelf life — four days longer, and only if it names 0.5.7.** |
 
 ---
 
@@ -36,14 +62,17 @@ address, not a public issue, not a send-to-all.
 >
 > pick a repo you own that calls an llm and run:
 >
->     npx github:ajitheee/mendr#v0.5.6-alpha audit .
+>     npx github:ajitheee/mendr#v0.5.7-alpha audit .
 >
 > it reads your ts/js/python and config for model ids a provider is about to switch off. twelve
 > verified openai ids shut down on 2026-10-23 — gpt-4, gpt-4-turbo, gpt-3.5-turbo, o3-mini,
-> o4-mini among them. 27 days.
+> o4-mini among them. 24 days.
+>
+> every line it prints carries the countdown, not just a label — "deprecated, 24d left
+> (2026-10-23)". that's the part i actually want judged.
 >
 > the honest cost: it isn't on npm yet, so npx clones and compiles it first. i timed it cold on
-> an empty cache this morning — 98 seconds start to finish, needs node 22+. no api key. it
+> an empty cache today — 54 seconds start to finish, needs node 22+. no api key. it
 > writes nothing: no edit, no commit, no pr, report goes to stdout. `--offline` enforces the
 > no-network part rather than promising it.
 >
@@ -67,8 +96,11 @@ position on a *claim*, not on a *finding*. Under the current definition that is 
 Either log it as `reply=yes / verdict=no`, or amend `BETA-GATES.md` first — deliberately, in
 writing. Do not quietly widen the definition to make the scoreboard move.
 
-**Send before 2026-10-08.** After that the bundled registry grades itself stale and a clean run
-reports `inconclusive`, which muddies exactly the case this ask is aimed at.
+**Send before 2026-10-12** (corrected 2026-09-29 from 10-08, which was `v0.5.6-alpha`'s stamp).
+After that the registry bundled in `v0.5.7-alpha` grades itself stale and a clean run reports
+`inconclusive`, which muddies exactly the case this ask is aimed at. The date moves with the tag,
+so **cutting a new tag before sending buys more runway** — but do not delay the send to get it.
+The last gate was lost with time still on the clock.
 
 ---
 
@@ -76,6 +108,26 @@ reports `inconclusive`, which muddies exactly the case this ask is aimed at.
 
 **To:** the person in the ring who will not run a stranger's npx from a friend. That's a real
 category and pretending otherwise wastes an ask.
+
+> **Re-verified 2026-09-29 — the link, and one thing to decide.**
+>
+> - **`mendr-demo` is public** (`private=false`) and `src/ai.ts:12` does call `gpt-4-0613` today.
+> - **The check-run URL in `PLAN-30-DAYS.md` is stale.** `runs/108618583430` is an older run. The
+>   current one a logged-out visitor should be sent to is
+>   **`https://github.com/ajitheee/mendr-demo/runs/109424680822`** — `Mendr audit`,
+>   `action_required`, title **`gpt-4-0613 stops serving in 24 days · 1 patch eligible`**. Re-check
+>   it the hour you send; scheduled runs replace it.
+> - **The draft undersells it.** It describes what the report refuses to claim — which is good and
+>   true — but never mentions that the check *title itself* is a countdown. That is the line most
+>   likely to make someone look.
+> - **A decision, because it is a credibility risk.** `git log src/ai.ts` shows the id was
+>   migrated by Mendr at `06:12:12Z` on 2026-09-28 and **deliberately re-added 23 minutes later**
+>   at `06:35:49Z` — *"demo: call gpt-4-0613 again, so the repository demonstrates something"* —
+>   and the same reset happened on 09-26 and 09-12. That is legitimate fixture maintenance, but a
+>   careful reader who opens the history will find it on their own and it will read as staging.
+>   **Disclose it in the ask** — one clause, e.g. *"it's a fixture: the id gets put back after
+>   each proof so there's always something to find"* — rather than letting them discover it.
+>   Volunteering it costs one sentence; being caught by it costs the verdict.
 
 > hey [NAME] — no install, just a link and one question.
 >
@@ -104,12 +156,35 @@ September drafts unsendable.
 
 ---
 
-## Ask 3 — LibreChat #16017, the one live public room
+## Ask 3 — LibreChat #16017 — ~~the one live public room~~ **the premise is void**
 
-**Post at:** `https://github.com/LibreChat-AI/LibreChat/issues/16017` — **the `danny-avila` path
-404s**, the repo moved. Verified today.
+> **Re-verified 2026-09-29. Do not send this as written.**
+>
+> `issues/16017` is **closed** — `state_reason: completed`, closed **2026-09-17T03:47:22Z**, with
+> **0 comments**, filed by `ajitheee`. It is not a live room, and it never had an audience: nobody
+> ever replied. The heading called it "the one live public room"; that was true when written and
+> is not true now. Both URL paths resolve today, so the "`danny-avila` 404s" note is also stale.
+>
+> What *is* still true, re-checked today: `title.js:25` still reads `model: 'gpt-3.5-turbo'`, and
+> the id still shuts down 2026-10-23, now 24 days out. The finding is real. The room is gone.
+>
+> **The decision is yours, and the draft already names the answer.** Its own closing note says:
+> *"Consider a PR instead… `title.js:25` is a one-token change. A merged PR **is** a verdict, and
+> it costs a maintainer with 800 open issues less than a reply does."* With the issue closed and
+> unanswered, the PR is not the fallback any more — it is the only form of this ask that can
+> produce a verdict.
+>
+> It passes the standing rule cleanly: a hardcoded model id that stops serving in 24 days is worth
+> fixing whether or not Mendr exists. So the PR is legitimate. **Only Ajith can open it**, and it
+> should lead with the code and the date and not mention Mendr at all — a one-token fix that
+> argues for itself is worth more than a fix that arrives with a pitch attached.
+>
+> Reopening the closed issue to comment on it is the weaker option: it was closed as completed, so
+> reopening it to say "actually, still broken" spends goodwill to reach zero subscribers.
 
-**Why this is legitimate and not a pitch:** the line is still there, the shutdown is 27 days
+**Post at (superseded):** `https://github.com/LibreChat-AI/LibreChat/issues/16017`
+
+**Why this is legitimate and not a pitch:** the line is still there, the shutdown is 24 days
 out, and the fix is one token. It passes the standing rule — worth filing if Mendr did not
 exist — so it leads with the code and the date, and corrects my own overstatement first.
 
