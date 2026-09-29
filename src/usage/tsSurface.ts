@@ -64,6 +64,20 @@ export const TS_CLI_DEFAULT_REASON =
   'default value of a command-line --model option; a real selector whose use is not traced, review before changing';
 export const TS_EXAMPLE_REASON =
   'example / sample / demo / docs tree: informational, not a dependency of the shipped product';
+/**
+ * An example that actually CALLS a provider. Measured 2026-09-28 across twelve public
+ * repositories: the blanket example-tree rule was the single largest cause of missed live
+ * call sites — langgraph's registered graph entrypoints, three of chroma's five live sites,
+ * and most of openai-cookbook's evaluation harnesses. Copying one of those files into `src/`
+ * made the scanner classify it correctly, which proved the parser was already right and the
+ * path rule was discarding its answer.
+ *
+ * Capped at review rather than promoted to Tier A: a sample is still a weaker claim on the
+ * shipped product than application code, and rewriting somebody's example unattended is
+ * presumptuous. Detection is right; an unattended swap is not.
+ */
+export const TS_EXAMPLE_CALL_REASON =
+  'example / sample tree, but the id is passed to a real provider request here: runnable, so it breaks at retirement — review, never an unattended swap';
 export const TS_DEFAULT_UNTRACED_REASON =
   'model-named declaration not traced to any provider request in this file';
 export const TS_DEFAULT_CONTAINER_REASON =

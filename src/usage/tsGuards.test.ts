@@ -13,6 +13,7 @@ import {
   TS_CLI_DEFAULT_REASON,
   TS_DEFAULT_UNTRACED_REASON,
   TS_EXAMPLE_REASON,
+  TS_EXAMPLE_CALL_REASON,
   TS_MODULE_LEVEL_REASON,
   TS_PREFIXED_REASON,
 } from './tsSurface.js';
@@ -176,16 +177,19 @@ describe('the path rules read the repo, not the checkout directory', () => {
     });
   }
 
-  it('a genuine examples/ directory inside the repo is still informational', () => {
-    expect(scanAt('/home/runner/work/app/app', '/home/runner/work/app/app/examples/basic/app.ts')).toBe('C');
+  // Still 'B' and not 'A', which is what this test actually guards: the `examples/` segment was
+  // recognised RELATIVE TO THE REPO rather than to the checkout directory. The tier moved C -> B
+  // when rule C3 was narrowed (see the C3/C4 block below); path resolution is unchanged.
+  it('a genuine examples/ directory inside the repo is still capped, not full tier', () => {
+    expect(scanAt('/home/runner/work/app/app', '/home/runner/work/app/app/examples/basic/app.ts')).toBe('B');
   });
 
   it('a genuine tests/ directory inside the repo is still skipped', () => {
     expect(scanAt('/home/runner/work/app/app', '/home/runner/work/app/app/tests/helper.ts')).toBeUndefined();
   });
 
-  it('an examples/ tree inside a repo that is itself named docs is still informational', () => {
-    expect(scanAt('/home/runner/work/docs/docs', '/home/runner/work/docs/docs/examples/x.ts')).toBe('C');
+  it('an examples/ tree inside a repo that is itself named docs is still capped, not full tier', () => {
+    expect(scanAt('/home/runner/work/docs/docs', '/home/runner/work/docs/docs/examples/x.ts')).toBe('B');
   });
 });
 
@@ -238,9 +242,36 @@ describe('the file walkers judge position inside the repo, not the checkout dire
   });
 });
 
-describe('C3 / C4 — examples and type-tests are never dependencies', () => {
-  it('an examples/ file is informational, whatever it calls', () => {
+describe('C3 / C4 — a runnable example is a dependency; a documented one is not', () => {
+  // RULE C3 WAS NARROWED ON 2026-09-28, deliberately. It used to read "an examples/ file is
+  // informational, WHATEVER IT CALLS", and that absolute is what this test asserted.
+  //
+  // The twelve-repo measurement retired the absolute. Recall was 37% against 93.5% precision,
+  // and the blanket example rule was the single largest cause of the misses: langgraph's
+  // REGISTERED graph entrypoints under libs/cli/examples/, three of chroma's five live call
+  // sites, and most of openai-cookbook's evaluation harnesses. A controlled probe settled it —
+  // copying langgraph's examples/graphs/agent.py into src/ produced a correct selector
+  // classification from the same parser, so the analysis was already right and the path rule
+  // was discarding it.
+  //
+  // Worst case measured: Mendr printed "NO EXPOSURE IN COMPLETED SURFACES" on a repository
+  // whose registered entrypoint constructs a retiring model. The comment at the top of this
+  // file already says what that is — "a false clean is the one answer this product must never
+  // give" — and the rule was producing one.
+  //
+  // Capped at review, never Tier A: a sample is still a weaker claim on the shipped product
+  // than application code, and rewriting somebody's example unattended is presumptuous.
+  it('an examples/ file that really calls a provider is capped at review, not silenced', () => {
     const t = tierOf(`${OPENAI}export async function ask() {\n  return client.chat.completions.create({ model: "gpt-4", messages: [] });\n}\n`, 'examples/basic/app.ts');
+    expect(t?.tier).toBe('B');
+    expect(t?.reason).toBe(TS_EXAMPLE_CALL_REASON);
+  });
+
+  // The other half of the rule, and the precision it was written to protect. Everything the
+  // parser reads as DATA in an example stays informational: this is what keeps litellm's
+  // example_config_yaml/ and a dozen doc snippets out of the review bucket.
+  it('an examples/ file that only holds data is still informational', () => {
+    const t = tierOf('export const MODELS = ["gpt-4"];\n', 'examples/basic/list.ts');
     expect(t?.tier).toBe('C');
     expect(t?.purpose).toBe('example');
     expect(t?.reason).toBe(TS_EXAMPLE_REASON);

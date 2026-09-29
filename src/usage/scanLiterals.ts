@@ -13,6 +13,7 @@ import {
   TS_CLI_DEFAULT_REASON,
   TS_DEFAULT_CONTAINER_REASON,
   TS_EXAMPLE_REASON,
+  TS_EXAMPLE_CALL_REASON,
   TS_MODEL_FACTORIES,
   TS_PREFIXED_REASON,
   type TsSinkMap,
@@ -723,7 +724,15 @@ export function findModelIdLiterals(
     // runnable sample is not a dependency of the shipped product.
     const example = isExamplePath(rel);
     // The sink rule's evidence, once per file: which names reach a model position.
-    const sinks = example ? undefined : collectTsSinks(sf);
+    //
+    // COLLECTED FOR EXAMPLE TREES TOO, since 2026-09-28. This used to short-circuit to
+    // `undefined`, so an example file was never even parsed for call sinks and every
+    // occurrence in it became `data` by rule. The twelve-repo measurement showed that was
+    // the largest single cause of missed live call sites, and a controlled probe settled
+    // the question: copying langgraph's `examples/graphs/agent.py` into `src/` produced a
+    // correct selector classification from the same parser. The analysis was already
+    // right; the path rule was throwing it away.
+    const sinks = collectTsSinks(sf);
 
     const literals = [
       ...sf.getDescendantsOfKind(SyntaxKind.StringLiteral),
@@ -748,9 +757,22 @@ export function findModelIdLiterals(
       // entry, so classify ONCE and share the verdict across every matching
       // record — then emit one match per record so each entryId flows through.
       const { line, column } = sf.getLineAndColumnAtPos(node.getStart());
-      let classification: LiteralClassification = example
-        ? { position: 'data', purpose: 'example', reason: TS_EXAMPLE_REASON }
-        : classifyLiteral(node, sinks);
+      let classification: LiteralClassification = classifyLiteral(node, sinks);
+      // An example tree is informational BY DEFAULT — a sample is not a dependency of the
+      // shipped product, and that rule is why litellm's `example_config_yaml/` and a dozen
+      // doc snippets stay out of the review bucket. It is kept.
+      //
+      // What changed: it is no longer unconditional. If the parser found the id at a REAL
+      // provider request in that file, the sample is runnable and it breaks at retirement,
+      // so it is reported — capped at review, never Tier A. Everything the parser calls
+      // `data` in an example (a docstring, a catalog row, a commented line, a model-picker
+      // list) still lands exactly where it did before.
+      if (example) {
+        classification =
+          classification.position === 'data' || classification.position === 'usage_unverified'
+            ? { position: 'data', purpose: 'example', reason: TS_EXAMPLE_REASON }
+            : { position: 'surface_capped', reason: TS_EXAMPLE_CALL_REASON };
+      }
       // A prefixed id is a gateway SELECTOR only where a plain id would have been
       // one. In a type union or a catalog row (`id: 'openai/gpt-4'` in a model
       // card list) it is data like any other — vercel/ai's gateway settings and
