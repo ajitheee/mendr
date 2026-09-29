@@ -63,15 +63,34 @@ Next, in order, and the first is not an engineering task:
 
 **Nothing downstream of this is worth doing until it is fixed.**
 
-> **Updated 2026-09-29: the symptom stopped; the cause was never found.** Approval #8 fired on
-> 2026-09-28 and the loop closed (P1-B), so the "nothing downstream is worth doing" line above is
-> overtaken by events. But **no Render log line was ever captured**, so nothing was diagnosed —
-> the button went from dead for 170 runs to working, for reasons unknown.
+> ### P1-A stays OPEN. Status, set 2026-09-29:
 >
-> That is now a *worse* risk, not a closed one. Part 1's goal is a stranger's repository. An
-> intermittently dead Approve button costs nothing on `mendr-demo` and costs the entire verdict if
-> it fires on the one person who agreed to try it. Step 1 is still one click and one log line, and
-> still only Ajith can do it.
+> > **Failure no longer reproduces; root cause unknown; historical telemetry unavailable.**
+>
+> Approval #8 fired on 2026-09-28 and the loop closed (P1-B), so the "nothing downstream is worth
+> doing" line above is overtaken by events — but nothing was *diagnosed*. The button went from dead
+> for 170 runs to working, for reasons nobody established, and the logs that would have said why no
+> longer exist. A defect that stopped reproducing on its own is not a fixed defect; it is an
+> unexplained one, and the next click may be a stranger's.
+>
+> **Containment required before any external reviewer depends on the button.** Five items, none of
+> which need the original failure to recur:
+>
+> | # | item | what it has to do |
+> |---|---|---|
+> | 1 | **Sanitized request-level instrumentation** | One record per approval attempt, from first byte to outcome, carrying no secrets and no customer source — it must survive the redaction rules the sanitizer already enforces. This is what was missing; capture it permanently rather than waiting to catch the next failure live. |
+> | 2 | **Deployment identification** | Every record names the build and instance that served it. Without this, "it works now" cannot be distinguished from "it works on the instance that happens to be warm". |
+> | 3 | **Failure classification** | Each attempt ends in a named class — client-side never-sent, auth, dispatch, provider timeout, unhandled throw — not a bare success flag. A class is what makes the next occurrence diagnosable on the first look instead of the tenth. |
+> | 4 | **Post-deployment smoke test** | An approval path exercised automatically after each deploy, so the button is proven on the build that is live rather than on the build it was last tested on. |
+> | 5 | **Manual fallback path** | A documented route by which a reviewer completes the approval **without** the button. |
+>
+> **The gate, stated so it cannot be fudged:** if item 5 exists and the external workflow can be
+> completed manually end to end, **outreach proceeds while root-cause work continues** — the
+> unknown cause stops blocking P1-F. If the button is the **only** path to completing the workflow,
+> **P1-A remains a blocker** and no ask that depends on approval should be sent.
+>
+> Ajith's one click and one Render log line is still the cheapest possible diagnosis and still
+> worth doing, but it is no longer the only route forward, and it is no longer something to wait on.
 
 ## P1-B · Close the loop once, end to end  —  **DONE 2026-09-28**
 
@@ -258,9 +277,40 @@ sophisticated teams worth selling to. Cheapest change with the biggest strategic
 fires like a live call. A free Semgrep rule that requires the id to sit in the `model` field
 beats Mendr on precision until this is fixed.
 
+> **Rescoped 2026-09-29. `MEASUREMENT-2026-09-28.md` already said "do not build P1-G3 as
+> scoped" — precision was never the problem, recall was. The remaining precision work is
+> narrower than the heading, and it is a CLASSIFICATION job, not a suppression job:**
+>
+> - **Classify, do not hide.** A test double or a fixture that references a retiring id is a real
+>   reference and stays **reported**, in its own labelled class — a reader must still be able to
+>   find it, because a fixture pinned to a dead id breaks their build on 10-23 exactly like
+>   production does. Silently dropping it would be the false clean this product must never give.
+>   The scanner already has the right shape for this: report it, tier it low, and say why.
+> - **Automatic migration is limited to supported production call sites.** A fixture, a test
+>   double, an example or an unresolved wrapper may be reported and may be reviewed, but must
+>   never be `patch`-eligible and must never be rewritten unattended. This is the invariant that
+>   keeps the blast radius honest, and it is already how Tier A is gated — this makes it explicit
+>   for the test and fixture classes rather than leaving it to follow from path rules.
+> - The immediate instance is librechat's `api/app/clients/specs/FakeClient.js:33`. It sits in
+>   `specs/`, which the directory list does not carry (`tests?` is there, `specs?` is not), so a
+>   jest double is currently classed as live code. Fixing the list is the cheap half; giving test
+>   and fixture references their own reported class is the half that generalises to a customer's
+>   own repository.
+
 **P1-G4 · The honest competitive page.** Name `llmstatus.ai` and `modeldeprecations.dev` in
 Mendr's own docs, concede the registry and CI architecture are similar, show the verified-swap
 and evidence difference. A prospect will find them; better they find this first.
+
+> **Gated 2026-09-29: written when ready, published only on evidence.** The page's whole value is
+> that it is *honest*, and its central claim — that Mendr's verified-swap and evidence
+> architecture is worth more than a free tool's breadth — is currently **unevidenced**: zero
+> external repositories have run it and zero verdicts exist. Publishing a comparison whose
+> differentiator rests on nothing but our own measurement would be the same error as the invented
+> model ids in the film: a confident claim assembled without the facts under it.
+>
+> **Do not publish P1-G4 until the external runs provide evidence for its claims.** Drafting it
+> early is fine and probably useful — it forces us to name what we would need to prove. Shipping
+> it before a stranger has produced a finding is not.
 
 ### Ranked below the line, deliberately
 

@@ -132,8 +132,14 @@ category and pretending otherwise wastes an ask.
 > hey [NAME] — no install, just a link and one question.
 >
 > github.com/ajitheee/mendr-demo is a small service that calls `gpt-4-0613`. openai switches
-> that id off on 2026-10-23. the audit runs in that repo's own ci on every push; today's run
-> found it and posted the evidence as a check.
+> that id off on 2026-10-23 — 24 days. the audit runs in that repo's own ci; the current run
+> found it and posted the evidence as a check, titled "gpt-4-0613 stops serving in 24 days ·
+> 1 patch eligible".
+>
+> one thing up front, before you go looking and find it yourself: this repository is a
+> repeatable integration fixture: after each successful Mendr migration, we intentionally
+> restore the retired model identifier so the complete workflow can be exercised again; the
+> restoration is test maintenance, not a rejected migration.
 >
 > the thing i'd like you to look at is what it refuses to claim. it never says "clean", it
 > prints which surfaces it could not complete, and where it found a verified replacement it
@@ -158,29 +164,75 @@ September drafts unsendable.
 
 ## Ask 3 — LibreChat #16017 — ~~the one live public room~~ **the premise is void**
 
-> **Re-verified 2026-09-29. Do not send this as written.**
+> **Re-verified 2026-09-29. The PR was authorised and then NOT opened. Four blocking facts, all
+> found before touching the repository.**
 >
-> `issues/16017` is **closed** — `state_reason: completed`, closed **2026-09-17T03:47:22Z**, with
-> **0 comments**, filed by `ajitheee`. It is not a live room, and it never had an audience: nobody
-> ever replied. The heading called it "the one live public room"; that was true when written and
-> is not true now. Both URL paths resolve today, so the "`danny-avila` 404s" note is also stale.
+> **1. The project lead already ruled on this finding.** `issues/16017` is **closed —
+> `state_reason: completed`, closed 2026-09-17T03:47:23Z by `danny-avila`, with 0 comments.** Not
+> closed by Ajith, and not closed by a fix: the line is still there. A maintainer looked at it and
+> closed it as completed without a word, twelve days ago. Any PR now re-litigates that decision.
 >
-> What *is* still true, re-checked today: `title.js:25` still reads `model: 'gpt-3.5-turbo'`, and
-> the id still shuts down 2026-10-23, now 24 days out. The finding is real. The room is gone.
+> **2. Their CONTRIBUTING forbids exactly this PR**, in writing:
+> *"A pull request that appears unannounced, with no issue, no assignment and no prior
+> conversation, **may be closed without review** no matter how good the patch is."* And:
+> *"A pull request produced by pointing an agent at our issue tracker will be rejected unless the
+> issue it addresses was assigned to you."* The single exception is *"a novel P0/P1 defect: data
+> loss, a broken release, a crash, or a regression with no workaround, that nobody has yet
+> reported"* — and this qualifies on none of those counts. Nothing is broken today; the failure is
+> dated 2026-10-23; and it was **already reported**, which the policy names as disqualifying. There
+> is no open issue to be assigned: a search returns one open issue mentioning the id and it is
+> unrelated. `#10737`, the reasoning-parameter bug, is also closed with 0 comments.
 >
-> **The decision is yours, and the draft already names the answer.** Its own closing note says:
-> *"Consider a PR instead… `title.js:25` is a one-token change. A merged PR **is** a verdict, and
-> it costs a maintainer with 800 open issues less than a reply does."* With the issue closed and
-> unanswered, the PR is not the fallback any more — it is the only form of this ask that can
-> produce a verdict.
+> **3. It is not a one-token change.** The draft's central claim — *"`title.js:25` is a one-token
+> change"* — is wrong for OpenAI's own recommended replacement. The call is:
 >
-> It passes the standing rule cleanly: a hardcoded model id that stops serving in 24 days is worth
-> fixing whether or not Mendr exists. So the PR is legitimate. **Only Ajith can open it**, and it
-> should lead with the code and the date and not mention Mendr at all — a one-token fix that
-> argues for itself is worth more than a fix that arrives with a pitch attached.
+> ```js
+> const completion = await openai.chat.completions.create({
+>   model: 'gpt-3.5-turbo',
+>   messages: [{ role: 'user', content: titlePrompt }],
+>   temperature: 0.7,
+>   max_tokens: 20,
+> });
+> ```
 >
-> Reopening the closed issue to comment on it is the weaker option: it was closed as completed, so
-> reopening it to say "actually, still broken" spends goodwill to reach zero subscribers.
+> OpenAI maps `gpt-3.5-turbo` → **`gpt-5.6-terra`** (confirmed on the deprecations page today).
+> `gpt-5.6-terra` is a reasoning model, and reasoning models reject **both** remaining parameters:
+> `max_tokens` must become `max_completion_tokens`, and `temperature: 0.7` returns
+> *"Unsupported value: 'temperature' does not support 0.7 with this model. Only the default (1) is
+> supported."* So the official mapping is a **three-line behavioural change** that also makes a
+> 20-token title call slower and dearer. A swap of the id alone would have shipped a **broken
+> call** to a 45,000-star repository under Ajith's name.
+>
+> **4. It would have targeted the wrong branch.** *"All contributions target `dev`; `main` only
+> moves at release time."* Verified: `dev` still carries all three lines, so the finding is live
+> there too.
+>
+> **What is still true.** `title.js:25` reads `model: 'gpt-3.5-turbo'` on `main` **and** `dev`,
+> fetched 2026-09-29. The id stops serving 2026-10-23, 24 days out, per
+> `developers.openai.com/api/docs/deprecations`, announced 2026-04-22. The finding is real and
+> unfixed. Only the *route to a verdict* is blocked.
+>
+> **The compliant route, if Ajith wants one.** Their policy does allow a small bug fix tied to a
+> **new** issue: *"Small changes and bug fixes should be tied to an issue and included in the
+> corresponding pull request for tracking purposes."* So: a fresh issue stating the date and the
+> parameter trap, then a PR against `dev` linked to it. The low-risk patch is **not** the official
+> mapping but `gpt-4o-mini` — confirmed today as absent from the deprecations page, already this
+> registry's live successor in 11 rows, non-reasoning, and therefore a genuine one-line change that
+> keeps `temperature` and `max_tokens` working exactly as they do now. That change stands entirely
+> on its own merit and needs no mention of this project.
+>
+> **The honest counter-argument, recorded because it is the stronger one.** The maintainer closed
+> this as completed once already. Filing again to tell him he was wrong, on a repository where the
+> policy warns that unannounced patches get closed unread, spends credibility we have not got to
+> spend and is unlikely to return a verdict. **Ajith's call.**
+>
+> **A scoring question this raises, not to be answered quietly.** A maintainer closing a
+> Mendr-located finding as `completed`, without comment, while the code stays unchanged, arguably
+> *is* "a recorded position on a Mendr-located finding" — the `BETA-GATES.md` definition of a
+> verdict, under which *"not worth fixing" scores*. But a wordless close does not say **which**
+> position, so reading it as verdict #1 would be exactly the quiet widening this file warns
+> against. Log it as `reply=no / verdict=no` and raise the definition deliberately, in writing, or
+> not at all.
 
 **Post at (superseded):** `https://github.com/LibreChat-AI/LibreChat/issues/16017`
 
