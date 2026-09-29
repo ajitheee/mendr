@@ -5,6 +5,7 @@ import {
   classifyCallSurface,
   collectTsSinks,
   enclosingCallOfObject,
+  enclosingNewOfObject,
   hasCatalogSiblings,
   isCliModelOptionDefault,
   isCliOptionCall,
@@ -16,6 +17,7 @@ import {
   TS_EXAMPLE_CALL_REASON,
   TS_MODEL_FACTORIES,
   TS_PREFIXED_REASON,
+  TS_WRAPPER_CTOR_REASON,
   type TsSinkMap,
 } from './tsSurface.js';
 import { isExamplePath, isModelLikeName, splitProviderPrefix } from './sharedRules.js';
@@ -513,6 +515,12 @@ function classifyByEnclosure(node: Node, parent: Node | undefined, sinks?: TsSin
       // `JSON.stringify` of a mocked response, or an internal wrapper is REAL but
       // never an unattended swap.
       if (isModelLikeName(keyName) && call) return classifyCallSurface(call);
+      // The same shape behind a wrapper CLASS: `new OpenAiChat({ model: "gpt-4" })`. Consulted
+      // only when there is no enclosing CALL, so nothing above can change. Catalog siblings
+      // still win — `new ModelCard({ model, label, pricing })` is a card, not a selection.
+      if (isModelLikeName(keyName) && obj && !hasCatalogSiblings(obj) && enclosingNewOfObject(obj)) {
+        return { position: 'surface_capped', reason: TS_WRAPPER_CTOR_REASON };
+      }
       // A `model:` in a standalone DEFAULT-configuration object (`DEFAULT_CONFIG =
       // { llm: { model: "…" } }`, `defaultLlm = { config: { model } }`) is the
       // default a caller inherits — a real selector, review — unless the object

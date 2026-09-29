@@ -76,6 +76,14 @@ export const TS_EXAMPLE_REASON =
  * shipped product than application code, and rewriting somebody's example unattended is
  * presumptuous. Detection is right; an unattended swap is not.
  */
+/**
+ * `new OpenAiChat({ model: "gpt-4" })` — a model argument to a wrapper CLASS. Real: the value
+ * is the model this object will request with. Capped at review because the constructor is not
+ * a provider SDK call and nothing here proves what it does with the id; a first-party wrapper
+ * may normalise, map or ignore it.
+ */
+export const TS_WRAPPER_CTOR_REASON =
+  'model argument to a constructor: a real selection, but the constructor is not a provider SDK request, so the swap is not verifiable here — review';
 export const TS_EXAMPLE_CALL_REASON =
   'example / sample tree, but the id is passed to a real provider request here: runnable, so it breaks at retirement — review, never an unattended swap';
 export const TS_DEFAULT_UNTRACED_REASON =
@@ -517,6 +525,30 @@ export function enclosingCallOfObject(obj: Node): CallExpression | undefined {
   const top = climbTransparent(obj);
   const parent = top.getParent();
   if (parent && Node.isCallExpression(parent) && parent.getArguments().includes(top as Expression)) return parent;
+  return undefined;
+}
+
+/**
+ * The `new X({ … })` that this object literal is an argument of, if any.
+ *
+ * {@link enclosingCallOfObject} matches `Node.isCallExpression` only, and a `new` is a
+ * NewExpression, so `new OpenAiChat({ model: "gpt-3.5-turbo" })` had no enclosing call at all
+ * and fell through to plain data — silenced at `monitor`, not even review.
+ *
+ * Measured 2026-09-28: first-party wrapper CLASSES were the second-largest cause of the 37%
+ * recall, after the examples/ rule. promptfoo's `new OpenAiCompletionProvider(...)` and
+ * chroma's sample route handlers are this shape.
+ *
+ * Deliberately separate from `enclosingCallOfObject` rather than widening its return type:
+ * that value flows into `classifyCallSurface`, which resolves a receiver to a first-party SDK
+ * client. A constructor has no such receiver to resolve, so feeding it there would ask that
+ * machinery a question it was not built to answer. The caller consults this ONLY when there is
+ * no enclosing call, so no existing verdict can change.
+ */
+export function enclosingNewOfObject(obj: Node): Node | undefined {
+  const top = climbTransparent(obj);
+  const parent = top.getParent();
+  if (parent && Node.isNewExpression(parent) && parent.getArguments().includes(top as Expression)) return parent;
   return undefined;
 }
 

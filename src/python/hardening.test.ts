@@ -5,6 +5,7 @@ import {
   findPyModelIdLiterals,
   PY_DEFAULT_CONTAINER_REASON,
   PY_EXAMPLE_REASON,
+  PY_EXAMPLE_CALL_REASON,
   PY_FIELD_DEFAULT_REASON,
   PY_LOOKUP_DEFAULT_REASON,
   PY_PREFIXED_REASON,
@@ -218,6 +219,20 @@ client = OpenAI()
 def ask():
     return client.chat.completions.create(model="gpt-4", messages=[])
 `);
+    const hit = t.find((x) => x.value === 'gpt-4');
+    // RULE C3 NARROWED 2026-09-28 — the Python half. See MEASUREMENT-2026-09-28.md.
+    //
+    // This assertion is the one that kept langgraph reporting NO EXPOSURE IN COMPLETED
+    // SURFACES after the TypeScript half shipped: its registered graph entrypoint,
+    // libs/cli/examples/graphs/agent.py, is Python, so the TS change could not reach it.
+    // A runnable sample that reaches a provider request is reported and capped at review.
+    expect(hit?.tier).toBe('B');
+    expect(hit?.reason).toBe(PY_EXAMPLE_CALL_REASON);
+  }, 60_000);
+
+  it('a data-only reference under examples/ is still Tier C with the example purpose', async () => {
+    // The precision half of the rule, unchanged: a picker list in a sample is not a selection.
+    const t = await tiers('examples/quickstart.py', 'MODELS = ["gpt-4"]\n');
     const hit = t.find((x) => x.value === 'gpt-4');
     expect(hit?.tier).toBe('C');
     expect(hit?.purpose).toBe('example');
