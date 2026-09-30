@@ -532,3 +532,84 @@ non-semantic rather than assumed.
    coupled-parameter cap is now another shape that lands in that blind spot. Safety is unaffected
    — refusing to offer the patch is correct — but "Nothing to fix" is the wrong words for it.
    **Not fixed.**
+
+---
+
+# Amendment, 2026-09-29 — run 7: entry-scoped stub detection in gateway configs
+
+Same twelve repositories, same commits. One scanner change (P1-G2, narrowed to LiteLLM
+`config.yaml` / `model_list`). Run 7's twelve JSON documents are preserved with a SHA-256
+manifest so this table can be re-derived rather than taken on trust.
+
+## Before / after
+
+| | run 5 | run 7 |
+|---|---|---|
+| Repositories identical | — | **12 of 12** |
+| Locations compared | — | **14,171** |
+| Locations changed | — | **0** |
+| Promotions `test_fixture` → `review` | — | **0** |
+| Precision | 94.6 % | **94.6 %** |
+| Recall | 59.6 % | **59.6 %** |
+
+The comparison deliberately covers **every location in every bucket**, not just actionable ones:
+a promotion moves *between* buckets, so measuring only the actionable set would have hidden the
+exact thing being measured.
+
+**The manual review of promoted locations is therefore empty, because there were none.** That is
+reported as the result rather than dressed up as a clean bill of health, and the next section
+explains why it happened instead of leaving it as a shrug.
+
+## Why nothing moved, verified rather than asserted
+
+The fix stops `FAKE_[A-Z_]*API_BASE` from speaking for a whole file. Nine YAML files in the corpus
+carry that marker. Each was checked:
+
+| files | why they did not move |
+|---|---|
+| 6 | already demoted by **fixture path** (`proxy/example_config_yaml/…`) — that rule is untouched |
+| 1 | `proxy_server_config.yaml` has a genuine **file-wide switch**, `dangerously_allow_mock_testing_request_params: true` under root `general_settings:` — correctly still demoted, which preserves the partner-audit conclusion about that file |
+| 1 | `docker/build_from_pip/litellm_config.yaml` — its only registry id is `model_name: "gpt-4"`, an **alias**, sitting **inside the stub entry itself**: informational before and after |
+| 1 | `.circleci/config.yml` — contains **no registry id at all**, so there is nothing to classify |
+
+**Zero of the nine present the shape the fix addresses**: a live route in a file whose only mock
+signal is an entry-level marker. The defect is real — reproduced end to end, where one entry
+carrying `os.environ/FAKE_OPENAI_API_BASE` demoted a sibling `model: gpt-4-0613` from review to
+informational — and the corpus simply does not contain it.
+
+**That is the third time in two days.** The coupled-parameter guard fired on none of the twelve.
+The injected-client false clean was caught by probing a shape the twelve do not contain. Now this.
+The conclusion to draw is not that these fixes were unnecessary; each closed a reproduced defect
+found in real third-party code or by adversarial probing. It is that **twelve repositories is a
+regression harness, not a discovery instrument.** A green diff across all of them means "nothing
+regressed" and never "nothing is wrong", and the sentence "measured across twelve repositories"
+should not be used to imply coverage it does not have.
+
+## A correction to the diagnosis this slice was queued on
+
+I reported that `blockHasMockMarker` leaked across entry boundaries and proposed making it
+entry-scoped. **That was wrong.** Isolated separately: a stub entry carrying `openai/fake` and
+`fake-key` leaves a sibling `model: gpt-4-0613` at review, correctly — the entry scan does not
+leak. The earlier evidence was **confounded**: removing the stub entry removed two markers at
+once, and the effect was attributed to the wrong one.
+
+Reproducing a defect is not sufficient if the experiment does not isolate the variable. That is a
+sharper version of the lesson this document already records twice.
+
+## What shipped, and what it refuses to do
+
+Entry boundaries now come from the YAML parser's node ranges (`src/config/yamlEntries.ts`), not
+from indentation, because a line scanner has no real notion of an entry and cannot be trusted
+across four-space indents, several documents in one file, an unexpected key order, or a file that
+does not parse.
+
+**Ambiguity never demotes.** `resolved: false` means *no opinion*, never *no stubs*: a parse error
+in any document, a `model_list` that is not a sequence, an item with no usable range, no route
+list, an empty file. The cost of demoting wrongly is a retirement reported as informational — a
+false clean. The cost of not demoting is a review-queue entry on a stub. Those are not comparable.
+
+An "all entries are fake" file rule was **deliberately not added**: per-entry marking already marks
+every entry when every entry is a stub, and a file rule would only restate that while
+reintroducing the whole-file blast radius this removes.
+
+24 tests, mutation-verified twice. Full suite 1547/1547.
