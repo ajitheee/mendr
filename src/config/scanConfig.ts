@@ -17,6 +17,7 @@ import { displayEntryId } from '../registry/entryId.js';
 import { splitProviderPrefix } from '../usage/sharedRules.js';
 import { effectiveVerificationState, modelIdEntries } from '../usage/llmRegistry.js';
 import { isModelLikeName } from '../usage/scanLiterals.js';
+import { lineIsInStubEntry, stubModelListEntries, type ModelListScope } from './yamlEntries.js';
 import type { Tier } from '../report/tiers.js';
 
 /** Where a deprecated id sits in config. */
@@ -452,6 +453,13 @@ export interface FileSignals {
   dense: boolean;
   /** The file carries api keys / urls / sampling params — it is live config. */
   runtimeContext: boolean;
+  /**
+   * Router-entry boundaries from the YAML parser, for `.yaml`/`.yml` only. `resolved: false` means
+   * NO OPINION — never "no stubs" — and no occurrence may be demoted on the strength of it.
+   */
+  yamlStubs: ModelListScope;
+  /** Is this a YAML file, so the parser scope above is the authority on entry boundaries? */
+  isYaml: boolean;
 }
 
 /**
@@ -584,8 +592,16 @@ export function classifyOccurrenceWithSignals(
   if (base.key !== null && /^model_name$/i.test(base.key) && index >= 0 && hasSiblingKey(lines, index, 'litellm_params')) {
     return { position: 'config_catalog', purpose: 'catalog_entry', key: base.key, signals: [...signals, 'alias_key'] };
   }
-  // An entry pointing at a fake model / fake key is a stub, whatever the file is.
-  if (index >= 0 && blockHasMockMarker(lines, index)) {
+  // An entry pointing at a fake model / fake key is a stub — that ENTRY, and nothing around it.
+  //
+  // For YAML the parser is the authority on where an entry ends (config/yamlEntries.ts). When it
+  // cannot resolve boundaries it returns no opinion and NOTHING is demoted here, because the cost
+  // of demoting wrongly is a retirement reported as informational. The line-based scan is kept for
+  // the seven non-YAML config formats, where there is no parser to ask.
+  const inStubEntry = file.isYaml
+    ? lineIsInStubEntry(file.yamlStubs, index + 1)
+    : index >= 0 && blockHasMockMarker(lines, index);
+  if (inStubEntry) {
     return { position: 'config_catalog', purpose: 'data_fixture', key: base.key, signals: [...signals, 'mock_markers'] };
   }
   const isRuntimeRoute = base.key !== null && RUNTIME_ROUTE_KEYS.test(base.key);
@@ -630,7 +646,14 @@ export function classifyOccurrenceWithSignals(
  * `mock_timeout`, `my-fake-model`; a docker sample config points every entry at
  * `openai/fake` with `fake-key`.
  */
-const FILE_MOCK_FLAGS = /\b(mock_timeout|mock_response|dangerously_allow_mock_testing\w*|FAKE_[A-Z_]*API_BASE)/i;
+// FAKE_*_API_BASE WAS HERE AND WAS WRONG. Corrected 2026-09-29. An `api_base` is the address ONE
+// route dials, inside one `litellm_params` block, so reading it as a statement about the whole file
+// is a category error — and a measured false clean: a single stub entry carrying
+// `os.environ/FAKE_OPENAI_API_BASE` demoted a sibling `model: gpt-4-0613` from review to
+// informational. It now lives in ENTRY_STUB_MARKERS (config/yamlEntries.ts), scoped to the entry
+// the parser says it belongs to. What remains here is genuinely file-wide: root-level proxy
+// switches that change how the whole process answers, not properties of one route.
+const FILE_MOCK_FLAGS = /\b(mock_timeout|mock_response|dangerously_allow_mock_testing\w*)/i;
 /** Entry-level: a fake key or a fake model inside ONE model_list entry marks that entry, not the file (a Helm chart can carry a stub entry beside a real one). */
 const ENTRY_MOCK_MARKERS = /\b(fake-key|my-fake-model|openai\/fake|test-api-key)\b/i;
 
@@ -684,12 +707,17 @@ export function scanConfigText(
   const surface = detectProviderSurface(file);
   let distinct = 0;
   for (const id of byValue.keys()) if (text.includes(id)) distinct++;
+  const isYaml = /\.ya?ml$/i.test(file);
   const fileSignals: FileSignals = {
     fixturePath: dataFixture,
     catalogDefinitionPath: isCatalogDefinitionPath(file),
     catalogKeys: hasCatalogDefinitionKeys(text),
     dense: distinct >= CATALOG_DENSITY_HINT,
     runtimeContext: hasRuntimeContext(text),
+    // Parsed ONCE per file, not once per occurrence: a large Helm values.yaml would otherwise be
+    // re-parsed for every matched id in it.
+    yamlStubs: isYaml ? stubModelListEntries(text) : { stubs: [], resolved: false },
+    isYaml,
   };
   void catalogDef;
   const lines0 = text.split(/\r?\n/);

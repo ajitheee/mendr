@@ -192,3 +192,92 @@ describe('density is a hint, never a verdict', () => {
     expect(selectorsOf('config/sparse.yaml', sparse)).toHaveLength(1);
   });
 });
+
+// ENTRY-SCOPED STUB MARKING, at the scanner level — the false clean measured 2026-09-29.
+//
+// `FAKE_*_API_BASE` sat in the FILE-level mock set, but an `api_base` is the address ONE route
+// dials. One stub entry carrying `os.environ/FAKE_OPENAI_API_BASE` therefore marked the whole file
+// a fixture and demoted a SIBLING `model: gpt-4-32k` from review to informational — a missed
+// retirement reported as data, on the most ordinary gateway shape there is. LiteLLM's own docker
+// sample ships exactly this: a stub entry beside live routes.
+//
+// The helper's boundary logic is covered in yamlEntries.test.ts. These assert the SCANNER's
+// verdict, which is what a customer actually sees.
+describe('one stub route does not silence its siblings', () => {
+  const MIXED = `model_list:
+  - model_name: live
+    litellm_params:
+      model: gpt-4-32k
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: stub
+    litellm_params:
+      model: gpt-4-vision-preview
+      api_base: os.environ/FAKE_OPENAI_API_BASE
+`;
+
+  it('the live route stays a selector; the stub route is the fixture', () => {
+    const sel = selectorsOf('config/litellm.yaml', MIXED);
+    expect(sel.map((m) => m.value)).toEqual(['gpt-4-32k']);
+    const cat = catalogOf('config/litellm.yaml', MIXED);
+    expect(cat.map((m) => m.value)).toContain('gpt-4-vision-preview');
+  });
+
+  it('the api_base marker no longer speaks for the file', () => {
+    // The precise regression: before the fix this returned zero selectors.
+    expect(selectorsOf('config/litellm.yaml', MIXED)).toHaveLength(1);
+  });
+
+  it('a genuinely file-wide mock switch still demotes the whole file', () => {
+    // `dangerously_allow_mock_testing_request_params` is a root proxy switch that changes how the
+    // whole process answers — unlike an api_base, it really is a statement about the file. That
+    // half of the old rule is deliberately kept.
+    const fileWide = `litellm_settings:
+  dangerously_allow_mock_testing_request_params: true
+${MIXED}`;
+    expect(selectorsOf('config/litellm.yaml', fileWide)).toHaveLength(0);
+  });
+
+  it('a malformed router config demotes NOTHING, rather than guessing boundaries', () => {
+    // Ambiguity must never demote: the cost of a wrong demotion is a retirement reported as
+    // informational. An unparseable file gets no entry-level opinion at all, so the live route
+    // is still reported.
+    const broken = `model_list:
+  - model_name: live
+    litellm_params:
+      model: gpt-4-32k
+  - model_name: [unclosed
+    litellm_params:
+      api_key: fake-key
+`;
+    expect(selectorsOf('config/litellm.yaml', broken).map((m) => m.value)).toContain('gpt-4-32k');
+  });
+
+  it('a fixture exposure stays VISIBLE — it is reported, never dropped', () => {
+    // Requirement from the P1-G3 rescoping: fixtures remain their own reported category. A stub
+    // pinned to a retiring id breaks a build on 2026-10-23 exactly like production does, so
+    // silence here would be the misleading clean.
+    const allStub = `model_list:
+  - model_name: a
+    litellm_params:
+      model: gpt-4-32k
+      api_key: fake-key
+`;
+    const cat = catalogOf('config/litellm.yaml', allStub);
+    expect(cat.map((m) => m.value)).toEqual(['gpt-4-32k']);
+    expect(selectorsOf('config/litellm.yaml', allStub)).toHaveLength(0);
+  });
+
+  it('non-YAML config keeps its existing line-scoped behaviour', () => {
+    // There is no parser to ask for .json/.toml/.ini, so the line-based scan is unchanged there.
+    // This asserts the change did not silently alter the other seven config formats.
+    const json = `{
+  "model_list": [
+    { "model_name": "live", "litellm_params": { "model": "gpt-4-32k" } },
+    { "model_name": "stub", "litellm_params": { "api_key": "fake-key" } }
+  ]
+}
+`;
+    const all = scanConfigText('config/litellm.json', json, REG);
+    expect(all.some((m) => m.value === 'gpt-4-32k')).toBe(true);
+  });
+});
