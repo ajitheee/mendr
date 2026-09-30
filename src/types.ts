@@ -71,6 +71,7 @@ export type TierBReason =
   | 'platform_blocked'
   | 'dynamic_model_value'
   | 'insufficient_dataflow'
+  | 'coupled_param_unverified'
   | 'type_cast_masked';
 
 // --- LLM-mode (Phase: fix-llm) --------------------------------------------

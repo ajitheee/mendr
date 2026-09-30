@@ -21,6 +21,7 @@ import {
   type TsSinkMap,
 } from './tsSurface.js';
 import { isExamplePath, isModelLikeName, splitProviderPrefix } from './sharedRules.js';
+import { TS_COUPLED_PARAM_REASON, unresolvedCoupledParams } from './coupledParams.js';
 import {
   effectiveVerificationState,
   isVerified,
@@ -412,6 +413,27 @@ export function isEnclosingObjectACallArgument(prop: Node): boolean {
   return !!parent && Node.isCallExpression(parent) && parent.getArguments().includes(node);
 }
 
+/**
+ * The keys of the object literal this value sits in — the siblings of `model:`, which are the
+ * request parameters the call passes alongside it. Empty when the literal is not a property
+ * value of an object literal, which is the honest answer: no siblings are visible, so nothing
+ * can be claimed about them.
+ */
+function siblingParamKeys(node: Node): string[] {
+  const prop = node.getParent();
+  if (!prop || !Node.isPropertyAssignment(prop)) return [];
+  const obj = prop.getParent();
+  if (!obj || !Node.isObjectLiteralExpression(obj)) return [];
+  const keys: string[] = [];
+  for (const p of obj.getProperties()) {
+    if (Node.isPropertyAssignment(p) || Node.isShorthandPropertyAssignment(p)) {
+      const name = propertyKeyName(p.getNameNode());
+      if (name) keys.push(name);
+    }
+  }
+  return keys;
+}
+
 /** The full classification of a matched literal: position + (for data) purpose. */
 export interface LiteralClassification {
   position: LiteralPosition;
@@ -790,14 +812,36 @@ export function findModelIdLiterals(
         classification = { position: 'surface_capped', reason: TS_PREFIXED_REASON };
       }
       for (const deprecation of deprecations) {
+        // A verified replacement is not yet a safe patch. The `model_id` record says which id
+        // to put there; it says nothing about the request around it, and a model swap can
+        // change which parameters the provider accepts. Where the replacement's family is
+        // known to constrain a parameter this call passes, and NO registry rule covers that
+        // parameter, the swap drops to review — absence of a rule is not evidence of
+        // compatibility. Regression case: coupledParams.test.ts
+        // (recommended_replacement_requires_coupled_parameter_migration).
+        let coupled = classification;
+        if (coupled.position === 'model_arg') {
+          const unresolved = unresolvedCoupledParams(
+            siblingParamKeys(node),
+            deprecation.provider,
+            deprecation.replacement,
+            registry,
+          );
+          if (unresolved.length > 0) {
+            coupled = {
+              position: 'surface_capped',
+              reason: TS_COUPLED_PARAM_REASON(deprecation.replacement, unresolved),
+            };
+          }
+        }
         out.push({
           node,
           value,
           location: { file, line, column },
           deprecation,
-          position: classification.position,
-          purpose: classification.purpose,
-          reason: classification.reason,
+          position: coupled.position,
+          purpose: coupled.purpose,
+          reason: coupled.reason,
           prefixed,
         });
       }

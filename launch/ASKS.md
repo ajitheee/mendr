@@ -15,7 +15,7 @@ Scoreboard: **verdicts = 0** (as of 2026-09-22).
 | date | target | channel | the exact question asked | reply | verdict | days |
 |---|---|---|---|---|---|---|
 | 2026-09-13 | `giselles-ai/giselle#2971` | public issue | *(not recorded — no draft exists)* | none | silent | 9+ |
-| 2026-09-16 | `danny-avila/LibreChat#16017` | public issue | "worth a PR, or is that path on its way out anyway?" | closed `COMPLETED`, no words | **no** — see below | 1 |
+| 2026-09-16 | `danny-avila/LibreChat#16017` | public issue | "worth a PR, or is that path on its way out anyway?" | **no** (closed `COMPLETED`, no words) | **no** — see below | 1 |
 | 2026-09-16 | `evalstate/fast-agent#959` | public issue | "is DEFAULT_OPENAI_MODEL a deliberate pin, or do you bump it by hand?" | none | silent | 6+ |
 | 2026-09-17 | `going-doer/Paper2Code#31` | public issue | *(report; no question)* | none | silent | 5+ |
 | 2026-09-17 | `skywalker023/sodaverse#11` | public issue | "if you decide what you want it to be, I'll do the mechanical part" | none | silent | 5+ |
@@ -32,6 +32,34 @@ and its last commit predates the issue by eight days.
 So he read something and acted on it, and nothing he did says whether the *evidence* convinced him.
 Logging that as a verdict would be counting a box tick as an answer, which is exactly the error
 that let a zero-ask campaign look like a working one for five days. It stays a `no`.
+
+### Closed for good, 2026-09-29: `reply=no / verdict=no`
+
+Re-examined thirteen days on, when the Gate 2 plan proposed a follow-up pull request instead. The
+decision is that **a silent `completed` closure is not an interpretable maintainer verdict, and the
+beta gate will not be widened to count it.** Recorded so the question cannot be quietly reopened
+later when the scoreboard is uncomfortable.
+
+Four things were checked before dropping it, and each is a reason not to push:
+
+1. **The line is genuinely still broken.** `title.js:25` reads `model: 'gpt-3.5-turbo'` on `main`
+   **and** on `dev`, fetched 2026-09-29. The finding was and is correct.
+2. **Their CONTRIBUTING forbids the follow-up.** *"A pull request that appears unannounced, with no
+   issue, no assignment and no prior conversation, may be closed without review no matter how good
+   the patch is."* The only exception is a *novel* P0/P1 defect; this is a dated future failure,
+   already reported, which the policy itself names as disqualifying.
+3. **The obvious patch is not a patch.** OpenAI maps `gpt-3.5-turbo` → `gpt-5.6-terra`, which
+   rejects both parameters this call passes — `temperature` outright, `max_tokens` by rename. A
+   one-token swap would have shipped a failing request to a 45,000-star repository.
+4. **A substitute id is a decision we do not get to make.** `gpt-4o-mini` is parameter-compatible
+   and not retiring, but it is **not** the provider-designated replacement, so choosing it is a
+   product or maintainer judgement about cost, latency and output — not a mechanical migration.
+   Mendr must not make that choice silently, and neither should we in someone else's repository.
+
+Point 3 is the one worth keeping: it became the regression case
+`recommended_replacement_requires_coupled_parameter_migration`, and it found a real defect in Mendr
+— a verified replacement was being called a safe automatic patch while the request around it went
+unchecked. **The most valuable thing this ask produced was a bug in our own product, not a verdict.**
 
 ## What the seven rows show
 

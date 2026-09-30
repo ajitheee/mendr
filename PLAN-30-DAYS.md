@@ -82,7 +82,38 @@ Next, in order, and the first is not an engineering task:
 > | 2 | **Deployment identification** | Every record names the build and instance that served it. Without this, "it works now" cannot be distinguished from "it works on the instance that happens to be warm". |
 > | 3 | **Failure classification** | Each attempt ends in a named class — client-side never-sent, auth, dispatch, provider timeout, unhandled throw — not a bare success flag. A class is what makes the next occurrence diagnosable on the first look instead of the tenth. |
 > | 4 | **Post-deployment smoke test** | An approval path exercised automatically after each deploy, so the button is proven on the build that is live rather than on the build it was last tested on. |
-> | 5 | **Manual fallback path** | A documented route by which a reviewer completes the approval **without** the button. |
+> | 5 | **Manual fallback path** | A documented route by which a reviewer completes the approval **without** the button. **VERIFIED 2026-09-29 — see below.** |
+
+> #### Item 5 is verified, so outreach may proceed
+>
+> Approvals are created by exactly one route (`POST /r/:owner/:name/approve`, the button), so
+> there is no way to *record* an approval without it. The fallback therefore has to skip the App
+> rather than substitute for it — and it does, because **nothing a customer needs requires the
+> App at all.** Run against a fixture with the provider SDK actually installed, so the gates
+> could really run:
+>
+> ```
+> $ mendr audit .          ->  1 patch-eligible, Decision: PATCH ELIGIBLE
+> $ mendr fix-llm . --write
+>     type-check:  passed (no new errors)  [required]
+>     Tier A: 1 model-id swap ("gpt-4-0613" -> "gpt-5.6-sol") (verified: type-check passes)
+>     files modified: 1
+> $ git diff
+>     -    model: 'gpt-4-0613',
+>     +    model: 'gpt-5.6-sol',
+> ```
+>
+> Find, verify against a real type-check, apply, review in your own git, commit and open your own
+> pull request. **No App, no OIDC, no approval record, no button.** The required gate genuinely
+> ran and passed — with the SDK absent it refuses to write and says why, which is the correct
+> behaviour and was confirmed separately.
+>
+> **And the two asks that are actually queued never touch the button.** Ask 1 is `audit`, which
+> writes nothing and needs no App. Ask 2 is read-a-public-check-run-and-reply. The button gates
+> only the *hosted* convenience of the loop, not any step a reviewer must complete.
+>
+> So by the gate below: **outreach proceeds while root-cause work continues.** P1-A stays open,
+> and items 1–4 stay required before anyone is asked to depend on the button itself.
 >
 > **The gate, stated so it cannot be fudged:** if item 5 exists and the external workflow can be
 > completed manually end to end, **outreach proceeds while root-cause work continues** — the

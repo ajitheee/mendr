@@ -87,7 +87,14 @@ const roleLabel = (r: LocationRef['role']): string =>
               : 'config catalog reference';
 
 const locationPhrase = (l: LocationRef): string =>
-  `${l.file}:${l.line} — ${roleLabel(l.role)}${l.providerSurface ? ` (surface: ${l.providerSurface})` : ''}`;
+  `${l.file}:${l.line} — ${
+    // A coupled-parameter cap has role `code_candidate`, whose label says the call was not
+    // traced to a provider request. That is false here and sends the reader to the wrong
+    // question: the call site is confirmed and the REQUEST is unverified. See coupledParams.ts.
+    l.reason === 'coupled_param_unverified'
+      ? 'verified provider SDK call site; request parameters unverified for the replacement (review)'
+      : roleLabel(l.role)
+  }${l.providerSurface ? ` (surface: ${l.providerSurface})` : ''}`;
 
 /** The "Production usage:" line — the honest default is "not measured". */
 function productionUsageLine(inv: ModelInvestigation): string {

@@ -424,3 +424,111 @@ What does not change either way:
 
    Recorded because the mistake is the same one this document opens with: a cause asserted from
    a symptom without checking the cheap alternative explanation.
+
+---
+
+# Run 5 — the coupled-parameter guard, and a case the corpus does not contain
+
+2026-09-29. One scanner change. **Twelve of twelve repositories bit-for-bit identical, and that
+is the point of the entry.**
+
+## What it fixes
+
+A `model_id` record says which id to put there. It says nothing about the REQUEST around the id,
+and a model swap can change which parameters the provider accepts. Found while preparing a
+one-line fix for a real call site in a public repository — LibreChat,
+`api/server/services/Endpoints/assistants/title.js:25`:
+
+```js
+openai.chat.completions.create({
+  model: 'gpt-3.5-turbo',
+  messages: [...],
+  temperature: 0.7,
+  max_tokens: 20,
+})
+```
+
+OpenAI's deprecations page maps `gpt-3.5-turbo` → `gpt-5.6-terra` (fetched 2026-09-29, announced
+2026-04-22). That replacement is a reasoning model, and reasoning models reject **both** of the
+remaining parameters:
+
+| parameter | what the replacement does | did Mendr handle it? |
+|---|---|---|
+| `max_tokens` | must be `max_completion_tokens` | **yes** — the registry has a `param_rename` whose `on_models` covers `gpt-5.6`, and the fix pass runs AFTER the id swap so it sees the new model. This half was already right. |
+| `temperature: 0.7` | rejected: *"Only the default (1) value is supported"* | **no** — the registry's three `param_removal` entries are all Anthropic Opus. Nothing touched it. |
+
+Reproduced before the guard existed: `Decision: PATCH ELIGIBLE`, tier A, *"safe automatic
+patch"*, and a diff that swapped the id, renamed `max_tokens`, and left `temperature` in place —
+**a call that still fails at runtime.** It escaped only because the fixture had no `openai`
+package, so the required type-check gate went inconclusive and refused to write. In a real
+checkout that gate passes — a model id is just a string to `tsc` — and Mendr applies it.
+
+**The defect in one sentence: absence of a rule was being treated as absence of a problem.**
+
+## The invariant, and how it is enforced
+
+A model-id replacement is not safe until coupled parameters and behavioural compatibility are
+validated. Where no authoritative rule covers a parameter the replacement's family constrains,
+the finding **requires review** rather than producing an automatic patch.
+
+The guard is driven by the registry, not by a hand-kept list of model families, so it cannot
+drift from the data (`src/usage/coupledParams.ts`):
+
+1. Does the **replacement** fall under any param rule's `on_models`? If no rule anywhere
+   constrains a family it belongs to, nothing is known to be constrained about it and the guard
+   says nothing. This is what stops it firing on every call site that sets `temperature`.
+2. If it does, every model-dependent parameter at the call site must be covered by a real rule
+   for that provider and that model. Any that is not is named, and the finding drops to review.
+
+Both halves are mutation-tested: disabling (1) makes the narrowness test fail, disabling (2)
+makes the defect tests fail.
+
+The finding also got its own Tier B reason code, `coupled_param_unverified`, because reusing
+`platform_blocked` printed *"deployment-alias"* and *"code default or call not traced to a
+provider request"* — sending the reviewer to look for an Azure key that is not there and to
+re-check a call site that was never in doubt. It now reads:
+
+```
+Location: src/title.ts:6 - verified provider SDK call site; request parameters unverified
+                           for the replacement (review)
+Decision: REVIEW REQUIRED
+Reason:   Located at a verified provider SDK call site whose request passes a parameter the
+          replacement gpt-5.6-terra may not accept, with no migration rule covering it
+          (the call site is proven; the request around it is not).
+```
+
+## The result, and why zero movement is the honest headline
+
+| | run 3 | run 5 |
+|---|---|---|
+| Repositories identical | — | **12 of 12** |
+| Actionable locations changed | — | **0** |
+| Precision | 94.6 % | **94.6 %** |
+| Recall | 59.6 % | **59.6 %** |
+
+**The guard fires on none of the twelve repositories.** No Tier A finding in the corpus has a
+replacement in a constrained family AND passes a model-dependent parameter. So this entry reports
+no precision or recall movement at all, and that is worth stating plainly rather than dressing up:
+
+**the measurement set did not contain the case.** It was found in a real third-party repository
+while preparing an unrelated patch. That is the second time in two days that the twelve-repo
+corpus missed a defect an outside shape exposed — the first was the false clean caught by probing
+an injected client. Twelve repositories is a floor, not a proof, and a green diff across all of
+them means "nothing regressed", never "nothing is wrong".
+
+Full suite 1524/1524. The measurement spanned two builds; re-running chroma, librechat and
+promptfoo against the final one produced byte-identical JSON, so the rebuild is proven
+non-semantic rather than assumed.
+
+## A defect found next to it, pre-existing, not fixed
+
+6. **`fix-llm` reports nothing for a `surface_capped` finding.** On a repository whose only
+   finding is Tier B, `audit` says *"1 needs human review"* and `fix-llm` says **"No deprecated
+   LLM model ids or model-coupled params found. Nothing to fix."** with `unique occurrences: 0`.
+   Confirmed pre-existing on a clean tree with a module-level call, which has classified as
+   `surface_capped` for far longer than this guard has existed. `fix-llm`'s own header promises a
+   Tier B count, and for this whole position it is silently always zero — the same two-surface
+   drift that `classifyOccurrence.ts` was created to end. This change makes it **wider**: the
+   coupled-parameter cap is now another shape that lands in that blind spot. Safety is unaffected
+   — refusing to offer the patch is correct — but "Nothing to fix" is the wrong words for it.
+   **Not fixed.**

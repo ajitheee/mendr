@@ -212,19 +212,25 @@ September drafts unsendable.
 > `developers.openai.com/api/docs/deprecations`, announced 2026-04-22. The finding is real and
 > unfixed. Only the *route to a verdict* is blocked.
 >
-> **The compliant route, if Ajith wants one.** Their policy does allow a small bug fix tied to a
-> **new** issue: *"Small changes and bug fixes should be tied to an issue and included in the
-> corresponding pull request for tracking purposes."* So: a fresh issue stating the date and the
-> parameter trap, then a PR against `dev` linked to it. The low-risk patch is **not** the official
-> mapping but `gpt-4o-mini` — confirmed today as absent from the deprecations page, already this
-> registry's live successor in 11 rows, non-reasoning, and therefore a genuine one-line change that
-> keeps `temperature` and `max_tokens` working exactly as they do now. That change stands entirely
-> on its own merit and needs no mention of this project.
+> **DECIDED 2026-09-29: dropped. The pull request will not be opened and the issue will not be
+> reopened.** Logged in `launch/ASKS.md` as `reply=no / verdict=no`, with the reasoning, and the
+> beta gate is **not** widened to count a silent `completed` closure as a maintainer verdict.
 >
-> **The honest counter-argument, recorded because it is the stronger one.** The maintainer closed
-> this as completed once already. Filing again to tell him he was wrong, on a repository where the
-> policy warns that unannounced patches get closed unread, spends credibility we have not got to
-> spend and is unlikely to return a verdict. **Ajith's call.**
+> **And `gpt-4o-mini` is explicitly NOT the answer.** An earlier draft of this note recommended it
+> as "the low-risk patch" because it is parameter-compatible and not retiring. That recommendation
+> is withdrawn: `gpt-4o-mini` is **not the provider-designated replacement**, so selecting it is a
+> product or maintainer judgement about cost, latency and output quality — not a mechanical
+> migration. Substituting it automatically is precisely the overreach Mendr exists to refuse, and
+> proposing it in a stranger's repository would be making their decision for them. If a
+> non-designated id is ever the right answer, a human picks it, on the record.
+>
+> **What this ask actually produced.** Not a verdict — a defect in our own product. The parameter
+> trap in point 3 is now the regression case
+> `recommended_replacement_requires_coupled_parameter_migration`
+> (`src/usage/coupledParams.test.ts`): Mendr was calling a verified model-id replacement a "safe
+> automatic patch" while never checking whether the request around the id survived the swap. It now
+> requires review whenever no authoritative rule covers a parameter the replacement's family
+> constrains. That is worth more than the reply would have been.
 >
 > **A scoring question this raises, not to be answered quietly.** A maintainer closing a
 > Mendr-located finding as `completed`, without comment, while the code stays unchanged, arguably

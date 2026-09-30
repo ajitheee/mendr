@@ -513,7 +513,14 @@ function registryEntryFor(
 function decide(inv: ModelInvestigation): { decision: AuditDecision; reason: string } {
   const sel = inv.locations.selectors;
   const hasCall = sel.some((s) => s.role === 'code_call_site');
-  const hasCodeCandidate = sel.some((s) => s.role === 'code_candidate');
+  // A coupled-parameter cap is a code_candidate by role, but the generic sentence for that
+  // role ("not traced to a provider request") is FALSE here and points the reviewer at the
+  // wrong question: the call site is confirmed, the request parameters are the doubt. Split
+  // it out so the reason names the real thing to check. See usage/coupledParams.ts.
+  const hasCoupledParam = sel.some((s) => s.reason === 'coupled_param_unverified');
+  const hasCodeCandidate = sel.some(
+    (s) => s.role === 'code_candidate' && s.reason !== 'coupled_param_unverified',
+  );
   const hasConfig = sel.some((s) => s.surface === 'config');
   const configRead = sel.some((s) => s.surface === 'config' && s.readerTieBack?.proven);
   const hasSelector = sel.length > 0;
@@ -555,6 +562,12 @@ function decide(inv: ModelInvestigation): { decision: AuditDecision; reason: str
   if (hasSelector) {
     const parts: string[] = [];
     if (hasCall) parts.push('a verified provider SDK call site');
+    if (hasCoupledParam)
+      parts.push(
+        `a verified provider SDK call site whose request passes a parameter the replacement ` +
+          `${inv.retirementEvidence.replacement ?? 'model'} may not accept, with no migration rule covering it ` +
+          `(the call site is proven; the request around it is not)`,
+      );
     if (hasCodeCandidate) parts.push('a code default or call not traced to a provider request (its use as a live call is not proven)');
     if (hasConfig) parts.push(configRead ? 'a config selector read by code (tie-back proven)' : 'a config selector candidate (reader tie-back not proven)');
     return {

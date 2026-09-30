@@ -41,6 +41,9 @@ const EVERY_REASON: TierBReason[] = [
   'platform_blocked',
   'dynamic_model_value',
   'insufficient_dataflow',
+  // Added 2026-09-29 with the coupled-parameter guard. This list is hand-kept on purpose:
+  // it is what made the new code fail three assertions until its rows were written.
+  'coupled_param_unverified',
   'type_cast_masked',
 ];
 
@@ -178,8 +181,18 @@ describe('tierBFinding', () => {
           reason,
         ),
       ).usageVerdict;
-    expect(usageOf('replacement_unverified')).toBe('confirmed');
-    for (const reason of EVERY_REASON.filter((r) => r !== 'replacement_unverified')) {
+    // TWO reasons, and only two, describe a site whose USAGE is fine. Both are cases where
+    // the literal is a proven live model argument and the doubt is about something else:
+    //   replacement_unverified    — the MAPPING did not clear verification.
+    //   coupled_param_unverified  — the REQUEST around the id may not survive the swap
+    //                               (added 2026-09-29 with the coupled-parameter guard).
+    // Saying "unverified usage" for either would send a reviewer to re-check a call site that
+    // was never in question, which is the whole reason this dimension is split out.
+    const USAGE_CONFIRMED: TierBReason[] = ['replacement_unverified', 'coupled_param_unverified'];
+    for (const reason of USAGE_CONFIRMED) {
+      expect(usageOf(reason), reason).toBe('confirmed');
+    }
+    for (const reason of EVERY_REASON.filter((r) => !USAGE_CONFIRMED.includes(r))) {
       expect(usageOf(reason), reason).toBe('unverified');
     }
   });
@@ -582,6 +595,8 @@ describe('the replacement verdict on a Tier B finding', () => {
       usage_unverified: 'unverified -- no traced sink in this file',
       replacement_unverified: 'confirmed live model argument',
       platform_blocked: 'unverified -- sits under a deployment key, not in a model argument',
+      coupled_param_unverified:
+        'confirmed live model argument -- the request parameters are what is unverified',
       type_cast_masked: 'unverified -- masked by an `as` cast',
       dynamic_model_value: 'unverified -- the model value is assembled at runtime',
       insufficient_dataflow: 'unverified -- not traced to a definite use',
