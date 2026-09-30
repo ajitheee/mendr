@@ -95,16 +95,46 @@ Next, in order, and the first is not an engineering task:
 >    passes against whatever is still serving -- which is precisely the "proven on the build it
 >    was last tested on" failure the item exists to close, and it would make a deploy that never
 >    landed read as a pass.
-> 2. **It exercises the real route**, `POST /r/:owner/:name/approve` with no session cookie,
->    asserting the documented answer: `302` to `/auth/login`. That drives route, body parse,
->    session check, redirect and the new audit write. A 500, a hang or a 404 each fail loudly.
+> 2. **It binds the assertion to that build.** Waiting on `/healthz` is NOT sufficient on its own:
+>    `/healthz` and the POST are two separate requests, and a rolling deployment can serve them
+>    from different builds. So every response now carries `X-Mendr-Deployment-Commit`, and the job
+>    asserts the POST's own header equals the deployed sha. Without it the job could report "the
+>    route works on the new build" having exercised the old one — the same confident-but-wrong
+>    shape this item exists to remove.
+> 3. **It exercises the real route**, `POST /r/:owner/:name/approve` with a valid urlencoded body
+>    and no session cookie, asserting `302` to `/auth/login`. A 500, a hang or a 404 fail loudly.
 >
-> **Verified against production before shipping**, not assumed: the live service answers that exact
-> probe with `HTTP 302` and `location: /auth/login?...` today, and its `/healthz` has no
-> `deployment` field yet -- which is why the wait step is load-bearing rather than cosmetic. The
-> assertion is deliberately narrow (status and path only, not the `next` parameter) because the
-> live build's internals can lag `main`, and a smoke test that breaks on an unrelated change is a
-> smoke test people learn to ignore.
+> #### What it proves, exactly
+>
+> * the route is **reachable** on the asserted build, and
+> * the **unauthenticated session branch** answers as documented.
+>
+> #### What it does NOT prove — written out because overclaiming here would defeat the purpose
+>
+> * **The audit write.** The signed-out path does write an `approval_failed` row, but this job
+>   never reads it back (that needs authentication), so the write is **not verified here**. It is
+>   covered by tests only. An earlier draft of this section claimed the smoke test "drives the new
+>   audit write"; it does not, and the claim is withdrawn.
+> * **Form parsing.** A valid body and content type are sent so the request is realistic, but this
+>   response cannot distinguish a parsed body from an unparsed one on the signed-out branch, so
+>   parsing is not asserted either.
+> * **The authenticated branch.** The GitHub access check, the approval insert and the workflow
+>   dispatch all need a real user session.
+>
+> **Every branch verified against production before shipping**, not assumed. Against the live build
+> — which has no header yet — the probe passes in non-main mode labelled honestly (`PROVEN on an
+> unstamped build`) and, in main mode, **fails with the true reason**: *"the response carried no
+> X-Mendr-Deployment-Commit, so this result cannot be attributed to a build."* The assertion stays
+> narrow (status, path, build) and never touches the `next` parameter, because the live build's
+> internals can lag `main` and a smoke test that breaks on an unrelated change is one people learn
+> to ignore.
+>
+> **Concurrency, at the job level and deliberately not the workflow's.** Render coalesces rapid
+> deploys: push A's build is abandoned when push B arrives, so A's smoke job would wait twenty
+> minutes for a sha that will never be live and then redden `main` for a deployment that was
+> skipped on purpose. The `smoke` job therefore has its own group with
+> `cancel-in-progress: true` — its question stops being one anyone is asking — while the workflow
+> group keeps `cancel-in-progress: false` so a deploy hook call is never killed halfway.
 >
 > **Safe by construction:** no credentials are used or needed, so no approval can be created and
 > nothing is dispatched. The synthetic repository name `mendr-smoke/post-deploy` makes the audit

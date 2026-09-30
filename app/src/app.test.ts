@@ -977,6 +977,40 @@ describe('an Approve click that does not create an approval still says so', () =
     const failed = lines.find((l) => l.message === 'approve failed');
     expect(failed?.extra).toMatchObject({ repo: 'acme/api' });
   });
+
+  // The header that lets item 4's smoke test bind an assertion to a BUILD.
+  //
+  // Reading the commit from /healthz cannot do that: /healthz and the request being judged are two
+  // separate requests, and during a rolling deployment they can be served by different instances
+  // running different builds. The smoke test would then report "the approve route works on the new
+  // build" having actually exercised the old one -- a confident claim about the wrong artifact,
+  // which is the failure mode item 4 exists to remove.
+  describe('every response carries the build that produced it', () => {
+    it('stamps the commit on a redirect, not only on healthz', async () => {
+      const h = harness({ 'acme/api': REPO.id }, { deployCommit: 'abc1234567890', deployInstance: 'srv-7' });
+      await h.install();
+      await h.ingest(await actionsToken(), sampleReport());
+      // The signed-out approve POST -- the exact response the smoke job asserts.
+      const res = await post(h, '/r/acme/api/approve', { ...finding, mode: 'pr' });
+      expect(res.status).toBe(302);
+      expect(res.headers.get('x-mendr-deployment-commit')).toBe('abc1234567890');
+      expect(res.headers.get('x-mendr-deployment')).toBe('abc12345@srv-7');
+    });
+
+    it('omits the commit header entirely when the host supplies none, rather than sending a lie', async () => {
+      const h = harness({}, { deployCommit: null, deployInstance: null });
+      const res = await h.app.request('/healthz');
+      expect(res.headers.get('x-mendr-deployment-commit')).toBeNull();
+      // The derived id is still present and honest about not knowing.
+      expect(res.headers.get('x-mendr-deployment')).toBe('unknown');
+    });
+
+    it('stamps error responses too, so a failure can be attributed to a build', async () => {
+      const h = harness({}, { deployCommit: 'deadbeefcafe', deployInstance: 'i-2' });
+      const res = await h.app.request('/r/nobody/nothing/runs/1');
+      expect(res.headers.get('x-mendr-deployment-commit')).toBe('deadbeefcafe');
+    });
+  });
 });
 
 // P1-A CONTAINMENT, item 4's precondition: /healthz says WHICH BUILD answered.

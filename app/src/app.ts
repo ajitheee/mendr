@@ -167,6 +167,27 @@ export function createApp(deps: AppDeps): Hono {
   const secure = config.appUrl.startsWith('https://');
   const cookieOpts = { httpOnly: true, secure, sameSite: 'Lax' as const, path: '/' };
 
+  /**
+   * Stamp EVERY response with the build that produced it.
+   *
+   * P1-A containment item 4 needs to bind an assertion to a build, and reading the commit from
+   * `/healthz` cannot do that: `/healthz` and the request being judged are two separate requests,
+   * and during a rolling deployment they can be served by different instances running different
+   * builds. So the smoke test would report "the approve route works on the new build" having
+   * actually exercised the old one — a confident claim about the wrong artifact, which is the
+   * failure mode this whole item exists to remove.
+   *
+   * With the header, the response that is asserted carries its own provenance and the two cannot
+   * be separated. Not a secret: a commit sha identifies a deployment, not a credential, and it is
+   * already public in `/healthz` and in this repository's history.
+   */
+  app.use('*', async (c, next) => {
+    await next();
+    const commit = config.deployCommit;
+    if (commit) c.header('X-Mendr-Deployment-Commit', commit);
+    c.header('X-Mendr-Deployment', deploymentId(config));
+  });
+
   // THE APP HAD NO ERROR HANDLER AT ALL, so an exception anywhere fell through to Hono's
   // default: `console.error(err)` and the bare text "Internal Server Error". That stack
   // carries no route, no repository and no actor, which is why a failed Approve could not be
