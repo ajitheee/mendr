@@ -94,24 +94,51 @@ jobs:
       - name: Wait for this commit to be the one answering
         env:
           WANT: ${{ github.sha }}
+          # The sha match is only meaningful when the sha is the one that gets DEPLOYED. Render
+          # deploys main, so a `workflow_dispatch` from any other ref would wait for a commit that
+          # is never going to be live and then fail for a reason that is not a defect. On those
+          # runs the probe still runs; it just does not demand a particular build.
+          EXPECT_SHA: ${{ github.ref == 'refs/heads/main' }}
         run: |
           set -u
+          # Fail FAST and truthfully if the parser is missing. `jq` is preinstalled on
+          # GitHub-hosted runners, but the read below swallows its own errors, so without this a
+          # missing jq would look identical to a build that never went live: twenty minutes of
+          # polling and then "the deployed commit never became live", which is a lie about the
+          # cause. Discovered by running this script on a machine that has no jq.
+          if ! command -v jq >/dev/null 2>&1; then
+            echo "::error::jq is not installed on this runner, so /healthz cannot be read. This is a runner problem, not a deploy problem."
+            exit 1
+          fi
           short=$(printf '%s' "$WANT" | cut -c1-8)
-          echo "waiting for /healthz deployment.commit to start with $short"
+          if [ "$EXPECT_SHA" != "true" ]; then
+            echo "::notice::not a main-branch run, so not waiting for a specific build; only checking that the service answers."
+          else
+            echo "waiting for /healthz deployment.commit to start with $short"
+          fi
           got=''
-          for i in $(seq 1 60); do
+          # 120 x 10s = 20 minutes. A Render deploy is usually 2-5 minutes, but a cold free-tier
+          # build can be much slower, and a smoke test that goes red because the host was slow is
+          # the phantom failure that teaches people to ignore smoke tests.
+          for i in $(seq 1 120); do
             body=$(curl -sS --max-time 15 "${APP_URL%/}/healthz" 2>/dev/null || printf '{}')
+            ok=$(printf '%s' "$body" | jq -r '.ok // false' 2>/dev/null || printf 'false')
             got=$(printf '%s' "$body" | jq -r '.deployment.commit // ""' 2>/dev/null || printf '')
-            case "$got" in
-              "$short"*)
-                echo "live on $got"
-                exit 0
-                ;;
-            esac
-            echo "  attempt $i: serving '${got:-unknown}'"
+            if [ "$EXPECT_SHA" != "true" ]; then
+              if [ "$ok" = "true" ]; then echo "service answers (build '${got:-unknown}')"; exit 0; fi
+            else
+              case "$got" in
+                "$short"*) echo "live on $got"; exit 0 ;;
+              esac
+            fi
+            echo "  attempt $i: ok=$ok serving '${got:-unknown}'"
             sleep 10
           done
-          echo "::error::the deployed commit never became live within 10 minutes (last seen '${got:-unknown}'). Either the deploy did not land or the service is not serving it."
+          if [ "$EXPECT_SHA" != "true" ]; then
+            echo "::error::the service never answered /healthz within 20 minutes."
+          else
+            echo "::error::the deployed commit never became live within 20 minutes (last seen '${got:-unknown}'). Either the deploy did not land or the service is not serving it."
+          fi
           exit 1
 
       - name: The approval route answers on the live build
