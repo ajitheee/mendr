@@ -78,11 +78,47 @@ Next, in order, and the first is not an engineering task:
 >
 > | # | item | what it has to do |
 > |---|---|---|
-> | 1 | **Sanitized request-level instrumentation** | One record per approval attempt, from first byte to outcome, carrying no secrets and no customer source — it must survive the redaction rules the sanitizer already enforces. This is what was missing; capture it permanently rather than waiting to catch the next failure live. |
-> | 2 | **Deployment identification** | Every record names the build and instance that served it. Without this, "it works now" cannot be distinguished from "it works on the instance that happens to be warm". |
-> | 3 | **Failure classification** | Each attempt ends in a named class — client-side never-sent, auth, dispatch, provider timeout, unhandled throw — not a bare success flag. A class is what makes the next occurrence diagnosable on the first look instead of the tenth. |
+> | 1 | **Sanitized request-level instrumentation** | One record per approval attempt, from first byte to outcome, carrying no secrets and no customer source — it must survive the redaction rules the sanitizer already enforces. This is what was missing; capture it permanently rather than waiting to catch the next failure live. **DONE 2026-09-29.** |
+> | 2 | **Deployment identification** | Every record names the build and instance that served it. Without this, "it works now" cannot be distinguished from "it works on the instance that happens to be warm". **DONE 2026-09-29.** |
+> | 3 | **Failure classification** | Each attempt ends in a named class — client-side never-sent, auth, dispatch, provider timeout, unhandled throw — not a bare success flag. A class is what makes the next occurrence diagnosable on the first look instead of the tenth. **DONE 2026-09-29.** |
 > | 4 | **Post-deployment smoke test** | An approval path exercised automatically after each deploy, so the button is proven on the build that is live rather than on the build it was last tested on. |
 > | 5 | **Manual fallback path** | A documented route by which a reviewer completes the approval **without** the button. **VERIFIED 2026-09-29 — see below.** |
+>
+> #### Items 1-3, done together, because they are one record
+>
+> **The diagnosis was never blocked on the failure recurring. It was blocked on the record.** The
+> approve handler already had seven distinct exits, each logging a `why` -- and every one went to
+> `console.log` only. The single approval that SUCCEEDED wrote a durable `audit_log` row; the 170
+> that failed wrote lines the host has long since rotated away. That asymmetry is the whole of
+> "historical telemetry unavailable", and it was fixable without waiting for anything.
+>
+> Every non-success exit now writes an `approval_failed` row carrying:
+>
+> - a **closed outcome class** -- `signed_out`, `github_access_check`, `repo_not_visible`,
+>   `malformed_form`, `already_in_flight`, `dispatch_failed` -- so failures are *counted*, not
+>   merely described;
+> - the **deployment that served it**, `commit@instance`, from `RENDER_GIT_COMMIT` /
+>   `RENDER_INSTANCE_ID`, and the literal `unknown` off-host rather than an invented value. The
+>   **success** row carries it too, which is the point: only a stamp on both outcomes separates
+>   "it is fixed" from "it works on whichever instance is warm";
+> - at most a **redacted, truncated** message, through the same `redactSecrets` the report
+>   sanitizer uses. The `detail` contract is scalars only -- never a token, never source, never a
+>   finding.
+>
+> `dispatch_failed` is the class that matters most: the approval record exists and the workflow did
+> not start. That is what a person experiences as *"it spun and nothing happened"*, and the hourly
+> schedule then quietly papers over it by collecting the approval later -- so it needed its own
+> counted class rather than a `false` in a field on a row named "approved".
+>
+> **Deploy-safe:** `audit_log.event` is `TEXT`, not an enum, so the new value needs no migration.
+> **Six tests, mutation-verified** -- disabling the writer fails four of them. One asserts the
+> record can never cost the click its answer: if the audit insert throws the person still gets
+> their refusal, because turning a refusal into a 500 because the LOGGING failed would be worse
+> than the bug this exists to diagnose.
+>
+> Still open: **item 4**, the post-deployment smoke test. This records what happens; it does not
+> yet prove the button on the build that is live.
+>
 
 > #### Item 5 is verified, so outreach may proceed
 >

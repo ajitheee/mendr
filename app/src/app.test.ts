@@ -731,6 +731,84 @@ describe('approvals: decided in Mendr, carried out by the customer\'s own CI', (
     expect(await res.text()).toContain('1 approval(s)');
     expect(await h.store.getApproval(1)).toBeNull();
   });
+
+  // P1-A CONTAINMENT, items 1-3: every approval attempt leaves a DURABLE, CLASSIFIED,
+  // BUILD-STAMPED record — not a console line.
+  //
+  // Why these exist. The Approve button was dead for 170 runs and then worked, and the cause is
+  // still unknown, because the only approval that ever left a durable row was the one that
+  // SUCCEEDED (`migration_approved`). Every failure wrote `console.log` and nothing else, and on
+  // the host those lines have long since rotated away. P1-A's recorded status is "failure no longer
+  // reproduces; root cause unknown; historical telemetry unavailable" — and the third clause is the
+  // one that is fixable after the fact. It is fixed by writing the record, not by waiting for the
+  // failure to come back.
+  describe('an approval attempt that fails is as durable as one that works', () => {
+    const DEPLOY: Partial<AppConfig> = { deployCommit: 'abc1234567890', deployInstance: 'srv-7' };
+    const failures = async (h: ReturnType<typeof harness>) =>
+      (await h.store.listAuditLog()).filter((e) => e.event === 'approval_failed');
+
+    it('records a signed-out click, with its class and the build that served it', async () => {
+      const h = harness({ 'acme/api': REPO.id }, DEPLOY);
+      await h.install();
+      await h.ingest(await actionsToken(), sampleReport());
+      await post(h, '/r/acme/api/approve', { ...finding, mode: 'pr' }); // no session cookie
+      const rows = await failures(h);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].detail.outcome).toBe('signed_out');
+      // Item 2: WHICH build and WHICH instance. Without this, "it works now" cannot be told apart
+      // from "it works on the instance that happens to be warm".
+      expect(rows[0].detail.deployment).toBe('abc12345@srv-7');
+      expect(rows[0].repo).toBe('acme/api');
+    });
+
+    it('records a malformed form against the repository, with no model to name', async () => {
+      const h = harness({ 'acme/api': REPO.id }, DEPLOY);
+      await h.install();
+      await h.ingest(await actionsToken(), sampleReport());
+      const cookie = await h.sessionCookie();
+      await post(h, '/r/acme/api/approve', { back: '/r/acme/api/runs/1' }, cookie); // no provider/model
+      const rows = await failures(h);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].detail.outcome).toBe('malformed_form');
+      expect(rows[0].detail.model).toBeNull();
+      expect(rows[0].actor).toBe('octocat');
+    });
+
+    it('records a duplicate click as its own class, not as a success', async () => {
+      const { h, cookie } = await approved('pr', DEPLOY);
+      await post(h, '/r/acme/api/approve', { ...finding, mode: 'pr' }, cookie); // the second click
+      const rows = await failures(h);
+      expect(rows.map((r) => r.detail.outcome)).toEqual(['already_in_flight']);
+    });
+
+    it('stamps the build on the SUCCESS row too, which is what makes the two comparable', async () => {
+      const { h } = await approved('pr', DEPLOY);
+      const ok = (await h.store.listAuditLog()).find((e) => e.event === 'migration_approved');
+      expect(ok?.detail.deployment).toBe('abc12345@srv-7');
+    });
+
+    it('says `unknown` rather than inventing a build when the host supplies none', async () => {
+      const h = harness({ 'acme/api': REPO.id }, { deployCommit: null, deployInstance: null });
+      await h.install();
+      await h.ingest(await actionsToken(), sampleReport());
+      await post(h, '/r/acme/api/approve', { ...finding, mode: 'pr' });
+      expect((await failures(h))[0].detail.deployment).toBe('unknown');
+    });
+
+    it('a failed record never costs the click its answer', async () => {
+      // The record is diagnostics. If the audit insert throws, the person must still be told what
+      // happened — turning a refusal into a 500 because the logging failed would be a worse bug
+      // than the one this instrumentation exists to diagnose.
+      const h = harness({ 'acme/api': REPO.id }, DEPLOY);
+      await h.install();
+      await h.ingest(await actionsToken(), sampleReport());
+      h.store.appendAuditLog = async () => {
+        throw new Error('audit table unavailable');
+      };
+      const res = await post(h, '/r/acme/api/approve', { ...finding, mode: 'pr' });
+      expect(res.status).toBe(302); // still the signed-out redirect, not a 500
+    });
+  });
 });
 
 describe('reading evidence requires sign-in AND GitHub access to the repository', () => {

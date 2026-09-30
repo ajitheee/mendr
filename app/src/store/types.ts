@@ -274,9 +274,35 @@ export type AuditEvent =
   | 'finding_acknowledged'
   | 'acknowledgement_cleared'
   | 'migration_approved'
+  /**
+   * An approval attempt that did NOT become an approval — containment items 1 and 3 for P1-A.
+   *
+   * Every exit from the approve handler already logged a `why`, to `console.log`, which on the
+   * host is ephemeral: the one successful approval left a durable `migration_approved` row and
+   * all 170 failures left lines that have since rotated away. That is the entire reason the
+   * root cause is "unknown" rather than "found". A click that dies is now as durable as a click
+   * that works, carries its {@link ApprovalOutcome} class, and names the build that served it.
+   */
+  | 'approval_failed'
   | 'approval_cancelled'
   | 'migration_prepared'
   | 'pr_created';
+
+/**
+ * WHY an approval attempt ended where it did — a closed set, so a failure is counted rather
+ * than merely described. Each value is one exit of the approve handler.
+ *
+ * `dispatch_failed` is the class that matters most for P1-A: the approval record was created and
+ * the workflow dispatch did not land, which is the shape a user experiences as "it spun and
+ * nothing happened".
+ */
+export type ApprovalOutcome =
+  | 'signed_out'
+  | 'github_access_check'
+  | 'repo_not_visible'
+  | 'malformed_form'
+  | 'already_in_flight'
+  | 'dispatch_failed';
 
 export interface AuditLogInput {
   event: AuditEvent;
