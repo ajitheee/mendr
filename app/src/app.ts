@@ -220,7 +220,18 @@ export function createApp(deps: AppDeps): Hono {
   // newest sealed one open with the current key. Counts and a verdict — never data.
   app.get('/healthz', async (c) => {
     const enc = await store.encryptionStatus();
-    return c.json({ ok: true, configured: isConfigured(config), store: store.kind, encryption: { enabled: !!config.dataKey, ...enc } });
+    return c.json({
+      ok: true,
+      configured: isConfigured(config),
+      store: store.kind,
+      encryption: { enabled: !!config.dataKey, ...enc },
+      // WHICH BUILD IS ANSWERING — P1-A containment item 4 depends on this and nothing else does.
+      // A post-deploy smoke test that cannot tell builds apart is worse than none: it passes
+      // against whatever is still serving, which is precisely the "proven on the build it was
+      // last tested on" failure the item exists to close. Neither value is a secret — a commit
+      // sha and an instance id identify a deployment, not a credential.
+      deployment: { commit: config.deployCommit, instance: config.deployInstance, id: deploymentId(config) },
+    });
   });
 
   app.get('/', async (c) => {

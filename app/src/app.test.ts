@@ -978,3 +978,33 @@ describe('an Approve click that does not create an approval still says so', () =
     expect(failed?.extra).toMatchObject({ repo: 'acme/api' });
   });
 });
+
+// P1-A CONTAINMENT, item 4's precondition: /healthz says WHICH BUILD answered.
+//
+// A post-deploy smoke test that cannot tell builds apart is worse than none — it passes against
+// whatever is still serving, which is exactly the "proven on the build it was last tested on"
+// failure item 4 exists to close. So the workflow waits for this field to report the commit it
+// just deployed before it exercises anything.
+describe('healthz names the build that answered', () => {
+  it('reports the commit, the instance, and a single legible id', async () => {
+    const h = harness({}, { deployCommit: 'abc1234567890', deployInstance: 'srv-7' });
+    const body = await (await h.app.request('/healthz')).json();
+    expect(body.deployment).toEqual({ commit: 'abc1234567890', instance: 'srv-7', id: 'abc12345@srv-7' });
+  });
+
+  it('says `unknown` off-host rather than inventing a build', async () => {
+    const h = harness({}, { deployCommit: null, deployInstance: null });
+    const body = await (await h.app.request('/healthz')).json();
+    expect(body.deployment.id).toBe('unknown');
+    expect(body.deployment.commit).toBeNull();
+  });
+
+  it('carries no credential — only the two deployment identifiers', async () => {
+    // /healthz is unauthenticated. A field added here is public by construction, so this asserts
+    // the shape stays exactly the two ids and the derived string, and never grows a secret.
+    const h = harness({}, { deployCommit: 'deadbeef', deployInstance: 'i-1', githubPrivateKey: 'pem-secret' });
+    const body = await (await h.app.request('/healthz')).json();
+    expect(Object.keys(body.deployment).sort()).toEqual(['commit', 'id', 'instance']);
+    expect(JSON.stringify(body)).not.toContain('pem-secret');
+  });
+});

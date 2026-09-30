@@ -1,4 +1,5 @@
-# Deploy the Mendr App on Render whenever a push to main touches it.
+# Deploy the Mendr App on Render whenever a push to main touches it, then prove the
+# approval path on the build that deploy made live.
 #
 # Render normally auto-deploys through its own GitHub integration. This is the
 # belt to that brace, added after a day when several App pushes never reached
@@ -23,6 +24,10 @@ permissions: {}
 concurrency:
   group: app-deploy
   cancel-in-progress: false
+
+env:
+  # The App's public origin. Not a secret — it is printed in every generated workflow.
+  APP_URL: https://mendr-app.onrender.com
 
 jobs:
   gate:
@@ -52,3 +57,87 @@ jobs:
           echo "Render responded HTTP $code"
           cat /tmp/render-response; echo
           case "$code" in 2*) ;; *) echo "::error::deploy hook call failed"; exit 1 ;; esac
+
+  # P1-A containment item 4: prove the approval path on the build that is now LIVE.
+  #
+  # The Approve button was dead for 170 runs and then worked, and the cause is unknown. A deploy
+  # that is never exercised is how that state persists: every release was only ever "tested" on
+  # the build the developer had locally. This job asks the running service, after each deploy,
+  # whether the money path still answers.
+  #
+  # Two things make it meaningful rather than decorative:
+  #
+  #   1. It WAITS FOR THE NEW BUILD. /healthz reports deployment.commit, so this polls until the
+  #      commit just shipped is the one answering. Without that, a smoke test passes against
+  #      whatever is still serving — exactly the "proven on the build it was last tested on"
+  #      failure this item exists to close — and a deploy that never landed would read as a pass.
+  #   2. It exercises the REAL route, POST /r/:owner/:name/approve, with no session cookie. That
+  #      drives the handler end to end — route, body parse, session check, redirect, and the
+  #      audit write added alongside this — and asserts the documented answer: 302 to /auth/login.
+  #      A 500, a hang, or a 404 each fail loudly.
+  #
+  # SAFE BY CONSTRUCTION: no credentials are used and none are needed, so no approval can be
+  # created and nothing is dispatched. The synthetic repository name makes the audit rows this
+  # leaves behind obviously probes rather than customer activity.
+  #
+  # WHAT IT DOES NOT PROVE: the authenticated branch. Everything past the session check — the
+  # GitHub access check, the approval insert, the workflow dispatch — needs a real user session
+  # and remains covered only by tests. This closes "is the path reachable on this build", not
+  # "does an approval succeed on this build". Item 4 is honest about its own reach.
+  smoke:
+    # Deliberately NOT `needs: deploy`: Render's own auto-deploy is the primary path and the hook
+    # is only the belt to that brace, so the smoke test has to run whether or not the hook fired.
+    needs: gate
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for this commit to be the one answering
+        env:
+          WANT: ${{ github.sha }}
+        run: |
+          set -u
+          short=$(printf '%s' "$WANT" | cut -c1-8)
+          echo "waiting for /healthz deployment.commit to start with $short"
+          got=''
+          for i in $(seq 1 60); do
+            body=$(curl -sS --max-time 15 "${APP_URL%/}/healthz" 2>/dev/null || printf '{}')
+            got=$(printf '%s' "$body" | jq -r '.deployment.commit // ""' 2>/dev/null || printf '')
+            case "$got" in
+              "$short"*)
+                echo "live on $got"
+                exit 0
+                ;;
+            esac
+            echo "  attempt $i: serving '${got:-unknown}'"
+            sleep 10
+          done
+          echo "::error::the deployed commit never became live within 10 minutes (last seen '${got:-unknown}'). Either the deploy did not land or the service is not serving it."
+          exit 1
+
+      - name: The approval route answers on the live build
+        run: |
+          set -u
+          # No cookie on purpose: this is the signed-out branch. It creates nothing, dispatches
+          # nothing, and needs no secret — while still running the whole handler.
+          code=$(curl -sS -o /tmp/body -D /tmp/head -w '%{http_code}' --max-time 20 -X POST \
+            "${APP_URL%/}/r/mendr-smoke/post-deploy/approve" \
+            --data-urlencode 'provider=openai' \
+            --data-urlencode 'model=gpt-4' \
+            --data-urlencode 'back=/r/mendr-smoke/post-deploy' || printf '000')
+          loc=$(tr -d '\r' < /tmp/head | grep -i '^location:' | head -1 || true)
+          echo "HTTP $code"
+          echo "${loc:-no location header}"
+          if [ "$code" != "302" ]; then
+            echo "::error::the approve route returned $code, expected 302 to the login page. The money path is not answering on this build."
+            head -c 400 /tmp/body || true
+            exit 1
+          fi
+          case "$loc" in
+            */auth/login*)
+              echo "the handler ran and refused correctly: route, body parse, session check and redirect all work on this build"
+              ;;
+            *)
+              echo "::error::got a 302 to an unexpected place: ${loc:-none}"
+              exit 1
+              ;;
+          esac

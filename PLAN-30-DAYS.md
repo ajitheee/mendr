@@ -81,8 +81,42 @@ Next, in order, and the first is not an engineering task:
 > | 1 | **Sanitized request-level instrumentation** | One record per approval attempt, from first byte to outcome, carrying no secrets and no customer source — it must survive the redaction rules the sanitizer already enforces. This is what was missing; capture it permanently rather than waiting to catch the next failure live. **DONE 2026-09-29.** |
 > | 2 | **Deployment identification** | Every record names the build and instance that served it. Without this, "it works now" cannot be distinguished from "it works on the instance that happens to be warm". **DONE 2026-09-29.** |
 > | 3 | **Failure classification** | Each attempt ends in a named class — client-side never-sent, auth, dispatch, provider timeout, unhandled throw — not a bare success flag. A class is what makes the next occurrence diagnosable on the first look instead of the tenth. **DONE 2026-09-29.** |
-> | 4 | **Post-deployment smoke test** | An approval path exercised automatically after each deploy, so the button is proven on the build that is live rather than on the build it was last tested on. |
+> | 4 | **Post-deployment smoke test** | An approval path exercised automatically after each deploy, so the button is proven on the build that is live rather than on the build it was last tested on. **DONE 2026-09-29.** |
 > | 5 | **Manual fallback path** | A documented route by which a reviewer completes the approval **without** the button. **VERIFIED 2026-09-29 — see below.** |
+>
+> #### Item 4: the smoke test waits for the new build, or it proves nothing
+>
+> Added to `.github/workflows/app-deploy.yml` as a `smoke` job. Two properties make it more than
+> decoration:
+>
+> 1. **It waits for THIS commit to be the one answering.** `/healthz` now reports
+>    `deployment.commit`, and the job polls until the sha it just shipped is live, failing after
+>    ten minutes with "the deployed commit never became live". Without that step a smoke test
+>    passes against whatever is still serving -- which is precisely the "proven on the build it
+>    was last tested on" failure the item exists to close, and it would make a deploy that never
+>    landed read as a pass.
+> 2. **It exercises the real route**, `POST /r/:owner/:name/approve` with no session cookie,
+>    asserting the documented answer: `302` to `/auth/login`. That drives route, body parse,
+>    session check, redirect and the new audit write. A 500, a hang or a 404 each fail loudly.
+>
+> **Verified against production before shipping**, not assumed: the live service answers that exact
+> probe with `HTTP 302` and `location: /auth/login?...` today, and its `/healthz` has no
+> `deployment` field yet -- which is why the wait step is load-bearing rather than cosmetic. The
+> assertion is deliberately narrow (status and path only, not the `next` parameter) because the
+> live build's internals can lag `main`, and a smoke test that breaks on an unrelated change is a
+> smoke test people learn to ignore.
+>
+> **Safe by construction:** no credentials are used or needed, so no approval can be created and
+> nothing is dispatched. The synthetic repository name `mendr-smoke/post-deploy` makes the audit
+> rows it leaves obviously probes rather than customer activity. It does not depend on
+> `needs: deploy`, because Render's own auto-deploy is the primary path and the hook is only the
+> belt to that brace.
+>
+> **WHAT IT DOES NOT PROVE, stated because the gap is the point:** the authenticated branch.
+> Everything past the session check -- the GitHub access check, the approval insert, the workflow
+> dispatch -- needs a real user session and is still covered only by tests. This closes "is the
+> path reachable on this build", not "does an approval succeed on this build". Closing the second
+> one needs a test identity, which is its own decision and is not taken here.
 >
 > #### Items 1-3, done together, because they are one record
 >
@@ -158,6 +192,24 @@ Next, in order, and the first is not an engineering task:
 >
 > Ajith's one click and one Render log line is still the cheapest possible diagnosis and still
 > worth doing, but it is no longer the only route forward, and it is no longer something to wait on.
+>
+> ### Containment is COMPLETE (all five, 2026-09-29). P1-A is still OPEN.
+>
+> Those are two different statements and collapsing them would be the whole point missed.
+> **Containment closed means the next occurrence is diagnosable and the workflow is completable
+> anyway. It does not mean the defect is understood.** P1-A's status is unchanged:
+>
+> > **Failure no longer reproduces; root cause unknown.**
+>
+> What changed is that the three things which made it *undiagnosable* are gone: a failed click is
+> now as durable as a successful one, every record names the build that served it, and each
+> outcome has a counted class. So if it recurs, the first look answers it instead of the tenth —
+> and if it never recurs, the rows will say which builds and instances served how many attempts,
+> which is a weaker but real answer.
+>
+> **What none of this establishes:** why the button was dead for 170 runs. The evidence that would
+> have told us was ephemeral and is gone, and no instrumentation added afterwards can recover it.
+> P1-A closes when a cause is named, not when the telemetry improves. It stays open.
 
 ## P1-B · Close the loop once, end to end  —  **DONE 2026-09-28**
 
