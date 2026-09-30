@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { Hono, type Context } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
-import { isConfigured, type AppConfig } from './config.js';
+import { deploymentId, isConfigured, type AppConfig } from './config.js';
 import { openSession, sealSession, SESSION_COOKIE, SESSION_MAX_AGE_SECONDS, type Session } from './auth/session.js';
 import { GitHubApiError, type GitHubApi } from './github/api.js';
 import type { ActionsTokenVerifier } from './github/oidc.js';
@@ -11,7 +11,7 @@ import { countDecisions, sanitizeReport, validateReport } from './ingest/validat
 import { prNumber, validateMigrationReport } from './ingest/migrationReport.js';
 import { migrationWorkflowFile } from './ingest/migration.js';
 import { redactSecrets } from './redact.js';
-import { APPROVAL_STAGES, approvalVersion, type Approval, type ApprovalMode, type ApprovalStage, type Repo, type Store } from './store/types.js';
+import { APPROVAL_STAGES, approvalVersion, type Approval, type ApprovalMode, type ApprovalOutcome, type ApprovalStage, type Repo, type Store } from './store/types.js';
 import { credentialsPage, errorPage, homePage, installedPage, runPage, runsPage, setupPage, workflowRunsUrl } from './ui/pages.js';
 import { MENDR_MIGRATE_WORKFLOW_PATH, migrateActionsUrl, setupMigrateWorkflowUrl, setupWorkflowUrl } from './ui/workflowTemplate.js';
 
@@ -119,9 +119,74 @@ export function createApp(deps: AppDeps): Hono {
   const now = deps.now ?? (() => new Date());
   const log = deps.log ?? ((message, extra) => console.log(extra ? `${message} ${JSON.stringify(extra)}` : message));
   const interactiveMs = deps.interactiveTimeoutMs ?? INTERACTIVE_GITHUB_MS;
+
+  /**
+   * Record an approval attempt that did NOT become an approval — containment items 1–3 for P1-A.
+   *
+   * Every exit of the approve handler already said something, to `console.log`. On the host that
+   * is ephemeral, so the single successful approval left a durable row and the 170 failures left
+   * lines that have since rotated away — which is the whole reason P1-A's status is "root cause
+   * unknown; historical telemetry unavailable" rather than a diagnosis. A click that dies is now
+   * exactly as durable as a click that works.
+   *
+   * SANITIZED by construction: a closed `outcome` class, the deployment that served it, and at
+   * most a redacted, truncated message. Never a token, never customer source, never a finding —
+   * the `detail` contract on AuditLogInput is scalars only, and `redactSecrets` is applied to the
+   * one free-text field because an upstream error string is the one place a credential could
+   * plausibly surface.
+   */
+  const recordApprovalFailure = async (args: {
+    outcome: ApprovalOutcome;
+    repo: string;
+    installationId: number | null;
+    actor: string | null;
+    model?: string | null;
+    message?: string;
+  }): Promise<void> => {
+    try {
+      await store.appendAuditLog({
+        event: 'approval_failed',
+        installationId: args.installationId,
+        repo: args.repo,
+        actor: args.actor,
+        detail: {
+          outcome: args.outcome,
+          deployment: deploymentId(config),
+          model: args.model ?? null,
+          message: args.message ? redactSecrets(args.message).slice(0, 200) : null,
+        },
+      });
+    } catch (err) {
+      // The record is diagnostics. If writing it fails, the click must still get its answer —
+      // turning a refusal into a 500 because the audit insert failed would be a worse bug than
+      // the one this exists to diagnose.
+      log('approval failure record not written', { repo: args.repo, error: String(err).slice(0, 200) });
+    }
+  };
   const app = new Hono();
   const secure = config.appUrl.startsWith('https://');
   const cookieOpts = { httpOnly: true, secure, sameSite: 'Lax' as const, path: '/' };
+
+  /**
+   * Stamp EVERY response with the build that produced it.
+   *
+   * P1-A containment item 4 needs to bind an assertion to a build, and reading the commit from
+   * `/healthz` cannot do that: `/healthz` and the request being judged are two separate requests,
+   * and during a rolling deployment they can be served by different instances running different
+   * builds. So the smoke test would report "the approve route works on the new build" having
+   * actually exercised the old one — a confident claim about the wrong artifact, which is the
+   * failure mode this whole item exists to remove.
+   *
+   * With the header, the response that is asserted carries its own provenance and the two cannot
+   * be separated. Not a secret: a commit sha identifies a deployment, not a credential, and it is
+   * already public in `/healthz` and in this repository's history.
+   */
+  app.use('*', async (c, next) => {
+    await next();
+    const commit = config.deployCommit;
+    if (commit) c.header('X-Mendr-Deployment-Commit', commit);
+    c.header('X-Mendr-Deployment', deploymentId(config));
+  });
 
   // THE APP HAD NO ERROR HANDLER AT ALL, so an exception anywhere fell through to Hono's
   // default: `console.error(err)` and the bare text "Internal Server Error". That stack
@@ -176,7 +241,18 @@ export function createApp(deps: AppDeps): Hono {
   // newest sealed one open with the current key. Counts and a verdict — never data.
   app.get('/healthz', async (c) => {
     const enc = await store.encryptionStatus();
-    return c.json({ ok: true, configured: isConfigured(config), store: store.kind, encryption: { enabled: !!config.dataKey, ...enc } });
+    return c.json({
+      ok: true,
+      configured: isConfigured(config),
+      store: store.kind,
+      encryption: { enabled: !!config.dataKey, ...enc },
+      // WHICH BUILD IS ANSWERING — P1-A containment item 4 depends on this and nothing else does.
+      // A post-deploy smoke test that cannot tell builds apart is worse than none: it passes
+      // against whatever is still serving, which is precisely the "proven on the build it was
+      // last tested on" failure the item exists to close. Neither value is a secret — a commit
+      // sha and an instance id identify a deployment, not a credential.
+      deployment: { commit: config.deployCommit, instance: config.deployInstance, id: deploymentId(config) },
+    });
   });
 
   app.get('/', async (c) => {
@@ -546,6 +622,13 @@ export function createApp(deps: AppDeps): Hono {
     // The flag makes the page say it outright.
     if (!sess) {
       log('approve refused', { repo: fullName, why: 'signed out' });
+      await recordApprovalFailure({
+        outcome: 'signed_out',
+        repo: fullName,
+        installationId: null, // the repo is not resolved yet on this path
+        actor: null,
+        model: f ? `${f.provider}/${f.model}` : null,
+      });
       return c.redirect(`/auth/login?next=${encodeURIComponent(atNotice(f?.back ?? `/r/${fullName}`, 'signedout'))}`);
     }
     // THE ACCESS CHECK IS AN OUTBOUND GITHUB CALL, and on this path a person is watching a
@@ -558,6 +641,14 @@ export function createApp(deps: AppDeps): Hono {
       repo = await withDeadline(accessibleRepo(sess, fullName), interactiveMs);
     } catch (err) {
       log('approve failed', { repo: fullName, by: sess.login, why: 'github access check', error: String(err).slice(0, 200) });
+      await recordApprovalFailure({
+        outcome: 'github_access_check',
+        repo: fullName,
+        installationId: null,
+        actor: sess.login,
+        model: f ? `${f.provider}/${f.model}` : null,
+        message: String(err),
+      });
       return c.html(
         errorPage(
           'GitHub did not answer',
@@ -568,10 +659,24 @@ export function createApp(deps: AppDeps): Hono {
     }
     if (!repo) {
       log('approve refused', { repo: fullName, by: sess.login, why: 'repository not visible' });
+      await recordApprovalFailure({
+        outcome: 'repo_not_visible',
+        repo: fullName,
+        installationId: null,
+        actor: sess.login,
+        model: f ? `${f.provider}/${f.model}` : null,
+      });
       return c.html(errorPage('Not found', 'No such repository is visible to you here.'), 404);
     }
     if (!f) {
       log('approve refused', { repo: fullName, by: sess.login, why: 'malformed form' });
+      await recordApprovalFailure({
+        outcome: 'malformed_form',
+        repo: fullName,
+        installationId: repo.installationId,
+        actor: sess.login,
+        model: null, // there is no well-formed model to name; that IS the failure
+      });
       return c.html(errorPage('Bad request', 'An approval names the provider and model of the finding it is about.'), 400);
     }
     const key = `${f.provider}/${f.model}`;
@@ -586,6 +691,13 @@ export function createApp(deps: AppDeps): Hono {
     // two sets still disagree and that is tracked separately.
     if ((await store.activeApprovals(repo.id)).has(key)) {
       log('approve ignored', { repo: fullName, by: sess.login, model: key, why: 'one already in flight' });
+      await recordApprovalFailure({
+        outcome: 'already_in_flight',
+        repo: fullName,
+        installationId: repo.installationId,
+        actor: sess.login,
+        model: key,
+      });
       return c.redirect(atNotice(f.back, 'inflight'), 303);
     }
     const approval = await store.createApproval({ repoId: repo.id, provider: f.provider, model: f.model, replacement: f.replacement, mode: f.mode, approvedBy: sess.login });
@@ -610,8 +722,25 @@ export function createApp(deps: AppDeps): Hono {
       installationId: repo.installationId,
       repo: fullName,
       actor: sess.login,
-      detail: { approval: approval.id, provider: f.provider, model: f.model, replacement: f.replacement, mode: f.mode, dispatched },
+      // `deployment` on the SUCCESS row too, not only on failures: "it works now" and "it works
+      // on the instance that happens to be warm" are the two readings of P1-A, and only a build
+      // stamp on both outcomes can separate them.
+      detail: { approval: approval.id, provider: f.provider, model: f.model, replacement: f.replacement, mode: f.mode, dispatched, deployment: deploymentId(config) },
     });
+    // The approval EXISTS and the workflow did not start. This is the shape a person experiences
+    // as "it spun and nothing happened", and the one the hourly schedule will silently paper over
+    // by picking the approval up later — so it needs its own counted class, not just a `false` in
+    // a field on a row named "approved".
+    if (!dispatched) {
+      await recordApprovalFailure({
+        outcome: 'dispatch_failed',
+        repo: fullName,
+        installationId: repo.installationId,
+        actor: sess.login,
+        model: key,
+        message: why,
+      });
+    }
     return c.redirect(f.back, 303);
   });
 

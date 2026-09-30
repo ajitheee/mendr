@@ -100,9 +100,14 @@ describe('the Provider SDKs row through the real CLI', () => {
 // MENDR_JOB_SUMMARY. It is appended AFTER the JSON is complete, so the JSON the App
 // receives, and the exit code, must be byte-for-byte what they were without it.
 
-// generatedAt and the registry's age (rounded to 0.1 day) move between two back-to-back runs.
-const WITHOUT_TIME = (json: string): string =>
-  json.replace(/"generatedAt": "[^"]+"/, '"generatedAt": "-"').replace(/"ageDays": [-0-9.]+/g, '"ageDays": -');
+// PIN THE CLOCK instead of scrubbing the output.
+//
+// This used to blank `generatedAt` and `ageDays` because both drift between two back-to-back runs,
+// and that normaliser then silently failed to cover `evaluatedAt` when it was added — the assertion
+// broke on a field it had never been taught about, which is what a scrub-list always eventually
+// does. Every clock-derived value now comes from one pinned instant, so the two runs can be compared
+// BYTE FOR BYTE with nothing removed, which is the stronger claim and the one the test is named for.
+const PINNED = { MENDR_EVALUATED_AT: '2026-09-30T00:00:00Z' };
 
 function summaryFile(): string {
   const dir = mkdtempSync(join(tmpdir(), 'mendr-summary-'));
@@ -116,9 +121,9 @@ describe('the Provider SDKs section in the Actions job summary', () => {
       // One repo for both runs: the JSON names the repo directory.
       const repoDir = fixture(LOCK);
       const file = summaryFile();
-      const plain = await audit(repoDir, args);
-      const withSummary = await audit(repoDir, args, { MENDR_JOB_SUMMARY: 'on', GITHUB_STEP_SUMMARY: file });
-      expect(WITHOUT_TIME(withSummary.stdout)).toBe(WITHOUT_TIME(plain.stdout));
+      const plain = await audit(repoDir, args, { ...PINNED });
+      const withSummary = await audit(repoDir, args, { ...PINNED, MENDR_JOB_SUMMARY: 'on', GITHUB_STEP_SUMMARY: file });
+      expect(withSummary.stdout).toBe(plain.stdout);
       expect(withSummary.exitCode).toBe(plain.exitCode);
       const md = readFileSync(file, 'utf8');
       expect(md).toContain('### Mendr — provider SDKs (information only)');
@@ -145,9 +150,9 @@ describe('the Provider SDKs section in the Actions job summary', () => {
     const dir = mkdtempSync(join(tmpdir(), 'mendr-summary-dir-'));
     created.push(dir);
     const repoDir = fixture(LOCK);
-    const plain = await audit(repoDir, ['--json']);
-    const broken = await audit(repoDir, ['--json'], { MENDR_JOB_SUMMARY: 'on', GITHUB_STEP_SUMMARY: dir });
-    expect(WITHOUT_TIME(broken.stdout)).toBe(WITHOUT_TIME(plain.stdout));
+    const plain = await audit(repoDir, ['--json'], { ...PINNED });
+    const broken = await audit(repoDir, ['--json'], { ...PINNED, MENDR_JOB_SUMMARY: 'on', GITHUB_STEP_SUMMARY: dir });
+    expect(broken.stdout).toBe(plain.stdout);
     expect(broken.exitCode).toBe(plain.exitCode);
     expect(broken.stderr).toContain('job summary not written');
   }, 180_000);

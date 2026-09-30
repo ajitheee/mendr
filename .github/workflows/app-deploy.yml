@@ -1,4 +1,5 @@
-# Deploy the Mendr App on Render whenever a push to main touches it.
+# Deploy the Mendr App on Render whenever a push to main touches it, then prove the
+# approval path on the build that deploy made live.
 #
 # Render normally auto-deploys through its own GitHub integration. This is the
 # belt to that brace, added after a day when several App pushes never reached
@@ -23,6 +24,10 @@ permissions: {}
 concurrency:
   group: app-deploy
   cancel-in-progress: false
+
+env:
+  # The App's public origin. Not a secret — it is printed in every generated workflow.
+  APP_URL: https://mendr-app.onrender.com
 
 jobs:
   gate:
@@ -52,3 +57,163 @@ jobs:
           echo "Render responded HTTP $code"
           cat /tmp/render-response; echo
           case "$code" in 2*) ;; *) echo "::error::deploy hook call failed"; exit 1 ;; esac
+
+  # P1-A containment item 4: prove the approval path on the build that is now LIVE.
+  #
+  # The Approve button was dead for 170 runs and then worked, and the cause is unknown. A deploy
+  # that is never exercised is how that state persists: every release was only ever "tested" on
+  # the build the developer had locally. This job asks the running service, after each deploy,
+  # whether the money path still answers.
+  #
+  # Two things make it meaningful rather than decorative:
+  #
+  #   1. It WAITS FOR THE NEW BUILD, then BINDS THE ASSERTION TO IT. /healthz reports
+  #      deployment.commit, so this polls until the commit just shipped is answering — but that
+  #      alone is not enough, because /healthz and the POST are two separate requests and a
+  #      rolling deployment can serve them from different builds. So the POST's own response
+  #      carries X-Mendr-Deployment-Commit and the job asserts THAT equals the deployed sha.
+  #      Without it the job could report "the route works on the new build" having exercised the
+  #      old one, which is the same class of confident-but-wrong claim this item exists to remove.
+  #   2. It exercises the REAL route, POST /r/:owner/:name/approve, with a valid urlencoded body
+  #      and no session cookie, asserting the documented answer: 302 to /auth/login. A 500, a
+  #      hang or a 404 each fail loudly.
+  #
+  # SAFE BY CONSTRUCTION: no credentials are used and none are needed, so no approval can be
+  # created and nothing is dispatched. The synthetic repository name makes the audit rows this
+  # leaves behind obviously probes rather than customer activity.
+  #
+  # WHAT THIS PROVES, EXACTLY — and no more than this:
+  #   * the route is reachable on the asserted build, and
+  #   * the unauthenticated session branch answers as documented.
+  #
+  # WHAT IT DOES NOT PROVE, stated because overclaiming here would defeat the purpose:
+  #   * THE AUDIT WRITE. The signed-out path writes an `approval_failed` row, but this job never
+  #     reads it back — reading the audit log needs authentication — so the write is NOT verified
+  #     here. It is covered by tests only. Do not describe this job as proving instrumentation.
+  #   * FORM PARSING. A valid body and content type are sent so the request is realistic, but the
+  #     response cannot distinguish a parsed body from an unparsed one on this branch, so parsing
+  #     is not asserted either.
+  #   * THE AUTHENTICATED BRANCH. The GitHub access check, the approval insert and the workflow
+  #     dispatch all need a real user session and remain covered only by tests.
+  smoke:
+    # Deliberately NOT `needs: deploy`: Render's own auto-deploy is the primary path and the hook
+    # is only the belt to that brace, so the smoke test has to run whether or not the hook fired.
+    needs: gate
+    if: ${{ always() }}
+    # A NEWER PUSH MUST CANCEL AN OBSOLETE SMOKE RUN, and this is why the workflow-level group
+    # cannot do it. Render coalesces rapid deploys: push A's build is abandoned when push B
+    # arrives, so A's smoke job waits twenty minutes for a sha that will never be live and then
+    # fails — a red main for a deployment that was deliberately skipped. Cancelling it is correct
+    # because its question ("is A live and working?") has stopped being a question anyone is
+    # asking. The workflow group keeps `cancel-in-progress: false` so a deploy hook call is never
+    # killed halfway.
+    concurrency:
+      group: app-deploy-smoke
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for this commit to be the one answering
+        env:
+          WANT: ${{ github.sha }}
+          # The sha match is only meaningful when the sha is the one that gets DEPLOYED. Render
+          # deploys main, so a `workflow_dispatch` from any other ref would wait for a commit that
+          # is never going to be live and then fail for a reason that is not a defect. On those
+          # runs the probe still runs; it just does not demand a particular build.
+          EXPECT_SHA: ${{ github.ref == 'refs/heads/main' }}
+        run: |
+          set -u
+          # Fail FAST and truthfully if the parser is missing. `jq` is preinstalled on
+          # GitHub-hosted runners, but the read below swallows its own errors, so without this a
+          # missing jq would look identical to a build that never went live: twenty minutes of
+          # polling and then "the deployed commit never became live", which is a lie about the
+          # cause. Discovered by running this script on a machine that has no jq.
+          if ! command -v jq >/dev/null 2>&1; then
+            echo "::error::jq is not installed on this runner, so /healthz cannot be read. This is a runner problem, not a deploy problem."
+            exit 1
+          fi
+          short=$(printf '%s' "$WANT" | cut -c1-8)
+          if [ "$EXPECT_SHA" != "true" ]; then
+            echo "::notice::not a main-branch run, so not waiting for a specific build; only checking that the service answers."
+          else
+            echo "waiting for /healthz deployment.commit to start with $short"
+          fi
+          got=''
+          # 120 x 10s = 20 minutes. A Render deploy is usually 2-5 minutes, but a cold free-tier
+          # build can be much slower, and a smoke test that goes red because the host was slow is
+          # the phantom failure that teaches people to ignore smoke tests.
+          for i in $(seq 1 120); do
+            body=$(curl -sS --max-time 15 "${APP_URL%/}/healthz" 2>/dev/null || printf '{}')
+            ok=$(printf '%s' "$body" | jq -r '.ok // false' 2>/dev/null || printf 'false')
+            got=$(printf '%s' "$body" | jq -r '.deployment.commit // ""' 2>/dev/null || printf '')
+            if [ "$EXPECT_SHA" != "true" ]; then
+              if [ "$ok" = "true" ]; then echo "service answers (build '${got:-unknown}')"; exit 0; fi
+            else
+              case "$got" in
+                "$short"*) echo "live on $got"; exit 0 ;;
+              esac
+            fi
+            echo "  attempt $i: ok=$ok serving '${got:-unknown}'"
+            sleep 10
+          done
+          if [ "$EXPECT_SHA" != "true" ]; then
+            echo "::error::the service never answered /healthz within 20 minutes."
+          else
+            echo "::error::the deployed commit never became live within 20 minutes (last seen '${got:-unknown}'). Either the deploy did not land or the service is not serving it."
+          fi
+          exit 1
+
+      - name: The approval route answers, on the build this run deployed
+        env:
+          WANT: ${{ github.sha }}
+          EXPECT_SHA: ${{ github.ref == 'refs/heads/main' }}
+        run: |
+          set -u
+          # No cookie on purpose: the signed-out branch creates nothing, dispatches nothing and
+          # needs no secret. A valid urlencoded body with an explicit content type is sent so the
+          # request is a realistic one rather than a malformed-input path.
+          code=$(curl -sS -o /tmp/body -D /tmp/head -w '%{http_code}' --max-time 20 -X POST \
+            "${APP_URL%/}/r/mendr-smoke/post-deploy/approve" \
+            -H 'content-type: application/x-www-form-urlencoded' \
+            --data-urlencode 'provider=openai' \
+            --data-urlencode 'model=gpt-4' \
+            --data-urlencode 'replacement=gpt-5.6-sol' \
+            --data-urlencode 'mode=pr' \
+            --data-urlencode 'back=/r/mendr-smoke/post-deploy' || printf '000')
+          hdrs=$(tr -d '\r' < /tmp/head)
+          loc=$(printf '%s\n' "$hdrs" | grep -i '^location:' | head -1 || true)
+          served=$(printf '%s\n' "$hdrs" | grep -i '^x-mendr-deployment-commit:' | head -1 | cut -d' ' -f2- || true)
+          echo "HTTP $code"
+          echo "${loc:-no location header}"
+          echo "served by build: ${served:-unstamped}"
+
+          if [ "$code" != "302" ]; then
+            echo "::error::the approve route returned $code, expected 302 to the login page. The route is not answering on this build."
+            head -c 400 /tmp/body || true
+            exit 1
+          fi
+          case "$loc" in
+            */auth/login*) : ;;
+            *) echo "::error::got a 302 to an unexpected place: ${loc:-none}"; exit 1 ;;
+          esac
+
+          # BIND THE ASSERTION TO THE BUILD. Without this the two steps are independent requests
+          # and a rolling deployment can answer them from different builds, so the pass above
+          # would be about an artifact nobody chose.
+          if [ "$EXPECT_SHA" = "true" ]; then
+            if [ -z "$served" ]; then
+              echo "::error::the response carried no X-Mendr-Deployment-Commit, so this result cannot be attributed to a build."
+              exit 1
+            fi
+            case "$WANT" in
+              "$served"*) ;;
+              *)
+                echo "::error::the response came from build '$served', not the deployed sha '$WANT'. A rolling deployment served this request from a different build, so nothing here is proven about the new one."
+                exit 1
+                ;;
+            esac
+            echo "PROVEN on $served: the route is reachable and the unauthenticated session branch answers as documented."
+          else
+            echo "PROVEN on ${served:-an unstamped build}: the route is reachable and the unauthenticated session branch answers as documented."
+          fi
+          # Deliberately NOT claimed: the audit write (never read back) and form parsing (not
+          # observable from this response). Both are covered by tests only.

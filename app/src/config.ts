@@ -46,6 +46,25 @@ export interface AppConfig {
    * and the option comes back as an advanced opt-in only after partner validation.
    */
   autoMerge: boolean;
+  /**
+   * WHICH BUILD AND WHICH INSTANCE served this request — containment item 2 for P1-A.
+   *
+   * The Approve button was dead for 170 runs and then worked, and the cause is still unknown
+   * because nothing durable recorded WHERE a click was served. "It works now" and "it works on
+   * the instance that happens to be warm" are indistinguishable without this, and a host that
+   * runs more than one instance makes that difference the whole diagnosis.
+   *
+   * Render supplies both (RENDER_GIT_COMMIT, RENDER_INSTANCE_ID). Null off-host, and the record
+   * then says so rather than inventing a value.
+   */
+  deployCommit: string | null;
+  deployInstance: string | null;
+}
+
+/** `commit@instance`, for one legible field on a record. `unknown` when the host says nothing. */
+export function deploymentId(c: Pick<AppConfig, 'deployCommit' | 'deployInstance'>): string {
+  const commit = c.deployCommit ? c.deployCommit.slice(0, 8) : 'unknown';
+  return c.deployInstance ? `${commit}@${c.deployInstance}` : commit;
 }
 
 function int(v: string | undefined, fallback: number): number {
@@ -102,6 +121,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     dataKey: opt(env.MENDR_DATA_KEY),
     retentionDays: Math.max(0, Math.floor(Number(env.MENDR_RETENTION_DAYS) || 0)),
     autoMerge: /^(on|1|true|yes)$/i.test((env.MENDR_AUTO_MERGE ?? '').trim()),
+    // Render's own names first, then generic ones so this works on another host without a code
+    // change. Neither is a secret: a commit sha and an instance id identify a deployment, not a
+    // credential, which is why they are safe to put on a persisted record.
+    deployCommit: opt(env.RENDER_GIT_COMMIT) ?? opt(env.GIT_COMMIT) ?? opt(env.SOURCE_COMMIT),
+    deployInstance: opt(env.RENDER_INSTANCE_ID) ?? opt(env.INSTANCE_ID) ?? opt(env.HOSTNAME),
   };
 }
 

@@ -41,10 +41,33 @@ describe('router model_list, mock fixtures and gitignored configs (partner audit
     expect(real?.position).toBe('config_selector');
     expect(stub?.position).toBe('config_catalog');
   });
-  it('a file with mock-testing flags is a test fixture, whatever its path', () => {
+  // REVERSED 2026-09-29, deliberately. This asserted that a global mock-testing switch makes every
+  // model entry in the file a fixture. That inferred too much: the switch is global in EFFECT — it
+  // lets any request be answered with a mock — but it is not evidence that any particular route is
+  // fake, and a proxy can permit mock testing while routing production traffic. Demoting every
+  // selector on that basis is a false clean waiting to happen.
+  //
+  // The switch is now recorded as the `global_mock_testing_enabled` RISK SIGNAL and changes no
+  // verdict. Entries are judged one at a time, on their own markers.
+  it('a global mock-testing switch is recorded as a risk signal, and demotes nothing by itself', () => {
     const text = 'general_settings:\n  dangerously_allow_mock_testing_request_params: true\nmodel_list:\n  - model_name: my-model\n    litellm_params:\n      model: gpt-3.5-turbo\n';
     const ms = scanConfigText('proxy_server_config.yaml', text, REG);
-    expect(ms.every((m) => m.position === 'config_catalog')).toBe(true);
+    const sel = ms.find((m) => m.key === 'model');
+    // The route is still a route: nothing about it was faked.
+    expect(sel?.position).toBe('config_selector');
+    // And the switch is visible to a reviewer on that very occurrence.
+    expect(sel?.signals).toContain('global_mock_testing_enabled');
+  });
+  it('the switch is recognised ONLY under root general_settings', () => {
+    // Narrowed from a set that also accepted litellm_settings, router_settings and the bare root.
+    // That breadth was guesswork; general_settings is where LiteLLM defines it.
+    const body = 'model_list:\n  - model_name: m\n    litellm_params:\n      model: gpt-3.5-turbo\n';
+    const under = (parent: string) =>
+      scanConfigText('c.yaml', `${parent}:\n  dangerously_allow_mock_testing_request_params: true\n${body}`, REG)
+        .find((m) => m.key === 'model')?.signals ?? [];
+    expect(under('general_settings')).toContain('global_mock_testing_enabled');
+    expect(under('litellm_settings')).not.toContain('global_mock_testing_enabled');
+    expect(under('router_settings')).not.toContain('global_mock_testing_enabled');
   });
   it('a file the repo gitignores is a local artifact, not deployed configuration', () => {
     const ms = scanConfigText('litellm/proxy/_super_secret_config.yaml', 'model: gpt-3.5-turbo\n', REG, { gitignored: true });

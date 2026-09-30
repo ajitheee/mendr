@@ -2,6 +2,7 @@ import type { LlmModelIdDeprecation, TierBReason } from '../types.js';
 import { isVerified } from '../usage/llmRegistry.js';
 import { TYPE_CAST_REASON, type LiteralPosition } from '../usage/scanLiterals.js';
 import type { Tier } from './tiers.js';
+import { isCoupledParamReason } from '../usage/coupledParams.js';
 
 // THE ONE per-occurrence tier classifier, shared by fix-llm and watch.
 //
@@ -47,7 +48,15 @@ export function classifyOccurrenceTier(m: OccurrenceInput): OccurrenceTier {
   if (m.position === 'usage_unverified') return { tier: 'B', reason: 'usage_unverified' };
   if (m.position === 'azure_deployment') return { tier: 'B', reason: 'platform_blocked' };
   // A real call site the guards capped at review — never an unattended swap.
-  if (m.position === 'surface_capped') return { tier: 'B', reason: 'platform_blocked' };
+  if (m.position === 'surface_capped') {
+    // Distinguished because the advice differs and `platform_blocked` reads
+    // "deployment-alias", which would send the reviewer to look for an Azure
+    // deployment key that is not there. Here the call site is fine and the
+    // REQUEST is the question. See coupledParams.ts.
+    return isCoupledParamReason(m.reason)
+      ? { tier: 'B', reason: 'coupled_param_unverified' }
+      : { tier: 'B', reason: 'platform_blocked' };
+  }
   if (m.reason === TYPE_CAST_REASON) return { tier: 'B', reason: 'type_cast_masked' };
   return { tier: 'C' };
 }
@@ -57,6 +66,7 @@ export const TIER_B_SHORT: Record<TierBReason, string> = {
   usage_unverified: 'usage-unverified',
   replacement_unverified: 'unverified-replacement',
   platform_blocked: 'deployment-alias',
+  coupled_param_unverified: 'coupled-param-unverified',
   type_cast_masked: 'type-cast-masked',
   dynamic_model_value: 'dynamic-value',
   insufficient_dataflow: 'untraced',

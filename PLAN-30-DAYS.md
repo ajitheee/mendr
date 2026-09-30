@@ -13,8 +13,15 @@ diagram that is empty or broken today; everything already built is named in
 
 | date | day | what it is |
 |---|---|---|
-| **2026-10-09** | 11 | The bundled registry grades itself stale. A zero-finding run then reads `inconclusive`. **Inside Part 1.** |
+| **2026-10-12** | 14 | The bundled registry grades itself stale. A zero-finding run then reads `inconclusive`. **Inside Part 1.** |
 | **2026-10-23** | 25 | OpenAI stops serving `gpt-4`, `gpt-4-turbo`, `gpt-3.5-turbo`, `o3-mini`, `o4-mini`. Gate 2. **Inside Part 2.** |
+
+> **Corrected 2026-09-29: the first date was 10-09 and is now 10-12.** It is not a calendar fact.
+> It is `BUNDLED_PUBLISHED_AT` in whichever **tag** a stranger installs, plus 14 days. 10-09 came
+> from `v0.5.6-alpha` (stamped 2026-09-24); `v0.5.7-alpha`, cut 2026-09-28, moves it to 10-12. So
+> this row moves every time a tag is cut with a re-stamped registry — and an ask that names an
+> **old** tag inherits the old, earlier cliff. `launch/GATE2-ASKS.md` pinned 0.5.6 and has been
+> repointed.
 
 Part 1 finishing on 10-13 leaves **ten days installed before the wave**. That is the whole
 strategic point, in the words already committed to `BETA-GATES.md`: *"a tool discovered on the
@@ -56,9 +63,206 @@ Next, in order, and the first is not an engineering task:
 
 **Nothing downstream of this is worth doing until it is fixed.**
 
-## P1-B · Close the loop once, end to end
+> ### P1-A stays OPEN. Status, set 2026-09-29:
+>
+> > **Failure no longer reproduces; root cause unknown; historical telemetry unavailable.**
+>
+> Approval #8 fired on 2026-09-28 and the loop closed (P1-B), so the "nothing downstream is worth
+> doing" line above is overtaken by events — but nothing was *diagnosed*. The button went from dead
+> for 170 runs to working, for reasons nobody established, and the logs that would have said why no
+> longer exist. A defect that stopped reproducing on its own is not a fixed defect; it is an
+> unexplained one, and the next click may be a stranger's.
+>
+> **Containment required before any external reviewer depends on the button.** Five items, none of
+> which need the original failure to recur:
+>
+> | # | item | what it has to do |
+> |---|---|---|
+> | 1 | **Sanitized request-level instrumentation** | One record per approval attempt, from first byte to outcome, carrying no secrets and no customer source — it must survive the redaction rules the sanitizer already enforces. This is what was missing; capture it permanently rather than waiting to catch the next failure live. **DONE 2026-09-29.** |
+> | 2 | **Deployment identification** | Every record names the build and instance that served it. Without this, "it works now" cannot be distinguished from "it works on the instance that happens to be warm". **DONE 2026-09-29.** |
+> | 3 | **Failure classification** | Each attempt ends in a named class — client-side never-sent, auth, dispatch, provider timeout, unhandled throw — not a bare success flag. A class is what makes the next occurrence diagnosable on the first look instead of the tenth. **DONE 2026-09-29.** |
+> | 4 | **Post-deployment smoke test** | An approval path exercised automatically after each deploy, so the button is proven on the build that is live rather than on the build it was last tested on. **DONE 2026-09-29.** |
+> | 5 | **Manual fallback path** | A documented route by which a reviewer completes the approval **without** the button. **VERIFIED 2026-09-29 — see below.** |
+>
+> #### Item 4: the smoke test waits for the new build, or it proves nothing
+>
+> Added to `.github/workflows/app-deploy.yml` as a `smoke` job. Two properties make it more than
+> decoration:
+>
+> 1. **It waits for THIS commit to be the one answering.** `/healthz` now reports
+>    `deployment.commit`, and the job polls until the sha it just shipped is live, failing after
+>    ten minutes with "the deployed commit never became live". Without that step a smoke test
+>    passes against whatever is still serving -- which is precisely the "proven on the build it
+>    was last tested on" failure the item exists to close, and it would make a deploy that never
+>    landed read as a pass.
+> 2. **It binds the assertion to that build.** Waiting on `/healthz` is NOT sufficient on its own:
+>    `/healthz` and the POST are two separate requests, and a rolling deployment can serve them
+>    from different builds. So every response now carries `X-Mendr-Deployment-Commit`, and the job
+>    asserts the POST's own header equals the deployed sha. Without it the job could report "the
+>    route works on the new build" having exercised the old one — the same confident-but-wrong
+>    shape this item exists to remove.
+> 3. **It exercises the real route**, `POST /r/:owner/:name/approve` with a valid urlencoded body
+>    and no session cookie, asserting `302` to `/auth/login`. A 500, a hang or a 404 fail loudly.
+>
+> #### What it proves, exactly
+>
+> * the route is **reachable** on the asserted build, and
+> * the **unauthenticated session branch** answers as documented.
+>
+> #### What it does NOT prove — written out because overclaiming here would defeat the purpose
+>
+> * **The audit write.** The signed-out path does write an `approval_failed` row, but this job
+>   never reads it back (that needs authentication), so the write is **not verified here**. It is
+>   covered by tests only. An earlier draft of this section claimed the smoke test "drives the new
+>   audit write"; it does not, and the claim is withdrawn.
+> * **Form parsing.** A valid body and content type are sent so the request is realistic, but this
+>   response cannot distinguish a parsed body from an unparsed one on the signed-out branch, so
+>   parsing is not asserted either.
+> * **The authenticated branch.** The GitHub access check, the approval insert and the workflow
+>   dispatch all need a real user session.
+>
+> **Every branch verified against production before shipping**, not assumed. Against the live build
+> — which has no header yet — the probe passes in non-main mode labelled honestly (`PROVEN on an
+> unstamped build`) and, in main mode, **fails with the true reason**: *"the response carried no
+> X-Mendr-Deployment-Commit, so this result cannot be attributed to a build."* The assertion stays
+> narrow (status, path, build) and never touches the `next` parameter, because the live build's
+> internals can lag `main` and a smoke test that breaks on an unrelated change is one people learn
+> to ignore.
+>
+> **Concurrency, at the job level and deliberately not the workflow's.** Render coalesces rapid
+> deploys: push A's build is abandoned when push B arrives, so A's smoke job would wait twenty
+> minutes for a sha that will never be live and then redden `main` for a deployment that was
+> skipped on purpose. The `smoke` job therefore has its own group with
+> `cancel-in-progress: true` — its question stops being one anyone is asking — while the workflow
+> group keeps `cancel-in-progress: false` so a deploy hook call is never killed halfway.
+>
+> **Safe by construction:** no credentials are used or needed, so no approval can be created and
+> nothing is dispatched. The synthetic repository name `mendr-smoke/post-deploy` makes the audit
+> rows it leaves obviously probes rather than customer activity. It does not depend on
+> `needs: deploy`, because Render's own auto-deploy is the primary path and the hook is only the
+> belt to that brace.
+>
+> **WHAT IT DOES NOT PROVE, stated because the gap is the point:** the authenticated branch.
+> Everything past the session check -- the GitHub access check, the approval insert, the workflow
+> dispatch -- needs a real user session and is still covered only by tests. This closes "is the
+> path reachable on this build", not "does an approval succeed on this build". Closing the second
+> one needs a test identity, which is its own decision and is not taken here.
+>
+> #### Items 1-3, done together, because they are one record
+>
+> **The diagnosis was never blocked on the failure recurring. It was blocked on the record.** The
+> approve handler already had seven distinct exits, each logging a `why` -- and every one went to
+> `console.log` only. The single approval that SUCCEEDED wrote a durable `audit_log` row; the 170
+> that failed wrote lines the host has long since rotated away. That asymmetry is the whole of
+> "historical telemetry unavailable", and it was fixable without waiting for anything.
+>
+> Every non-success exit now writes an `approval_failed` row carrying:
+>
+> - a **closed outcome class** -- `signed_out`, `github_access_check`, `repo_not_visible`,
+>   `malformed_form`, `already_in_flight`, `dispatch_failed` -- so failures are *counted*, not
+>   merely described;
+> - the **deployment that served it**, `commit@instance`, from `RENDER_GIT_COMMIT` /
+>   `RENDER_INSTANCE_ID`, and the literal `unknown` off-host rather than an invented value. The
+>   **success** row carries it too, which is the point: only a stamp on both outcomes separates
+>   "it is fixed" from "it works on whichever instance is warm";
+> - at most a **redacted, truncated** message, through the same `redactSecrets` the report
+>   sanitizer uses. The `detail` contract is scalars only -- never a token, never source, never a
+>   finding.
+>
+> `dispatch_failed` is the class that matters most: the approval record exists and the workflow did
+> not start. That is what a person experiences as *"it spun and nothing happened"*, and the hourly
+> schedule then quietly papers over it by collecting the approval later -- so it needed its own
+> counted class rather than a `false` in a field on a row named "approved".
+>
+> **Deploy-safe:** `audit_log.event` is `TEXT`, not an enum, so the new value needs no migration.
+> **Six tests, mutation-verified** -- disabling the writer fails four of them. One asserts the
+> record can never cost the click its answer: if the audit insert throws the person still gets
+> their refusal, because turning a refusal into a 500 because the LOGGING failed would be worse
+> than the bug this exists to diagnose.
+>
+> Still open: **item 4**, the post-deployment smoke test. This records what happens; it does not
+> yet prove the button on the build that is live.
+>
 
-The migrate path has **never executed**: 169 runs on `mendr-demo`, every one
+> #### Item 5 is verified, so outreach may proceed
+>
+> Approvals are created by exactly one route (`POST /r/:owner/:name/approve`, the button), so
+> there is no way to *record* an approval without it. The fallback therefore has to skip the App
+> rather than substitute for it — and it does, because **nothing a customer needs requires the
+> App at all.** Run against a fixture with the provider SDK actually installed, so the gates
+> could really run:
+>
+> ```
+> $ mendr audit .          ->  1 patch-eligible, Decision: PATCH ELIGIBLE
+> $ mendr fix-llm . --write
+>     type-check:  passed (no new errors)  [required]
+>     Tier A: 1 model-id swap ("gpt-4-0613" -> "gpt-5.6-sol") (verified: type-check passes)
+>     files modified: 1
+> $ git diff
+>     -    model: 'gpt-4-0613',
+>     +    model: 'gpt-5.6-sol',
+> ```
+>
+> Find, verify against a real type-check, apply, review in your own git, commit and open your own
+> pull request. **No App, no OIDC, no approval record, no button.** The required gate genuinely
+> ran and passed — with the SDK absent it refuses to write and says why, which is the correct
+> behaviour and was confirmed separately.
+>
+> **And the two asks that are actually queued never touch the button.** Ask 1 is `audit`, which
+> writes nothing and needs no App. Ask 2 is read-a-public-check-run-and-reply. The button gates
+> only the *hosted* convenience of the loop, not any step a reviewer must complete.
+>
+> So by the gate below: **outreach proceeds while root-cause work continues.** P1-A stays open,
+> and items 1–4 stay required before anyone is asked to depend on the button itself.
+>
+> **The gate, stated so it cannot be fudged:** if item 5 exists and the external workflow can be
+> completed manually end to end, **outreach proceeds while root-cause work continues** — the
+> unknown cause stops blocking P1-F. If the button is the **only** path to completing the workflow,
+> **P1-A remains a blocker** and no ask that depends on approval should be sent.
+>
+> Ajith's one click and one Render log line is still the cheapest possible diagnosis and still
+> worth doing, but it is no longer the only route forward, and it is no longer something to wait on.
+>
+> ### Containment is COMPLETE (all five, 2026-09-29). P1-A is still OPEN.
+>
+> Those are two different statements and collapsing them would be the whole point missed.
+> **Containment closed means the next occurrence is diagnosable and the workflow is completable
+> anyway. It does not mean the defect is understood.** P1-A's status is unchanged:
+>
+> > **Failure no longer reproduces; root cause unknown.**
+>
+> What changed is that the three things which made it *undiagnosable* are gone: a failed click is
+> now as durable as a successful one, every record names the build that served it, and each
+> outcome has a counted class. So if it recurs, the first look answers it instead of the tenth —
+> and if it never recurs, the rows will say which builds and instances served how many attempts,
+> which is a weaker but real answer.
+>
+> **What none of this establishes:** why the button was dead for 170 runs. The evidence that would
+> have told us was ephemeral and is gone, and no instrumentation added afterwards can recover it.
+> P1-A closes when a cause is named, not when the telemetry improves. It stays open.
+
+## P1-B · Close the loop once, end to end  —  **DONE 2026-09-28**
+
+**It closed.** Approval #8 fired at 06:11 on 2026-09-28 after 170 runs of `skipped`;
+`Run Mendr and open a PR` executed, the sandbox verify reported `✓ type-check passed`, and
+[`mendr-demo#5`](https://github.com/ajitheee/mendr-demo/pull/5) opened and **merged at
+06:12:12Z** — `gpt-4-0613` → `gpt-5.6-sol`, one line. All eight links ran for real, including
+the one that mattered: **the report sanitizer has now run on a customer path**, so the S1
+security deliverable is no longer test-only.
+
+Twenty-three minutes later, `698ed178` deliberately restored the id — *"demo: call gpt-4-0613
+again, so the repository demonstrates something"* — the same reset as 09-26 and 09-12. That is
+fixture maintenance, not a regression, and `mendr-demo` is a fixture. It does mean the repo's
+history shows a fix being undone, which `launch/GATE2-ASKS.md` now tells Ask 2 to disclose
+rather than let a reader discover.
+
+**What this does NOT close:** P1-A's root cause, and Part 1's actual goal. The loop closed on
+`mendr-demo`, which is Ajith's own repository. The goal is a repository that is not
+`mendr-demo`, owned by someone who is not Ajith. That still needs P1-F, and P1-F needs a send.
+
+The original text follows, since it records what was true for 170 runs:
+
+The migrate path had **never executed**: 169 runs on `mendr-demo`, every one
 `nothing is approved`, `Run Mendr and open a PR → skipped`.
 
 The consequence is not cosmetic. `run-mendr.sh` is where the report sanitizer is invoked, so
@@ -108,12 +312,19 @@ message on a broken button.
 Zero external repositories are onboarded. Zero findings have been reviewed by anyone who is not
 Ajith. The ask-to-verdict rate is not low, it is **undefined — the denominator is zero**.
 
-`launch/GATE2-ASKS.md` is written and unsent. Ask 1 must go **before 10-09** or its central
-claim goes stale.
+`launch/GATE2-ASKS.md` is written and unsent. Ask 1 must go **before 10-12** (was 10-09; the date
+moved with the tag — see the correction under "The two dates") or its central claim goes stale.
 
-Ask 2's blocker is already cleared: a logged-out stranger can see the finding, and the exact
-check-run URL to link is
-`https://github.com/ajitheee/mendr-demo/runs/108618583430`.
+**Re-verified 2026-09-29, and all three asks needed changes:** Ask 1 pinned the superseded
+`v0.5.6-alpha` and quoted a 98 s install that is now 54 s; Ask 2's check-run URL below is stale;
+**Ask 3's issue is closed with zero replies**, so its "one live public room" premise is void and a
+one-token PR is the only form that can now produce a verdict. All three are corrected in place.
+
+Ask 2's blocker is cleared — `mendr-demo` is public and a logged-out stranger can see the
+finding — but the URL here is **stale**. The current check run is
+`https://github.com/ajitheee/mendr-demo/runs/109424680822`, titled
+**`gpt-4-0613 stops serving in 24 days · 1 patch eligible`**. Scheduled runs replace it, so
+re-check it the hour it is sent rather than trusting this line.
 
 **Only Ajith can send.** This is the one item on the whole plan that engineering cannot do, and
 it is the item the last gate was lost on: *"the gate was not lost at the deadline; it was left
@@ -211,13 +422,74 @@ Still first because it is small and lands on a path already walked twice today
 Presets. Teams that adopt a gateway are currently **invisible** to Mendr, and they are the
 sophisticated teams worth selling to. Cheapest change with the biggest strategic payoff.
 
+> ### CLOSED 2026-09-30 — scoped to LiteLLM `config.yaml` / `model_list` only
+>
+> **The premise was wrong in a useful way.** Gateway configs were not invisible: detection already
+> existed, including the hard part — `model_name` is the client-facing alias and
+> `litellm_params.model` is the routed target, and renaming the alias would break every caller while
+> fixing no retirement. That distinction was already correct. What was wrong was one **false clean**:
+> a single stub route (`FAKE_*_API_BASE`, later also `mock_timeout` / `mock_response`) demoted every
+> real route in the file to a fixture, because per-route fields sat in the file-level marker set.
+>
+> **What shipped**, each as its own measured change, on top of the run-7 baseline:
+> - stub markers are **entry-scoped**, with boundaries from the YAML parser's node ranges, and
+>   **ambiguity never demotes** — a parse error, a non-sequence `model_list`, an item without a
+>   range all resolve to *no opinion*, never *no stubs*;
+> - `dangerously_allow_mock_testing_request_params` is a **configuration observation**
+>   (`observations.config.globalMockTestingFiles`), recognised only at root `general_settings`; it
+>   classifies nothing, moves no denominator, and is not a limit;
+> - `FIXTURE-ONLY REFERENCES — NO PRODUCTION SELECTOR FOUND` replaces `NO EXPOSURE` when the only
+>   references are fixtures, below production severity and never auto-migrated;
+> - the audit reads the clock **once**, records `evaluatedAt` and `evaluationTimeSource`, honours
+>   `MENDR_EVALUATED_AT` for reproducible batches, and **stops the run** on a pin it cannot read.
+>
+> **Evidence.** The targeted mixed-entry and mutation tests are the direct proof the defect is
+> fixed. Run 7 (14,171 locations, zero changed) is the regression evidence that it broke nothing
+> — the twelve repositories are a **regression corpus**, not a discovery or coverage corpus, and
+> the corpus contained none of the shapes fixed here. Run 9's five behavioural promotions were each
+> read in the config; stub-marker leaks: **zero**. Full details in `MEASUREMENT-2026-09-28.md`.
+>
+> **Deliberately NOT done, and still open:** `model_group_alias`, `fallbacks`, Portkey, OpenRouter
+> Presets. Each is its own slice with its own measurement. Nothing here extends to them.
+
 **P1-G3 · Call-site-aware detection.** A model id in a changelog or an old test currently
 fires like a live call. A free Semgrep rule that requires the id to sit in the `model` field
 beats Mendr on precision until this is fixed.
 
+> **Rescoped 2026-09-29. `MEASUREMENT-2026-09-28.md` already said "do not build P1-G3 as
+> scoped" — precision was never the problem, recall was. The remaining precision work is
+> narrower than the heading, and it is a CLASSIFICATION job, not a suppression job:**
+>
+> - **Classify, do not hide.** A test double or a fixture that references a retiring id is a real
+>   reference and stays **reported**, in its own labelled class — a reader must still be able to
+>   find it, because a fixture pinned to a dead id breaks their build on 10-23 exactly like
+>   production does. Silently dropping it would be the false clean this product must never give.
+>   The scanner already has the right shape for this: report it, tier it low, and say why.
+> - **Automatic migration is limited to supported production call sites.** A fixture, a test
+>   double, an example or an unresolved wrapper may be reported and may be reviewed, but must
+>   never be `patch`-eligible and must never be rewritten unattended. This is the invariant that
+>   keeps the blast radius honest, and it is already how Tier A is gated — this makes it explicit
+>   for the test and fixture classes rather than leaving it to follow from path rules.
+> - The immediate instance is librechat's `api/app/clients/specs/FakeClient.js:33`. It sits in
+>   `specs/`, which the directory list does not carry (`tests?` is there, `specs?` is not), so a
+>   jest double is currently classed as live code. Fixing the list is the cheap half; giving test
+>   and fixture references their own reported class is the half that generalises to a customer's
+>   own repository.
+
 **P1-G4 · The honest competitive page.** Name `llmstatus.ai` and `modeldeprecations.dev` in
 Mendr's own docs, concede the registry and CI architecture are similar, show the verified-swap
 and evidence difference. A prospect will find them; better they find this first.
+
+> **Gated 2026-09-29: written when ready, published only on evidence.** The page's whole value is
+> that it is *honest*, and its central claim — that Mendr's verified-swap and evidence
+> architecture is worth more than a free tool's breadth — is currently **unevidenced**: zero
+> external repositories have run it and zero verdicts exist. Publishing a comparison whose
+> differentiator rests on nothing but our own measurement would be the same error as the invented
+> model ids in the film: a confident claim assembled without the facts under it.
+>
+> **Do not publish P1-G4 until the external runs provide evidence for its claims.** Drafting it
+> early is fine and probably useful — it forces us to name what we would need to prove. Shipping
+> it before a stranger has produced a finding is not.
 
 ### Ranked below the line, deliberately
 

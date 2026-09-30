@@ -731,6 +731,84 @@ describe('approvals: decided in Mendr, carried out by the customer\'s own CI', (
     expect(await res.text()).toContain('1 approval(s)');
     expect(await h.store.getApproval(1)).toBeNull();
   });
+
+  // P1-A CONTAINMENT, items 1-3: every approval attempt leaves a DURABLE, CLASSIFIED,
+  // BUILD-STAMPED record — not a console line.
+  //
+  // Why these exist. The Approve button was dead for 170 runs and then worked, and the cause is
+  // still unknown, because the only approval that ever left a durable row was the one that
+  // SUCCEEDED (`migration_approved`). Every failure wrote `console.log` and nothing else, and on
+  // the host those lines have long since rotated away. P1-A's recorded status is "failure no longer
+  // reproduces; root cause unknown; historical telemetry unavailable" — and the third clause is the
+  // one that is fixable after the fact. It is fixed by writing the record, not by waiting for the
+  // failure to come back.
+  describe('an approval attempt that fails is as durable as one that works', () => {
+    const DEPLOY: Partial<AppConfig> = { deployCommit: 'abc1234567890', deployInstance: 'srv-7' };
+    const failures = async (h: ReturnType<typeof harness>) =>
+      (await h.store.listAuditLog()).filter((e) => e.event === 'approval_failed');
+
+    it('records a signed-out click, with its class and the build that served it', async () => {
+      const h = harness({ 'acme/api': REPO.id }, DEPLOY);
+      await h.install();
+      await h.ingest(await actionsToken(), sampleReport());
+      await post(h, '/r/acme/api/approve', { ...finding, mode: 'pr' }); // no session cookie
+      const rows = await failures(h);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].detail.outcome).toBe('signed_out');
+      // Item 2: WHICH build and WHICH instance. Without this, "it works now" cannot be told apart
+      // from "it works on the instance that happens to be warm".
+      expect(rows[0].detail.deployment).toBe('abc12345@srv-7');
+      expect(rows[0].repo).toBe('acme/api');
+    });
+
+    it('records a malformed form against the repository, with no model to name', async () => {
+      const h = harness({ 'acme/api': REPO.id }, DEPLOY);
+      await h.install();
+      await h.ingest(await actionsToken(), sampleReport());
+      const cookie = await h.sessionCookie();
+      await post(h, '/r/acme/api/approve', { back: '/r/acme/api/runs/1' }, cookie); // no provider/model
+      const rows = await failures(h);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].detail.outcome).toBe('malformed_form');
+      expect(rows[0].detail.model).toBeNull();
+      expect(rows[0].actor).toBe('octocat');
+    });
+
+    it('records a duplicate click as its own class, not as a success', async () => {
+      const { h, cookie } = await approved('pr', DEPLOY);
+      await post(h, '/r/acme/api/approve', { ...finding, mode: 'pr' }, cookie); // the second click
+      const rows = await failures(h);
+      expect(rows.map((r) => r.detail.outcome)).toEqual(['already_in_flight']);
+    });
+
+    it('stamps the build on the SUCCESS row too, which is what makes the two comparable', async () => {
+      const { h } = await approved('pr', DEPLOY);
+      const ok = (await h.store.listAuditLog()).find((e) => e.event === 'migration_approved');
+      expect(ok?.detail.deployment).toBe('abc12345@srv-7');
+    });
+
+    it('says `unknown` rather than inventing a build when the host supplies none', async () => {
+      const h = harness({ 'acme/api': REPO.id }, { deployCommit: null, deployInstance: null });
+      await h.install();
+      await h.ingest(await actionsToken(), sampleReport());
+      await post(h, '/r/acme/api/approve', { ...finding, mode: 'pr' });
+      expect((await failures(h))[0].detail.deployment).toBe('unknown');
+    });
+
+    it('a failed record never costs the click its answer', async () => {
+      // The record is diagnostics. If the audit insert throws, the person must still be told what
+      // happened — turning a refusal into a 500 because the logging failed would be a worse bug
+      // than the one this instrumentation exists to diagnose.
+      const h = harness({ 'acme/api': REPO.id }, DEPLOY);
+      await h.install();
+      await h.ingest(await actionsToken(), sampleReport());
+      h.store.appendAuditLog = async () => {
+        throw new Error('audit table unavailable');
+      };
+      const res = await post(h, '/r/acme/api/approve', { ...finding, mode: 'pr' });
+      expect(res.status).toBe(302); // still the signed-out redirect, not a 500
+    });
+  });
 });
 
 describe('reading evidence requires sign-in AND GitHub access to the repository', () => {
@@ -898,5 +976,69 @@ describe('an Approve click that does not create an approval still says so', () =
     expect(await res.text()).toContain('nothing was approved');
     const failed = lines.find((l) => l.message === 'approve failed');
     expect(failed?.extra).toMatchObject({ repo: 'acme/api' });
+  });
+
+  // The header that lets item 4's smoke test bind an assertion to a BUILD.
+  //
+  // Reading the commit from /healthz cannot do that: /healthz and the request being judged are two
+  // separate requests, and during a rolling deployment they can be served by different instances
+  // running different builds. The smoke test would then report "the approve route works on the new
+  // build" having actually exercised the old one -- a confident claim about the wrong artifact,
+  // which is the failure mode item 4 exists to remove.
+  describe('every response carries the build that produced it', () => {
+    it('stamps the commit on a redirect, not only on healthz', async () => {
+      const h = harness({ 'acme/api': REPO.id }, { deployCommit: 'abc1234567890', deployInstance: 'srv-7' });
+      await h.install();
+      await h.ingest(await actionsToken(), sampleReport());
+      // The signed-out approve POST -- the exact response the smoke job asserts.
+      const res = await post(h, '/r/acme/api/approve', { ...finding, mode: 'pr' });
+      expect(res.status).toBe(302);
+      expect(res.headers.get('x-mendr-deployment-commit')).toBe('abc1234567890');
+      expect(res.headers.get('x-mendr-deployment')).toBe('abc12345@srv-7');
+    });
+
+    it('omits the commit header entirely when the host supplies none, rather than sending a lie', async () => {
+      const h = harness({}, { deployCommit: null, deployInstance: null });
+      const res = await h.app.request('/healthz');
+      expect(res.headers.get('x-mendr-deployment-commit')).toBeNull();
+      // The derived id is still present and honest about not knowing.
+      expect(res.headers.get('x-mendr-deployment')).toBe('unknown');
+    });
+
+    it('stamps error responses too, so a failure can be attributed to a build', async () => {
+      const h = harness({}, { deployCommit: 'deadbeefcafe', deployInstance: 'i-2' });
+      const res = await h.app.request('/r/nobody/nothing/runs/1');
+      expect(res.headers.get('x-mendr-deployment-commit')).toBe('deadbeefcafe');
+    });
+  });
+});
+
+// P1-A CONTAINMENT, item 4's precondition: /healthz says WHICH BUILD answered.
+//
+// A post-deploy smoke test that cannot tell builds apart is worse than none — it passes against
+// whatever is still serving, which is exactly the "proven on the build it was last tested on"
+// failure item 4 exists to close. So the workflow waits for this field to report the commit it
+// just deployed before it exercises anything.
+describe('healthz names the build that answered', () => {
+  it('reports the commit, the instance, and a single legible id', async () => {
+    const h = harness({}, { deployCommit: 'abc1234567890', deployInstance: 'srv-7' });
+    const body = await (await h.app.request('/healthz')).json();
+    expect(body.deployment).toEqual({ commit: 'abc1234567890', instance: 'srv-7', id: 'abc12345@srv-7' });
+  });
+
+  it('says `unknown` off-host rather than inventing a build', async () => {
+    const h = harness({}, { deployCommit: null, deployInstance: null });
+    const body = await (await h.app.request('/healthz')).json();
+    expect(body.deployment.id).toBe('unknown');
+    expect(body.deployment.commit).toBeNull();
+  });
+
+  it('carries no credential — only the two deployment identifiers', async () => {
+    // /healthz is unauthenticated. A field added here is public by construction, so this asserts
+    // the shape stays exactly the two ids and the derived string, and never grows a secret.
+    const h = harness({}, { deployCommit: 'deadbeef', deployInstance: 'i-1', githubPrivateKey: 'pem-secret' });
+    const body = await (await h.app.request('/healthz')).json();
+    expect(Object.keys(body.deployment).sort()).toEqual(['commit', 'id', 'instance']);
+    expect(JSON.stringify(body)).not.toContain('pem-secret');
   });
 });

@@ -48,6 +48,15 @@ export const TIER_B_REASON_TEXT: Record<TierBReason, string> = {
     'the model value is assembled at runtime, so no single literal here can carry the migration.',
   insufficient_dataflow:
     'the value could not be traced to a definite use, so the migration cannot be shown to be safe.',
+  // WHAT WAS ACTUALLY CHECKED: the literal IS a live model argument and the
+  // replacement IS verified -- this is not a doubt about either. What is missing is
+  // the REQUEST around the id: the replacement belongs to a model family the registry
+  // records parameter rules for, this call passes a model-dependent parameter, and no
+  // rule covers that parameter for that model. mendr has NOT tested the parameter
+  // against the provider; it reports that nothing authoritative says the parameter
+  // survives the swap. Silence in the registry is not compatibility.
+  coupled_param_unverified:
+    'sits in a live model argument, but the replacement model belongs to a family whose accepted request parameters differ, and this call passes a parameter no migration rule covers; swapping the id alone could leave a request the provider rejects.',
   // WHAT WAS ACTUALLY CHECKED: the literal sits in a model argument and is
   // wrapped in an `as` cast to something other than `string`/`const`
   // (classifyLiteral's maskingCast). mendr does NOT resolve the cast target, so
@@ -68,6 +77,7 @@ export const TIER_B_REASON_TEXT: Record<TierBReason, string> = {
  */
 export const TIER_B_REASON_ORDER: readonly TierBReason[] = [
   'replacement_unverified',
+  'coupled_param_unverified',
   'platform_blocked',
   'usage_unverified',
   'type_cast_masked',
@@ -481,6 +491,12 @@ export const TIER_B_USAGE_VERDICT_TEXT: Record<TierBReason, string> = {
   // reports the key, which is the fact, and leaves the provisioning inference
   // to the `reason:` row below it, which already hedges it.
   platform_blocked: 'unverified -- sits under a deployment key, not in a model argument',
+  // Like `replacement_unverified`, the USAGE here is fine and saying otherwise would
+  // send the reviewer looking for the wrong thing: the literal is a confirmed live
+  // model argument and the mapping is verified. What is unproven is the REQUEST
+  // around it, so this row confirms the usage and lets the `reason:` row carry the
+  // parameter.
+  coupled_param_unverified: 'confirmed live model argument -- the request parameters are what is unverified',
   type_cast_masked: 'unverified -- masked by an `as` cast',
   dynamic_model_value: 'unverified -- the model value is assembled at runtime',
   insufficient_dataflow: 'unverified -- not traced to a definite use',
