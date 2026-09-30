@@ -56,6 +56,7 @@ import { displayEntryId, entryIdFor } from './registry/entryId.js';
 import { formatValidation, validateRegistry } from './registry/validateRegistry.js';
 import { coverageFieldsOf, loadRegistryWithFreshness } from './registry/freshRegistry.js';
 import { isOffline } from './net/offlineGuard.js';
+import { EvaluatedAtError, resolveEvaluationTime, type EvaluationTimeSource } from './audit/evaluatedAt.js';
 import {
   findModelIdLiterals,
   scanProjectAnnotations,
@@ -3471,7 +3472,34 @@ program
         process.exit(2);
       }
       const resolved = resolveRepoOrExit(repoPath);
-      const now = new Date();
+      // ONE evaluation instant for the whole run, and pinnable across a BATCH.
+      //
+      // Every time-dependent answer in an audit reads this: the registry's age and therefore its
+      // freshness grade, `daysUntil`, and the deadline severity that follows from it — `24d left`
+      // vs `due TODAY` vs `Nd OVERDUE`. Those are not cosmetic. Severity feeds the decision a
+      // reader acts on, so a batch of scans that straddles a boundary can hand two repositories
+      // different verdicts for no reason but when their turn came.
+      //
+      // Measured: runs 7 and 8 straddled the registry's 2.0-day boundary, and six of twelve
+      // repositories reported `ageDays: 1.9` while six reported `2`. That surfaced as a diff in a
+      // comparison, and the first instinct was to exclude the field. Excluding it would have
+      // hidden the same clock reaching deadline severity, which no exclusion can fix.
+      //
+      // MENDR_EVALUATED_AT pins the instant so a batch is reproducible. Unset, the system clock is
+      // read once here. Present but unreadable, the run STOPS: a pin that is silently replaced by
+      // the system clock yields a valid-looking report at a time nobody asked for, with every
+      // deadline shifted and nothing saying so — which defeats the only reason to pin.
+      let evaluation: { at: Date; source: EvaluationTimeSource };
+      try {
+        evaluation = resolveEvaluationTime();
+      } catch (err) {
+        if (err instanceof EvaluatedAtError) {
+          console.error(`mendr: ${err.message}`);
+          process.exit(2); // usage/configuration error, the same class as a bad repo path
+        }
+        throw err;
+      }
+      const now = evaluation.at;
       // The registry, graded for FRESHNESS (src/registry/freshRegistry.ts): the
       // opt-in refresh fetches a signed snapshot; otherwise the bundled copy is
       // used and dated by its release stamp. --offline always wins over a refresh.
@@ -3494,6 +3522,7 @@ program
       let excludedDirs: string[] = [];
       let configFailed = false;
       let configParseIssues: { file: string; issue: string }[] = [];
+      let configMockSwitchFiles: string[] = [];
       let config: ReturnType<typeof foldConfigExposure> = [];
       try {
         const scan = scanConfigFiles(resolved, registry);
@@ -3505,6 +3534,7 @@ program
         // A config file the line walk could not claim to have read properly counts in the same
         // denominator as a source parse failure, and fails closed the same way.
         configParseIssues = scan.parseIssues;
+        configMockSwitchFiles = scan.globalMockTestingFiles;
         if (scan.filesUnreadable > 0 && !json) {
           console.error(`mendr: ${scan.filesUnreadable} config file(s) could not be read.`);
         }
@@ -3815,9 +3845,24 @@ program
               preview: true,
               repo: basename(resolved),
               generatedAt: now.toISOString(),
+              // The instant EVERY time-dependent answer in this report was computed against:
+              // registry age and freshness, daysUntil, deadline severity. Recorded so a report can
+              // be reproduced, and so a batch pinned with MENDR_EVALUATED_AT is self-evidently one
+              // evaluation rather than N clock reads.
+              evaluatedAt: now.toISOString(),
+              // `system`: the clock was read once at the start of this run. `override`: pinned
+              // through MENDR_EVALUATED_AT, so this report is one of a reproducible batch.
+              evaluationTimeSource: evaluation.source,
               period: { from, to },
               sha: opts.sha ?? null,
               coverage,
+              // NEITHER findings NOR coverage. Things mendr noticed that classify nothing, move no
+              // denominator, and do not mean anything went unread. See AuditObservations.
+              observations: {
+                config: {
+                  globalMockTestingFiles: configMockSwitchFiles.length > 0 ? configMockSwitchFiles : undefined,
+                },
+              },
               conclusion,
               // The audit is READ-ONLY: `decision` is kept for compatibility, but
               // every record states explicitly that nothing was applied, and gives
@@ -3921,7 +3966,15 @@ program
       // counts uv.lock among the manifests it looks for).
       const pythonSdks = reqs ? { reqs, uv } : undefined;
 
-      const meta: AuditMeta = { from, to, coverage, verbose: !!opts.verbose, lockedSdks, pythonSdks };
+      const meta: AuditMeta = {
+        from,
+        to,
+        coverage,
+        observations: { config: { globalMockTestingFiles: configMockSwitchFiles.length > 0 ? configMockSwitchFiles : undefined } },
+        verbose: !!opts.verbose,
+        lockedSdks,
+        pythonSdks,
+      };
       const rendered = renderAuditReport(investigations, meta);
       for (const line of shouldUsePlain(opts.plain) ? toPlainLines(rendered) : rendered) console.log(line);
       // Printed after the findings, never instead of them: a suppression the reader cannot see

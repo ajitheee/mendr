@@ -65,7 +65,83 @@ const ROUTE_LIST_KEY = /^(model_list|models|deployments|model_group|llm_list)$/i
  * route dials. A file-level reading of it is a category error, and a measurable false clean.
  */
 export const ENTRY_STUB_MARKERS =
-  /\b(fake-key|my-fake-model|openai\/fake|test-api-key|FAKE_[A-Z_]*API_BASE|fake_api_base)\b/i;
+  /\b(fake-key|my-fake-model|openai\/fake|test-api-key|FAKE_[A-Z_]*API_BASE|fake_api_base|mock_timeout|mock_response)\b/i;
+
+/**
+ * The ONE switch that genuinely speaks for a whole file, and the scopes it may speak from.
+ *
+ * `mock_timeout` and `mock_response` used to sit in the file-level set and do not belong there:
+ * both are `litellm_params` fields, set per route. Verified in litellm's own
+ * `proxy_server_config.yaml`, where `mock_timeout: True` sits inside a `model_list` entry's
+ * `litellm_params` beside `FAKE_OPENAI_API_BASE` — an entry marker by construction. They have moved
+ * to {@link ENTRY_STUB_MARKERS}.
+ *
+ * `dangerously_allow_mock_testing_request_params` really is file-wide: it is a root proxy switch
+ * that changes how the whole process answers. In that same file it sits under root
+ * `general_settings:`, which is why that file stays demoted and the partner-audit conclusion about
+ * it survives this tightening.
+ */
+const FILE_WIDE_SWITCH = /^dangerously_allow_mock_testing\w*$/i;
+/**
+ * The ONE parent this switch is recognised under: root `general_settings`.
+ *
+ * Narrowed 2026-09-29 from a set that also accepted `litellm_settings`, `router_settings`,
+ * `environment_variables` and the bare root. That breadth was guesswork — `general_settings` is
+ * where LiteLLM actually defines it, and where litellm's own `proxy_server_config.yaml` puts it.
+ * Accepting it anywhere else invents scopes the product does not have.
+ */
+const SWITCH_PARENT = /^general_settings$/i;
+
+/** Is a YAML/JSON scalar truthy in the sense a config switch means? */
+function isTruthy(v: unknown): boolean {
+  if (v === true) return true;
+  if (typeof v === 'string') return /^(true|yes|on|1)$/i.test(v.trim());
+  return v === 1;
+}
+
+/**
+ * Is `general_settings.dangerously_allow_mock_testing_request_params` ON in this file?
+ *
+ * WHAT THIS IS, AND WHAT IT IS NOT. The switch is global in EFFECT: it lets any request to this
+ * proxy be answered with a mock. It is NOT evidence that any particular route is fake, and it was
+ * being used as exactly that — one `true` classified every `model_list` entry in the file as a
+ * fixture, so a proxy that merely *permits* mock testing had its real production routes silenced.
+ * A deployment can have this on and still serve live traffic.
+ *
+ * So the answer here is CONFIGURATION METADATA, recorded as a risk signal a reviewer can see. It
+ * changes no verdict on its own. Callers must not use it to demote.
+ *
+ * Read at parsed scope, not by matching characters. The old `regex.test(text)` fired on the switch
+ * inside a comment, inside a quoted string, or inside a `model_list` entry, and could not tell
+ * `: true` from `: false` — so a config that deliberately DISABLED mock testing was treated as if
+ * it had enabled it. Unparseable input answers `false`: an unreadable file has declared nothing.
+ */
+export function hasGlobalMockTestingSwitch(text: string): boolean {
+  let docs;
+  try {
+    docs = parseAllDocuments(text);
+  } catch {
+    return false;
+  }
+  for (const doc of docs) {
+    if (doc.errors.length > 0) return false;
+    const root = doc.contents;
+    if (!isMap(root)) continue;
+    for (const pair of root.items as Pair[]) {
+      const key = pair.key as { value?: unknown } | null;
+      const name = key && typeof key.value === 'string' ? key.value : null;
+      if (name === null || !SWITCH_PARENT.test(name) || !isMap(pair.value)) continue;
+      for (const inner of (pair.value as unknown as { items: Pair[] }).items) {
+        const ik = inner.key as { value?: unknown } | null;
+        const iname = ik && typeof ik.value === 'string' ? ik.value : null;
+        if (iname !== null && FILE_WIDE_SWITCH.test(iname) && isTruthy((inner.value as { value?: unknown } | null)?.value)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
 
 /** Offset → 1-based line. Built once per file; a scan per lookup made this quadratic on big files. */
 function lineIndex(text: string): (offset: number) => number {

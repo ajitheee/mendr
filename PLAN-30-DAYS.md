@@ -422,6 +422,36 @@ Still first because it is small and lands on a path already walked twice today
 Presets. Teams that adopt a gateway are currently **invisible** to Mendr, and they are the
 sophisticated teams worth selling to. Cheapest change with the biggest strategic payoff.
 
+> ### CLOSED 2026-09-30 — scoped to LiteLLM `config.yaml` / `model_list` only
+>
+> **The premise was wrong in a useful way.** Gateway configs were not invisible: detection already
+> existed, including the hard part — `model_name` is the client-facing alias and
+> `litellm_params.model` is the routed target, and renaming the alias would break every caller while
+> fixing no retirement. That distinction was already correct. What was wrong was one **false clean**:
+> a single stub route (`FAKE_*_API_BASE`, later also `mock_timeout` / `mock_response`) demoted every
+> real route in the file to a fixture, because per-route fields sat in the file-level marker set.
+>
+> **What shipped**, each as its own measured change, on top of the run-7 baseline:
+> - stub markers are **entry-scoped**, with boundaries from the YAML parser's node ranges, and
+>   **ambiguity never demotes** — a parse error, a non-sequence `model_list`, an item without a
+>   range all resolve to *no opinion*, never *no stubs*;
+> - `dangerously_allow_mock_testing_request_params` is a **configuration observation**
+>   (`observations.config.globalMockTestingFiles`), recognised only at root `general_settings`; it
+>   classifies nothing, moves no denominator, and is not a limit;
+> - `FIXTURE-ONLY REFERENCES — NO PRODUCTION SELECTOR FOUND` replaces `NO EXPOSURE` when the only
+>   references are fixtures, below production severity and never auto-migrated;
+> - the audit reads the clock **once**, records `evaluatedAt` and `evaluationTimeSource`, honours
+>   `MENDR_EVALUATED_AT` for reproducible batches, and **stops the run** on a pin it cannot read.
+>
+> **Evidence.** The targeted mixed-entry and mutation tests are the direct proof the defect is
+> fixed. Run 7 (14,171 locations, zero changed) is the regression evidence that it broke nothing
+> — the twelve repositories are a **regression corpus**, not a discovery or coverage corpus, and
+> the corpus contained none of the shapes fixed here. Run 9's five behavioural promotions were each
+> read in the config; stub-marker leaks: **zero**. Full details in `MEASUREMENT-2026-09-28.md`.
+>
+> **Deliberately NOT done, and still open:** `model_group_alias`, `fallbacks`, Portkey, OpenRouter
+> Presets. Each is its own slice with its own measurement. Nothing here extends to them.
+
 **P1-G3 · Call-site-aware detection.** A model id in a changelog or an old test currently
 fires like a live call. A free Semgrep rule that requires the id to sit in the `model` field
 beats Mendr on precision until this is fixed.

@@ -168,6 +168,30 @@ export interface SurfaceCoverage extends ParseAware {
   note?: string;
 }
 
+/**
+ * THINGS MENDR NOTICED, which are neither findings nor coverage gaps.
+ *
+ * Kept out of `coverage` on purpose. Everything in `coverage` answers "what did the scan manage to
+ * read, and what does its silence therefore not prove" — every field there is a denominator or a
+ * limit. An observation is neither: the scan read the file perfectly well, nothing is missing, and
+ * no number moves. Filing one under coverage would make it read as a gap, and printing it under
+ * "Limits of this run" said outright that mendr had failed to inspect something. It had not.
+ *
+ * An observation may never classify, never alter a denominator, and never change a verdict.
+ */
+export interface AuditObservations {
+  config: {
+    /**
+     * Files with `general_settings.dangerously_allow_mock_testing_request_params` on.
+     *
+     * Worth a reviewer's attention: requests to that proxy can be answered with a mock. NOT
+     * evidence that any route in the file is fake — a deployment can allow mock testing and still
+     * serve production traffic — so every entry there is still judged on its own markers.
+     */
+    globalMockTestingFiles?: string[];
+  };
+}
+
 export interface SourceCoverage extends SurfaceCoverage {
   tsFiles: number;
   pyFiles: number;
@@ -258,6 +282,14 @@ export interface AuditCoverage {
 /** The only four verdicts an audit may reach. A general `clean` is not one. */
 export type AuditConclusion =
   | 'exposure_detected'
+  /**
+   * No production selector, but the repository DOES reference a retiring id in a test double, a
+   * fixture or a sample. Distinct from {@link no_exposure_in_completed_surfaces} on purpose: a
+   * fixture pinned to an id that stops serving breaks a build on the shutdown date exactly as
+   * production does, so headlining it "NO EXPOSURE" understates it. It sits below production
+   * severity, it is never auto-migrated, and it is not a clean result.
+   */
+  | 'fixture_only_references'
   | 'no_exposure_in_completed_surfaces'
   | 'inconclusive'
   | 'audit_failed';
@@ -314,7 +346,16 @@ export function partitionFindings(investigations: readonly ModelInvestigation[])
  *        count. Informational catalog/fixture references must never produce an
  *        `exposure_detected` verdict.
  */
-export function concludeAudit(coverage: AuditCoverage, exposureCount: number): AuditConclusion {
+export function concludeAudit(
+  coverage: AuditCoverage,
+  exposureCount: number,
+  /**
+   * Investigations whose only locations are test doubles, fixtures or samples. Optional and
+   * defaulting to 0 so every existing caller keeps its exact previous behaviour: this parameter
+   * can only ever change the wording of a result that was already going to be called clean.
+   */
+  fixtureReferences = 0,
+): AuditConclusion {
   if (exposureCount > 0) return 'exposure_detected';
   if (anySurfaceFailed(coverage)) return 'audit_failed';
   // REGISTRY FRESHNESS, fail-closed: stale knowledge can still PROVE an exposure
@@ -344,7 +385,29 @@ export function concludeAudit(coverage: AuditCoverage, exposureCount: number): A
   // M8 (external validation): anything-llm — 22 of 1,242 source files analyzed —
   // read "no retiring AI dependencies in use". When the analyzed share is a small
   // minority of the repository's source, silence proves nothing; say so.
-  return sourceComplete && !analyzedIsMinority(coverage) ? 'no_exposure_in_completed_surfaces' : 'inconclusive';
+  if (!sourceComplete || analyzedIsMinority(coverage)) return 'inconclusive';
+  // LAST, and deliberately so. Every fail-closed check above outranks this: a repository whose
+  // scan was incomplete, whose registry was stale or whose files would not parse stays
+  // INCONCLUSIVE even when a fixture reference was found, because "fixture-only" is a claim about
+  // what IS there and those cases are about what could not be seen. Only a run that would
+  // otherwise have been called clean can be called fixture-only.
+  return fixtureReferences > 0 ? 'fixture_only_references' : 'no_exposure_in_completed_surfaces';
+}
+
+/**
+ * How many investigations sit ONLY in test doubles, fixtures or sample data.
+ *
+ * Counted from the location roles the scanner already assigned — this reads the classification,
+ * it never changes it, which is what keeps the conclusion a pure reporting decision.
+ */
+export function countFixtureReferences(investigations: readonly ModelInvestigation[]): number {
+  let n = 0;
+  for (const inv of investigations) {
+    if (isExposure(inv)) continue;
+    const all = [...inv.locations.selectors, ...inv.locations.catalog];
+    if (all.some((l) => l.role === 'test_fixture')) n++;
+  }
+  return n;
 }
 
 /** Fewer than a quarter of the repo's source files were in a language mendr reads. */
@@ -357,6 +420,10 @@ export function analyzedIsMinority(coverage: AuditCoverage): boolean {
 /** The limits on this run — what a zero-finding result does NOT prove. */
 export function coverageGaps(coverage: AuditCoverage): string[] {
   const gaps: string[] = [];
+  // NOTHING ABOUT GLOBAL MOCK TESTING BELONGS HERE. It was briefly pushed into this list, which
+  // prints under "Limits of this run" — a section that says mendr could not vouch for something.
+  // The file was read completely and every entry in it was classified; there is no gap. It is an
+  // OBSERVATION and is reported as one. See AuditObservations.
   if ((coverage.source.parseFailures ?? 0) > 0) {
     const n = coverage.source.parseFailures ?? 0;
     gaps.push(

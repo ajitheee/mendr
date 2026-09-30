@@ -17,7 +17,7 @@ import { displayEntryId } from '../registry/entryId.js';
 import { splitProviderPrefix } from '../usage/sharedRules.js';
 import { effectiveVerificationState, modelIdEntries } from '../usage/llmRegistry.js';
 import { isModelLikeName } from '../usage/scanLiterals.js';
-import { lineIsInStubEntry, stubModelListEntries, type ModelListScope } from './yamlEntries.js';
+import { hasGlobalMockTestingSwitch, lineIsInStubEntry, stubModelListEntries, type ModelListScope } from './yamlEntries.js';
 import type { Tier } from '../report/tiers.js';
 
 /** Where a deprecated id sits in config. */
@@ -162,6 +162,15 @@ export type ClassificationSignal =
   | 'ui_metadata_key' // the key names UI/presentation metadata (placeholder, hint, label), never a selection
   | 'alias_key' // router model_list: `model_name` is the client alias; the sibling litellm_params.model selects
   | 'mock_markers' // the file carries fake keys / mock flags — a test fixture, whatever its path
+  /**
+   * CONFIGURATION METADATA, NOT A CLASSIFICATION. `general_settings.dangerously_allow_mock_testing_request_params`
+   * is on in this file. That switch is global in EFFECT — it lets any request be answered with a
+   * mock — but it is not evidence that any particular route is fake, and it used to be treated as
+   * if it were: one `true` demoted every model entry in the file to a fixture. A proxy can have
+   * mock testing available and still route production traffic. So it is recorded here as a risk
+   * signal a reviewer can see, and it changes no verdict on its own.
+   */
+  | 'global_mock_testing_enabled'
   | 'gitignored' // the repo's own .gitignore names this file: a local/dev artifact, not deployed config
   | 'runtime_route_key' // a key naming a runtime route/selection
   | 'lookup_key' // the id IS the key
@@ -460,6 +469,12 @@ export interface FileSignals {
   yamlStubs: ModelListScope;
   /** Is this a YAML file, so the parser scope above is the authority on entry boundaries? */
   isYaml: boolean;
+  /**
+   * `general_settings.dangerously_allow_mock_testing_request_params` is on. RISK SIGNAL ONLY — it is
+   * recorded on every occurrence in the file and demotes nothing, because permitting mock answers
+   * is not evidence that any given route is fake.
+   */
+  globalMockTesting: boolean;
 }
 
 /**
@@ -563,10 +578,13 @@ export function classifyOccurrenceWithSignals(
 ): { position: ConfigPosition; purpose?: ConfigPurpose; key: string | null; signals: ClassificationSignal[] } {
   const base = classifyConfigOccurrence(line, idCol, id);
   const signals: ClassificationSignal[] = [];
+  // Recorded FIRST and never acted on: metadata a reviewer should see, on whatever verdict follows.
+  // It is deliberately not a branch — see FileSignals.globalMockTesting.
+  if (file.globalMockTesting) signals.push('global_mock_testing_enabled');
 
   // 1. Hard override: a fixture / artifact / generated file is DATA, always.
   if (file.fixturePath) {
-    return { position: 'config_catalog', purpose: 'data_fixture', key: base.key, signals: ['fixture_path'] };
+    return { position: 'config_catalog', purpose: 'data_fixture', key: base.key, signals: [...signals, 'fixture_path'] };
   }
 
   // 2. The occurrence is not selector-shaped — record why and stop.
@@ -651,15 +669,33 @@ export function classifyOccurrenceWithSignals(
 // is a category error — and a measured false clean: a single stub entry carrying
 // `os.environ/FAKE_OPENAI_API_BASE` demoted a sibling `model: gpt-4-0613` from review to
 // informational. It now lives in ENTRY_STUB_MARKERS (config/yamlEntries.ts), scoped to the entry
-// the parser says it belongs to. What remains here is genuinely file-wide: root-level proxy
-// switches that change how the whole process answers, not properties of one route.
-const FILE_MOCK_FLAGS = /\b(mock_timeout|mock_response|dangerously_allow_mock_testing\w*)/i;
+// the parser says it belongs to.
+//
+// `mock_timeout` and `mock_response` LEFT TOO, 2026-09-29, for the same reason: both are
+// `litellm_params` fields, set per route. Verified in that same litellm file, where
+// `mock_timeout: True` sits inside a `model_list` entry's `litellm_params` beside
+// `FAKE_OPENAI_API_BASE` — an entry marker by construction.
+//
+// What remains is the one switch that really is file-wide,
+// `dangerously_allow_mock_testing_request_params`, and it is no longer matched anywhere in the text.
+// An unrestricted match fired on the switch inside a comment, inside a quoted string, or inside a
+// `model_list` entry, and demoted the whole file on that basis. It is now a PARSED MAPPING KEY at
+// the root or under a settings block, with a truthy value — see hasFileWideMockSwitch.
 /** Entry-level: a fake key or a fake model inside ONE model_list entry marks that entry, not the file (a Helm chart can carry a stub entry beside a real one). */
 const ENTRY_MOCK_MARKERS = /\b(fake-key|my-fake-model|openai\/fake|test-api-key)\b/i;
 
-/** Does the whole FILE declare itself a mock/test configuration? */
+/**
+ * Is global mock testing switched on in this file?
+ *
+ * NO LONGER A FIXTURE CLASSIFIER. This used to feed `dataFixture`, so one
+ * `general_settings.dangerously_allow_mock_testing_request_params: true` demoted every model entry
+ * in the file to a fixture. That inferred too much: the switch is global in effect, but it does not
+ * prove any particular route is fake, and a proxy can permit mock testing while serving production
+ * traffic. It is now recorded as the `global_mock_testing_enabled` risk signal and changes no
+ * verdict on its own. Entries are judged one at a time, on their own markers.
+ */
 export function hasMockMarkers(text: string): boolean {
-  return FILE_MOCK_FLAGS.test(text);
+  return hasGlobalMockTestingSwitch(text);
 }
 
 /** Does the BLOCK around line `index` (its siblings and their children) carry a fake key or fake model? */
@@ -699,10 +735,17 @@ export function scanConfigText(
   // file defines, not a runtime selection. Surface rides on every match.
   // FILE-LEVEL SIGNALS. None of these is a verdict on its own; they are inputs to
   // the per-occurrence decision below.
-  // A fixture by PATH (examples/, templates, tests), by CONTENT (fake keys, mock
-  // flags), or by the repo's own .gitignore naming it (a local/dev artifact that
-  // happens to be tracked). Any one is decisive: nothing here is deployed config.
-  const dataFixture = isTestFixturePath(file) || hasMockMarkers(text) || !!opts.gitignored;
+  // A fixture by PATH (examples/, templates, tests), or by the repo's own .gitignore naming it (a
+  // local/dev artifact that happens to be tracked). Either is decisive: nothing there is deployed
+  // config.
+  //
+  // `hasMockMarkers` USED TO BE IN THIS OR, and its removal is the point. A global
+  // `dangerously_allow_mock_testing_request_params: true` demoted every model entry in the file to
+  // a fixture — inferring "every route here is fake" from "this proxy permits mock answers". A
+  // deployment can have that switch on and still serve production traffic. It is now recorded as
+  // the `global_mock_testing_enabled` risk signal below, and every entry is judged on its own.
+  const dataFixture = isTestFixturePath(file) || !!opts.gitignored;
+  const globalMockTesting = hasMockMarkers(text);
   const catalogDef = isCatalogDefinitionFile(file, text);
   const surface = detectProviderSurface(file);
   let distinct = 0;
@@ -718,6 +761,7 @@ export function scanConfigText(
     // re-parsed for every matched id in it.
     yamlStubs: isYaml ? stubModelListEntries(text) : { stubs: [], resolved: false },
     isYaml,
+    globalMockTesting,
   };
   void catalogDef;
   const lines0 = text.split(/\r?\n/);
@@ -895,6 +939,16 @@ export function scanConfigFiles(repoPath: string, registry: LlmRegistry): {
   excludedDirs: string[];
   /** Files the line walk could not claim to have read properly, with the reason. */
   parseIssues: { file: string; issue: string }[];
+  /**
+   * Files with `general_settings.dangerously_allow_mock_testing_request_params` on.
+   *
+   * CONFIGURATION METADATA, disclosed rather than acted on. The switch lets any request to that
+   * proxy be answered with a mock, which is worth a reviewer knowing — but it is not evidence that
+   * any route in the file is fake, so it demotes nothing. It is reported here, and in the audit's
+   * limits, because a signal recorded only inside the classifier is a signal nobody can see: the
+   * per-occurrence `signals` array never reaches `LocationRef` or `--json`.
+   */
+  globalMockTestingFiles: string[];
 } {
   const abs = resolve(repoPath);
   const excluded = new Set<string>();
@@ -910,6 +964,7 @@ export function scanConfigFiles(repoPath: string, registry: LlmRegistry): {
   let filesUnreadable = 0;
   let generatedSkipped = 0;
   const parseIssues: { file: string; issue: string }[] = [];
+  const globalMockTestingFiles: string[] = [];
   for (const file of files) {
     let text: string;
     try {
@@ -936,6 +991,8 @@ export function scanConfigFiles(repoPath: string, registry: LlmRegistry): {
     const gitignored = ignored.has(r) || ignored.has(r.split('/').pop() ?? '');
     const issue = configParseIssue(r, text);
     if (issue) parseIssues.push({ file: r, issue });
+    // Disclosed, not acted on. See the field's doc on the return type.
+    if (hasGlobalMockTestingSwitch(text)) globalMockTestingFiles.push(r);
     for (const m of scanConfigText(r, text, registry, { gitignored })) matches.push(m);
   }
   return {
@@ -944,6 +1001,7 @@ export function scanConfigFiles(repoPath: string, registry: LlmRegistry): {
     filesRead,
     filesUnreadable,
     generatedSkipped,
+    globalMockTestingFiles,
     excludedDirs: [...excluded].sort(),
     parseIssues,
   };

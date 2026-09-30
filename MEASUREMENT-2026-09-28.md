@@ -577,13 +577,34 @@ signal is an entry-level marker. The defect is real — reproduced end to end, w
 carrying `os.environ/FAKE_OPENAI_API_BASE` demoted a sibling `model: gpt-4-0613` from review to
 informational — and the corpus simply does not contain it.
 
-**That is the third time in two days.** The coupled-parameter guard fired on none of the twelve.
-The injected-client false clean was caught by probing a shape the twelve do not contain. Now this.
-The conclusion to draw is not that these fixes were unnecessary; each closed a reproduced defect
-found in real third-party code or by adversarial probing. It is that **twelve repositories is a
-regression harness, not a discovery instrument.** A green diff across all of them means "nothing
-regressed" and never "nothing is wrong", and the sentence "measured across twelve repositories"
-should not be used to imply coverage it does not have.
+### What run 7 is evidence OF
+
+**Run 7 is regression evidence, and that is exactly what it was for.** 14,171 locations compared,
+zero changed: the fix altered nothing it was not aimed at. That is a real and necessary result, and
+it is the whole job of these twelve repositories.
+
+**The twelve repositories are a REGRESSION CORPUS. They are not a discovery corpus and not a
+coverage corpus.** Naming that precisely matters, because the same table can be read three ways and
+only one of them is true:
+
+| reading | valid? |
+|---|---|
+| "this change broke nothing across twelve real repositories" | **yes** — that is what was measured |
+| "this change was unnecessary, since nothing moved" | no — the defect was reproduced end to end |
+| "twelve repositories were checked, so the scanner is broadly correct" | no — they were never sampled for coverage |
+
+**The direct evidence that the defect is fixed is the targeted tests, not the corpus.** The
+mixed-entry cases — a stub route beside a live one, stub first, stub sandwiched between two live
+routes — fail before the change and pass after it. The mutation runs are the other half: disabling
+the parse-error guard fails four abstention tests, and disabling the entry scoping fails two, which
+is what shows those branches are load-bearing rather than decorative. Those tests are the proof.
+Run 7 is the assurance that the proof cost nothing elsewhere.
+
+**Two other changes in these two days also moved nothing here** — the coupled-parameter guard, and
+the injected-client false clean that was caught by adversarial probing rather than by the corpus at
+all. Read together the lesson is about the instrument, not the fixes: a green diff across all twelve
+means "nothing regressed" and never "nothing is wrong", and the sentence "measured across twelve
+repositories" must not be used to imply coverage it does not have.
 
 ## A correction to the diagnosis this slice was queued on
 
@@ -613,3 +634,229 @@ every entry when every entry is a stub, and a file rule would only restate that 
 reintroducing the whole-file blast radius this removes.
 
 24 tests, mutation-verified twice. Full suite 1547/1547.
+
+---
+
+# Amendment, 2026-09-29 — runs 8 and 9, recorded separately from run 7
+
+Run 7 is preserved unchanged, with its SHA-256 manifest. These are two further changes, each
+measured on its own so each can be attributed.
+
+## Run 8 — the fixture-only conclusion. Reporting-only, verified field by field.
+
+`NO EXPOSURE IN COMPLETED SURFACES` understated a repository that pins a retiring id in a test
+double or sample: such a reference fails on the shutdown date like any other caller, and what
+breaks is a test run, a docs sample, or a developer setting the project up. The headline is now
+**`FIXTURE-ONLY REFERENCES — NO PRODUCTION SELECTOR FOUND`**, below production severity, never
+auto-migrated, and explicitly not a clean result.
+
+**The requirement was that this change nothing else, and that was checked rather than assumed.**
+Run 7 (preserved) against run 8, comparing every location's role, tier, disposition, key and
+patch-eligibility, every investigation decision, and every coverage count:
+
+| | result |
+|---|---|
+| Repositories | **12 of 12** unchanged apart from the conclusion string |
+| Classifications changed | **0** |
+| Decisions changed | **0** |
+| Denominators changed | **0** |
+
+**The first run of that check reported six failures, and the check was wrong, not the code.** Six
+repositories differed on `registry.ageDays: 1.9 → 2` — the bundled registry's age against the wall
+clock, which crossed the 2.0-day boundary partway through the twelve. Six scanned before it, six
+after, which is exactly the split. The comparison's volatile-field list was incomplete. Recorded
+because the failure looked like the thing it was designed to catch, and the correct response was to
+read the diff rather than re-run and hope.
+
+Ordering is mutation-verified: **every fail-closed verdict outranks the new one.** A stale registry,
+an unparseable file or a mostly-unread repository stays `INCONCLUSIVE` even with fixture references
+present, because fixture-only is a claim about what IS there and those are claims about what could
+not be seen.
+
+**The new conclusion fires on none of the twelve.** llama_index, the only repository without
+exposure, has no fixture reference at all. Consistent with everything else in these two days.
+
+## Run 9 — the mock-switch correction, and the promotions read by hand
+
+Two corrections, both narrowing what may demote:
+
+1. **`mock_timeout` and `mock_response` are per-route, not file-wide.** Both are `litellm_params`
+   fields. Verified in litellm's own `proxy_server_config.yaml`, where `mock_timeout: True` sits
+   inside a `model_list` entry's `litellm_params`, beside `FAKE_OPENAI_API_BASE`. They moved to
+   entry scope.
+2. **`dangerously_allow_mock_testing_request_params` no longer classifies anything.** It is
+   recognised only at root `general_settings`, and it is recorded as **configuration metadata**,
+   not a verdict. The switch says what the proxy PERMITS; it is not evidence that any particular
+   route is fake, and a deployment can allow mock answers while serving production traffic. Using
+   it to demote every entry was a false clean waiting to happen. An earlier commit in this same
+   slice defended keeping it as a file-wide demotion and shipped a test asserting that; both are
+   reversed, with the reasoning recorded in the test.
+
+**Blast radius, measured before the change rather than discovered after it.** The previous check had
+been YAML-only, which was too narrow — the old regex ran on all eight config extensions. Re-checked
+across every format and all twelve repositories: **exactly one file matched**,
+`litellm/proxy_server_config.yaml`, and it matched on **`mock_timeout`** — confirming the per-route
+field was what had been demoting the file, not the switch.
+
+### Every classification change in that file, inspected individually
+
+17 locations, **16 changed**. They are two different kinds of change and are counted separately,
+because only one kind alters what a reader is asked to do:
+
+| kind | count | severity effect |
+|---|---|---|
+| **Behavioural promotions** — `test_fixture/C/informational` → `runtime_selector_candidate/B/review` | **5** | **yes**: enters the review queue |
+| **Label-only corrections** — `test_fixture/C/informational` → `catalog_reference/C/informational` | **11** | **none**: same tier, same disposition, more accurate name |
+| Unchanged | 1 | — |
+
+#### Stub-marker leaks: ZERO
+
+**Not one promotion came out of a `model_list` entry carrying a stub marker.** This is the property
+the entry-scoping work exists to guarantee, so it is recorded as a result rather than left implied.
+The stub entries in this file (`mock_timeout`, `openai/fake`, `FAKE_OPENAI_API_BASE`) contain no
+registry-matching id at all, so they produced no location in either run — checked, not assumed.
+
+#### The five behavioural promotions, with a per-location verdict
+
+Each was judged by opening its entry in the config, not by its role string.
+
+| line | id | the entry, as written | stub marker in the entry? | verdict |
+|---|---|---|---|---|
+| 4 | `gpt-5-mini` | `- model_name: gpt-5-mini-end-user-test` → `litellm_params: { model: gpt-5-mini, region_name: "eu" }` | none | **CORRECT** — a routed target with a real region, not a fixture |
+| 10 | `gpt-5-mini` | same alias → `litellm_params: { model: openai/gpt-5-mini, api_key: os.environ/OPENAI_API_KEY }` | none | **CORRECT** — prefixed selector, real env-var key |
+| 45 | `gpt-image-1` | `- model_name: dall-e-2` → `litellm_params: { model: openai/gpt-image-1 }` | none | **CORRECT** — the alias is the retiring name, the target is what is routed |
+| 48 | `gpt-image-1` | `- model_name: openai-dall-e-3` → `litellm_params: { model: gpt-image-1 }` | none | **CORRECT** — bare target, no marker |
+| 55 | `gpt-image-1` | `- model_name: gpt-image-1` → `litellm_params: { model: openai/gpt-image-1, api_key: os.environ/…, api_base: os.environ/RECORDER_OPENAI_BASE_URL }` | none | **CORRECT** — `RECORDER_OPENAI_BASE_URL` is not a fake base; the file's own comment says it is unset outside CI and falls back to `api.openai.com` |
+
+**All five are correct as CLASSIFICATIONS.** Whether `gpt-5-mini` and `gpt-image-1` belong in the
+registry at all is a different question, already open in this document as the registry-content audit,
+and it is not answered here.
+
+#### The eleven label-only corrections
+
+No severity change in any of them, which is why they are counted apart from the five: nine
+`model_name` values now read `catalog_reference` (an alias, which is what they are) instead of
+`test_fixture`; one is `context_window_fallbacks`; one is a `text-completion-openai/`-prefixed
+target. A reader's queue is unaffected — only the reason printed beside the line improves.
+
+### A risk signal nobody could see is not a risk signal
+
+The switch was first recorded into the classifier's internal `signals` array — which never reaches
+a `LocationRef` or `--json`. So it was recorded where no consumer could read it: the same
+invisible-reason defect already written up as bug #4 in this document, reproduced by the person who
+wrote that entry.
+
+It now travels as `coverage.config.globalMockTestingFiles` and prints in the audit's limits:
+
+```
+* 1 config file(s) enable mock testing globally
+  (general_settings.dangerously_allow_mock_testing_request_params): config.yaml — requests to
+  that proxy can be answered with a mock, which does not by itself mean any route there is fake;
+  each was still judged on its own
+```
+
+Verified in both surfaces, with the route still `runtime_selector_candidate/B`: disclosed, and
+demoting nothing.
+
+Full suite **1565/1565**.
+
+## Two corrections to how this document was being measured and reported
+
+### The clock is now read once, and a batch can pin it
+
+`registry.ageDays: 1.9 → 2` between runs 7 and 8 was treated, at first, as a field to exclude from
+the comparison. **That was the wrong fix and excluding it would have hidden the real problem.** The
+same clock drives:
+
+* the **registry freshness grade**, which decides whether a zero-finding run reads
+  `no exposure in completed surfaces` or `inconclusive` — a conclusion, not a cosmetic; and
+* **`daysUntil` and deadline severity** on every finding.
+
+Verified by pinning the instant against a real fixture, which moves severity through every state:
+
+```
+MENDR_EVALUATED_AT=2026-10-01  ->  registry date 2026-10-23 (22d ahead)
+MENDR_EVALUATED_AT=2026-10-22  ->  registry date 2026-10-23 (1d ahead)
+MENDR_EVALUATED_AT=2026-10-23  ->  registry date 2026-10-23 (today)
+MENDR_EVALUATED_AT=2026-12-01  ->  registry date 2026-10-23 (39d past)
+MENDR_EVALUATED_AT=2026-11-01  ->  registry STALE 33 d -> inconclusive
+```
+
+So a batch straddling a boundary could hand two repositories different severities, and therefore
+different decisions, for no reason but when their turn came. The audit now reads the clock **once**,
+records it as `evaluatedAt` together with `evaluationTimeSource` (`system` or `override`), and
+honours `MENDR_EVALUATED_AT` so a batch is one evaluation rather than N. Two runs with the same pin
+produce **byte-identical JSON**.
+
+**A pin that cannot be read STOPS the run — exit 2, a sentence on stderr, no report.** The first
+version of this fell back to the system clock instead, and that was corrected before commit because
+it is the worst available behaviour: someone who deliberately pinned an instant would get a
+confident, valid-looking report computed at a different time than they asked for, every deadline in
+it shifted and nothing saying so. A pin exists to make a run reproducible; silently ignoring it
+defeats the only reason to set it.
+
+Three shapes are refused, each with a message naming the fix. A **naked datetime** such as
+`2026-10-23T00:00:00`, because JavaScript reads it as *local* midnight — a different instant on every
+machine, which is the irreproducibility a pin is meant to remove; a date-only value is therefore
+*defined* as UTC and an offset must be explicit. An **empty** value, because something set it and
+meant to pass an instant. And an **impossible calendar date**: `2026-02-30` does not fail in V8, it
+rolls over to March 2nd and returns a valid Date — so the calendar fields are validated against the
+string before any Date is constructed, not against whatever the parser was willing to accept.
+Verified through the real CLI: `garbage`, `2026-10-23T00:00:00` and `2026-02-30` each exit 2 with
+zero bytes on stdout.
+
+### `globalMockTestingFiles` is an observation, not coverage and not a limit
+
+It was first put in `coverage.config` and printed under **"Limits of this run"**. Both were wrong in
+the same way. Everything in `coverage` is a denominator or a limit — it answers *"what did the scan
+manage to read, and what does its silence therefore not prove"*. This is neither: the file was read
+completely, every entry in it was classified, and no number moves. Printing it as a limit stated
+outright that mendr had failed to inspect something. It had not.
+
+It now lives at **`observations.config.globalMockTestingFiles`** and prints in its own section:
+
+```
+Configuration observations (these classify nothing and change no count):
+  • mock testing is enabled globally in 1 file(s)
+    (general_settings.dangerously_allow_mock_testing_request_params): config.yaml.
+    Requests to that proxy can be answered with a mock. That does NOT mean any route
+    there is fake, so every entry was still judged on its own markers.
+```
+
+Verified: present under `observations`, absent from `coverage.config`, and the route in that file is
+still classified `runtime_selector_candidate/B`. An observation may never classify, never alter a
+denominator, and never imply something went unread.
+
+### The fixed-clock comparison, and the first attempt that had to be thrown away
+
+The real-repository check — two pinned audits of litellm, compared byte for byte — was run twice
+before a valid result existed, and the first two attempts are **discarded**, not reported.
+
+Both tasks wrote to the **same output paths**, and the scanner was rebuilt while they were in
+flight. One task's `cmp` therefore compared a file it had written against a file the *other* task
+had overwritten, and printed `BYTE-IDENTICAL` directly beneath two byte counts that differed by 38
+— the exact size of the `evaluationTimeSource` field the rebuild had added. Files of different
+sizes cannot be identical; the verdict was contaminated by its own environment.
+
+That is the same family of error as the volatile-field lists earlier in this document: a check that
+cannot detect its own contamination is not a check. The rerun is isolated in its own directory and
+**fingerprints the scanner build before and after both runs, refusing its own verdict if the build
+changed underneath it.** Its result is recorded below only once it exists; nothing from the two
+contaminated attempts is used.
+
+**The clean result, 2026-09-30.** Two pinned audits of litellm in an isolated directory, the
+scanner build fingerprinted before and after:
+
+```
+build fingerprint before: 80705371ff3855b9
+run 1: rc=0 bytes=7297999 elapsed=1240s
+run 2: rc=0 bytes=7297999 elapsed=1297s
+build fingerprint after:  80705371ff3855b9
+BYTE-IDENTICAL under a pinned clock (2026-09-30T00:00:00Z)
+evaluationTimeSource: "override"
+5f8386d77c2f…22e93  run-1.json
+5f8386d77c2f…22e93  run-2.json
+```
+
+Same build, same pin, same bytes. That is the reproducibility the pin exists to provide, shown on
+a 7.3 MB report of a real repository rather than on a fixture.

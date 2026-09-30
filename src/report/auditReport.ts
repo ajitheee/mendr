@@ -19,6 +19,8 @@ import {
   type LocationRef,
   type ModelInvestigation,
   analyzedIsMinority,
+  countFixtureReferences,
+  type AuditObservations,
 } from '../audit/investigation.js';
 import { redactSecrets } from '../audit/issueReport.js';
 import { RUNTIME_SOURCE_LABEL } from '../runtime/evidence.js';
@@ -33,6 +35,11 @@ export interface PythonSurface {
 }
 
 export interface AuditMeta {
+  /**
+   * Things mendr noticed that are neither findings nor coverage gaps. Absent on reports from
+   * before the field existed. Never a classification and never a denominator.
+   */
+  observations?: AuditObservations;
   /** Only set when a runtime window applies (a provider/export read). */
   from: string | null;
   to: string | null;
@@ -455,10 +462,29 @@ export function coverageReport(meta: AuditMeta): string[] {
 
 const CONCLUSION_LINE: Record<string, string> = {
   exposure_detected: 'EXPOSURE DETECTED',
+  fixture_only_references: 'FIXTURE-ONLY REFERENCES — NO PRODUCTION SELECTOR FOUND',
   no_exposure_in_completed_surfaces: 'NO EXPOSURE IN COMPLETED SURFACES',
   inconclusive: 'INCONCLUSIVE',
   audit_failed: 'AUDIT FAILED',
 };
+
+/**
+ * What a fixture-only result means, and what it does not.
+ *
+ * `NO EXPOSURE IN COMPLETED SURFACES` understated this case. A test double or sample pinned to an
+ * id that stops serving breaks a build on the shutdown date exactly as production code does — the
+ * difference is WHOSE workflow breaks, not whether anything breaks. So the headline names it, and
+ * this paragraph keeps it below production severity without letting it read as clean.
+ */
+const FIXTURE_ONLY_NOTE = [
+  'These are NOT production model selections: nothing here was traced to a request this',
+  'application makes. They still matter. A fixture, example, snapshot or test double pinned to an',
+  'id the provider stops serving fails on the shutdown date like any other caller, so what breaks',
+  'is a test run, a sample in your docs, or a developer setting the project up — not your users.',
+  'They are listed below with their exact locations, ranked beneath any production finding, and',
+  'they are never migrated automatically: automatic migration is limited to production call sites.',
+  'This is NOT a clean result. A clean result is one where nothing was found at all.',
+].join('\n');
 
 /** Plain-language plural: "one is", "two are". */
 const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
@@ -484,7 +510,14 @@ export function plainSummary(investigations: readonly ModelInvestigation[], cove
           `No retiring model ids in the ${analyzed} TypeScript/JavaScript/Python files analyzed.`,
           `${other} source files in languages mendr does not read (${Math.round((other / (analyzed + other)) * 100)}% of this repository's source) were NOT analyzed — this result says nothing about them.`,
         ]
-      : ['We found no retiring AI dependencies in use.'];
+      : countFixtureReferences(investigations) > 0
+        ? // DO NOT open a fixture-only result with the clean result's own sentence. "We found no
+          // retiring AI dependencies in use" is literally true — `in use` means production — but
+          // it is the first line a reader sees, and printing it verbatim under a
+          // FIXTURE-ONLY headline hands them the clean reading before the caveat arrives. The
+          // whole point of the new conclusion is to be distinguishable from clean.
+          ['No retiring AI dependencies are SELECTED by this application — but retiring ids were found in its test, fixture or sample data.']
+        : ['We found no retiring AI dependencies in use.'];
     return [
       ...headline,
       '',
@@ -593,13 +626,19 @@ export function renderAuditReport(investigations: readonly ModelInvestigation[],
 
   const count = (d: string): number => investigations.filter((i) => i.decision === d).length;
   const { exposure, informational } = partitionFindings(investigations);
-  // The conclusion turns on EXPOSURE, never on informational catalog references.
-  const conclusion = concludeAudit(meta.coverage, exposure.length);
+  // The conclusion turns on EXPOSURE, never on informational catalog references. The fixture
+  // count only ever changes the WORDING of a result already headed for "clean" — it cannot
+  // promote anything, and every fail-closed verdict outranks it (see concludeAudit).
+  const conclusion = concludeAudit(meta.coverage, exposure.length, countFixtureReferences(investigations));
   lines.push(`Conclusion: ${CONCLUSION_LINE[conclusion]}`);
 
   if (exposure.length === 0 && informational.length > 0) {
     lines.push('');
     for (const line of plainSummary(investigations, meta.coverage)) lines.push(line);
+    if (conclusion === 'fixture_only_references') {
+      lines.push('');
+      lines.push(FIXTURE_ONLY_NOTE);
+    }
     lines.push('');
     lines.push(`Informational references (${informational.length}) — deprecated ids found only in catalog/doc/fixture data:`);
     for (const inv of informational.slice(0, 20)) {
@@ -720,6 +759,22 @@ export function renderAuditReport(investigations: readonly ModelInvestigation[],
       lines.push('  To verify which of these are live, connect a runtime source (OpenTelemetry, a sanitized');
       lines.push('  usage export, your own provider key kept in your CI, or gateway/app logs). All optional.');
     }
+  }
+
+  // ITS OWN SECTION, below the limits and deliberately not inside them. "Limits" means mendr could
+  // not vouch for something; an observation is the opposite — the file was read completely and every
+  // entry in it was classified. Printing this as a limit claimed a gap that does not exist.
+  const observed = meta.observations?.config.globalMockTestingFiles ?? [];
+  if (observed.length > 0) {
+    lines.push('');
+    lines.push('Configuration observations (these classify nothing and change no count):');
+    lines.push(
+      `  • mock testing is enabled globally in ${observed.length} file(s) ` +
+        '(general_settings.dangerously_allow_mock_testing_request_params): ' +
+        `${observed.slice(0, 3).join(', ')}${observed.length > 3 ? `, and ${observed.length - 3} more` : ''}.`,
+    );
+    lines.push('    Requests to that proxy can be answered with a mock. That does NOT mean any route');
+    lines.push('    there is fake, so every entry was still judged on its own markers.');
   }
 
   lines.push('');

@@ -175,3 +175,61 @@ describe('M10 — test files are scanned as test-only references, not a coverage
     expect(coverageGaps(c).join('\n')).not.toContain('test/spec/fixture');
   });
 });
+
+// FIXTURE-ONLY REFERENCES — the conclusion added 2026-09-29.
+//
+// `NO EXPOSURE IN COMPLETED SURFACES` understated a repository that pins a retiring id in a test
+// double or sample. Such a reference is not a production selector, but it fails on the shutdown
+// date like any other caller: what breaks is a test run, a docs sample, or a developer setting the
+// project up. The headline now names it, below production severity, and must stay distinguishable
+// from a genuinely clean result.
+//
+// THE INVARIANT THESE PIN: this is a REPORTING decision only. It may never change a
+// classification, a tier, a decision or a denominator — it can only reword a result that was
+// already going to be called clean.
+describe('fixture-only references are not a clean result', () => {
+  const clean = coverage({ filesScanned: 10, tsFiles: 10 });
+
+  it('names itself when a fixture reference is present', () => {
+    expect(concludeAudit(clean, 0, 1)).toBe('fixture_only_references');
+  });
+
+  it('a genuinely clean repository is untouched', () => {
+    expect(concludeAudit(clean, 0, 0)).toBe('no_exposure_in_completed_surfaces');
+  });
+
+  it('defaults to the previous behaviour when the count is not supplied', () => {
+    // The parameter is optional so every existing caller keeps its exact prior result. This is
+    // what makes the change safe to land separately from the classification work.
+    expect(concludeAudit(clean, 0)).toBe('no_exposure_in_completed_surfaces');
+  });
+
+  it('EXPOSURE still outranks it — a production finding is never softened by a fixture', () => {
+    expect(concludeAudit(clean, 1, 5)).toBe('exposure_detected');
+  });
+
+  it('every fail-closed verdict outranks it', () => {
+    // A fixture-only claim is a statement about what IS there. An incomplete scan, a stale
+    // registry or an unparseable file are statements about what could NOT be seen, and those must
+    // win — otherwise the new wording would quietly mask an inconclusive run.
+    const minority = coverage({ filesScanned: 22, tsFiles: 22, unanalyzedFiles: 1220 });
+    expect(concludeAudit(minority, 0, 3)).toBe('inconclusive');
+
+    const stale = coverage({ filesScanned: 10, tsFiles: 10 });
+    stale.registry.freshness = 'stale';
+    expect(concludeAudit(stale, 0, 3)).toBe('inconclusive');
+
+    const unparseable = coverage({ filesScanned: 10, tsFiles: 10, parseFailures: 1 });
+    expect(concludeAudit(unparseable, 0, 3)).toBe('inconclusive');
+
+    const failed = coverage({ filesScanned: 10, tsFiles: 10 });
+    failed.source.failed = true;
+    expect(concludeAudit(failed, 0, 3)).toBe('audit_failed');
+  });
+
+  it('a repo with only catalog/doc references — no fixtures — keeps the old wording', () => {
+    // A changelog mention is not a fixture. Only a test/fixture role earns the new headline, so
+    // this is not a blanket relabelling of every informational result.
+    expect(concludeAudit(clean, 0, 0)).toBe('no_exposure_in_completed_surfaces');
+  });
+});

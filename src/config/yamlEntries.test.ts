@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { lineIsInStubEntry, stubModelListEntries } from './yamlEntries.js';
+import { hasGlobalMockTestingSwitch, lineIsInStubEntry, stubModelListEntries } from './yamlEntries.js';
 
 // ENTRY-SCOPED STUB DETECTION — the regression suite for the false clean measured 2026-09-29.
 //
@@ -225,5 +225,85 @@ describe('a resolved file with no stubs is still an ANSWER, not an abstention', 
     expect(scope.resolved).toBe(true);
     expect(scope.stubs).toEqual([]);
     expect(lineIsInStubEntry(scope, 4)).toBe(false);
+  });
+});
+
+// THE FILE-WIDE SWITCH, at parsed scope rather than anywhere in the text.
+//
+// `hasMockMarkers` was `FILE_MOCK_FLAGS.test(text)` — an unrestricted match. It fired on the switch
+// inside a comment, inside a quoted string, or inside a `model_list` entry, and demoted the WHOLE
+// file on that basis. The key must be a real mapping key, at the root or directly under a settings
+// block, with a truthy value.
+//
+// `mock_timeout` and `mock_response` are no longer file-wide at all: both are `litellm_params`
+// fields. Verified in litellm's own proxy_server_config.yaml, where `mock_timeout: True` sits inside
+// a model_list entry's litellm_params beside FAKE_OPENAI_API_BASE.
+describe('the file-wide mock switch is read at its parsed scope', () => {
+  const SWITCH = 'dangerously_allow_mock_testing_request_params';
+
+  it('fires under root general_settings, which is where litellm defines it', () => {
+    expect(hasGlobalMockTestingSwitch(`general_settings:\n  ${SWITCH}: true\n`)).toBe(true);
+  });
+
+  it('is recognised ONLY there — not under other settings blocks, and not at the root', () => {
+    // Narrowed 2026-09-29. An earlier draft accepted litellm_settings, router_settings,
+    // environment_variables and the bare root. That breadth was guesswork: it invented scopes the
+    // product does not have, and every extra scope is one more way to record something wrongly.
+    expect(hasGlobalMockTestingSwitch(`litellm_settings:\n  ${SWITCH}: true\n`)).toBe(false);
+    expect(hasGlobalMockTestingSwitch(`router_settings:\n  ${SWITCH}: true\n`)).toBe(false);
+    expect(hasGlobalMockTestingSwitch(`${SWITCH}: true\n`)).toBe(false);
+  });
+
+  it('accepts the truthy spellings a config actually uses', () => {
+    for (const v of ['true', 'True', 'yes', 'on', '1']) {
+      expect(hasGlobalMockTestingSwitch(`general_settings:\n  ${SWITCH}: ${v}\n`), v).toBe(true);
+    }
+  });
+
+  it('does NOT fire when the switch is explicitly off', () => {
+    // The old text match could not tell `: true` from `: false`, so a config that deliberately
+    // disabled mock testing was demoted as if it had enabled it.
+    expect(hasGlobalMockTestingSwitch(`general_settings:\n  ${SWITCH}: false\n`)).toBe(false);
+  });
+
+  it('does NOT fire from a COMMENT', () => {
+    expect(hasGlobalMockTestingSwitch(`general_settings:\n  # ${SWITCH}: true\n  master_key: os.environ/KEY\n`)).toBe(false);
+  });
+
+  it('does NOT fire from a quoted string value', () => {
+    expect(hasGlobalMockTestingSwitch(`general_settings:\n  note: "never set ${SWITCH}: true in production"\n`)).toBe(false);
+  });
+
+  it('does NOT fire from inside a model_list entry, which is not a file-wide scope', () => {
+    expect(hasGlobalMockTestingSwitch(`model_list:\n  - model_name: a\n    litellm_params:\n      ${SWITCH}: true\n`)).toBe(false);
+  });
+
+  it('does NOT fire for the per-route mock fields, which are no longer file-wide', () => {
+    expect(hasGlobalMockTestingSwitch('model_list:\n  - model_name: a\n    litellm_params:\n      mock_timeout: True\n')).toBe(false);
+    expect(hasGlobalMockTestingSwitch('litellm_settings:\n  mock_response: hello\n')).toBe(false);
+  });
+
+  it('treats the per-route mock fields as ENTRY markers instead', () => {
+    const mixed = [
+      'model_list:',
+      '  - model_name: live',
+      '    litellm_params:',
+      '      model: gpt-4-0613',
+      '  - model_name: stub',
+      '    litellm_params:',
+      '      mock_timeout: True',
+    ].join('\n');
+    const scope = stubModelListEntries(mixed);
+    expect(scope.stubs).toHaveLength(1);
+    expect(lineIsInStubEntry(scope, 4)).toBe(false); // the live route
+    expect(lineIsInStubEntry(scope, 7)).toBe(true); // the stub route
+  });
+
+  it('answers false for unparseable input — an unreadable file has declared nothing', () => {
+    expect(hasGlobalMockTestingSwitch(`general_settings:\n  ${SWITCH}: [unclosed\n`)).toBe(false);
+  });
+
+  it('reads JSON too, since YAML is a superset of it', () => {
+    expect(hasGlobalMockTestingSwitch(`{ "general_settings": { "${SWITCH}": true } }`)).toBe(true);
   });
 });

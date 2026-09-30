@@ -16,7 +16,10 @@ Three drafts. Ajith sends; nothing here has been sent by anyone else.
 >    `v0.5.7-alpha` → stamped `2026-09-28` → stale **2026-10-12**.
 >    Repointing the ask buys four days. Confirmed from the shipped tag, which prints
 >    `Registry: … bundled 2026-09-28 (fresh, 1 d)`.
-> 3. **It got faster.** 98 s → **54 s** cold. Re-timed on the new tag, method below.
+> 3. **The install figure is now a median, not a single reading.** Three cold-cache runs:
+>    **median 46 s, range 45–60 s**, all successful. The lone `98 s` — and the lone `54 s` that
+>    briefly replaced it — were single measurements of something with a 15-second spread, so
+>    neither was ever quotable. **No claim is made that any change made installation faster.**
 > 4. **The report now leads with the deadline.** P1-G1 shipped, so the check title is a
 >    countdown rather than a label. This is the strongest line in the product and no draft
 >    mentions it.
@@ -42,7 +45,7 @@ All re-checked **2026-09-29** against `v0.5.7-alpha` and the live pages.
 
 | claim | checked |
 |---|---|
-| Cold install + scan = **54 s** | Re-timed 2026-09-29 on the new tag: `npm_config_cache` pointed at an empty directory (**0 entries before, 4 after** — `_cacache`, `_npx`, `_logs`, so npx genuinely built from scratch), 2-file TS repo, `npx --yes github:ajitheee/mendr#v0.5.7-alpha audit .` → **54 s**, `EXPOSURE DETECTED`, exit 0. Not a guess and not a warm run. A second, warm run took **9 s**. |
+| Cold install + scan = **median 46 s, range 45–60 s** | Timed **three times** 2026-09-29, each with `npm_config_cache` pointed at its own empty directory (**0 entries before, 4 after** each time — `_cacache`, `_npx`, `_logs`, so npx genuinely built from scratch), against a 2-file TS repo. Runs: **45 s, 46 s, 60 s**; all exit 0, all `EXPOSURE DETECTED`. A warm run took **9 s**.<br><br>**Why three and not one.** A single measurement of this cannot be quoted as a figure: the observed spread is 15 seconds, so the earlier lone `54 s` was always inside the noise. It is replaced by a median and a range, and **no claim is made about whether any code change made installation faster or slower** — three runs against one prior measurement cannot support that in either direction. |
 | The report **leads with a countdown** | The shipped tag prints `Retirement: deprecated - 24d left (2026-10-23)`, and the public check title on `mendr-demo` today reads **`gpt-4-0613 stops serving in 24 days · 1 patch eligible`**. Computed at write time, so it is correct whenever it is read. |
 | **Twelve** verified ids retire 2026-10-23 | `registries/llm-deprecations.json`: 13 rows carry that date, 12 are `verification.status: verified`, `gpt-image-1` is `unverifiable`. The five commonly named — `gpt-4`, `gpt-4-turbo`, `gpt-3.5-turbo`, `o3-mini`, `o4-mini` — are all in the verified twelve. **Say twelve, not thirteen.** |
 | `audit` writes nothing | Re-verified on `v0.5.7-alpha`: `git status --porcelain` captured before and after, **byte-identical**. No write site is reachable from a bare `audit .`. |
@@ -71,8 +74,9 @@ address, not a public issue, not a send-to-all.
 > every line it prints carries the countdown, not just a label — "deprecated, 24d left
 > (2026-10-23)". that's the part i actually want judged.
 >
-> the honest cost: it isn't on npm yet, so npx clones and compiles it first. i timed it cold on
-> an empty cache today — 54 seconds start to finish, needs node 22+. no api key. it
+> the honest cost: it isn't on npm yet, so npx clones and compiles it first. Three cold-cache
+> installations completed in a median of 46 seconds, with a 45–60 second observed range. All three
+> scans completed successfully and detected the exposure. needs node 22+. no api key. it
 > writes nothing: no edit, no commit, no pr, report goes to stdout. `--offline` enforces the
 > no-network part rather than promising it.
 >

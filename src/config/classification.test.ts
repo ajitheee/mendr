@@ -227,14 +227,17 @@ describe('one stub route does not silence its siblings', () => {
     expect(selectorsOf('config/litellm.yaml', MIXED)).toHaveLength(1);
   });
 
-  it('a genuinely file-wide mock switch still demotes the whole file', () => {
-    // `dangerously_allow_mock_testing_request_params` is a root proxy switch that changes how the
-    // whole process answers — unlike an api_base, it really is a statement about the file. That
-    // half of the old rule is deliberately kept.
-    const fileWide = `litellm_settings:
+  it('a global mock-testing switch does NOT demote the routes it sits above', () => {
+    // I asserted the opposite here one commit ago, on the reasoning that this switch "really is a
+    // statement about the file". It is a statement about what the proxy PERMITS, not about whether
+    // any given route is real — a deployment can allow mock answers and still serve production
+    // traffic. So it demotes nothing and is recorded as a risk signal instead.
+    const withSwitch = `general_settings:
   dangerously_allow_mock_testing_request_params: true
 ${MIXED}`;
-    expect(selectorsOf('config/litellm.yaml', fileWide)).toHaveLength(0);
+    const sel = selectorsOf('config/litellm.yaml', withSwitch);
+    expect(sel.map((m) => m.value)).toEqual(['gpt-4-32k']); // the live route survives
+    expect(sel[0].signals).toContain('global_mock_testing_enabled'); // and carries the warning
   });
 
   it('a malformed router config demotes NOTHING, rather than guessing boundaries', () => {
