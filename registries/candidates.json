@@ -1811,5 +1811,47 @@
     "candidateId": "google:gemini-3-1-flash-live-preview",
     "proposedBy": "discovery",
     "proposedAt": "2026-09-18T20:14:35.879Z"
+  },
+  {
+    "provider": "anthropic",
+    "kind": "model_id",
+    "deprecated": "claude-sonnet-4-5-20250929",
+    "replacement": "claude-sonnet-5-5",
+    "status": "deprecated",
+    "shutdownDate": "2026-11-30",
+    "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+    "note": "discovered from the anthropic deprecation table; row read as: November 30, 2026 | claude-sonnet-4-5-20250929 | claude-sonnet-5-5",
+    "evidence": [
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+        "contentHash": "sha256:1afad8a15a129c7cd4b0291faf54f34de917ed02a4e20c052b013e9d915b8394",
+        "retrievedAt": "2026-10-01T14:10:12.867Z",
+        "excerpt": "November 30, 2026 | claude-sonnet-4-5-20250929 | claude-sonnet-5-5"
+      }
+    ],
+    "candidateId": "anthropic:claude-sonnet-4-5-20250929",
+    "proposedBy": "discovery",
+    "proposedAt": "2026-10-01T14:10:12.473Z"
+  },
+  {
+    "provider": "google",
+    "kind": "model_id",
+    "deprecated": "gemini-2.5-computer-use-preview-10-2025",
+    "replacement": "gemini-3.8-flash",
+    "status": "retired",
+    "shutdownDate": "2026-07-28",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "note": "discovered from the google deprecation table; row read as: gemini-2.5-computer-use-preview-10-2025 | October 7, 2025 | July 28, 2026 | gemini-3.8-flash",
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:748b84aed9e21ee8f04fb6cd8bea8beeb99e0bcaf040bf8b991585fb4a65b0a8",
+        "retrievedAt": "2026-10-01T14:10:13.178Z",
+        "excerpt": "gemini-2.5-computer-use-preview-10-2025 | October 7, 2025 | July 28, 2026 | gemini-3.8-flash"
+      }
+    ],
+    "candidateId": "google:gemini-2-5-computer-use-preview-10-2025",
+    "proposedBy": "discovery",
+    "proposedAt": "2026-10-01T14:10:12.473Z"
   }
 ]
