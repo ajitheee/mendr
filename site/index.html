@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>mendr — stop AI model retirements before they break production</title>
+<title>mendr · stop AI model retirements before they break production</title>
 <meta name="description" content="Connect GitHub once. Mendr continuously monitors your AI dependencies, explains the risk, and prepares a validated migration pull request for human approval.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://mendr-mu.vercel.app/">
-<meta property="og:title" content="mendr — stop AI model retirements before they break production">
+<meta property="og:title" content="mendr · stop AI model retirements before they break production">
 <meta property="og:description" content="Connect GitHub once. Mendr continuously monitors your AI dependencies, explains the risk, and prepares a validated migration pull request for human approval.">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="mendr — stop AI model retirements before they break production">
+<meta name="twitter:title" content="mendr · stop AI model retirements before they break production">
 <meta name="twitter:description" content="Connect GitHub once. Mendr continuously monitors your AI dependencies, explains the risk, and prepares a validated migration pull request for human approval.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' role='img' aria-label='mendr'><rect width='100' height='100' fill='%23F4F1EA'/><rect x='15' y='30' width='77' height='14' fill='%23315CFF'/><rect x='15' y='30' width='14' height='62' fill='%23315CFF'/><rect x='43' y='30' width='14' height='62' fill='%23315CFF'/><rect x='78' y='30' width='14' height='34' fill='%23315CFF'/><rect x='78' y='78' width='14' height='14' fill='%23D88916'/></svg>">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -29,13 +29,14 @@
   }
   *{box-sizing:border-box}
   html{scroll-behavior:smooth}@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
-  body{margin:0;color:var(--carbon);font-family:var(--sans);font-size:18px;line-height:1.55;overflow-x:clip;-webkit-font-smoothing:antialiased;
+  body{margin:0;color:var(--carbon);font-family:var(--sans);font-size:18px;line-height:1.55;overflow-x:clip;-webkit-font-smoothing:antialiased;background:var(--ivory)}
+  /* Ambient washes on a fixed, composited layer: same viewport-anchored look as background-attachment:fixed
+     without repainting the whole page on every scroll frame, and it works on iOS. */
+  body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
     background:
       radial-gradient(42% 34% at 82% 16%, rgba(49,92,255,.11), transparent 62%),
       radial-gradient(40% 38% at 14% 60%, rgba(216,137,22,.09), transparent 62%),
-      radial-gradient(34% 32% at 62% 98%, rgba(21,128,93,.07), transparent 62%),
-      var(--ivory);
-    background-attachment:fixed}
+      radial-gradient(34% 32% at 62% 98%, rgba(21,128,93,.07), transparent 62%)}
   /* glassmorphism surfaces */
   .glass{background:rgba(250,248,243,.5);backdrop-filter:blur(18px) saturate(1.35);-webkit-backdrop-filter:blur(18px) saturate(1.35);border:1px solid rgba(255,255,255,.55);box-shadow:inset 0 1px 0 rgba(255,255,255,.72),0 16px 46px -22px rgba(11,13,16,.24)}
   .glass-dark{background:rgba(12,15,20,.62);backdrop-filter:blur(18px) saturate(1.2);-webkit-backdrop-filter:blur(18px) saturate(1.2);border:1px solid rgba(255,255,255,.09);box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 16px 46px -22px rgba(0,0,0,.45)}
@@ -55,9 +56,16 @@
   .mark{align-items:baseline;gap:.04em}
   .mark .m{height:.51em;width:auto;flex:none;display:inline-block}
   .nav .links{display:flex;gap:24px;margin-left:14px}
-  .nav .links a{font-size:.93rem;color:var(--grey)}.nav .links a:hover{color:var(--carbon)}
-  .nav .run{margin-left:auto;color:var(--carbon);font-family:var(--mono);font-size:.86rem;border-bottom:1px solid var(--hair);padding-bottom:2px}
+  .nav .links a{font-size:.93rem;color:var(--grey);padding:10px 0}.nav .links a:hover{color:var(--carbon)}
+  .nav .run{margin-left:auto;color:var(--carbon);font-family:var(--mono);font-size:.86rem;border-bottom:1px solid var(--hair);padding:10px 0 2px}
   .nav .run:hover{border-color:var(--cobalt);color:var(--cobalt)}
+
+  /* Controls answer on press, not on release; keyboard focus is designed, not browser-default. */
+  a,button{-webkit-tap-highlight-color:transparent}
+  .btn:active,.tlink:active,.nav .run:active,.nav .links a:active{transform:scale(.97);transition-duration:.1s}
+  :focus-visible{outline:2px solid var(--cobalt);outline-offset:3px;border-radius:2px}
+  .btn:focus-visible{outline-offset:2px}
+  @media (prefers-reduced-motion:reduce){.btn:active,.tlink:active,.nav .run:active,.nav .links a:active{transform:none}}
   @media (max-width:820px){.nav .links{display:none}}
 
   section{padding:clamp(56px,7vw,92px) 0;border-top:1px solid var(--hair)}
@@ -68,9 +76,9 @@
   .body{font-size:1.1rem;color:var(--grey);line-height:1.5;max-width:52ch}
   .kick{font-family:var(--mono);font-size:.74rem;letter-spacing:.12em;text-transform:uppercase;color:var(--grey);margin:0 0 16px}
 
-  .btn{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono);font-size:.86rem;font-weight:500;padding:12px 18px;border-radius:2px;background:var(--carbon);color:var(--ivory);transition:opacity .14s}
-  .btn:hover{opacity:.86}
-  .tlink{font-family:var(--mono);font-size:.86rem;color:var(--carbon);display:inline-flex;align-items:center;gap:8px;border-bottom:1px solid var(--hair);padding-bottom:2px}
+  .btn{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono);font-size:.86rem;font-weight:500;padding:12px 18px;min-height:44px;border-radius:2px;background:var(--carbon);color:var(--ivory);transition:background .14s,transform .1s ease-out}
+  .btn:hover{background:var(--ink-2)}
+  .tlink{font-family:var(--mono);font-size:.86rem;color:var(--carbon);display:inline-flex;align-items:center;gap:8px;border-bottom:1px solid var(--hair);padding:10px 0 2px;transition:color .14s,border-color .14s,transform .1s ease-out}
   .tlink:hover{border-color:var(--cobalt);color:var(--cobalt)}
 
   /* HERO (kept from the version you liked) */
@@ -110,15 +118,20 @@
   .player{max-width:720px;margin:0 auto;border-radius:14px;overflow:hidden;background:rgba(250,248,243,.5);backdrop-filter:blur(18px) saturate(1.35);-webkit-backdrop-filter:blur(18px) saturate(1.35);border:1px solid rgba(255,255,255,.55);box-shadow:inset 0 1px 0 rgba(255,255,255,.72),0 18px 50px -24px rgba(11,13,16,.26)}
   @media (prefers-reduced-transparency:reduce){.player{background:var(--data);backdrop-filter:none;-webkit-backdrop-filter:none;border-color:var(--hair)}}
   .player .pbar{display:flex;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid var(--hair);font-family:var(--mono);font-size:.74rem;color:var(--grey)}
-  .player .pbar .pi{width:22px;height:22px;border-radius:50%;background:var(--carbon);color:var(--ivory);display:grid;place-items:center;font-size:.6rem}
-  .player .pbar .dur{margin-left:auto}
-  .player .screen{padding:16px clamp(16px,2.4vw,26px) 14px;font-family:var(--mono);font-size:clamp(.72rem,.95vw,.82rem);line-height:1.6}
-  .dl{display:block;opacity:0;transform:translateY(5px);transition:opacity .35s,transform .35s;white-space:pre-wrap}
+  .player .pbar .pi{width:28px;height:28px;margin:-3px 0;padding:0;border:0;border-radius:50%;background:var(--carbon);color:var(--ivory);display:grid;place-items:center;cursor:pointer;transition:transform .1s ease-out,background .14s}
+  .player .pbar .pi svg{margin-left:1px}
+  .player .pbar .pi:hover{background:var(--cobalt)}
+  .player .pbar .pi:active{transform:scale(.92)}
+  .player .pbar .pi.playing{background:var(--cobalt)}
+  .player .pbar .dur{margin-left:auto;font-variant-numeric:tabular-nums}
+  .player .screen{padding:16px clamp(16px,2.4vw,26px) 14px;font-family:var(--mono);font-size:clamp(.72rem,.95vw,.82rem);line-height:1.6;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .dl{display:block;opacity:0;transform:translateY(5px);transition:opacity .35s,transform .35s;white-space:pre}
   .dl.show{opacity:1;transform:none}
-  .dl .cmd{color:var(--cobalt)}.dl .dim{color:var(--grey)}.dl .risk{color:var(--amber)}.dl .del{color:var(--red)}.dl .ok{color:var(--jade)}.dl .num{color:var(--cobalt)}
+  @media (prefers-reduced-motion:reduce){.dl{transform:none;transition:opacity .2s}}
+  .dl .pr{color:var(--cobalt)}.dl .dim{color:var(--grey)}.dl .risk{color:var(--amber)}.dl .del{color:var(--red)}.dl .ok{color:var(--jade)}.dl .num{color:var(--cobalt)}
   .player .prog{height:3px;background:var(--hair)}
-  .player .prog .fill{height:100%;width:0;background:var(--cobalt);transition:width .3s linear}
-  .demo-cap{text-align:center;font-family:var(--mono);font-size:.72rem;color:var(--grey);margin-top:16px}
+  .player .prog .fill{display:block;height:100%;width:100%;background:var(--cobalt);transform:scaleX(0);transform-origin:left;transition:transform .3s linear}
+  .demo-cap{text-align:center;font-family:var(--mono);font-size:.72rem;line-height:1.7;color:var(--grey);margin:16px auto 0;max-width:62ch;text-wrap:balance}
   .player .stages{display:flex;flex-wrap:wrap;gap:7px;padding:11px 16px;border-bottom:1px solid var(--hair);font-family:var(--mono);font-size:.65rem;letter-spacing:.08em;text-transform:uppercase;color:var(--grey-2)}
   .player .stages span{padding:3px 9px;border-radius:3px;border:1px solid transparent;transition:color .3s,background .3s,border-color .3s}
   .player .stages span.done{color:var(--grey)}
@@ -134,7 +147,7 @@
   .logo b{font-weight:600;font-size:1.2rem;letter-spacing:-.01em}
   @media (max-width:520px){.logowall{gap:22px 34px}}
 
-  /* feature (show the product) row — alternating, not identical */
+  /* feature (show the product) row: alternating, not identical */
   .feature{display:grid;grid-template-columns:0.85fr 1.15fr;gap:clamp(30px,5vw,64px);align-items:center}
   .feature.rev{grid-template-columns:1.15fr 0.85fr}
   .feature.rev .ftext{order:2}
@@ -222,11 +235,18 @@
   /* install + CTA */
   .install-grid{display:grid;grid-template-columns:0.9fr 1.1fr;gap:clamp(30px,5vw,56px);align-items:center}
   @media (max-width:820px){.install-grid{grid-template-columns:1fr;gap:28px}}
-  .term{border-radius:14px;overflow:hidden;font-family:var(--mono);background:rgba(12,15,20,.64);backdrop-filter:blur(18px) saturate(1.2);-webkit-backdrop-filter:blur(18px) saturate(1.2);border:1px solid rgba(255,255,255,.09);box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 18px 50px -24px rgba(0,0,0,.46)}
-  @media (prefers-reduced-transparency:reduce){.term{background:var(--carbon);backdrop-filter:none;-webkit-backdrop-filter:none}}
-  .term .th{padding:11px 16px;border-bottom:1px solid #1e2733;font-size:.72rem;color:#7b8794}
-  .term .tb{padding:18px;font-size:.86rem;line-height:1.9;color:#e7ecf2}
-  .term .tb .pr{color:#7b8794}.term .tb .ok{color:var(--jade)}.term .tb .am{color:var(--amber)}.term .tb .dim{color:#7b8794}
+  /* The terminal is the one solid surface on the page: text must read, and output is line-based.
+     The blurred translucent dark card composited over ivory landed its grey text at ~1.7:1. */
+  .term{border-radius:14px;overflow:hidden;font-family:var(--mono);background:var(--carbon);border:1px solid rgba(255,255,255,.09);box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 18px 50px -24px rgba(0,0,0,.46)}
+  .term .th{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 10px 9px 16px;border-bottom:1px solid #1e2733;font-size:.72rem;color:#9aa6b2}
+  .term .copy{font-family:var(--mono);font-size:.72rem;color:#e7ecf2;background:transparent;border:1px solid rgba(255,255,255,.18);border-radius:3px;padding:6px 10px;min-height:32px;cursor:pointer;transition:transform .1s ease-out,border-color .14s,background .14s}
+  .term .copy:hover{border-color:rgba(255,255,255,.4)}
+  .term .copy:active{transform:scale(.97)}
+  .term .copy.done{color:var(--jade);border-color:var(--jade)}
+  .term .tb{padding:18px;font-size:.86rem;line-height:1.9;color:#e7ecf2;white-space:pre;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .term .tb #cmd::selection{background:rgba(49,92,255,.45)}
+  @media (max-width:520px){.term .tb{font-size:.8rem;padding:16px 14px}}
+  .term .tb .pr{color:#9aa6b2}.term .tb .ok{color:var(--jade)}.term .tb .am{color:var(--amber)}.term .tb .dim{color:#9aa6b2}
   .cta{text-align:center}
   .cta h2{margin:0 auto 22px;max-width:22ch}
   .cta .actions{justify-content:center}
@@ -235,8 +255,6 @@
   .foot{max-width:var(--maxw);margin:0 auto;padding:0 clamp(22px,4.5vw,44px);display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;font-family:var(--mono);font-size:.76rem;color:var(--grey)}
   .foot .fl{display:flex;gap:22px;flex-wrap:wrap}.foot .fl a:hover{color:var(--carbon)}
 
-  .rise{opacity:0;transform:translateY(14px);transition:opacity .7s ease,transform .7s ease}.rise.in{opacity:1;transform:none}
-  @media (prefers-reduced-motion:reduce){.rise{opacity:1;transform:none;transition:none}}
 </style>
 <script defer src="/_vercel/insights/script.js"></script>
 </head>
@@ -245,7 +263,7 @@
 <header>
   <div class="nav">
     <a class="mark" href="#" aria-label="mendr"><svg class="m" viewBox="15 30 77 62" aria-hidden="true"><rect x="15" y="30" width="77" height="14" fill="var(--cobalt)"/><rect x="15" y="30" width="14" height="62" fill="var(--cobalt)"/><rect x="43" y="30" width="14" height="62" fill="var(--cobalt)"/><rect x="78" y="30" width="14" height="34" fill="var(--cobalt)"/><rect x="78" y="78" width="14" height="14" fill="var(--amber)"/></svg>endr</a>
-    <nav class="links"><a href="#demo">Product</a><a href="#detect">How it works</a><a href="#evidence">Evidence</a><a href="#safety">Security</a><a href="https://github.com/ajitheee/mendr">GitHub</a></nav>
+    <nav class="links"><a href="#demo">Demo</a><a href="#detect">How it works</a><a href="#evidence">Evidence</a><a href="#safety">Security</a><a href="https://github.com/ajitheee/mendr">GitHub</a></nav>
     <a class="run" href="https://mendr-app.onrender.com">Connect GitHub →</a>
   </div>
 </header>
@@ -260,7 +278,6 @@
         <p class="body">Connect GitHub once. Mendr continuously monitors your AI dependencies, explains the risk, and prepares a validated migration pull request for human approval.</p>
         <div class="actions">
           <a class="btn" href="https://mendr-app.onrender.com"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.37.5 0 5.87 0 12.5c0 5.3 3.44 9.8 8.21 11.39.6.11.82-.26.82-.58 0-.29-.01-1.04-.02-2.05-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.09-.75.08-.73.08-.73 1.21.09 1.84 1.24 1.84 1.24 1.07 1.84 2.81 1.31 3.5 1 .11-.78.42-1.31.76-1.61-2.67-.3-5.47-1.34-5.47-5.95 0-1.31.47-2.39 1.24-3.23-.13-.3-.54-1.53.11-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 3-.4c1.02 0 2.05.14 3 .4 2.29-1.55 3.3-1.23 3.3-1.23.65 1.65.24 2.88.12 3.18.77.84 1.24 1.92 1.24 3.23 0 4.62-2.81 5.64-5.49 5.94.43.37.81 1.1.81 2.22 0 1.6-.01 2.89-.01 3.28 0 .32.21.7.82.58C20.57 22.29 24 17.8 24 12.5 24 5.87 18.63.5 12 .5Z"/></svg> Connect GitHub</a>
-          <a class="tlink" href="#demo">See it work <span aria-hidden="true">→</span></a>
           <a class="tlink" href="#install">Run it locally <span aria-hidden="true">→</span></a>
         </div>
       </div>
@@ -284,15 +301,15 @@
 <!-- DEMO -->
 <section id="demo">
   <div class="wrap">
-    <div class="demo-head rise">
+    <div class="demo-head">
       <p class="kick" style="text-align:center">See it work</p>
       <h2 style="margin:0 auto;max-width:26ch">How it searches your code, finds the problem, and fixes it.</h2>
-      <p class="body" style="margin:14px auto 0;text-align:center;max-width:56ch">The audit walks every file, tells a live call from catalog data, and matches the registry. <span class="mono">fix-llm</span> goes one step further: it writes the exact diff and proves it before anything is applied. Connected through the App, you approve the migration on the finding and your own CI opens the pull request — you watch each step and see the change itself, without leaving Mendr.</p>
+      <p class="body" style="margin:14px auto 0;text-align:center;max-width:56ch">The audit walks every file, tells a live call from catalog data, and matches the registry. <span class="mono">fix-llm</span> goes one step further: it writes the exact diff and proves it before anything is applied. Connected through the App, you approve the migration on the finding and your own CI opens the pull request. You watch each step and see the change itself without leaving Mendr.</p>
     </div>
-    <figure class="player rise" style="margin:0" role="img" aria-label="A run of mendr fix-llm: it walks 342 files, finds a deprecated id at a live call site while leaving catalog and test data alone, matches the registry to a verified replacement, writes a diff, passes type-check and tests, and marks it Tier A verified for review.">
-      <div class="pbar"><span class="pi">▶</span> mendr fix-llm · services/geminiService.ts <span class="dur" id="dur">0:00</span></div>
+    <figure class="player" id="player" style="margin:0" aria-label="A run of mendr fix-llm: it walks 342 files, finds a deprecated id at a live call site while leaving catalog and test data alone, matches the registry to a verified replacement, writes a diff, passes type-check and tests, and marks it Tier A verified for review.">
+      <div class="pbar"><button class="pi" id="play" type="button" aria-label="Replay the walkthrough"><svg viewBox="0 0 10 10" width="8" height="8" aria-hidden="true"><path d="M2 1.2v7.6L8.4 5z" fill="currentColor"/></svg></button> mendr fix-llm · services/geminiService.ts <span class="dur" id="dur">0:18</span></div>
       <div class="stages" id="stages"><span data-s="0">scan</span><span data-s="1">find</span><span data-s="2">classify</span><span data-s="3">match</span><span data-s="4">change</span><span data-s="5">verify</span><span data-s="6">decide</span></div>
-      <div class="screen" id="screen"><span class="dl" data-s="0"><span class="cmd">$</span> mendr fix-llm .</span>
+      <div class="screen" id="screen"><span class="dl" data-s="0"><span class="pr">$</span> mendr fix-llm .</span>
 <span class="dl" data-s="0"><span class="dim">walking 342 files · typescript + python</span></span>
 <span class="dl" data-s="1"> </span>
 <span class="dl" data-s="1"><span class="dim">3 references to</span> gemini-2.0-flash</span>
@@ -305,7 +322,7 @@
 <span class="dl" data-s="2">  <span class="dim">catalog + fixture are data · left alone</span></span>
 <span class="dl" data-s="3"> </span>
 <span class="dl" data-s="3"><span class="dim">registry ·</span> <span class="del">gemini-2.0-flash</span> <span class="dim">retired</span></span>
-<span class="dl" data-s="3">  replacement <span class="add">gemini-flash-latest</span> <span class="dim">· verified vs live catalog</span></span>
+<span class="dl" data-s="3">  replacement <span class="add">gemini-flash-latest</span> <span class="dim">· listed in public catalogs</span></span>
 <span class="dl" data-s="4"> </span>
 <span class="dl" data-s="4"><span class="dim">diff · services/geminiService.ts:18</span></span>
 <span class="dl" data-s="4">  <span class="del">- const MODEL_NAME = "gemini-2.0-flash"</span></span>
@@ -314,39 +331,39 @@
 <span class="dl" data-s="5"><span class="dim">gate · patched copy</span></span>
 <span class="dl" data-s="5">  <span class="ok">✓</span> type-check   <span class="ok">✓</span> tests   <span class="dim">(your own suite)</span></span>
 <span class="dl" data-s="6"> </span>
-<span class="dl" data-s="6"><span class="am">Tier A · verified</span> — 1 change ready to review, catalog untouched</span></div>
+<span class="dl" data-s="6"><span class="am">Tier A · verified</span> · 1 change ready to review, catalog untouched</span></div>
       <div class="prog"><span class="fill" id="fill"></span></div>
     </figure>
-    <p class="demo-cap">Animated walkthrough of real fix-llm output · example data — drop in a screen recording to replace it</p>
+    <p class="demo-cap">A fix-llm run on an example repository. Press play to watch it step by step.</p>
   </div>
 </section>
 
 <!-- PROVIDERS -->
 <section id="providers">
   <div class="wrap">
-    <div class="provintro rise">
+    <div class="provintro">
       <p class="kick" style="text-align:center">Works with</p>
       <h2>The LLMs your product already calls.</h2>
-      <p class="body">Deprecated model ids and the params coupled to them, tracked across every major provider—in TypeScript, JavaScript and Python.</p>
+      <p class="body">Deprecated model ids and the params coupled to them, tracked across every major provider, in TypeScript, JavaScript and Python.</p>
     </div>
-    <div class="logowall rise">
+    <div class="logowall">
       <span class="logo"><svg viewBox="0 0 24 24" role="img" aria-label="OpenAI"><path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/></svg><b>OpenAI</b></span>
       <span class="logo"><svg viewBox="0 0 24 24" role="img" aria-label="Claude"><path d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/></svg><b>Claude</b></span>
       <span class="logo"><svg viewBox="0 0 24 24" role="img" aria-label="Gemini"><path d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81"/></svg><b>Gemini</b></span>
     </div>
-    <p class="demo-cap" style="margin-top:clamp(34px,4vw,44px)">Dated, sourced and re-verified against each provider's live catalog.</p>
+    <p class="demo-cap" style="margin-top:clamp(34px,4vw,44px)">Every record links to the provider's own documentation. A weekly job checks that each verified replacement is still listed in public model catalogs.</p>
   </div>
 </section>
 
 <!-- DETECT -->
 <section id="detect">
   <div class="wrap">
-    <div class="feature rise">
+    <div class="feature">
       <div class="ftext">
         <p class="kick">Detect</p>
         <h2>Know what is retiring before the notice lands.</h2>
-        <p class="body">Mendr tracks a dated deprecation registry and flags the models your systems depend on, ordered by deadline.</p>
-        <ul class="flist"><li>Dated, sourced retirement records</li><li>Ordered by nearest deadline</li><li>OpenAI, Anthropic and Google</li></ul>
+        <p class="body">Mendr keeps a sourced deprecation registry and flags the models your systems depend on, ordered by deadline.</p>
+        <ul class="flist"><li>Sourced from the provider's own documentation</li><li>Ordered by nearest deadline</li><li>OpenAI, Anthropic and Google</li></ul>
       </div>
       <figure class="pv" role="img" aria-label="Registry: gpt-4, gpt-3.5-turbo and gpt-4-turbo with their dated shutdowns, claude-3-opus already retired.">
         <div class="pvh"><span class="d"></span> deprecation registry</div>
@@ -364,7 +381,7 @@
 <!-- MEASURE -->
 <section id="measure">
   <div class="wrap">
-    <div class="feature rev rise">
+    <div class="feature rev">
       <figure class="pv" role="img" aria-label="Runtime evidence is optional: an OpenTelemetry export, a sanitized usage export, your own read-only key kept in your own CI, or gateway and application logs. Without any of them usage is reported as not measured.">
         <div class="pvh"><span class="d"></span> runtime evidence · optional</div>
         <div class="pvb">
@@ -378,7 +395,7 @@
       <div class="ftext">
         <p class="kick">Optional · Measure</p>
         <h2>Prove which ones are live. If you want to.</h2>
-        <p class="body">Code says where a model is declared, not whether production calls it. Connect telemetry you already have and the same finding gains an observed-usage line. Until then the report says <span class="mono">not measured</span>—never "unused".</p>
+        <p class="body">Code says where a model is declared, not whether production calls it. Connect telemetry you already have and the same finding gains an observed-usage line. Until then the report says <span class="mono">not measured</span>, never "unused".</p>
         <ul class="flist"><li>OpenTelemetry, a usage export, your own key in your own CI, or gateway logs</li><li>Reads provider, model, service, timestamp and volume. Never prompts or responses</li><li>Never required. Absence is never treated as proof</li></ul>
       </div>
     </div>
@@ -388,11 +405,11 @@
 <!-- LOCATE -->
 <section id="locate">
   <div class="wrap">
-    <div class="feature rise">
+    <div class="feature">
       <div class="ftext">
         <p class="kick">Locate</p>
         <h2>Find the configuration that selects it.</h2>
-        <p class="body">Mendr separates a live selector from catalog data, so your team changes the right line—and only the right line.</p>
+        <p class="body">Mendr separates a live selector from catalog data, so your team changes the right line, and only the right line.</p>
         <ul class="flist"><li>Config and IaC: yaml, json, .env, helm</li><li>Selector vs. catalog, told apart</li><li>Reported as a candidate for review</li></ul>
       </div>
       <figure class="pv" role="img" aria-label="config-scan: app.yaml line 3 model gpt-4 is a candidate selector to review; models.yaml gpt-4 is catalog data left alone.">
@@ -427,29 +444,29 @@
 <!-- EVIDENCE -->
 <section id="evidence">
   <div class="wrap">
-    <div class="ev-head rise">
+    <div class="ev-head">
       <p class="kick">Evidence</p>
       <h2>One route, read as evidence.</h2>
       <p class="body">Each signal carries its evidence, its source, and how far it can be trusted. Nothing is asserted past what the data shows.</p>
     </div>
     <div class="ev-top">
-      <div class="rise">
+      <div>
         <div class="ehead"><span>Signal</span><span>Evidence</span><span>Source</span><span>Confidence</span></div>
         <div class="erow v"><span class="node"></span><span class="sig">Retirement</span><span class="evi">2026-10-23</span><span class="src">Registry</span><span class="conf">Verified</span></div>
         <div class="erow w"><span class="node"></span><span class="sig">Usage</span><span class="evi">not measured</span><span class="src">Runtime · optional</span><span class="conf">Unknown</span></div>
         <div class="erow o"><span class="node"></span><span class="sig">Location</span><span class="evi">src/ai/client.ts:42</span><span class="src">Source scan</span><span class="conf">Verified</span></div>
         <div class="erow w"><span class="node"></span><span class="sig">Decision</span><span class="evi">Patch eligible</span><span class="src">Safety gate</span><span class="conf">Not applied</span></div>
       </div>
-      <div class="timeline rise">
+      <div class="timeline">
         <div class="tl-label">RETIREMENT WINDOW</div>
         <div class="tstep announced"><span class="m"></span><div class="k">ANNOUNCED</div><div class="d">provider notice</div></div>
         <div class="tstep now"><span class="m"></span><div class="k">NOW</div><div class="d">mendr audit .</div></div>
         <div class="tstep deadline"><span class="m"></span><div class="k">DEADLINE · gpt-4</div><div class="d">2026-10-23</div></div>
       </div>
     </div>
-    <div class="result rise">
+    <div class="result">
       <div class="rl">RESULT</div>
-      <p>Call site located and verified. Migration evidence attached. <span class="un">Runtime usage not measured—and reported that way.</span></p>
+      <p>Call site located and verified. Migration evidence attached. <span class="un">Runtime usage not measured, and reported that way.</span></p>
     </div>
   </div>
 </section>
@@ -457,11 +474,11 @@
 <!-- COMMANDS -->
 <section id="commands">
   <div class="wrap">
-    <div class="ev-head rise"><p class="kick">The commands</p><h2>A small set, run in your own environment.</h2></div>
-    <div class="cmds rise">
+    <div class="ev-head"><p class="kick">The commands</p><h2>A small set, run in your own environment.</h2></div>
+    <div class="cmds">
       <div class="cmd"><span class="c">mendr audit [path] <span class="a">· preview</span></span><span class="d">The audit. Source, config and registry in one report with four honest conclusions. Needs only the repository.</span></div>
       <div class="cmd"><span class="c">mendr audit . --install <span class="a">· preview</span></span><span class="d">Scaffolds a GitHub workflow that keeps one issue per repo current: new, continuing, resolved. <span class="mono">contents: read</span>, <span class="mono">issues: write</span>.</span></div>
-      <div class="cmd"><span class="c">mendr fix-llm [path]</span><span class="d">Print the gated diff for a retired id at a verified call site—proved against your type-check and tests before it touches your code. Released, v0.1.0.</span></div>
+      <div class="cmd"><span class="c">mendr fix-llm [path]</span><span class="d">Print the gated diff for a retired id at a verified call site, proved against your type-check and tests before it touches your code. Released, v0.1.0.</span></div>
       <div class="cmd"><span class="c">mendr watch [path]</span><span class="d">The lightweight tracker: which deprecated ids a repo uses, by deadline, in one self-updating issue. Released, v0.1.0.</span></div>
     </div>
   </div>
@@ -471,14 +488,14 @@
 <section id="install">
   <div class="wrap">
     <div class="install-grid">
-      <div class="rise">
+      <div>
         <p class="kick">Install</p>
-        <h2>Run the audit. Thirty seconds, no key, nothing changed.</h2>
+        <h2>Run the audit. Under a minute, no key, nothing changed.</h2>
         <p class="body">Point it at a repo. It scans TypeScript, TSX, JavaScript, Python and config, joins the retirement registry, and prints every retiring model with its location, deadline and migration evidence. Add <span class="mono">--install</span> to keep one GitHub issue current.</p>
       </div>
-      <figure class="term rise" style="margin:0" role="img" aria-label="Terminal: npx github ajitheee mendr v0.5.7-alpha audit dot. Coverage: source code scanned, configuration not applicable, registry loaded, runtime usage not measured. Conclusion: exposure detected. gpt-4 at src/ai/client.ts line 42, verified direct call site, deadline 2026-10-23, patch eligible, no change applied.">
-        <div class="th">audit · v0.5.7-alpha</div>
-<div class="tb"><span class="pr">$</span> npx github:ajitheee/mendr#v0.5.7-alpha audit .
+      <figure class="term" style="margin:0" aria-label="Terminal: npx github ajitheee mendr v0.5.7-alpha audit dot. Coverage: source code scanned, configuration not applicable, registry loaded, runtime usage not measured. Conclusion: exposure detected. gpt-4 at src/ai/client.ts line 42, verified direct call site, deadline 2026-10-23, patch eligible, no change applied.">
+        <div class="th"><span>audit · v0.5.7-alpha</span><button class="copy" id="copy" type="button">Copy command</button></div>
+<div class="tb"><span class="pr">$</span> <span id="cmd">npx github:ajitheee/mendr#v0.5.7-alpha audit .</span>
 <span class="dim">mendr audit (preview)</span>
 
 <span class="ok">✓</span> Source code     342 files (301 TS/TSX, 41 Python)
@@ -497,7 +514,7 @@ Conclusion: <span class="am">EXPOSURE DETECTED</span>
 
 <!-- CTA -->
 <section class="cta" id="cta">
-  <div class="wrap rise">
+  <div class="wrap">
     <p class="kick" style="text-align:center">Get started</p>
     <h2>Know what retires under your code before it becomes an incident.</h2>
     <div class="actions">
@@ -510,7 +527,7 @@ Conclusion: <span class="am">EXPOSURE DETECTED</span>
 
 <footer>
   <div class="foot">
-    <span>mendr — find retiring AI models before they break prod · MIT</span>
+    <span>mendr · find retiring AI models before they break production · MIT</span>
     <span class="fl"><a href="https://github.com/ajitheee/mendr">GitHub</a><a href="https://github.com/ajitheee/mendr#readme">Docs</a><a href="https://github.com/ajitheee/mendr/releases">Releases</a><a href="/privacy.html">Privacy</a><a href="/security.html">Security</a></span>
   </div>
 </footer>
@@ -518,32 +535,68 @@ Conclusion: <span class="am">EXPOSURE DETECTED</span>
 <script>
   (function(){
     var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    var items=document.querySelectorAll('.rise');
-    if(reduce||!('IntersectionObserver'in window))items.forEach(function(el){el.classList.add('in');});
-    else{var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});},{rootMargin:'0px 0px -8% 0px',threshold:0.1});items.forEach(function(el){io.observe(el);});}
 
-    // demo screencast: reveal lines in sequence, light the stage tracker, loop
+    // demo: rests in its finished state and plays on press. Never loops, never clears to an empty card.
+    // Reduced motion: the play control still works, but nothing moves on its own.
     var lines=Array.prototype.slice.call(document.querySelectorAll('#screen .dl'));
     var stages=Array.prototype.slice.call(document.querySelectorAll('#stages span'));
-    var fill=document.getElementById('fill'), dur=document.getElementById('dur');
+    var fill=document.getElementById('fill'), dur=document.getElementById('dur'), play=document.getElementById('play');
+    var total=lines.length, timer=null;
     function setStage(s){stages.forEach(function(el,idx){el.classList.toggle('on',idx===s);el.classList.toggle('done',idx<s);});}
-    if(lines.length){
-      if(reduce){lines.forEach(function(l){l.classList.add('show');});stages.forEach(function(el){el.classList.add('done');});if(fill)fill.style.width='100%';}
-      else{
-        var i=0,total=lines.length,pause=0;
-        var step=function(){
-          if(pause>0){pause--;if(pause===0){lines.forEach(function(l){l.classList.remove('show');});i=0;setStage(-1);if(fill)fill.style.width='0';}return;}
-          if(i<total){
-            lines[i].classList.add('show');
-            var s=parseInt(lines[i].getAttribute('data-s'),10);if(!isNaN(s))setStage(s);
-            i++;
-            if(fill)fill.style.width=Math.round(i/total*100)+'%';
-            if(dur)dur.textContent='0:'+String(Math.round(i/total*18)).padStart(2,'0');
-            if(i===total)pause=5;
-          }
-        };
-        setInterval(step,820);
+    function finish(){
+      if(timer){clearInterval(timer);timer=null;}
+      lines.forEach(function(l){l.classList.add('show');});
+      stages.forEach(function(el){el.classList.remove('on');el.classList.add('done');});
+      if(fill)fill.style.transform='scaleX(1)';
+      if(dur)dur.textContent='0:18';
+      if(play){play.setAttribute('aria-label','Replay the walkthrough');play.classList.remove('playing');}
+    }
+    function run(){
+      if(!total)return;
+      if(timer)clearInterval(timer);
+      lines.forEach(function(l){l.classList.remove('show');});
+      setStage(-1);
+      if(fill)fill.style.transform='scaleX(0)';
+      if(play){play.setAttribute('aria-label','Playing');play.classList.add('playing');}
+      var i=0;
+      timer=setInterval(function(){
+        if(i>=total){finish();return;}
+        lines[i].classList.add('show');
+        var s=parseInt(lines[i].getAttribute('data-s'),10);if(!isNaN(s))setStage(s);
+        i++;
+        if(fill)fill.style.transform='scaleX('+(i/total)+')';
+        if(dur)dur.textContent='0:'+String(Math.round(i/total*18)).padStart(2,'0');
+      },820);
+    }
+    if(total){
+      finish();
+      if(play)play.addEventListener('click',run);
+    }
+
+    // copy the install command. The press always produces a visible result: "Copied", or the command
+    // left selected with "Press Ctrl+C" when the clipboard is unavailable (no permission, old browser).
+    var copy=document.getElementById('copy'), cmd=document.getElementById('cmd');
+    if(copy&&cmd){
+      var label=copy.textContent, reset=null;
+      function said(text,ok){
+        copy.textContent=text;copy.classList.toggle('done',!!ok);
+        clearTimeout(reset);reset=setTimeout(function(){copy.textContent=label;copy.classList.remove('done');},1800);
       }
+      function select(){
+        var range=document.createRange();range.selectNodeContents(cmd);
+        var sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);
+      }
+      function fallback(){
+        select();
+        var ok=false;try{ok=document.execCommand('copy');}catch(e){}
+        said(ok?'Copied':(navigator.platform.indexOf('Mac')>-1?'Press ⌘C':'Press Ctrl+C'),ok);
+      }
+      copy.addEventListener('click',function(){
+        var text=cmd.textContent.trim();
+        if(navigator.clipboard&&navigator.clipboard.writeText){
+          navigator.clipboard.writeText(text).then(function(){said('Copied',true);},fallback);
+        }else fallback();
+      });
     }
   })();
 </script>
