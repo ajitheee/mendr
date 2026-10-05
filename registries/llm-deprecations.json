@@ -4635,5 +4635,285 @@
         "excerpt": "gemini-3.1-flash-image-preview | February 26, 2026 | June 25, 2026 | gemini-3.1-flash-image"
       }
     ]
+  },
+  {
+    "entryId": "openai.o1.retirement-2026-10-23",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "o1",
+    "replacement": "gpt-5.6-sol",
+    "status": "deprecated",
+    "shutdownDate": "2026-10-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: October 23, 2026 | o1-2024-12-17 | o1 | gpt-5.6-sol; the model cell lists 2 ids (o1, o1-2024-12-17), read as one entry per id with the row's date and replacement",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-05",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
+        "the deprecation claim for \"o1\" is self-consistent (status \"deprecated\", shutdown 2026-10-23) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "October 23, 2026 | o1-2024-12-17 | o1 | gpt-5.6-sol"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.o3-mini-2025-01-31.retirement-2026-10-23",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "o3-mini-2025-01-31",
+    "replacement": "gpt-5.6-sol",
+    "status": "deprecated",
+    "shutdownDate": "2026-10-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: October 23, 2026 | o3-mini-2025-01-31 | o3-mini | gpt-5.6-sol; the model cell lists 2 ids (o3-mini-2025-01-31, o3-mini), read as one entry per id with the row's date and replacement",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-05",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
+        "the deprecation claim for \"o3-mini-2025-01-31\" is self-consistent (status \"deprecated\", shutdown 2026-10-23) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "October 23, 2026 | o3-mini-2025-01-31 | o3-mini | gpt-5.6-sol"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.o4-mini-2025-04-16.retirement-2026-10-23",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "o4-mini-2025-04-16",
+    "replacement": "gpt-5.6-terra",
+    "status": "deprecated",
+    "shutdownDate": "2026-10-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: October 23, 2026 | o4-mini-2025-04-16 | o4-mini | gpt-5.6-terra; the model cell lists 2 ids (o4-mini-2025-04-16, o4-mini), read as one entry per id with the row's date and replacement",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-05",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-terra\" is live in a public catalog",
+        "the deprecation claim for \"o4-mini-2025-04-16\" is self-consistent (status \"deprecated\", shutdown 2026-10-23) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "October 23, 2026 | o4-mini-2025-04-16 | o4-mini | gpt-5.6-terra"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-4.1-nano-2025-04-14.retirement-2026-10-23",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4.1-nano-2025-04-14",
+    "replacement": "gpt-5.6-luna",
+    "status": "deprecated",
+    "shutdownDate": "2026-10-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: October 23, 2026 | gpt-4.1-nano | gpt-4.1-nano-2025-04-14 | gpt-5.6-luna; the model cell lists 2 ids (gpt-4.1-nano-2025-04-14, gpt-4.1-nano), read as one entry per id with the row's date and replacement",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-05",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-luna\" is live in a public catalog",
+        "the deprecation claim for \"gpt-4.1-nano-2025-04-14\" is self-consistent (status \"deprecated\", shutdown 2026-10-23) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "October 23, 2026 | gpt-4.1-nano | gpt-4.1-nano-2025-04-14 | gpt-5.6-luna"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-3.5-turbo-completions.retirement-2026-10-23",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-3.5-turbo-completions",
+    "replacement": "gpt-5.6-terra",
+    "status": "deprecated",
+    "shutdownDate": "2026-10-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: October 23, 2026 | gpt-3.5-turbo-0125 | gpt-3.5-turbo , gpt-3.5-turbo-completions | gpt-5.6-terra; the model cell lists 3 ids (gpt-3.5-turbo-completions, gpt-3.5-turbo-0125, gpt-3.5-turbo), read as one entry per id with the row's date and replacement",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-05",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-terra\" is live in a public catalog",
+        "the deprecation claim for \"gpt-3.5-turbo-completions\" is self-consistent (status \"deprecated\", shutdown 2026-10-23) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "October 23, 2026 | gpt-3.5-turbo-0125 | gpt-3.5-turbo , gpt-3.5-turbo-completions | gpt-5.6-terra"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-4-0613-completions.retirement-2026-10-23",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4-0613-completions",
+    "replacement": "gpt-5.6-sol",
+    "status": "deprecated",
+    "shutdownDate": "2026-10-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: October 23, 2026 | gpt-4-0613 | gpt-4 , gpt-4-0613-completions , gpt-4-completions | gpt-5.6-sol; the model cell lists 4 ids (gpt-4-0613-completions, gpt-4-0613, gpt-4, gpt-4-completions), read as one entry per id with the row's date and replacement",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-05",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
+        "the deprecation claim for \"gpt-4-0613-completions\" is self-consistent (status \"deprecated\", shutdown 2026-10-23) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "October 23, 2026 | gpt-4-0613 | gpt-4 , gpt-4-0613-completions , gpt-4-completions | gpt-5.6-sol"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-4-completions.retirement-2026-10-23",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4-completions",
+    "replacement": "gpt-5.6-sol",
+    "status": "deprecated",
+    "shutdownDate": "2026-10-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: October 23, 2026 | gpt-4-0613 | gpt-4 , gpt-4-0613-completions , gpt-4-completions | gpt-5.6-sol; the model cell lists 4 ids (gpt-4-completions, gpt-4-0613, gpt-4, gpt-4-0613-completions), read as one entry per id with the row's date and replacement",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-05",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
+        "the deprecation claim for \"gpt-4-completions\" is self-consistent (status \"deprecated\", shutdown 2026-10-23) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "October 23, 2026 | gpt-4-0613 | gpt-4 , gpt-4-0613-completions , gpt-4-completions | gpt-5.6-sol"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-4-turbo-completions.retirement-2026-10-23",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4-turbo-completions",
+    "replacement": "gpt-5.6-sol",
+    "status": "deprecated",
+    "shutdownDate": "2026-10-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: October 23, 2026 | gpt-4-turbo | gpt-4-turbo-2024-04-09 , gpt-4-turbo-completions | gpt-5.6-sol; the model cell lists 3 ids (gpt-4-turbo-completions, gpt-4-turbo, gpt-4-turbo-2024-04-09), read as one entry per id with the row's date and replacement",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-05",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
+        "the deprecation claim for \"gpt-4-turbo-completions\" is self-consistent (status \"deprecated\", shutdown 2026-10-23) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "October 23, 2026 | gpt-4-turbo | gpt-4-turbo-2024-04-09 , gpt-4-turbo-completions | gpt-5.6-sol"
+      }
+    ]
   }
 ]
