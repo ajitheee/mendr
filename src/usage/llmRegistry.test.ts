@@ -88,6 +88,37 @@ function registryFile(evidence?: unknown): string {
   return path;
 }
 
+describe('loadLlmRegistry — inferredFrom', () => {
+  // The loader rebuilds each entry from known fields, so a field it does not
+  // list is silently dropped. inferredFrom must survive, or check-dates would
+  // judge an honestly-labelled inference as an unsupported claim.
+  function withInferredFrom(inferredFrom: unknown): string {
+    const path = join(mkdtempSync(join(tmpdir(), 'mendr-registry-')), 'llm-deprecations.json');
+    writeFileSync(
+      path,
+      JSON.stringify([
+        { provider: 'anthropic', kind: 'model_id', deprecated: 'claude-3-opus-latest', replacement: 'claude-opus-4-8', inferredFrom },
+      ]),
+    );
+    return path;
+  }
+
+  it('keeps inferredFrom through loading', () => {
+    const [loaded] = modelIdEntries(loadLlmRegistry(withInferredFrom('claude-3-opus-20240229')));
+    expect(loaded.inferredFrom).toBe('claude-3-opus-20240229');
+  });
+
+  it('adds no inferredFrom key to an entry that has none', () => {
+    const [loaded] = modelIdEntries(loadLlmRegistry(registryFile()));
+    expect('inferredFrom' in loaded).toBe(false);
+  });
+
+  it('HARD-errors on an empty or non-string inferredFrom: an inference must name its source', () => {
+    expect(() => loadLlmRegistry(withInferredFrom(''))).toThrow(/invalid "inferredFrom"/);
+    expect(() => loadLlmRegistry(withInferredFrom(42))).toThrow(/invalid "inferredFrom"/);
+  });
+});
+
 describe('loadLlmRegistry — evidence', () => {
   it('parses a well-formed evidence array', () => {
     const [loaded] = modelIdEntries(loadLlmRegistry(registryFile([VALID_EVIDENCE])));

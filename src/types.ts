@@ -248,6 +248,17 @@ export interface LlmModelIdDeprecation {
   shutdownDate?: string;
   /** The provider documentation page this verdict was read from. */
   sourceUrl?: string;
+  /**
+   * Set when the provider never names THIS id, and its retirement is inferred
+   * from the snapshot it pointed to: `claude-3-opus-latest` from
+   * `claude-3-opus-20240229`. `mendr check-dates` accepts an inferred date only
+   * when it is already past (the snapshot is gone, so calls fail today) and the
+   * named snapshot is on the provider page with the same date. A FUTURE alias
+   * retirement must be stated by the provider: on 2026-10-04 four `gpt-5` alias
+   * entries carried a 2026-12-11 date inferred this way and labelled
+   * "Provider-named", while OpenAI retired only the dated snapshots.
+   */
+  inferredFrom?: string;
   /** Optional human note explaining the deprecation. */
   note?: string;
   /**
