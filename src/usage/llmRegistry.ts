@@ -266,6 +266,13 @@ export function assertDeprecation(entry: unknown, index: number): LlmDeprecation
         throw new Error(`llm registry entry #${index} has a non-string "${field}"`);
       }
     }
+    // An inference must name what it was inferred from: an empty value would
+    // read as "inferred" while pointing at nothing the date check can test.
+    if (e.inferredFrom !== undefined && e.inferredFrom !== null) {
+      if (typeof e.inferredFrom !== 'string' || e.inferredFrom.length === 0) {
+        throw new Error(`llm registry entry #${index} has a missing/invalid "inferredFrom"`);
+      }
+    }
     // `entryId` is optional (an unstamped entry derives one), but an EMPTY or
     // non-string id is malformed data, not an absent field: it would print as a
     // blank `registry entry:` row and be copied into a command that finds
@@ -284,6 +291,7 @@ export function assertDeprecation(entry: unknown, index: number): LlmDeprecation
       status: (e.status ?? undefined) as ModelLifecycle | undefined,
       shutdownDate: (e.shutdownDate ?? undefined) as string | undefined,
       sourceUrl: (e.sourceUrl ?? undefined) as string | undefined,
+      ...(typeof e.inferredFrom === 'string' ? { inferredFrom: e.inferredFrom } : {}),
       note,
       verification: parseVerification(e, index),
       evidence: parseEvidence(e, index),

@@ -174,8 +174,10 @@ describe('the SHIPPED registry footer', () => {
 
   it('prints the measured shape of the shipped registry', () => {
     const lines = formatRegistryProvenanceLines(registryProvenance(loadLlmRegistry()));
-    expect(lines[0]).toBe('registry: 157 records');
-    expect(lines[1]).toBe('auto-fix eligible: 133');
-    expect(lines[2]).toBe('review-only: 24 (quarantined 13, unverified 5, unverifiable 6)');
+    // 2026-10-04: -4 gpt-5 aliases (no provider date), +10 ids OpenAI retires
+    // 2026-10-23, and the 4 reasoning.mode: pro replacements moved to quarantine.
+    expect(lines[0]).toBe('registry: 163 records');
+    expect(lines[1]).toBe('auto-fix eligible: 135');
+    expect(lines[2]).toBe('review-only: 28 (quarantined 17, unverified 5, unverifiable 6)');
   });
 });

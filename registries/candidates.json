@@ -1811,5 +1811,278 @@
     "candidateId": "google:gemini-3-1-flash-live-preview",
     "proposedBy": "discovery",
     "proposedAt": "2026-09-18T20:14:35.879Z"
+  },
+  {
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-5.3-codex",
+    "replacement": "gpt-6-sol",
+    "status": "deprecated",
+    "shutdownDate": "2027-04-01",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Apr 1, 2027 | gpt-5.3-codex | gpt-6-sol",
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "Apr 1, 2027 | gpt-5.3-codex | gpt-6-sol"
+      }
+    ],
+    "candidateId": "openai:gpt-5-3-codex",
+    "proposedBy": "discovery",
+    "proposedAt": "2026-10-05T03:51:08.122Z"
+  },
+  {
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-5.4-nano",
+    "replacement": "gpt-6-luna",
+    "status": "deprecated",
+    "shutdownDate": "2027-04-01",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Apr 1, 2027 | gpt-5.4-nano | gpt-6-luna",
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "Apr 1, 2027 | gpt-5.4-nano | gpt-6-luna"
+      }
+    ],
+    "candidateId": "openai:gpt-5-4-nano",
+    "proposedBy": "discovery",
+    "proposedAt": "2026-10-05T03:51:08.122Z"
+  },
+  {
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-5.1",
+    "replacement": "gpt-6-sol",
+    "status": "deprecated",
+    "shutdownDate": "2027-04-01",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Apr 1, 2027 | gpt-5.1 | gpt-6-sol",
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "Apr 1, 2027 | gpt-5.1 | gpt-6-sol"
+      }
+    ],
+    "candidateId": "openai:gpt-5-1",
+    "proposedBy": "discovery",
+    "proposedAt": "2026-10-05T03:51:08.122Z"
+  },
+  {
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "tts-1",
+    "replacement": "gpt-realtime-2.1-mini",
+    "status": "deprecated",
+    "shutdownDate": "2027-01-06",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Jan 6, 2027 | tts-1 | gpt-realtime-2.1-mini",
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "Jan 6, 2027 | tts-1 | gpt-realtime-2.1-mini"
+      }
+    ],
+    "candidateId": "openai:tts-1",
+    "proposedBy": "discovery",
+    "proposedAt": "2026-10-05T03:51:08.122Z"
+  },
+  {
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "tts-1-hd",
+    "replacement": "gpt-realtime-2.1-mini",
+    "status": "deprecated",
+    "shutdownDate": "2027-01-06",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Jan 6, 2027 | tts-1-hd | gpt-realtime-2.1-mini",
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "Jan 6, 2027 | tts-1-hd | gpt-realtime-2.1-mini"
+      }
+    ],
+    "candidateId": "openai:tts-1-hd",
+    "proposedBy": "discovery",
+    "proposedAt": "2026-10-05T03:51:08.122Z"
+  },
+  {
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4o-mini-tts-2025-03-20",
+    "replacement": "gpt-realtime-2.1-mini",
+    "status": "deprecated",
+    "shutdownDate": "2027-01-06",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Jan 6, 2027 | gpt-4o-mini-tts-2025-03-20 | gpt-realtime-2.1-mini",
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "Jan 6, 2027 | gpt-4o-mini-tts-2025-03-20 | gpt-realtime-2.1-mini"
+      }
+    ],
+    "candidateId": "openai:gpt-4o-mini-tts-2025-03-20",
+    "proposedBy": "discovery",
+    "proposedAt": "2026-10-05T03:51:08.122Z"
+  },
+  {
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4o-mini-tts-2025-12-15",
+    "replacement": "gpt-realtime-2.1-mini",
+    "status": "deprecated",
+    "shutdownDate": "2027-01-06",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Jan 6, 2027 | gpt-4o-mini-tts-2025-12-15 | gpt-realtime-2.1-mini",
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "Jan 6, 2027 | gpt-4o-mini-tts-2025-12-15 | gpt-realtime-2.1-mini"
+      }
+    ],
+    "candidateId": "openai:gpt-4o-mini-tts-2025-12-15",
+    "proposedBy": "discovery",
+    "proposedAt": "2026-10-05T03:51:08.122Z"
+  },
+  {
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "o3-deep-research-2025-06-26",
+    "replacement": "gpt-5.6-sol",
+    "status": "retired",
+    "shutdownDate": "2026-07-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: July 23, 2026 | o3-deep-research-2025-06-26 | o3-deep-research | gpt-5.6-sol; the model cell lists 2 ids (o3-deep-research-2025-06-26, o3-deep-research), read as one entry per id with the row's date and replacement",
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "July 23, 2026 | o3-deep-research-2025-06-26 | o3-deep-research | gpt-5.6-sol"
+      }
+    ],
+    "candidateId": "openai:o3-deep-research-2025-06-26",
+    "proposedBy": "discovery",
+    "proposedAt": "2026-10-05T03:51:08.122Z"
+  },
+  {
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "o3-deep-research",
+    "replacement": "gpt-5.6-sol",
+    "status": "retired",
+    "shutdownDate": "2026-07-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: July 23, 2026 | o3-deep-research-2025-06-26 | o3-deep-research | gpt-5.6-sol; the model cell lists 2 ids (o3-deep-research, o3-deep-research-2025-06-26), read as one entry per id with the row's date and replacement",
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "July 23, 2026 | o3-deep-research-2025-06-26 | o3-deep-research | gpt-5.6-sol"
+      }
+    ],
+    "candidateId": "openai:o3-deep-research",
+    "proposedBy": "discovery",
+    "proposedAt": "2026-10-05T03:51:08.122Z"
+  },
+  {
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "o4-mini-deep-research-2025-06-26",
+    "replacement": "gpt-5.6-sol",
+    "status": "retired",
+    "shutdownDate": "2026-07-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: July 23, 2026 | o4-mini-deep-research-2025-06-26 | o4-mini-deep-research | gpt-5.6-sol; the model cell lists 2 ids (o4-mini-deep-research-2025-06-26, o4-mini-deep-research), read as one entry per id with the row's date and replacement",
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "July 23, 2026 | o4-mini-deep-research-2025-06-26 | o4-mini-deep-research | gpt-5.6-sol"
+      }
+    ],
+    "candidateId": "openai:o4-mini-deep-research-2025-06-26",
+    "proposedBy": "discovery",
+    "proposedAt": "2026-10-05T03:51:08.122Z"
+  },
+  {
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "o4-mini-deep-research",
+    "replacement": "gpt-5.6-sol",
+    "status": "retired",
+    "shutdownDate": "2026-07-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: July 23, 2026 | o4-mini-deep-research-2025-06-26 | o4-mini-deep-research | gpt-5.6-sol; the model cell lists 2 ids (o4-mini-deep-research, o4-mini-deep-research-2025-06-26), read as one entry per id with the row's date and replacement",
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "July 23, 2026 | o4-mini-deep-research-2025-06-26 | o4-mini-deep-research | gpt-5.6-sol"
+      }
+    ],
+    "candidateId": "openai:o4-mini-deep-research",
+    "proposedBy": "discovery",
+    "proposedAt": "2026-10-05T03:51:08.122Z"
+  },
+  {
+    "provider": "anthropic",
+    "kind": "model_id",
+    "deprecated": "claude-sonnet-4-5-20250929",
+    "replacement": "claude-sonnet-5-5",
+    "status": "deprecated",
+    "shutdownDate": "2026-11-30",
+    "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+    "note": "discovered from the anthropic deprecation table; row read as: November 30, 2026 | claude-sonnet-4-5-20250929 | claude-sonnet-5-5",
+    "evidence": [
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+        "contentHash": "sha256:73391ff2e85ce434e7bfb42f54fd1d0b57a62ab013c8cb906b9ad3c762f7a37a",
+        "retrievedAt": "2026-10-05T03:51:08.630Z",
+        "excerpt": "November 30, 2026 | claude-sonnet-4-5-20250929 | claude-sonnet-5-5"
+      }
+    ],
+    "candidateId": "anthropic:claude-sonnet-4-5-20250929",
+    "proposedBy": "discovery",
+    "proposedAt": "2026-10-05T03:51:08.122Z"
+  },
+  {
+    "provider": "google",
+    "kind": "model_id",
+    "deprecated": "gemini-2.5-computer-use-preview-10-2025",
+    "replacement": "gemini-3.8-flash",
+    "status": "retired",
+    "shutdownDate": "2026-07-28",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "note": "discovered from the google deprecation table; row read as: gemini-2.5-computer-use-preview-10-2025 | October 7, 2025 | July 28, 2026 | gemini-3.8-flash",
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:748b84aed9e21ee8f04fb6cd8bea8beeb99e0bcaf040bf8b991585fb4a65b0a8",
+        "retrievedAt": "2026-10-05T03:51:08.926Z",
+        "excerpt": "gemini-2.5-computer-use-preview-10-2025 | October 7, 2025 | July 28, 2026 | gemini-3.8-flash"
+      }
+    ],
+    "candidateId": "google:gemini-2-5-computer-use-preview-10-2025",
+    "proposedBy": "discovery",
+    "proposedAt": "2026-10-05T03:51:08.122Z"
   }
 ]

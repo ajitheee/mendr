@@ -126,14 +126,17 @@ import {
   resolveCandidatesPath,
   saveCandidates,
 } from './registry/candidates.js';
-import { resolveEvidenceDir, saveSnapshot, snapshotName } from './registry/evidence.js';
+import { captureDocument, resolveEvidenceDir, saveSnapshot, snapshotName } from './registry/evidence.js';
 import { canonicalizeId } from './registry/normalize.js';
 import {
   DISCOVER_PROVIDERS,
   discoverCandidates,
   PROVIDER_SOURCES,
+  readModelRows,
   type DiscoverProvider,
+  type ModelRowFact,
 } from './registry/discover.js';
+import { checkDates, FAILING_VERDICTS } from './registry/checkDates.js';
 import type {
   CandidateEntry,
   LlmModelIdDeprecation,
@@ -1936,6 +1939,93 @@ program
   });
 
 program
+  .command('check-dates')
+  .option('--json', 'print every verdict as JSON')
+  .description(
+    "Check every shutdown date the registry ships against the provider's own deprecation page; exits 1 when one is not there.",
+  )
+  .action(async (opts: { json?: boolean }) => {
+    // Which dates count as past decides what may rest on an inference, so the
+    // clock is the audit's: one read, MENDR_EVALUATED_AT honoured, and a pin it
+    // cannot read stops the run rather than falling back to the system clock.
+    let today: string;
+    try {
+      today = resolveEvaluationTime().at.toISOString().slice(0, 10);
+    } catch (err) {
+      if (err instanceof EvaluatedAtError) {
+        console.error(`mendr: ${err.message}`);
+        process.exit(2);
+      }
+      throw err;
+    }
+    // Reads each provider page through the parser discovery uses, so this and
+    // `discover` cannot disagree about what a page says. Fetches, never writes.
+    const pages: Partial<Record<DiscoverProvider, ModelRowFact[]>> = {};
+    const unread: string[] = [];
+    for (const provider of DISCOVER_PROVIDERS) {
+      try {
+        const doc = await captureDocument(PROVIDER_SOURCES[provider]);
+        const { facts } = readModelRows(doc.text, provider);
+        // A page that fetched but yielded no rows has changed shape; reading it
+        // as "names nothing" would fail every entry for the wrong reason.
+        if (facts.length === 0) unread.push(`${provider}: page fetched but no model rows could be read`);
+        else pages[provider] = facts;
+      } catch (err) {
+        unread.push(`${provider}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    const results = checkDates(loadLlmRegistry(), pages, today);
+    const failing = results.filter((r) => FAILING_VERDICTS.has(r.verdict));
+    const warned = results.filter((r) => r.replacementOnPage !== undefined);
+    const count = (v: string) => results.filter((r) => r.verdict === v).length;
+
+    if (opts.json) {
+      console.log(JSON.stringify({ unread, results }, null, 2));
+    } else {
+      console.log(
+        `checked ${results.length} model-id entries against ${DISCOVER_PROVIDERS.length - unread.length} provider pages, as of ${today}`,
+      );
+      console.log(
+        `  stated: confirmed ${count('confirmed')} · was stated, row since removed ${count('was-stated')}` +
+          ` · inferred from a stated snapshot (past dates only) ${count('inferred')}`,
+      );
+      console.log(
+        `  failing: date differs ${count('date-differs')} · date unstated ${count('date-unstated')}` +
+          ` · inferred future date ${count('inferred-future')} · absent ${count('absent')}`,
+      );
+      console.log(`  not judged: ${count('unchecked')}`);
+      for (const line of unread) console.log(`  could not read ${line}`);
+      if (failing.length > 0) {
+        console.log('');
+        console.log(`${failing.length} shipped date(s) the provider page does not state:`);
+        for (const r of failing) console.log(`  [${r.verdict}] ${r.entryId}: ${r.reason}`);
+      }
+      if (warned.length > 0) {
+        console.log('');
+        console.log(`${warned.length} confirmed date(s) whose replacement is not one the page names (warning only):`);
+        for (const r of warned) {
+          console.log(`  ${r.entryId}: page names ${r.replacementOnPage!.join(' or ')}`);
+        }
+      }
+      const unchecked = results.filter((r) => r.verdict === 'unchecked');
+      if (unchecked.length > 0) {
+        const byReason = new Map<string, number>();
+        for (const r of unchecked) {
+          const key = r.reason.replace(/^cites \S+, a page/, 'cites a page');
+          byReason.set(key, (byReason.get(key) ?? 0) + 1);
+        }
+        console.log('');
+        console.log(`${unchecked.length} not judged:`);
+        for (const [reason, n] of byReason) console.log(`  ${n} × ${reason}`);
+      }
+    }
+    // Unread pages first: a run that could not look is not a pass.
+    if (unread.length > 0) process.exit(2);
+    if (failing.length > 0) process.exit(1);
+  });
+
+program
   .command('verify-registry')
   .option('--write', 'stamp the computed verification.status back into the registry JSON')
   .description(
@@ -2640,16 +2730,28 @@ program
           (c.shutdownDate ? ` (shutdown ${c.shutdownDate})` : ''));
       }
     }
-    if (result.skipped.length > 0) {
+    // EVERY skip is printed. This list used to stop at 12 with "+N more", and the
+    // review PR pointed at the job log; on 2026-10-01 that hid 46 of 58 refused
+    // rows, among them the 2026-10-23 rows for `o1-pro` and four dated
+    // snapshots. A row the parser refuses is a row only a human can add, so it
+    // must reach one. The workflow lifts the "Rows a human must read" section,
+    // verbatim, into the PR body and a standing issue; keep its two marker
+    // lines stable.
+    const rowSkips = result.skipped.filter((s) => !s.reason.startsWith('table has '));
+    const tableSkips = result.skipped.filter((s) => s.reason.startsWith('table has '));
+    if (rowSkips.length > 0) {
       console.log('');
-      console.log(`Skipped ${result.skipped.length} row(s) that could not be read confidently (never guessed):`);
-      const MAX_SKIPS = 12;
-      for (const skip of result.skipped.slice(0, MAX_SKIPS)) {
+      console.log(`Rows a human must read (${rowSkips.length}) -- the parser would not guess:`);
+      for (const skip of rowSkips) {
         console.log(`  [${skip.provider}] ${skip.reason}`);
+        console.log(`      row: ${skip.row}`);
       }
-      if (result.skipped.length > MAX_SKIPS) {
-        console.log(`  +${result.skipped.length - MAX_SKIPS} more`);
-      }
+      console.log('End of rows a human must read.');
+    }
+    if (tableSkips.length > 0) {
+      console.log('');
+      console.log(`Tables not read as deprecation tables (${tableSkips.length}), listed once each:`);
+      for (const skip of tableSkips) console.log(`  [${skip.provider}] ${skip.reason}`);
     }
 
     if (!opts.write) {

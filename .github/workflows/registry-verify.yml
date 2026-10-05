@@ -42,6 +42,21 @@ jobs:
       - name: Validate registry integrity
         run: node scripts/validate-registry.mjs
 
+      # THE LITERAL CHECK (online): every shutdown date the registry ships must
+      # be on the provider's own page, against that exact id. `verified` below
+      # means the REPLACEMENT is listed in a public catalog; it never looked at
+      # the claim a customer acts on. On 2026-10-04 four `gpt-5` alias entries
+      # carried a 2026-12-11 date OpenAI never wrote, each stamped verified and
+      # auto-appliable, and nothing failed. A past date may also rest on a row
+      # the provider has since pruned (quoted by the entry's stored evidence) or
+      # on an explicit `inferredFrom` snapshot the page states; a future date
+      # must be stated. Exit 2 means a page could not be read, which is not a
+      # pass. A failure here also holds back the weekly re-stamp in
+      # registry-publish, which runs only after this job succeeds: a registry
+      # that dates a model the provider did not must not be re-signed as fresh.
+      - name: Every shipped date is on the provider's page
+        run: node dist/cli.js check-dates
+
       - name: Run the public-oracle audit
         run: node dist/cli.js verify-registry | tee verify-out.txt
 
