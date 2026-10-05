@@ -48,6 +48,26 @@ const ANTHROPIC_HTML = `
 </table>
 `;
 
+/**
+ * Two rows copied from developers.openai.com/api/docs/deprecations on 2026-10-04,
+ * markup unchanged. Until then the parser skipped both (several ids in one model
+ * cell), the skip was never shown to anyone, and `o1` / `o1-pro` never reached the
+ * registry: a repository whose only call was `o1` got a clean audit 19 days before
+ * OpenAI switched it off.
+ */
+const OPENAI_O1_ROWS = `<table> <tr> <th>Shutdown date</th> <th>Model snapshot</th> <th>Substitute model</th> </tr>
+<tr> <td>October 23, 2026</td> <td><code>o1-2024-12-17</code> | <code>o1</code></td> <td><code>gpt-5.6-sol</code></td> </tr>
+<tr> <td>October 23, 2026</td> <td><code>o1-pro-2025-03-19</code> | <code>o1-pro</code></td> <td><code>gpt-5.6-sol</code> (<code>reasoning.mode: pro</code>)</td> </tr>
+</table>`;
+
+/** Several-id cells that must STILL go to a human. */
+const STILL_SKIPPED_HTML = `<table>
+  <tr><th>Shutdown date</th><th>Model</th><th>Recommended replacement</th></tr>
+  <tr><td>2026-10-23</td><td>gpt-4o-2024-05-13 snapshot of gpt-4o</td><td>gpt-5.6-sol</td></tr>
+  <tr><td>2026-10-23</td><td>gpt-4.1-nano | gpt-4.1-nano-2025-04-14</td><td>gpt-5.6-luna or gpt-5.6-terra</td></tr>
+  <tr><td>2026-10-23</td><td>gpt-5.6-sol-preview | gpt-5.6-sol</td><td>gpt-5.6-sol</td></tr>
+</table>`;
+
 const FIXED_NOW = () => '2026-08-20T12:00:00.000Z';
 
 /** A fetch stub keyed by URL, so a multi-provider run stays deterministic. */
@@ -99,9 +119,12 @@ describe('extractRows — reads what it can, SKIPS what it cannot', () => {
     expect(skipped.map((s) => s.reason).join('\n')).toMatch(/replacement cell offers 2 model ids/);
   });
 
-  it('SKIPS a row whose deprecated cell names several ids', () => {
-    expect(byId.has('gpt-4-0613')).toBe(false);
-    expect(skipped.map((s) => s.reason).join('\n')).toMatch(/deprecated cell names 3 model ids/);
+  it("reads a model cell that is a pure list of ids as one row per id, each with the row's date and replacement", () => {
+    for (const id of ['gpt-4-0613', 'gpt-4', 'gpt-4-completions']) {
+      expect(byId.get(id)).toMatchObject({ replacement: 'gpt-5.6-sol', shutdownDate: '2026-10-23' });
+    }
+    expect(byId.get('gpt-4')?.listedWith).toEqual(['gpt-4-0613', 'gpt-4-completions']);
+    expect(skipped.map((s) => s.reason).join('\n')).not.toMatch(/deprecated cell names 3 model ids/);
   });
 
   it('ignores a product/endpoint row that is not a model id at all', () => {
@@ -134,6 +157,73 @@ describe('extractRows — reads what it can, SKIPS what it cannot', () => {
   it('rejects ids that do not carry the provider prefix', () => {
     // The anthropic parser must not adopt OpenAI's table.
     expect(extractRows(OPENAI_HTML, 'anthropic').rows).toHaveLength(0);
+  });
+});
+
+describe('the 2026-10-23 rows that used to evaporate', () => {
+  it('reads o1 and o1-pro, snapshot and alias alike, off the real markup', () => {
+    const { rows, skipped } = extractRows(OPENAI_O1_ROWS, 'openai');
+    expect(rows.map((r) => r.deprecated)).toEqual(['o1-2024-12-17', 'o1', 'o1-pro-2025-03-19', 'o1-pro']);
+    for (const row of rows) {
+      expect(row).toMatchObject({ replacement: 'gpt-5.6-sol', shutdownDate: '2026-10-23' });
+    }
+    expect(skipped).toEqual([]);
+  });
+
+  it("sees OpenAI's separator-less reasoning ids, and still rejects bare product words", () => {
+    const html = `<table><tr><th>Shutdown date</th><th>Model</th><th>Recommended replacement</th></tr>
+      <tr><td>2026-12-11</td><td>o3-pro-2025-06-10</td><td>o3</td></tr>
+      <tr><td>2026-12-11</td><td>ada | babbage</td><td>gpt-5.6-terra</td></tr></table>`;
+    const { rows } = extractRows(html, 'openai');
+    expect(rows).toEqual([expect.objectContaining({ deprecated: 'o3-pro-2025-06-10', replacement: 'o3' })]);
+    // The same token never counts as an id for a provider that does not ship it.
+    expect(extractRows(OPENAI_O1_ROWS, 'anthropic').rows).toHaveLength(0);
+  });
+
+  it('keeps the whole replacement cell in the row text, so "(reasoning.mode: pro)" reaches the reviewer', () => {
+    const { rows } = extractRows(OPENAI_O1_ROWS, 'openai');
+    expect(rows.find((r) => r.deprecated === 'o1-pro')?.rowText).toMatch(/reasoning\.mode: pro/);
+  });
+});
+
+describe('several-id cells that are still a human call', () => {
+  const { rows, skipped } = extractRows(STILL_SKIPPED_HTML, 'openai');
+  const reasons = skipped.map((s) => s.reason).join('\n');
+
+  it('SKIPS a model cell that carries any text besides ids', () => {
+    expect(rows.some((r) => r.deprecated.startsWith('gpt-4o'))).toBe(false);
+    expect(reasons).toMatch(/names 2 model ids \(gpt-4o-2024-05-13, gpt-4o\) alongside other text/);
+  });
+
+  it('SKIPS a pure list whose replacement cell offers a choice', () => {
+    expect(rows.some((r) => r.deprecated.startsWith('gpt-4.1-nano'))).toBe(false);
+    expect(reasons).toMatch(/replacement cell offers 2 model ids \(gpt-5\.6-luna, gpt-5\.6-terra\)/);
+  });
+
+  it('in a pure list, skips only the id that maps to itself', () => {
+    expect(rows.map((r) => r.deprecated)).toEqual(['gpt-5.6-sol-preview']);
+    expect(reasons).toMatch(/maps a model id to itself \(gpt-5\.6-sol\)/);
+  });
+});
+
+describe('the human review list carries claims, not catalog listings', () => {
+  // Google-shaped: every live model is listed with "No shutdown date announced".
+  const GOOGLE_HTML = `<table>
+    <tr><th>Model</th><th>Release date</th><th>Shutdown date</th><th>Recommended replacement</th></tr>
+    <tr><td>gemini-3.8-flash</td><td>September 2, 2026</td><td>No shutdown date announced</td><td></td></tr>
+    <tr><td>gemini-2.0-flash-lite</td><td>February 25, 2025</td><td>June 1, 2026</td><td></td></tr>
+  </table>`;
+  const { rows, skipped } = extractRows(GOOGLE_HTML, 'google');
+
+  it('drops a row with no shutdown date and an empty replacement: it claims nothing', () => {
+    expect(skipped.some((s) => /gemini-3\.8-flash/.test(s.row))).toBe(false);
+  });
+
+  it('still sends a dated row with no replacement to a human', () => {
+    expect(rows).toHaveLength(0);
+    expect(skipped).toEqual([
+      expect.objectContaining({ reason: expect.stringMatching(/no usable replacement/), row: expect.stringMatching(/gemini-2\.0-flash-lite/) }),
+    ]);
   });
 });
 
@@ -214,6 +304,28 @@ describe('discoverCandidates', () => {
       now: FIXED_NOW,
     });
     expect(result.candidates.some((c) => c.deprecated === 'gpt-realtime')).toBe(false);
+  });
+
+  it('says in the note when a candidate came from a several-id cell', async () => {
+    const result = await discoverCandidates(['openai'], {
+      activeRegistry: [],
+      existingCandidates: [],
+      fetchImpl,
+      now: FIXED_NOW,
+    });
+    expect(result.candidates.find((c) => c.deprecated === 'gpt-4')?.note).toMatch(
+      /model cell lists 3 ids \(gpt-4, gpt-4-0613, gpt-4-completions\), read as one entry per id/,
+    );
+  });
+
+  it('proposes only the ids of a pure list that the registry does not already hold', async () => {
+    const result = await discoverCandidates(['openai'], {
+      activeRegistry: [{ provider: 'openai', kind: 'model_id', deprecated: 'o1-2024-12-17', replacement: 'gpt-5.6-sol' }],
+      existingCandidates: [],
+      fetchImpl: stubFetch({ [PROVIDER_SOURCES.openai]: OPENAI_O1_ROWS }),
+      now: FIXED_NOW,
+    });
+    expect(result.candidates.map((c) => c.deprecated)).toEqual(['o1', 'o1-pro-2025-03-19', 'o1-pro']);
   });
 
   it('notes a failing provider instead of aborting the whole run', async () => {

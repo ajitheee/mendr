@@ -14,9 +14,18 @@
 //     "discover cannot touch the active registry" a STRUCTURAL claim rather
 //     than a promise (see discover.test.ts, which asserts it against this
 //     module's own source text).
-//   - NO GUESSING. Every row that is not unambiguously (one deprecated id) ->
+//   - NO GUESSING. Every row that is not unambiguously (deprecated ids) ->
 //     (one replacement id) is SKIPPED with a stated reason. Ambiguity is
 //     reported to a human, never resolved by this parser.
+//
+//     A model cell that is a PURE LIST of ids (`o1-2024-12-17 | o1`, a snapshot
+//     and its aliases) is not ambiguous: the row's date and replacement apply to
+//     every id in it, so it becomes one candidate per id. Until 2026-10-04 such
+//     rows were skipped, and because the skip list was never shown to anyone, the
+//     2026-10-23 rows for `o1`, `o1-pro` and four dated snapshots evaporated: a
+//     repository whose only call was `o1` got a clean audit 19 days before OpenAI
+//     switched it off. A cell that mixes ids with ANY other text, or a replacement
+//     cell that offers a choice, is still a human's call.
 //
 // Even a perfectly-parsed candidate is inert: candidates carry no verification
 // stamp, live in a file the fix engine never reads, and reach the active
@@ -63,6 +72,17 @@ const PROVIDER_ID_PREFIXES: Record<DiscoverProvider, RegExp> = {
  * with a real family.
  */
 const MODEL_ID_SHAPE = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$/;
+
+/**
+ * Separator-less ids a provider really ships, accepted by name. The separator
+ * rule above exists to reject bare product words; OpenAI's reasoning aliases
+ * (`o1`, `o3`, `o4`) have no separator either, and that rule is why `o1` never
+ * reached the registry: discover could not see it in its own 2026-10-23 row,
+ * read the row as `o1-2024-12-17` alone, and said nothing about the alias.
+ */
+const PROVIDER_SHORT_IDS: Partial<Record<DiscoverProvider, RegExp>> = {
+  openai: /^o[1-9]$/,
+};
 
 /** Header of the column naming the DEPRECATED model. */
 const DEPRECATED_HEADER = /\bmodel\b/i;
@@ -154,22 +174,42 @@ export function parseShutdownDate(cell: string): string | undefined {
   return undefined;
 }
 
+/** Split a cell into the tokens model-id matching works on. */
+function cellTokens(cell: string): string[] {
+  // Trailing footnote markers/punctuation are display, not part of the id.
+  return normalizeDashes(cell)
+    .split(/[\s,|/()]+/)
+    .map((raw) => raw.toLowerCase().replace(/[.,;:*]+$/, ''))
+    .filter((token) => token !== '');
+}
+
+/** Does a token have the shape of a model id this provider uses? */
+function isModelId(token: string, provider: DiscoverProvider): boolean {
+  if (PROVIDER_SHORT_IDS[provider]?.test(token)) return true;
+  return MODEL_ID_SHAPE.test(token) && PROVIDER_ID_PREFIXES[provider].test(token);
+}
+
 /**
  * The model ids inside one cell. A cell may legitimately list several
- * (`gpt-4-0613 | gpt-4 , gpt-4-completions`), which is exactly the ambiguity
- * the caller refuses to resolve — it needs the COUNT, not a pick.
+ * (`gpt-4-0613 | gpt-4 , gpt-4-completions`): a snapshot and its aliases.
  */
 function modelIdsIn(cell: string, provider: DiscoverProvider): string[] {
-  const prefix = PROVIDER_ID_PREFIXES[provider];
-  const tokens = normalizeDashes(cell).split(/[\s,|/()]+/);
   const ids: string[] = [];
-  for (const raw of tokens) {
-    // Trailing footnote markers/punctuation are display, not part of the id.
-    const token = raw.toLowerCase().replace(/[.,;:*]+$/, '');
-    if (!MODEL_ID_SHAPE.test(token) || !prefix.test(token)) continue;
-    if (!ids.includes(token)) ids.push(token);
+  for (const token of cellTokens(cell)) {
+    if (isModelId(token, provider) && !ids.includes(token)) ids.push(token);
   }
   return ids;
+}
+
+/**
+ * True when a cell holds nothing but model ids and list punctuation. This is
+ * what licenses reading a several-id cell as one entry per id: the provider
+ * listed those names and nothing else. Any surviving word ("use", "snapshot",
+ * an id with a prefix we do not accept) means the cell is saying something more
+ * than a list, and that stays a human's call.
+ */
+function isPureIdList(cell: string, provider: DiscoverProvider): boolean {
+  return cellTokens(cell).every((token) => isModelId(token, provider) || /^[^a-z0-9]+$/.test(token));
 }
 
 /** Which column holds what, resolved from a table's header row. */
@@ -209,25 +249,38 @@ function mapColumns(headers: string[]): ColumnMap | string {
   return { deprecated: deprecateds[0], replacement: replacements[0], date };
 }
 
-/** One row successfully read off a provider page. */
-export interface DiscoveredRow {
-  deprecated: string;
-  replacement: string;
+/**
+ * One model row as the page states it, before any decision about whether it can
+ * become a candidate. `extractRows` (discovery) and `checkDates` (the weekly
+ * literal check) both read pages through this, so the two can never disagree
+ * about what a provider wrote.
+ */
+export interface ModelRowFact {
+  /** Every model id in the deprecated cell, in page order. */
+  deprecatedIds: string[];
+  /** Every model id in the replacement cell, in page order. */
+  replacementIds: string[];
+  /** The row's shutdown date, when the table has a date column and the cell holds one. */
   shutdownDate?: string;
+  /** True when the deprecated cell holds nothing but ids and list punctuation. */
+  pureList: boolean;
+  /** The replacement cell as printed, for skip reasons. */
+  replacementCell: string;
   /** The row as printed on the page — the excerpt a reviewer reads. */
   rowText: string;
 }
 
 /**
- * Extract every confidently-readable deprecation row from one provider's page
- * HTML. Exported for tests: this is the whole determinism claim, so it is
- * exercised directly against fixture markup with no network in sight.
+ * Read every model row off one provider's page. Rows with no model id in the
+ * deprecated cell (section headings, spacers, product names) are not rows of
+ * this kind and are dropped silently; tables whose columns cannot be mapped are
+ * reported once each as a skip.
  */
-export function extractRows(
+export function readModelRows(
   html: string,
   provider: DiscoverProvider,
-): { rows: DiscoveredRow[]; skipped: DiscoverySkip[] } {
-  const rows: DiscoveredRow[] = [];
+): { facts: ModelRowFact[]; skipped: DiscoverySkip[] } {
+  const facts: ModelRowFact[] = [];
   const skipped: DiscoverySkip[] = [];
 
   for (const table of html.match(/<table[\s\S]*?<\/table>/gi) ?? []) {
@@ -244,48 +297,96 @@ export function extractRows(
 
     for (const tr of trs.slice(1)) {
       const cells = rowCells(tr);
-      const rowText = clampExcerpt(cells.join(' | '));
       const depCell = cells[columns.deprecated] ?? '';
-      const replCell = cells[columns.replacement] ?? '';
-
-      const depIds = modelIdsIn(depCell, provider);
-      const replIds = modelIdsIn(replCell, provider);
-      if (depIds.length === 0) continue; // section heading / spacer row, not a claim
-      if (depIds.length > 1) {
-        skipped.push({
-          provider,
-          row: rowText,
-          reason: `deprecated cell names ${depIds.length} model ids (${depIds.join(', ')}) -- ambiguous, needs a human`,
-        });
-        continue;
-      }
-      if (replIds.length === 0) {
-        skipped.push({
-          provider,
-          row: rowText,
-          reason: `no usable replacement model id in "${clampExcerpt(replCell) || '(empty)'}"`,
-        });
-        continue;
-      }
-      if (replIds.length > 1) {
-        skipped.push({
-          provider,
-          row: rowText,
-          reason: `replacement cell offers ${replIds.length} model ids (${replIds.join(', ')}) -- ambiguous, needs a human`,
-        });
-        continue;
-      }
-      if (canonicalizeId(depIds[0]) === canonicalizeId(replIds[0])) {
-        skipped.push({ provider, row: rowText, reason: 'row maps a model id to itself' });
-        continue;
-      }
-
-      rows.push({
-        deprecated: depIds[0],
-        replacement: replIds[0],
+      const deprecatedIds = modelIdsIn(depCell, provider);
+      if (deprecatedIds.length === 0) continue; // section heading / spacer row, not a claim
+      const replacementCell = cells[columns.replacement] ?? '';
+      facts.push({
+        deprecatedIds,
+        replacementIds: modelIdsIn(replacementCell, provider),
         shutdownDate:
           columns.date === undefined ? undefined : parseShutdownDate(cells[columns.date] ?? ''),
+        pureList: isPureIdList(depCell, provider),
+        replacementCell,
+        rowText: clampExcerpt(cells.join(' | ')),
+      });
+    }
+  }
+  return { facts, skipped };
+}
+
+/** One row successfully read off a provider page. */
+export interface DiscoveredRow {
+  deprecated: string;
+  replacement: string;
+  shutdownDate?: string;
+  /** The row as printed on the page — the excerpt a reviewer reads. */
+  rowText: string;
+  /** The other ids the same model cell listed, when it listed several. */
+  listedWith?: string[];
+}
+
+/**
+ * Extract every confidently-readable deprecation row from one provider's page
+ * HTML. Exported for tests: this is the whole determinism claim, so it is
+ * exercised directly against fixture markup with no network in sight.
+ */
+export function extractRows(
+  html: string,
+  provider: DiscoverProvider,
+): { rows: DiscoveredRow[]; skipped: DiscoverySkip[] } {
+  const rows: DiscoveredRow[] = [];
+  const { facts, skipped } = readModelRows(html, provider);
+
+  for (const fact of facts) {
+    const { deprecatedIds: depIds, replacementIds: replIds, rowText } = fact;
+    // No shutdown date AND an empty replacement cell is not a deprecation, it is
+    // a catalog listing (Google's table lists every live model with "No shutdown
+    // date announced"). Those rows made up 22 of 39 in the human review list,
+    // and a list that is mostly noise is a list nobody reads to the end. A row
+    // that DOES carry a date but names no replacement still goes to a human.
+    if (replIds.length === 0 && fact.shutdownDate === undefined && fact.replacementCell.trim() === '') {
+      continue;
+    }
+    // The replacement is checked first: a row that offers a choice of
+    // replacement is a human's decision however many ids it deprecates.
+    if (replIds.length === 0) {
+      skipped.push({
+        provider,
+        row: rowText,
+        reason: `no usable replacement model id in "${clampExcerpt(fact.replacementCell) || '(empty)'}"`,
+      });
+      continue;
+    }
+    if (replIds.length > 1) {
+      skipped.push({
+        provider,
+        row: rowText,
+        reason: `replacement cell offers ${replIds.length} model ids (${replIds.join(', ')}) -- ambiguous, needs a human`,
+      });
+      continue;
+    }
+    if (depIds.length > 1 && !fact.pureList) {
+      skipped.push({
+        provider,
+        row: rowText,
+        reason: `deprecated cell names ${depIds.length} model ids (${depIds.join(', ')}) alongside other text -- needs a human`,
+      });
+      continue;
+    }
+
+    // One row per id: a pure list states the same date and replacement for each.
+    for (const id of depIds) {
+      if (canonicalizeId(id) === canonicalizeId(replIds[0])) {
+        skipped.push({ provider, row: rowText, reason: `row maps a model id to itself (${id})` });
+        continue;
+      }
+      rows.push({
+        deprecated: id,
+        replacement: replIds[0],
+        shutdownDate: fact.shutdownDate,
         rowText,
+        ...(depIds.length > 1 ? { listedWith: depIds.filter((other) => other !== id) } : {}),
       });
     }
   }
@@ -361,7 +462,11 @@ export async function discoverCandidates(
               : 'deprecated',
         shutdownDate: row.shutdownDate,
         sourceUrl: url,
-        note: `discovered from the ${provider} deprecation table; row read as: ${row.rowText}`,
+        note:
+          `discovered from the ${provider} deprecation table; row read as: ${row.rowText}` +
+          (row.listedWith
+            ? `; the model cell lists ${row.listedWith.length + 1} ids (${[row.deprecated, ...row.listedWith].join(', ')}), read as one entry per id with the row's date and replacement`
+            : ''),
         // NO verification block. Discovery states what a page said, never what
         // is trustworthy — `mendr candidates verify` classifies, and only
         // `mendr candidates promote` (run by a person) makes anything active.
