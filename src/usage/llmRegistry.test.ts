@@ -309,13 +309,15 @@ describe('hasSelfContradictingReasons (the CI lint)', () => {
 // be held back for real, in the file that actually ships -- and held back by
 // their STATUS, so the hold survives someone tidying the prose.
 describe('the shipped registry', () => {
-  it('quarantines the twelve records whose research contradicts a verified stamp, and the restricted-access one', () => {
+  it('quarantines the twelve records whose research contradicts a verified stamp, the restricted-access one, and the four pro-mode ones', () => {
     const entries = modelIdEntries(loadLlmRegistry(resolveRegistryPath()));
     const quarantined = entries.filter((e) => e.verification?.status === 'quarantined');
     // 12 held because their own research undercuts a verified stamp, plus gpt-5.4-cyber:
     // its replacement needs separate provisioning, and only a quarantine survives a
-    // re-stamp that later finds gpt-5.6-cyber in a catalog.
-    expect(quarantined).toHaveLength(13);
+    // re-stamp that later finds gpt-5.6-cyber in a catalog. Plus, from 2026-10-04,
+    // the four whose provider replacement is "gpt-5.6-sol (reasoning.mode: pro)":
+    // an id swap would silently drop pro mode.
+    expect(quarantined).toHaveLength(17);
     for (const entry of quarantined) {
       expect(isVerified(entry), entry.deprecated).toBe(false);
       // Every quarantine says what has to be resolved. A hold nobody can act
@@ -358,9 +360,11 @@ describe('the shipped registry', () => {
     // And the MEASURED shape of the shipped registry, so a re-stamp that moves
     // records between buckets has to be acknowledged here rather than landing
     // silently.
-    expect(provenance.activeEntries).toBe(157);
-    expect(provenance.autoFixEligible).toBe(133);
-    expect(provenance.reviewOnlyCounts.quarantined).toBe(13);
+    // 2026-10-04: -4 gpt-5 aliases (no provider date), +10 ids OpenAI retires
+    // 2026-10-23 (2 of them pro-mode), and 2 shipping pro-mode records quarantined.
+    expect(provenance.activeEntries).toBe(163);
+    expect(provenance.autoFixEligible).toBe(135);
+    expect(provenance.reviewOnlyCounts.quarantined).toBe(17);
     expect(provenance.reviewOnlyCounts.unverified).toBe(5);
     expect(provenance.reviewOnlyCounts.unverifiable).toBe(6);
     // Nothing ships in the defence-in-depth state; the validator forbids it.

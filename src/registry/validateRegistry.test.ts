@@ -214,6 +214,6 @@ describe('the shipped registry', () => {
       result.violations.map((v) => `${v.entryId}: ${v.code}`),
       formatValidation(result).join('\n'),
     ).toEqual([]);
-    expect(result.recordsChecked).toBe(157);
+    expect(result.recordsChecked).toBe(163); // 157 - 4 gpt-5 aliases + 10 ids retiring 2026-10-23
   });
 });
