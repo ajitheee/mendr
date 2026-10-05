@@ -1,20 +1,20 @@
 {
   "schema": "mendr-model-catalog/v1",
-  "fetchedAt": "2026-09-28T03:45:56Z",
+  "fetchedAt": "2026-10-05T14:23:01Z",
   "sources": [
     {
       "url": "https://openrouter.ai/api/v1/models",
       "ok": true,
-      "sha256": "c7e2f5a3cfa0c00ed3152ea8d4e1798dbabae5ea61a2c590aca9a4040deaa3cb",
-      "contributed": 179,
-      "note": "458 models, 179 first-party"
+      "sha256": "c6459c072e164c575c6fe4b125dcf96d2f313e98544f93c56537765147f4f1b7",
+      "contributed": 183,
+      "note": "466 models, 183 first-party"
     },
     {
       "url": "https://models.dev/api.json",
       "ok": true,
-      "sha256": "6e6acdfcd2de9d76e1a647f4acaebb49b8418e813cb930a9616f9e122a246250",
-      "contributed": 106,
-      "note": "106 first-party models"
+      "sha256": "fd8d2257e0f461d65db7ac8c23b00fb13dce7c97f5f886304673a69ab489ef31",
+      "contributed": 108,
+      "note": "108 first-party models"
     }
   ],
   "providers": {
@@ -48,6 +48,8 @@
       "claude-sonnet-4.5",
       "claude-sonnet-4.6",
       "claude-sonnet-5",
+      "claude-sonnet-5-5",
+      "claude-sonnet-5.5",
       "claude-sonnet-latest"
     ],
     "google": [
@@ -152,6 +154,8 @@
       "gpt-6-luna-pro",
       "gpt-6-sol",
       "gpt-6-sol-pro",
+      "gpt-6.1-sol",
+      "gpt-6.1-sol-pro",
       "gpt-astra-latest",
       "gpt-audio",
       "gpt-audio-mini",
@@ -183,5 +187,5 @@
       "text-embedding-ada-002"
     ]
   },
-  "count": 158
+  "count": 162
 }
