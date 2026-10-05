@@ -61,6 +61,76 @@ jobs:
           fi
           echo "active registry untouched, as required."
 
+      # The rows the parser refused are the rows only a human can add. They used to
+      # live in the job log alone, behind a "+46 more" cut, and the PR said "see the
+      # job log". On 2026-10-01 that is where the 2026-10-23 rows for o1-pro and
+      # four dated snapshots went. They now travel in the PR body AND in one
+      # standing issue that stays open while any row is unread: a merged PR stops
+      # being read. The section is lifted verbatim between the CLI's two marker
+      # lines ("Rows a human must read" / "End of rows a human must read").
+      - name: Collect the rows a human must read
+        id: rows
+        run: |
+          node -e '
+            const fs = require("fs");
+            const out = fs.readFileSync("discover-out.txt", "utf8").split(/\r?\n/);
+            const start = out.findIndex((l) => l.startsWith("Rows a human must read"));
+            const end = out.findIndex((l, i) => i > start && l.startsWith("End of rows a human must read"));
+            const rows = start >= 0 && end > start ? out.slice(start + 1, end) : [];
+            const count = rows.filter((l) => l.startsWith("  [")).length;
+            const list = count === 0
+              ? "None. Every model row on the provider pages was read."
+              : ["```", ...rows, "```"].join("\n");
+            fs.writeFileSync("rows-for-a-human.md", list + "\n");
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `count=${count}\n`);
+          '
+
+      - name: Write the PR body
+        run: |
+          {
+            cat <<'EOF'
+          Automated monthly discovery run over the curated provider deprecation pages.
+
+          **Nothing in this PR is active.** These are *candidates*: they live in
+          `registries/candidates.json`, which the fix engine never reads. Merging this PR
+          does not change a single thing `mendr fix-llm` will find, report, or apply.
+
+          A candidate becomes active only when a human runs:
+
+          ```
+          mendr candidates verify                       # classify against live catalogs
+          mendr candidates promote <candidateId...>     # explicit ids, never "promote all"
+          ```
+
+          `promote` checks two independent things, and refuses on either:
+
+          - the **replacement** is live in a public catalog and is not contradicted by the
+            provider's recommendation table (`verified`);
+          - the **deprecation claim** is self-consistent and quote-backed — a stated
+            lifecycle, no claim that a model is retired while the catalogs list it live, a
+            shutdown date behind an announced deprecation, an excerpt that actually names
+            the model, and a stored snapshot behind every evidence reference.
+
+          It does **not** independently confirm that the provider retired the model. There is
+          no public oracle for that, so nothing here should be read as one. Refusals print
+          their reason.
+
+          Every candidate carries an `EvidenceRef` (source url + sha256 of the fetched
+          document, normalized to strip per-response CSP nonces and script bodies, + the
+          quoted table row). The matching page snapshots are committed under
+          `registries/evidence/`. Run `mendr evidence <modelId>` after promotion to read the
+          provenance back.
+          EOF
+            echo
+            echo "## Rows a human must read (${{ steps.rows.outputs.count }})"
+            echo
+            echo "The parser would not guess these. Each is a row only a person can add, by hand,"
+            echo "with the provider page open. The same list stays in the issue titled"
+            echo "\"Discovery rows waiting for a human\" until it is empty."
+            echo
+            cat rows-for-a-human.md
+          } > pr-body.md
+
       - name: Open a review PR
         uses: peter-evans/create-pull-request@v7
         with:
@@ -71,41 +141,51 @@ jobs:
             registries/evidence
           commit-message: 'registry: ${{ steps.count.outputs.count }} discovered candidates for review'
           title: 'registry: ${{ steps.count.outputs.count }} discovered candidates for review'
-          body: |
-            Automated monthly discovery run over the curated provider deprecation pages.
+          body-path: pr-body.md
 
-            **Nothing in this PR is active.** These are *candidates*: they live in
-            `registries/candidates.json`, which the fix engine never reads. Merging this PR
-            does not change a single thing `mendr fix-llm` will find, report, or apply.
-
-            A candidate becomes active only when a human runs:
-
-            ```
-            mendr candidates verify                       # classify against live catalogs
-            mendr candidates promote <candidateId...>     # explicit ids, never "promote all"
-            ```
-
-            `promote` checks two independent things, and refuses on either:
-
-            - the **replacement** is live in a public catalog and is not contradicted by the
-              provider's recommendation table (`verified`);
-            - the **deprecation claim** is self-consistent and quote-backed — a stated
-              lifecycle, no claim that a model is retired while the catalogs list it live, a
-              shutdown date behind an announced deprecation, an excerpt that actually names
-              the model, and a stored snapshot behind every evidence reference.
-
-            It does **not** independently confirm that the provider retired the model. There is
-            no public oracle for that, so nothing here should be read as one. Refusals print
-            their reason.
-
-            Every candidate carries an `EvidenceRef` (source url + sha256 of the fetched
-            document, normalized to strip per-response CSP nonces and script bodies, + the
-            quoted table row). The matching page snapshots are committed under
-            `registries/evidence/`. Run `mendr evidence <modelId>` after promotion to read the
-            provenance back.
-
-            Rows the parser could not read unambiguously were **skipped, not guessed** — see the
-            job log for each skip and its reason, and add those by hand if they matter.
+      # ONE issue, found by its marker and edited in place, same discipline as the
+      # health alarm below. Open while any row waits; closed by the first run that
+      # reads every row. The list is read from a file, never interpolated into the
+      # script, because it carries text copied from third-party pages.
+      - name: Keep one issue listing the rows a human must read
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const MARKER = '<!-- mendr-discover-rows:v1 -->';
+            const count = Number('${{ steps.rows.outputs.count }}');
+            const list = fs.readFileSync('rows-for-a-human.md', 'utf8');
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const all = await github.paginate(github.rest.issues.listForRepo, {
+              ...context.repo, state: 'all', per_page: 100,
+            });
+            const issue = all.find((i) => !i.pull_request && (i.body || '').includes(MARKER));
+            if (count === 0) {
+              if (issue && issue.state === 'open') {
+                await github.rest.issues.createComment({ ...context.repo, issue_number: issue.number,
+                  body: `Every model row was read on ${run}. Closing.` });
+                await github.rest.issues.update({ ...context.repo, issue_number: issue.number, state: 'closed' });
+              }
+              return;
+            }
+            const body = [
+              MARKER,
+              `**${count} provider row(s) the discover parser refused to read.** Each one is a`,
+              'deprecation only a person can add: a choice of replacement, a replacement given in',
+              'words, or a dated row with none. Until someone does, Mendr does not know about it,',
+              'and a repository that calls one of these models gets no finding for it.',
+              '',
+              list,
+              '',
+              `Last discovery run: ${run}`,
+            ].join('\n');
+            if (issue) {
+              await github.rest.issues.update({ ...context.repo, issue_number: issue.number, body, state: 'open' });
+            } else {
+              await github.rest.issues.create({ ...context.repo,
+                title: 'Discovery rows waiting for a human', body });
+            }
 
       # ---- health alarm ------------------------------------------------------
       # registry-discover's scheduled run failed on 2026-09-01 and nobody knew for

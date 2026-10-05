@@ -2640,16 +2640,28 @@ program
           (c.shutdownDate ? ` (shutdown ${c.shutdownDate})` : ''));
       }
     }
-    if (result.skipped.length > 0) {
+    // EVERY skip is printed. This list used to stop at 12 with "+N more", and the
+    // review PR pointed at the job log; on 2026-10-01 that hid 46 of 58 refused
+    // rows, among them the 2026-10-23 rows for `o1-pro` and four dated
+    // snapshots. A row the parser refuses is a row only a human can add, so it
+    // must reach one. The workflow lifts the "Rows a human must read" section,
+    // verbatim, into the PR body and a standing issue; keep its two marker
+    // lines stable.
+    const rowSkips = result.skipped.filter((s) => !s.reason.startsWith('table has '));
+    const tableSkips = result.skipped.filter((s) => s.reason.startsWith('table has '));
+    if (rowSkips.length > 0) {
       console.log('');
-      console.log(`Skipped ${result.skipped.length} row(s) that could not be read confidently (never guessed):`);
-      const MAX_SKIPS = 12;
-      for (const skip of result.skipped.slice(0, MAX_SKIPS)) {
+      console.log(`Rows a human must read (${rowSkips.length}) -- the parser would not guess:`);
+      for (const skip of rowSkips) {
         console.log(`  [${skip.provider}] ${skip.reason}`);
+        console.log(`      row: ${skip.row}`);
       }
-      if (result.skipped.length > MAX_SKIPS) {
-        console.log(`  +${result.skipped.length - MAX_SKIPS} more`);
-      }
+      console.log('End of rows a human must read.');
+    }
+    if (tableSkips.length > 0) {
+      console.log('');
+      console.log(`Tables not read as deprecation tables (${tableSkips.length}), listed once each:`);
+      for (const skip of tableSkips) console.log(`  [${skip.provider}] ${skip.reason}`);
     }
 
     if (!opts.write) {
