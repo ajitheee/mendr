@@ -371,3 +371,32 @@ describe('the shipped registry', () => {
     expect(provenance.reviewOnlyCounts.withheld).toBe(0);
   });
 });
+
+describe('loadLlmRegistry — parameter-rule quotes', () => {
+  function withRule(extra: Record<string, unknown>): string {
+    const path = join(mkdtempSync(join(tmpdir(), 'mendr-registry-')), 'llm-deprecations.json');
+    writeFileSync(
+      path,
+      JSON.stringify([{ provider: 'openai', kind: 'param_removal', param: 'temperature', on_models: ['o1'], ...extra }]),
+    );
+    return path;
+  }
+  const QUOTE = { sourceUrl: 'https://example.test/guide', text: 'returns a 400 error.', about: 'rule' };
+
+  it('keeps quotes through loading', () => {
+    const [rule] = loadLlmRegistry(withRule({ quotes: [QUOTE] }));
+    expect((rule as { quotes?: unknown }).quotes).toEqual([QUOTE]);
+  });
+
+  it('adds no quotes key to a rule that has none', () => {
+    const [rule] = loadLlmRegistry(withRule({}));
+    expect('quotes' in rule).toBe(false);
+  });
+
+  it('HARD-errors on malformed quotes: a half-parsed quote would read as a provider statement', () => {
+    expect(() => loadLlmRegistry(withRule({ quotes: QUOTE }))).toThrow(/non-array "quotes"/);
+    expect(() => loadLlmRegistry(withRule({ quotes: [{ ...QUOTE, sourceUrl: 'http://example.test' }] }))).toThrow(/https page/);
+    expect(() => loadLlmRegistry(withRule({ quotes: [{ ...QUOTE, text: '  ' }] }))).toThrow(/empty "text"/);
+    expect(() => loadLlmRegistry(withRule({ quotes: [{ ...QUOTE, about: 'evidence' }] }))).toThrow(/invalid "about"/);
+  });
+});

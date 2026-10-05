@@ -137,6 +137,7 @@ import {
   type ModelRowFact,
 } from './registry/discover.js';
 import { checkDates, FAILING_VERDICTS } from './registry/checkDates.js';
+import { checkRules, ruleCheckFails, rulePageUrls } from './registry/checkRules.js';
 import type {
   CandidateEntry,
   LlmModelIdDeprecation,
@@ -2021,6 +2022,49 @@ program
       }
     }
     // Unread pages first: a run that could not look is not a pass.
+    if (unread.length > 0) process.exit(2);
+    if (failing.length > 0) process.exit(1);
+  });
+
+program
+  .command('check-rules')
+  .option('--json', 'print every verdict as JSON')
+  .description(
+    "Check that every parameter rule's quoted provider sentence is still on its page; exits 1 when one is not.",
+  )
+  .action(async (opts: { json?: boolean }) => {
+    // A parameter rule edits a customer's request, so the sentence it rests on must still be
+    // where it was quoted from. Fetches each cited page once, never writes.
+    const registry = loadLlmRegistry();
+    const pages = new Map<string, string | undefined>();
+    for (const url of rulePageUrls(registry)) {
+      try {
+        pages.set(url, (await captureDocument(url)).text);
+      } catch {
+        pages.set(url, undefined);
+      }
+    }
+    const results = checkRules(registry, pages);
+    const unread = [...pages].filter(([, text]) => text === undefined).map(([url]) => url);
+    const failing = results.filter(ruleCheckFails);
+
+    if (opts.json) {
+      console.log(JSON.stringify({ unread, results }, null, 2));
+    } else {
+      const quotes = results.flatMap((r) => r.quotes);
+      const n = (v: string) => quotes.filter((q) => q.verdict === v).length;
+      console.log(`checked ${results.length} parameter rules, ${quotes.length} quoted sentences, ${pages.size} pages`);
+      console.log(`  confirmed ${n('confirmed')} · missing from the page ${n('missing')} · page unread ${n('unread')}`);
+      for (const url of unread) console.log(`  could not read ${url}`);
+      for (const r of failing) {
+        console.log('');
+        console.log(`  ${r.rule}:`);
+        if (r.unquoted) console.log('    no provider sentence for this rule at all');
+        for (const q of r.quotes.filter((x) => x.verdict === 'missing')) {
+          console.log(`    no longer on ${q.sourceUrl}: "${q.text}"`);
+        }
+      }
+    }
     if (unread.length > 0) process.exit(2);
     if (failing.length > 0) process.exit(1);
   });

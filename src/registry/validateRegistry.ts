@@ -43,7 +43,8 @@ export type RegistryViolationCode =
   | 'missing_entry_id'
   | 'entry_id_mismatch'
   | 'duplicate_entry_id'
-  | 'param_rule_misses_replacement';
+  | 'param_rule_misses_replacement'
+  | 'param_rule_unquoted';
 
 /** One thing wrong with one record. */
 export interface RegistryViolation {
@@ -248,6 +249,21 @@ export function validateRegistry(registry: LlmRegistry): RegistryValidation {
       });
       break;
     }
+  }
+
+  // A parameter rule EDITS a customer's request: it renames or deletes a key the code passes.
+  // Until 2026-10-05 the four shipped rules carried a note and nothing else, and three of the
+  // notes said "VERIFY ... before production". A rule that changes someone's code must carry the
+  // provider's own sentence for it, which `mendr check-rules` then re-reads every week.
+  for (const rule of paramRules) {
+    if ((rule.quotes ?? []).some((q) => q.about === 'rule')) continue;
+    violations.push({
+      entryId: `${rule.provider}.${rule.kind}.${rule.param}`,
+      code: 'param_rule_unquoted',
+      message:
+        `the ${rule.kind} rule for "${rule.param}" carries no provider sentence (quotes[].about = "rule"), ` +
+        'so nothing shows the provider ever said it -- quote the page, or remove the rule',
+    });
   }
 
   return { recordsChecked: entries.length, violations };
