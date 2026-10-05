@@ -44,6 +44,8 @@ const EVERY_REASON: TierBReason[] = [
   // Added 2026-09-29 with the coupled-parameter guard. This list is hand-kept on purpose:
   // it is what made the new code fail three assertions until its rows were written.
   'coupled_param_unverified',
+  // Added 2026-10-05: a covering rule that starts applying only on the replacement.
+  'param_behaviour_change',
   'type_cast_masked',
 ];
 
@@ -188,7 +190,9 @@ describe('tierBFinding', () => {
     //                               (added 2026-09-29 with the coupled-parameter guard).
     // Saying "unverified usage" for either would send a reviewer to re-check a call site that
     // was never in question, which is the whole reason this dimension is split out.
-    const USAGE_CONFIRMED: TierBReason[] = ['replacement_unverified', 'coupled_param_unverified'];
+    //   param_behaviour_change    — a rule DOES cover the parameter but changes what the request
+    //                               asks for on the replacement (added 2026-10-05).
+    const USAGE_CONFIRMED: TierBReason[] = ['replacement_unverified', 'coupled_param_unverified', 'param_behaviour_change'];
     for (const reason of USAGE_CONFIRMED) {
       expect(usageOf(reason), reason).toBe('confirmed');
     }
@@ -597,6 +601,7 @@ describe('the replacement verdict on a Tier B finding', () => {
       platform_blocked: 'unverified -- sits under a deployment key, not in a model argument',
       coupled_param_unverified:
         'confirmed live model argument -- the request parameters are what is unverified',
+      param_behaviour_change: 'confirmed live model argument -- a parameter rule changes what the request asks for',
       type_cast_masked: 'unverified -- masked by an `as` cast',
       dynamic_model_value: 'unverified -- the model value is assembled at runtime',
       insufficient_dataflow: 'unverified -- not traced to a definite use',

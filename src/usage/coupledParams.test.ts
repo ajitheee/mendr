@@ -4,7 +4,13 @@ import type { LlmRegistry } from '../types.js';
 import { autoApplyVerification } from './llmRegistry.js';
 import { findModelIdLiterals } from './scanLiterals.js';
 import { classifyOccurrenceTier } from '../report/classifyOccurrence.js';
-import { TS_COUPLED_PARAM_REASON } from './coupledParams.js';
+import {
+  isCoupledParamReason,
+  isParamBehaviourReason,
+  paramRulesStartingAt,
+  TS_COUPLED_PARAM_REASON,
+  TS_PARAM_BEHAVIOUR_REASON,
+} from './coupledParams.js';
 
 // REGRESSION CASE: recommended_replacement_requires_coupled_parameter_migration
 //
@@ -116,13 +122,35 @@ describe('recommended_replacement_requires_coupled_parameter_migration', () => {
     expect(v?.reason).toContain('gpt-5.6-terra');
   });
 
-  it('a parameter the registry DOES cover is not a blocker — max_tokens alone stays tier A', () => {
-    // `max_tokens` has an authoritative rename rule for this family, and the fix pass applies
-    // it after the swap. A covered parameter must not downgrade the finding, or the guard
-    // would make every reasoning-model migration manual and the product useless.
+  it('max_tokens alone, carried onto a reasoning model, goes to review: the rule changes what the number means', () => {
+    // REVERSED 2026-10-05. This test used to pin tier A ("a covered parameter must not
+    // downgrade the finding, or ... every reasoning-model migration [goes] manual"). The rename
+    // keeps the request VALID, but OpenAI defines max_completion_tokens as "An upper bound for
+    // the number of tokens that can be generated for a completion, including visible output
+    // tokens and reasoning tokens": LibreChat's `max_tokens: 20` title call, moved onto
+    // gpt-5.6-terra, can come back empty, and tests that mock the API cannot see it. That is an
+    // incorrect verified edit in waiting. The edit is still written; a person sets the value.
     const src = LIBRECHAT.replace('    temperature: 0.7,\n', '');
     const v = verdict(src, 'gpt-3.5-turbo');
-    expect(v?.tier).toBe('A');
+    expect(v?.tier).toBe('B');
+    expect(v?.reason).toContain('changes what this call asks for');
+    expect(v?.reason).toContain('`max_tokens` becomes `max_completion_tokens`');
+  });
+
+  it('a covered parameter on a source already in the rule\'s family stays tier A: the rename means the same thing', () => {
+    // o-series already counted reasoning tokens against the limit, so nothing about the
+    // request changes when it moves to another reasoning model.
+    const reg: LlmRegistry = [
+      ...REG,
+      { provider: 'openai', kind: 'model_id', deprecated: 'o1', replacement: 'gpt-5.6-sol', status: 'deprecated', shutdownDate: '2026-10-23', verification: autoApplyVerification() },
+    ];
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      'src/r.ts',
+      "import OpenAI from 'openai';\nconst o = new OpenAI();\nexport const r = () => o.chat.completions.create({ model: 'o1', messages: [], max_tokens: 500 });\n",
+    );
+    const m = findModelIdLiterals(project, reg).find((x) => x.value === 'o1')!;
+    expect(classifyOccurrenceTier({ position: m.position, deprecation: m.deprecation, reason: m.reason }).tier).toBe('A');
   });
 
   it('a replacement whose family has no parameter constraints is untouched', () => {
@@ -146,5 +174,50 @@ describe('recommended_replacement_requires_coupled_parameter_migration', () => {
       '}',
     ].join('\n');
     expect(verdict(withoutParams, 'gpt-3.5-turbo')?.tier).toBe('A');
+  });
+});
+
+// paramRulesStartingAt: the rules a swap STARTS applying, for parameters the call passes.
+describe('paramRulesStartingAt', () => {
+  const rename = REG[2] as Extract<LlmRegistry[number], { kind: 'param_rename' }>;
+  const quoted: LlmRegistry = [
+    {
+      ...rename,
+      quotes: [
+        { sourceUrl: 'https://example.test/ref', text: 'not compatible with o-series models.', about: 'rule' },
+        { sourceUrl: 'https://example.test/ref', text: 'including visible output tokens and reasoning tokens.', about: 'behaviour' },
+      ],
+    },
+  ];
+
+  it('returns the rule a swap crosses into, when the call passes its parameter', () => {
+    expect(paramRulesStartingAt(['max_tokens'], 'openai', 'gpt-3.5-turbo', 'gpt-5.6-terra', REG)).toEqual([rename]);
+  });
+
+  it('returns nothing when the source was already covered by the same rule', () => {
+    expect(paramRulesStartingAt(['max_tokens'], 'openai', 'o1', 'gpt-5.6-sol', REG)).toEqual([]);
+  });
+
+  it('returns nothing when the call does not pass the parameter', () => {
+    expect(paramRulesStartingAt(['messages'], 'openai', 'gpt-3.5-turbo', 'gpt-5.6-terra', REG)).toEqual([]);
+  });
+
+  it("returns nothing for another provider's rule", () => {
+    expect(paramRulesStartingAt(['max_tokens'], 'anthropic', 'claude-3-opus', 'gpt-5.6-terra', REG)).toEqual([]);
+  });
+
+  it("quotes the rule's behaviour sentence in the review reason, and is not mistaken for the uncovered-parameter case", () => {
+    const reason = TS_PARAM_BEHAVIOUR_REASON('gpt-3.5-turbo', 'gpt-5.6-terra', quoted as never);
+    expect(reason).toContain('moving from gpt-3.5-turbo to gpt-5.6-terra changes what this call asks for');
+    expect(reason).toContain('including visible output tokens and reasoning tokens.');
+    expect(isParamBehaviourReason(reason)).toBe(true);
+    expect(isCoupledParamReason(reason)).toBe(false);
+    expect(isParamBehaviourReason(TS_COUPLED_PARAM_REASON('gpt-5.6-terra', ['temperature']))).toBe(false);
+  });
+
+  it('classifies as its own Tier B reason, so the report does not say "no migration rule covers it"', () => {
+    const reason = TS_PARAM_BEHAVIOUR_REASON('gpt-3.5-turbo', 'gpt-5.6-terra', [rename]);
+    const t = classifyOccurrenceTier({ position: 'surface_capped', deprecation: REG[0] as never, reason });
+    expect(t).toEqual({ tier: 'B', reason: 'param_behaviour_change' });
   });
 });

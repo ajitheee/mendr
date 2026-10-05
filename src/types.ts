@@ -72,6 +72,7 @@ export type TierBReason =
   | 'dynamic_model_value'
   | 'insufficient_dataflow'
   | 'coupled_param_unverified'
+  | 'param_behaviour_change'
   | 'type_cast_masked';
 
 // --- LLM-mode (Phase: fix-llm) --------------------------------------------

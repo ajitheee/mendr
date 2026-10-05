@@ -100,7 +100,9 @@ const locationPhrase = (l: LocationRef): string =>
     // question: the call site is confirmed and the REQUEST is unverified. See coupledParams.ts.
     l.reason === 'coupled_param_unverified'
       ? 'verified provider SDK call site; request parameters unverified for the replacement (review)'
-      : roleLabel(l.role)
+      : l.reason === 'param_behaviour_change'
+        ? 'verified provider SDK call site; a parameter rule changes what this request asks for on the replacement (review)'
+        : roleLabel(l.role)
   }${l.providerSurface ? ` (surface: ${l.providerSurface})` : ''}`;
 
 /** The "Production usage:" line — the honest default is "not measured". */
