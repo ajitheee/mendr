@@ -1309,33 +1309,6 @@
     }
   },
   {
-    "entryId": "openai.gpt-5.retirement-2026-12-11",
-    "provider": "openai",
-    "kind": "model_id",
-    "deprecated": "gpt-5",
-    "replacement": "gpt-5.6-sol",
-    "status": "deprecated",
-    "shutdownDate": "2026-12-11",
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "Provider-named. Alias resolves to gpt-5-2025-08-07; announced 2026-06-11.",
-    "verification": {
-      "status": "verified",
-      "officialSourceConfirmed": true,
-      "replacementConfirmed": true,
-      "autoApplyAllowed": true,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "replacement \"gpt-5.6-sol\" is live in a public catalog",
-        "Provider-named. Alias resolves to gpt-5-2025-08-07; announced 2026-06-11."
-      ]
-    }
-  },
-  {
     "entryId": "openai.gpt-5-2025-08-07.retirement-2026-12-11",
     "provider": "openai",
     "kind": "model_id",
@@ -1359,87 +1332,6 @@
       "reasons": [
         "replacement \"gpt-5.6-sol\" is live in a public catalog",
         "Provider-named."
-      ]
-    }
-  },
-  {
-    "entryId": "openai.gpt-5-mini.retirement-2026-12-11",
-    "provider": "openai",
-    "kind": "model_id",
-    "deprecated": "gpt-5-mini",
-    "replacement": "gpt-5.6-terra",
-    "status": "deprecated",
-    "shutdownDate": "2026-12-11",
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "Provider-named.",
-    "verification": {
-      "status": "verified",
-      "officialSourceConfirmed": true,
-      "replacementConfirmed": true,
-      "autoApplyAllowed": true,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "replacement \"gpt-5.6-terra\" is live in a public catalog",
-        "Provider-named."
-      ]
-    }
-  },
-  {
-    "entryId": "openai.gpt-5-nano.retirement-2026-12-11",
-    "provider": "openai",
-    "kind": "model_id",
-    "deprecated": "gpt-5-nano",
-    "replacement": "gpt-5.6-luna",
-    "status": "deprecated",
-    "shutdownDate": "2026-12-11",
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "Provider-named.",
-    "verification": {
-      "status": "verified",
-      "officialSourceConfirmed": true,
-      "replacementConfirmed": true,
-      "autoApplyAllowed": true,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "replacement \"gpt-5.6-luna\" is live in a public catalog",
-        "Provider-named."
-      ]
-    }
-  },
-  {
-    "entryId": "openai.gpt-5-pro.retirement-2026-12-11",
-    "provider": "openai",
-    "kind": "model_id",
-    "deprecated": "gpt-5-pro",
-    "replacement": "gpt-5.6-sol",
-    "status": "deprecated",
-    "shutdownDate": "2026-12-11",
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "Provider names 'gpt-5.6-sol (pro mode)'.",
-    "verification": {
-      "status": "verified",
-      "officialSourceConfirmed": true,
-      "replacementConfirmed": true,
-      "autoApplyAllowed": true,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "replacement \"gpt-5.6-sol\" is live in a public catalog",
-        "Provider names 'gpt-5.6-sol (pro mode)'."
       ]
     }
   },
