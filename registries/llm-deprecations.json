@@ -3410,13 +3410,13 @@
     "status": "deprecated",
     "shutdownDate": "2026-12-11",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "discovered from the openai deprecation table; row read as: Dec 11, 2026 | gpt-5-pro-2025-10-06 | gpt-5.6-sol ( reasoning.mode: pro )",
+    "note": "discovered from the openai deprecation table; row read as: Dec 11, 2026 | gpt-5-pro-2025-10-06 | gpt-5.6-sol ( reasoning.mode: pro ) Detect-only: the replacement needs reasoning.mode: pro, which an id swap does not carry.",
     "verification": {
-      "status": "verified",
+      "status": "quarantined",
       "officialSourceConfirmed": true,
       "replacementConfirmed": true,
-      "autoApplyAllowed": true,
-      "quarantineReason": null,
+      "autoApplyAllowed": false,
+      "quarantineReason": "the provider’s replacement is gpt-5.6-sol with reasoning.mode: pro; swapping the id alone would silently drop pro mode, so the change needs a person who can add the parameter",
       "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
@@ -3424,7 +3424,8 @@
       ],
       "reasons": [
         "replacement \"gpt-5.6-sol\" is live in a public catalog",
-        "the deprecation claim for \"gpt-5-pro-2025-10-06\" is self-consistent (status \"deprecated\", shutdown 2026-12-11) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+        "the deprecation claim for \"gpt-5-pro-2025-10-06\" is self-consistent (status \"deprecated\", shutdown 2026-12-11) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)",
+        "the deprecation row names the replacement as “gpt-5.6-sol (reasoning.mode: pro)”: an id swap without the parameter changes behaviour, so this entry is detect-only"
       ]
     },
     "evidence": [
@@ -3480,13 +3481,13 @@
     "status": "deprecated",
     "shutdownDate": "2026-12-11",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "discovered from the openai deprecation table; row read as: Dec 11, 2026 | o3-pro-2025-06-10 | gpt-5.6-sol ( reasoning.mode: pro )",
+    "note": "discovered from the openai deprecation table; row read as: Dec 11, 2026 | o3-pro-2025-06-10 | gpt-5.6-sol ( reasoning.mode: pro ) Detect-only: the replacement needs reasoning.mode: pro, which an id swap does not carry.",
     "verification": {
-      "status": "verified",
+      "status": "quarantined",
       "officialSourceConfirmed": true,
       "replacementConfirmed": true,
-      "autoApplyAllowed": true,
-      "quarantineReason": null,
+      "autoApplyAllowed": false,
+      "quarantineReason": "the provider’s replacement is gpt-5.6-sol with reasoning.mode: pro; swapping the id alone would silently drop pro mode, so the change needs a person who can add the parameter",
       "checkedAt": "2026-09-15",
       "sources": [
         "openrouter",
@@ -3494,7 +3495,8 @@
       ],
       "reasons": [
         "replacement \"gpt-5.6-sol\" is live in a public catalog",
-        "the deprecation claim for \"o3-pro-2025-06-10\" is self-consistent (status \"deprecated\", shutdown 2026-12-11) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+        "the deprecation claim for \"o3-pro-2025-06-10\" is self-consistent (status \"deprecated\", shutdown 2026-12-11) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)",
+        "the deprecation row names the replacement as “gpt-5.6-sol (reasoning.mode: pro)”: an id swap without the parameter changes behaviour, so this entry is detect-only"
       ]
     },
     "evidence": [
@@ -4913,6 +4915,78 @@
         "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
         "retrievedAt": "2026-10-05T03:51:08.286Z",
         "excerpt": "October 23, 2026 | gpt-4-turbo | gpt-4-turbo-2024-04-09 , gpt-4-turbo-completions | gpt-5.6-sol"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.o1-pro.retirement-2026-10-23",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "o1-pro",
+    "replacement": "gpt-5.6-sol",
+    "status": "deprecated",
+    "shutdownDate": "2026-10-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: October 23, 2026 | o1-pro-2025-03-19 | o1-pro | gpt-5.6-sol ( reasoning.mode: pro ); the model cell lists 2 ids (o1-pro, o1-pro-2025-03-19), read as one entry per id with the row's date and replacement Detect-only: the replacement needs reasoning.mode: pro, which an id swap does not carry.",
+    "verification": {
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": false,
+      "quarantineReason": "the provider’s replacement is gpt-5.6-sol with reasoning.mode: pro; swapping the id alone would silently drop pro mode, so the change needs a person who can add the parameter",
+      "checkedAt": "2026-10-05",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
+        "the deprecation claim for \"o1-pro\" is self-consistent (status \"deprecated\", shutdown 2026-10-23) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)",
+        "the deprecation row names the replacement as “gpt-5.6-sol (reasoning.mode: pro)”: an id swap without the parameter changes behaviour, so this entry is detect-only"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "October 23, 2026 | o1-pro-2025-03-19 | o1-pro | gpt-5.6-sol ( reasoning.mode: pro )"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.o1-pro-2025-03-19.retirement-2026-10-23",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "o1-pro-2025-03-19",
+    "replacement": "gpt-5.6-sol",
+    "status": "deprecated",
+    "shutdownDate": "2026-10-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: October 23, 2026 | o1-pro-2025-03-19 | o1-pro | gpt-5.6-sol ( reasoning.mode: pro ); the model cell lists 2 ids (o1-pro-2025-03-19, o1-pro), read as one entry per id with the row's date and replacement Detect-only: the replacement needs reasoning.mode: pro, which an id swap does not carry.",
+    "verification": {
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": false,
+      "quarantineReason": "the provider’s replacement is gpt-5.6-sol with reasoning.mode: pro; swapping the id alone would silently drop pro mode, so the change needs a person who can add the parameter",
+      "checkedAt": "2026-10-05",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
+        "the deprecation claim for \"o1-pro-2025-03-19\" is self-consistent (status \"deprecated\", shutdown 2026-10-23) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)",
+        "the deprecation row names the replacement as “gpt-5.6-sol (reasoning.mode: pro)”: an id swap without the parameter changes behaviour, so this entry is detect-only"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "October 23, 2026 | o1-pro-2025-03-19 | o1-pro | gpt-5.6-sol ( reasoning.mode: pro )"
       }
     ]
   }
