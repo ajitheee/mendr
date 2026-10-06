@@ -138,6 +138,7 @@ import {
 } from './registry/discover.js';
 import { checkDates, FAILING_VERDICTS } from './registry/checkDates.js';
 import { checkRules, ruleCheckFails, rulePageUrls } from './registry/checkRules.js';
+import { AI_READER_PROMPT_VERSION, chatCompletionsClient, endpointProblem, readPage } from './registry/aiReader.js';
 import type {
   CandidateEntry,
   LlmModelIdDeprecation,
@@ -2067,6 +2068,71 @@ program
     }
     if (unread.length > 0) process.exit(2);
     if (failing.length > 0) process.exit(1);
+  });
+
+program
+  .command('read-page')
+  .requiredOption('--provider <name>', 'the provider the page belongs to, e.g. cohere')
+  .requiredOption('--url <url>', "the provider's deprecation page")
+  .option('--model <id>', 'the model that reads the page (default: MENDR_READER_MODEL)')
+  .option('--json', 'print the reading as JSON')
+  .description(
+    'DRY RUN: have a model read a deprecation page, and keep only claims the page literally supports. Writes nothing. ' +
+      'The model is any OpenAI-compatible chat-completions endpoint: MENDR_READER_URL, MENDR_READER_MODEL, and MENDR_READER_KEY if it needs one.',
+  )
+  .action(async (opts: { provider: string; url: string; model?: string; json?: boolean }) => {
+    // L3. The model is a parser: every claim it returns must point at a sentence or row that is on
+    // the page word for word, naming the id and stating the date, or it is dropped. Nothing here
+    // reaches the registry; a reading is for a person to look at, and promotion stays a human gate.
+    const endpointUrl = process.env.MENDR_READER_URL;
+    const model = opts.model ?? process.env.MENDR_READER_MODEL;
+    if (!endpointUrl || !model) {
+      console.error(
+        'mendr: read-page needs a model to ask. Set MENDR_READER_URL to an OpenAI-compatible chat-completions URL ' +
+          'and MENDR_READER_MODEL (or --model) to the model id there; set MENDR_READER_KEY too if the endpoint needs a key.',
+      );
+      process.exit(2);
+    }
+    const problem = endpointProblem(endpointUrl);
+    if (problem) {
+      console.error(`mendr: MENDR_READER_URL cannot be used: ${problem}.`);
+      process.exit(2);
+    }
+    let page: string;
+    try {
+      page = (await captureDocument(opts.url)).text;
+    } catch (err) {
+      console.error(`mendr: could not read ${opts.url}: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(2);
+    }
+    let reading;
+    try {
+      reading = await readPage(
+        opts.provider,
+        page,
+        chatCompletionsClient({ url: endpointUrl, model, key: process.env.MENDR_READER_KEY }),
+      );
+    } catch (err) {
+      console.error(`mendr: the model could not be asked: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(2);
+    }
+    if (opts.json) {
+      console.log(JSON.stringify({ provider: opts.provider, url: opts.url, model, prompt: AI_READER_PROMPT_VERSION, ...reading }, null, 2));
+      return;
+    }
+    console.log(`read ${opts.url} with ${model} (${AI_READER_PROMPT_VERSION}), dry run`);
+    if (reading.error) console.log(`  the answer could not be used: ${reading.error}`);
+    console.log(`  kept ${reading.accepted.length} claim(s) the page supports, refused ${reading.rejected.length}`);
+    for (const c of reading.accepted) {
+      const repl = c.replacements.length ? ` -> ${c.replacements.join(' or ')}` : ' (no replacement named in the quote)';
+      console.log(`\n  ${c.deprecated} shuts down ${c.shutdownDate}${repl}`);
+      console.log(`    "${c.quote}"`);
+      if (c.droppedReplacements.length) console.log(`    dropped, not in the quote: ${c.droppedReplacements.join(', ')}`);
+    }
+    if (reading.rejected.length) {
+      console.log('\n  refused:');
+      for (const r of reading.rejected) console.log(`    ${JSON.stringify((r.claim as { deprecated?: string })?.deprecated ?? r.claim)}: ${r.why}`);
+    }
   });
 
 program
