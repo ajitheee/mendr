@@ -60,9 +60,21 @@ export const MODEL_DEPENDENT_PARAMS: ReadonlySet<string> = new Set([
  */
 export const COUPLED_PARAM_SIGNATURE = 'no migration rule covers';
 
-/** Was this review reason produced by the coupled-parameter guard? */
+/**
+ * The signature of the second case: a rule DOES cover the parameter, but only from the
+ * replacement on, so applying it changes what the request does. Its own Tier B reason
+ * (`param_behaviour_change`), because "no migration rule covers it" would be false here.
+ */
+export const PARAM_BEHAVIOUR_SIGNATURE = 'changes what this call asks for';
+
+/** Was this review reason produced by the coupled-parameter guard (no rule covers a parameter)? */
 export function isCoupledParamReason(reason: string | undefined): boolean {
   return !!reason && reason.includes(COUPLED_PARAM_SIGNATURE);
+}
+
+/** Was this review reason produced because a covering rule changes what the call asks for? */
+export function isParamBehaviourReason(reason: string | undefined): boolean {
+  return !!reason && reason.includes(PARAM_BEHAVIOUR_SIGNATURE);
 }
 
 /** The review reason, as a sentence that names the parameter and points at it. */
@@ -120,3 +132,62 @@ export function unresolvedCoupledParams(
   );
   return siblingKeys.filter((k) => MODEL_DEPENDENT_PARAMS.has(k) && !covered.has(k));
 }
+
+/**
+ * The parameter rules a swap from `source` to `replacement` STARTS applying, for parameters this
+ * call passes.
+ *
+ * A covering rule is not the end of the question. One that also covered the source changes
+ * nothing about the request. One that covers ONLY the replacement changes what the call asks for,
+ * and the providers say so in their own words: OpenAI's `max_completion_tokens` is "An upper bound
+ * for the number of tokens that can be generated for a completion, including visible output tokens
+ * and reasoning tokens", so `max_tokens: 20` carried onto a reasoning model can come back empty;
+ * Anthropic's rule drops a `temperature` the old model honoured. The fix pass still writes the
+ * edit, because the request would otherwise be rejected. The swap goes to a person, who can see
+ * the value and decide.
+ *
+ * Found 2026-10-05: before this, `create({ model: 'gpt-3.5-turbo', max_tokens: 20 })` was a Tier A
+ * patch to gpt-5.6-terra, verified by tests that mock the API and so cannot see an empty answer.
+ */
+export function paramRulesStartingAt(
+  siblingKeys: readonly string[],
+  provider: string,
+  source: string,
+  replacement: string,
+  registry: LlmRegistry,
+): LlmParamDeprecation[] {
+  return paramEntries(registry).filter(
+    (e) =>
+      e.provider === provider &&
+      siblingKeys.includes(e.param) &&
+      modelInFamily(replacement, e.on_models) &&
+      !modelInFamily(source, e.on_models),
+  );
+}
+
+/** The sentence a rule's behaviour change is explained by: its `behaviour` quote, else its `rule` quote. */
+function explainingQuote(rule: LlmParamDeprecation): string | undefined {
+  const quotes = rule.quotes ?? [];
+  return (quotes.find((q) => q.about === 'behaviour') ?? quotes.find((q) => q.about === 'rule'))?.text;
+}
+
+/** The review reason for a swap that starts applying parameter rules, quoting the provider. */
+export const TS_PARAM_BEHAVIOUR_REASON = (
+  source: string,
+  replacement: string,
+  rules: readonly LlmParamDeprecation[],
+): string => {
+  const parts = rules.map((rule) => {
+    const change =
+      rule.kind === 'param_rename'
+        ? `\`${rule.param}\` becomes \`${rule.replacement}\``
+        : `\`${rule.param}\` is removed`;
+    const quote = explainingQuote(rule);
+    return quote ? `${change} (${rule.provider}: "${quote}")` : change;
+  });
+  return (
+    `moving from ${source} to ${replacement} ${PARAM_BEHAVIOUR_SIGNATURE}: ${parts.join('; ')}. ` +
+    'The value this call sets may no longer do what it did, so a person should check it rather than ' +
+    'take an automatic patch'
+  );
+};

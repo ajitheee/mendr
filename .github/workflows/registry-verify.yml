@@ -57,6 +57,14 @@ jobs:
       - name: Every shipped date is on the provider's page
         run: node dist/cli.js check-dates
 
+      # The same standard for PARAMETER rules, which edit a customer's request (rename
+      # `max_tokens`, delete `temperature`). Every rule must quote the provider's own sentence,
+      # and the sentence must still be on its page, word for word. Before 2026-10-05 the four
+      # shipped rules carried a note and no source; three notes read "VERIFY ... before
+      # production". Exit 2 means a cited page could not be read, which is not a pass.
+      - name: Every parameter rule still has the provider's sentence behind it
+        run: node dist/cli.js check-rules
+
       - name: Run the public-oracle audit
         run: node dist/cli.js verify-registry | tee verify-out.txt
 

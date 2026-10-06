@@ -2,7 +2,7 @@ import type { LlmModelIdDeprecation, TierBReason } from '../types.js';
 import { isVerified } from '../usage/llmRegistry.js';
 import { TYPE_CAST_REASON, type LiteralPosition } from '../usage/scanLiterals.js';
 import type { Tier } from './tiers.js';
-import { isCoupledParamReason } from '../usage/coupledParams.js';
+import { isCoupledParamReason, isParamBehaviourReason } from '../usage/coupledParams.js';
 
 // THE ONE per-occurrence tier classifier, shared by fix-llm and watch.
 //
@@ -53,6 +53,7 @@ export function classifyOccurrenceTier(m: OccurrenceInput): OccurrenceTier {
     // "deployment-alias", which would send the reviewer to look for an Azure
     // deployment key that is not there. Here the call site is fine and the
     // REQUEST is the question. See coupledParams.ts.
+    if (isParamBehaviourReason(m.reason)) return { tier: 'B', reason: 'param_behaviour_change' };
     return isCoupledParamReason(m.reason)
       ? { tier: 'B', reason: 'coupled_param_unverified' }
       : { tier: 'B', reason: 'platform_blocked' };
@@ -67,6 +68,7 @@ export const TIER_B_SHORT: Record<TierBReason, string> = {
   replacement_unverified: 'unverified-replacement',
   platform_blocked: 'deployment-alias',
   coupled_param_unverified: 'coupled-param-unverified',
+  param_behaviour_change: 'param-changes-request',
   type_cast_masked: 'type-cast-masked',
   dynamic_model_value: 'dynamic-value',
   insufficient_dataflow: 'untraced',

@@ -507,6 +507,18 @@
         "excerpt": "OpenAI provider: every rename fails with 'max_tokens is not supported... use max_completion_tokens' (gpt-5.x)",
         "retrievedAt": "2026-09-15"
       }
+    ],
+    "quotes": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create",
+        "text": "This value is now deprecated in favor of max_completion_tokens, and is not compatible with o-series models.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create",
+        "text": "An upper bound for the number of tokens that can be generated for a completion, including visible output tokens and reasoning tokens.",
+        "about": "behaviour"
+      }
     ]
   },
   {
@@ -518,7 +530,19 @@
       "claude-opus-4-8",
       "claude-opus-5"
     ],
-    "note": "temperature rejected (HTTP 400) on Opus 4.7+ and newer; steer via prompt. VERIFY the exact model set against Anthropic's live docs before production."
+    "note": "temperature rejected (HTTP 400) on Opus 4.7+ and newer; steer via prompt.",
+    "quotes": [
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide",
+        "text": "Setting temperature, top_p, or top_k to any non-default value on Claude Opus 4.7 and later models, including Claude Opus 5.5, returns a 400 error.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide",
+        "text": "Omit temperature, top_p, and top_k, or leave them at their defaults: any other value is rejected.",
+        "about": "behaviour"
+      }
+    ]
   },
   {
     "provider": "anthropic",
@@ -529,7 +553,19 @@
       "claude-opus-4-8",
       "claude-opus-5"
     ],
-    "note": "top_p rejected (HTTP 400) on Opus 4.7+ and newer. VERIFY the exact model set against Anthropic's live docs before production."
+    "note": "top_p rejected (HTTP 400) on Opus 4.7+ and newer.",
+    "quotes": [
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide",
+        "text": "Setting temperature, top_p, or top_k to any non-default value on Claude Opus 4.7 and later models, including Claude Opus 5.5, returns a 400 error.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide",
+        "text": "Omit temperature, top_p, and top_k, or leave them at their defaults: any other value is rejected.",
+        "about": "behaviour"
+      }
+    ]
   },
   {
     "provider": "anthropic",
@@ -540,7 +576,19 @@
       "claude-opus-4-8",
       "claude-opus-5"
     ],
-    "note": "top_k rejected (HTTP 400) on Opus 4.7+ and newer. VERIFY the exact model set against Anthropic's live docs before production."
+    "note": "top_k rejected (HTTP 400) on Opus 4.7+ and newer.",
+    "quotes": [
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide",
+        "text": "Setting temperature, top_p, or top_k to any non-default value on Claude Opus 4.7 and later models, including Claude Opus 5.5, returns a 400 error.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide",
+        "text": "Omit temperature, top_p, and top_k, or leave them at their defaults: any other value is rejected.",
+        "about": "behaviour"
+      }
+    ]
   },
   {
     "entryId": "anthropic.claude-3-opus-20240229.retirement-2026-01-05",

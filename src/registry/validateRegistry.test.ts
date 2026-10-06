@@ -43,9 +43,17 @@ describe('validateRegistry', () => {
     expect(result.violations).toEqual([]);
   });
 
-  it('ignores param entries, which carry no verification block at all', () => {
+  it('applies no verification check to param entries, which carry no verification block at all', () => {
+    // A quoted rule, so the only check that DOES apply to param rules (it must carry the
+    // provider's sentence, see below) is satisfied and cannot mask a verification check firing.
     const result = validateRegistry([
-      { provider: 'openai', kind: 'param_removal', param: 'temperature', on_models: ['o1'] },
+      {
+        provider: 'openai',
+        kind: 'param_removal',
+        param: 'temperature',
+        on_models: ['o1'],
+        quotes: [{ sourceUrl: 'https://example.test', text: 'returns a 400 error.', about: 'rule' }],
+      },
     ]);
     expect(result.recordsChecked).toBe(0);
     expect(result.violations).toEqual([]);
@@ -215,5 +223,24 @@ describe('the shipped registry', () => {
       formatValidation(result).join('\n'),
     ).toEqual([]);
     expect(result.recordsChecked).toBe(163); // 157 - 4 gpt-5 aliases + 10 ids retiring 2026-10-23
+  });
+});
+
+describe('validateRegistry — a parameter rule must carry the provider sentence it rests on', () => {
+  const rule = { provider: 'anthropic', kind: 'param_removal' as const, param: 'temperature', on_models: ['claude-opus-4-7'] };
+  const codes = (reg: LlmRegistry) => validateRegistry(reg).violations.map((v) => `${v.entryId}: ${v.code}`);
+
+  it('FAILS a rule with no quote: it edits customer code on nobody\'s word', () => {
+    expect(codes([rule])).toEqual(['anthropic.param_removal.temperature: param_rule_unquoted']);
+  });
+
+  it('FAILS a rule whose only quote describes behaviour, not the rule', () => {
+    const r = { ...rule, quotes: [{ sourceUrl: 'https://example.test', text: 'x', about: 'behaviour' as const }] };
+    expect(codes([r])).toEqual(['anthropic.param_removal.temperature: param_rule_unquoted']);
+  });
+
+  it('passes a rule with a rule quote', () => {
+    const r = { ...rule, quotes: [{ sourceUrl: 'https://example.test', text: 'returns a 400 error.', about: 'rule' as const }] };
+    expect(codes([r])).toEqual([]);
   });
 });

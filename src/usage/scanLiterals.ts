@@ -21,7 +21,12 @@ import {
   type TsSinkMap,
 } from './tsSurface.js';
 import { isExamplePath, isModelLikeName, splitProviderPrefix } from './sharedRules.js';
-import { TS_COUPLED_PARAM_REASON, unresolvedCoupledParams } from './coupledParams.js';
+import {
+  paramRulesStartingAt,
+  TS_COUPLED_PARAM_REASON,
+  TS_PARAM_BEHAVIOUR_REASON,
+  unresolvedCoupledParams,
+} from './coupledParams.js';
 import {
   effectiveVerificationState,
   isVerified,
@@ -832,6 +837,22 @@ export function findModelIdLiterals(
               position: 'surface_capped',
               reason: TS_COUPLED_PARAM_REASON(deprecation.replacement, unresolved),
             };
+          } else {
+            // Every parameter is covered by a rule, but a rule that applies only from the
+            // replacement on changes what the call asks for. See paramRulesStartingAt.
+            const starting = paramRulesStartingAt(
+              siblingParamKeys(node),
+              deprecation.provider,
+              deprecation.deprecated,
+              deprecation.replacement,
+              registry,
+            );
+            if (starting.length > 0) {
+              coupled = {
+                position: 'surface_capped',
+                reason: TS_PARAM_BEHAVIOUR_REASON(deprecation.deprecated, deprecation.replacement, starting),
+              };
+            }
           }
         }
         out.push({

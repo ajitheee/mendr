@@ -72,6 +72,7 @@ export type TierBReason =
   | 'dynamic_model_value'
   | 'insufficient_dataflow'
   | 'coupled_param_unverified'
+  | 'param_behaviour_change'
   | 'type_cast_masked';
 
 // --- LLM-mode (Phase: fix-llm) --------------------------------------------
@@ -305,6 +306,20 @@ export interface CandidateEntry extends LlmModelIdDeprecation {
 }
 
 /**
+ * One sentence a provider wrote, quoted verbatim, that a parameter rule rests on.
+ * `mendr check-rules` re-reads every quote on its page each week. `about` says what
+ * the sentence establishes: `rule`, that the parameter must change on these models;
+ * `behaviour`, how the change alters what the request does, which the scanner quotes
+ * when it sends a migration to review.
+ */
+export interface ParamQuote {
+  sourceUrl: string;
+  /** The provider's sentence, as written (markup and emphasis are ignored when checked). */
+  text: string;
+  about: 'rule' | 'behaviour';
+}
+
+/**
  * A MODEL-COUPLED request-parameter RENAME: on the models named in `on_models`,
  * the `param` key must be renamed to `replacement` (e.g. OpenAI reasoning models
  * require `max_tokens` -> `max_completion_tokens`). The SDK still types the old
@@ -320,6 +335,8 @@ export interface LlmParamRenameDeprecation {
   /** Models this rename applies to; matched by {@link LlmRegistry} prefix rule. */
   on_models: string[];
   note?: string;
+  /** The provider's own sentences this rule rests on. The validator requires one `rule` quote. */
+  quotes?: ParamQuote[];
 }
 
 /**
@@ -337,6 +354,8 @@ export interface LlmParamRemovalDeprecation {
   /** Models this removal applies to; matched by {@link LlmRegistry} prefix rule. */
   on_models: string[];
   note?: string;
+  /** The provider's own sentences this rule rests on. The validator requires one `rule` quote. */
+  quotes?: ParamQuote[];
 }
 
 /** Any param-transform entry (the two model-coupled kinds). */

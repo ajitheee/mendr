@@ -9,6 +9,7 @@ import type {
   LlmParamDeprecation,
   LlmRegistry,
   ModelLifecycle,
+  ParamQuote,
   VerificationInfo,
   VerificationStatus,
 } from '../types.js';
@@ -302,6 +303,9 @@ export function assertDeprecation(entry: unknown, index: number): LlmDeprecation
   // `replacement`; `param_removal` must NOT depend on one.
   const param = requireString(e, 'param', index);
   const on_models = requireStringArray(e, 'on_models', index);
+  // Spread only when present, so a rule without quotes loads exactly as before.
+  const quotes = parseQuotes(e, index);
+  const quoted = quotes === undefined ? {} : { quotes };
   if (kind === 'param_rename') {
     return {
       provider,
@@ -310,9 +314,35 @@ export function assertDeprecation(entry: unknown, index: number): LlmDeprecation
       replacement: requireString(e, 'replacement', index),
       on_models,
       note,
+      ...quoted,
     };
   }
-  return { provider, kind, param, on_models, note };
+  return { provider, kind, param, on_models, note, ...quoted };
+}
+
+/**
+ * A parameter rule's quotes: the provider's own sentences it rests on. Malformed is a hard
+ * error, same posture as evidence: a half-parsed quote would let an empty string read as a
+ * provider statement, and the weekly literal check would then confirm nothing.
+ */
+function parseQuotes(e: Record<string, unknown>, index: number): ParamQuote[] | undefined {
+  if (e.quotes === undefined || e.quotes === null) return undefined;
+  if (!Array.isArray(e.quotes)) throw new Error(`llm registry entry #${index} has a non-array "quotes"`);
+  return e.quotes.map((q, i) => {
+    const quote = q as Record<string, unknown>;
+    const where = `llm registry entry #${index} quote #${i}`;
+    if (typeof quote !== 'object' || quote === null) throw new Error(`${where} is not an object`);
+    if (typeof quote.sourceUrl !== 'string' || !/^https:\/\//.test(quote.sourceUrl)) {
+      throw new Error(`${where} has a missing/invalid "sourceUrl" (an https page)`);
+    }
+    if (typeof quote.text !== 'string' || quote.text.trim().length === 0) {
+      throw new Error(`${where} has an empty "text"`);
+    }
+    if (quote.about !== 'rule' && quote.about !== 'behaviour') {
+      throw new Error(`${where} has an invalid "about": ${String(quote.about)} (expected rule | behaviour)`);
+    }
+    return { sourceUrl: quote.sourceUrl, text: quote.text, about: quote.about };
+  });
 }
 
 /**
