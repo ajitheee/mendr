@@ -1,6 +1,26 @@
-# Gate 2 asks — drafted 2026-09-26, re-verified 2026-09-29, 24 days out
+# Gate 2 asks — drafted 2026-09-26, re-verified 2026-10-06, 17 days out
 
 Three drafts. Ajith sends; nothing here has been sent by anyone else.
+
+> ### Re-verified 2026-10-06: what v0.5.8-alpha changed
+>
+> Every claim in the table below was re-run today against `v0.5.8-alpha` and the live pages.
+> Five things moved:
+>
+> 1. **The tag.** `v0.5.8-alpha` was cut 2026-10-06, and Ask 1 now names it. The tag it
+>    replaces, `v0.5.7-alpha`, had **no finding at all** for `o1` and four other ids OpenAI
+>    switches off on 2026-10-23: a repo whose only call was `o1` audited clean. Sending 0.5.7
+>    now ships that false clean to exactly the person whose reply counts.
+> 2. **The shelf life moved out again.** `v0.5.8-alpha` was stamped `2026-10-06`, so it goes
+>    stale on **2026-10-20**. Confirmed from the shipped tag, which prints
+>    `Registry: … bundled 2026-10-06 (fresh, 0 d)`.
+> 3. **Twenty, not twelve.** The tag's registry has 23 rows dated 2026-10-23, and 20 of them are
+>    verified. `o1` is now one of the twenty.
+> 4. **The install figure was re-measured, and was faster on this day.** Three cold-cache runs
+>    took a **median of 23 s, range 23–28 s**; on 2026-09-29 the same test took 45–60 s.
+>    Three runs a day cannot say why, so the message quotes both.
+> 5. **LibreChat's line moved.** `title.js:25` is now `title.js:31`, after LibreChat#16697 on
+>    2026-10-04. The id, `temperature: 0.7` and `max_tokens: 20` are unchanged.
 
 > ### Re-verified 2026-09-29 — what three days changed
 >
@@ -41,18 +61,18 @@ scoring notes below, and one of them says a likely reply does **not** score.
 
 ## Verified before writing, with the method
 
-All re-checked **2026-09-29** against `v0.5.7-alpha` and the live pages.
+All re-checked **2026-10-06** against `v0.5.8-alpha` and the live pages.
 
 | claim | checked |
 |---|---|
-| Cold install + scan = **median 46 s, range 45–60 s** | Timed **three times** 2026-09-29, each with `npm_config_cache` pointed at its own empty directory (**0 entries before, 4 after** each time — `_cacache`, `_npx`, `_logs`, so npx genuinely built from scratch), against a 2-file TS repo. Runs: **45 s, 46 s, 60 s**; all exit 0, all `EXPOSURE DETECTED`. A warm run took **9 s**.<br><br>**Why three and not one.** A single measurement of this cannot be quoted as a figure: the observed spread is 15 seconds, so the earlier lone `54 s` was always inside the noise. It is replaced by a median and a range, and **no claim is made about whether any code change made installation faster or slower** — three runs against one prior measurement cannot support that in either direction. |
-| The report **leads with a countdown** | The shipped tag prints `Retirement: deprecated - 24d left (2026-10-23)`, and the public check title on `mendr-demo` today reads **`gpt-4-0613 stops serving in 24 days · 1 patch eligible`**. Computed at write time, so it is correct whenever it is read. |
-| **Twelve** verified ids retire 2026-10-23 | `registries/llm-deprecations.json`: 13 rows carry that date, 12 are `verification.status: verified`, `gpt-image-1` is `unverifiable`. The five commonly named — `gpt-4`, `gpt-4-turbo`, `gpt-3.5-turbo`, `o3-mini`, `o4-mini` — are all in the verified twelve. **Say twelve, not thirteen.** |
-| `audit` writes nothing | Re-verified on `v0.5.7-alpha`: `git status --porcelain` captured before and after, **byte-identical**. No write site is reachable from a bare `audit .`. |
-| `--offline` works | Re-verified on `v0.5.7-alpha`: exit 0, `EXPOSURE DETECTED`, registry line `bundled 2026-09-28 (fresh, 1 d)`. |
-| LibreChat line unchanged | `title.js:25` still `model: 'gpt-3.5-turbo'`, fetched from `LibreChat-AI/LibreChat` **2026-09-29**. Exact line 25, confirmed by line number and not by eye. |
-| ~~The issue URL moved~~ **The issue is CLOSED** | Corrected 2026-09-29. Both paths now resolve (`danny-avila` no longer 404s via the API), but `issues/16017` is **closed, `state_reason: completed`, closed 2026-09-17, 0 comments**, filed by `ajitheee`. It is not a live room and never had an audience. **See Ask 3 — its premise is void.** |
-| Registry goes stale **2026-10-12** | Corrected: `BUNDLED_PUBLISHED_AT = 2026-09-28T04:39:57Z` in `v0.5.7-alpha`, max age 14 days. The old `2026-10-08` was `v0.5.6-alpha`'s stamp. **Ask 1 still has a shelf life — four days longer, and only if it names 0.5.7.** |
+| Cold install + scan = **median 23 s, range 23–28 s** on 2026-10-06; **45–60 s** on 2026-09-29 | Timed **three times** 2026-10-06 against `v0.5.8-alpha`, each with `npm_config_cache` pointed at its own empty directory (**0 entries before, 4 after** each time — `_cacache`, `_npx`, `_logs`, `_update-notifier-last-checked`, so npx genuinely built from scratch), against a 2-file TS repo. Runs: **27.6 s, 23.0 s, 23.1 s**; all exit 0, all `EXPOSURE DETECTED`. A warm run took **5.6 s**. On 2026-09-29, against `v0.5.7-alpha`, the same method gave **45 s, 46 s, 60 s**.<br><br>**Faster this time, and no claim is made about why.** It was the same machine and the same method, but three runs a day cannot separate a code change from the network or the machine. Four earlier runs that day, whose timings were lost to a script error, had also just warmed the operating system's file cache. So the message quotes this day's range **and** the slower one. **Why three and not one** still holds: a lone reading of something with this spread was never quotable. |
+| The report **leads with a countdown** | `v0.5.8-alpha` prints `Retirement: deprecated - 17d left (2026-10-23)`, and the public check title on `mendr-demo` today reads **`gpt-4-0613 stops serving in 17 days · 1 patch eligible`** (check run `112337907157`, produced by `v0.5.8-alpha`). Computed at write time, so it is correct whenever it is read. |
+| **Twenty** verified ids retire 2026-10-23 | `registries/llm-deprecations.json` at `v0.5.8-alpha`: 23 rows carry that date and 20 are `verification.status: verified`. `gpt-image-1` is `unverifiable`, and `o1-pro` and `o1-pro-2025-03-19` are `quarantined`, because their replacement needs `reasoning.mode: pro`. The five commonly named — `gpt-4`, `gpt-4-turbo`, `gpt-3.5-turbo`, `o3-mini`, `o4-mini` — are all in the verified twenty, and so is `o1`. **Say twenty, not twenty-three.** At `v0.5.7-alpha` it was 13 rows and 12 verified. |
+| `audit` writes nothing | Re-verified on `v0.5.8-alpha`: `git status --porcelain --ignored -uall` captured before and after, **byte-identical** (empty both times, so no new untracked or ignored file either). No write site is reachable from a bare `audit .`. |
+| `--offline` works | Re-verified on `v0.5.8-alpha`: exit 0, `EXPOSURE DETECTED`, registry line `bundled 2026-10-06 (fresh, 0 d)`. |
+| LibreChat line **moved**, id unchanged | `title.js:31` reads `model: 'gpt-3.5-turbo'` on `main` **and** `dev`, with `temperature: 0.7` and `max_tokens: 20` at :38–39, fetched from `LibreChat-AI/LibreChat` **2026-10-06**. It was `:25` until LibreChat#16697 moved it on 2026-10-04. Confirmed by line number and not by eye. Ask 3's text still says `:25`; Ask 3 is superseded and was not edited. |
+| ~~The issue URL moved~~ **The issue is CLOSED** | Re-checked 2026-10-06: unchanged, closed `completed`, 0 comments. Corrected 2026-09-29. Both paths now resolve (`danny-avila` no longer 404s via the API), but `issues/16017` is **closed, `state_reason: completed`, closed 2026-09-17, 0 comments**, filed by `ajitheee`. It is not a live room and never had an audience. **See Ask 3 — its premise is void.** |
+| Registry goes stale **2026-10-20** | `BUNDLED_PUBLISHED_AT = 2026-10-06T05:20:03Z` in `v0.5.8-alpha`, max age 14 days. It was `2026-10-12` for `v0.5.7-alpha` and `2026-10-08` for `v0.5.6-alpha`. **Ask 1 still has a shelf life, and only while it names 0.5.8.** |
 
 ---
 
@@ -65,18 +85,19 @@ address, not a public issue, not a send-to-all.
 >
 > pick a repo you own that calls an llm and run:
 >
->     npx github:ajitheee/mendr#v0.5.7-alpha audit .
+>     npx github:ajitheee/mendr#v0.5.8-alpha audit .
 >
-> it reads your ts/js/python and config for model ids a provider is about to switch off. twelve
+> it reads your ts/js/python and config for model ids a provider is about to switch off. twenty
 > verified openai ids shut down on 2026-10-23 — gpt-4, gpt-4-turbo, gpt-3.5-turbo, o3-mini,
-> o4-mini among them. 24 days.
+> o4-mini among them. 17 days.
 >
-> every line it prints carries the countdown, not just a label — "deprecated, 24d left
+> every line it prints carries the countdown, not just a label — "deprecated, 17d left
 > (2026-10-23)". that's the part i actually want judged.
 >
 > the honest cost: it isn't on npm yet, so npx clones and compiles it first. Three cold-cache
-> installations completed in a median of 46 seconds, with a 45–60 second observed range. All three
-> scans completed successfully and detected the exposure. needs node 22+. no api key. it
+> installations completed in a median of 23 seconds, with a 23–28 second observed range; the same
+> test a week earlier took 45–60, so allow up to a minute. All three scans completed successfully
+> and detected the exposure. needs node 22+. no api key. it
 > writes nothing: no edit, no commit, no pr, report goes to stdout. `--offline` enforces the
 > no-network part rather than promising it.
 >
@@ -100,8 +121,9 @@ position on a *claim*, not on a *finding*. Under the current definition that is 
 Either log it as `reply=yes / verdict=no`, or amend `BETA-GATES.md` first — deliberately, in
 writing. Do not quietly widen the definition to make the scoreboard move.
 
-**Send before 2026-10-12** (corrected 2026-09-29 from 10-08, which was `v0.5.6-alpha`'s stamp).
-After that the registry bundled in `v0.5.7-alpha` grades itself stale and a clean run reports
+**Send before 2026-10-20** (moved 2026-10-06 with `v0.5.8-alpha`'s stamp; it was 10-12 for
+`v0.5.7-alpha` and 10-08 for `v0.5.6-alpha`).
+After that the registry bundled in `v0.5.8-alpha` grades itself stale and a clean run reports
 `inconclusive`, which muddies exactly the case this ask is aimed at. The date moves with the tag,
 so **cutting a new tag before sending buys more runway** — but do not delay the send to get it.
 The last gate was lost with time still on the clock.
@@ -113,14 +135,16 @@ The last gate was lost with time still on the clock.
 **To:** the person in the ring who will not run a stranger's npx from a friend. That's a real
 category and pretending otherwise wastes an ask.
 
-> **Re-verified 2026-09-29 — the link, and one thing to decide.**
+> **Re-verified 2026-09-29 — the link, and one thing to decide.** The first two points were
+> re-checked on 2026-10-06.
 >
 > - **`mendr-demo` is public** (`private=false`) and `src/ai.ts:12` does call `gpt-4-0613` today.
 > - **The check-run URL in `PLAN-30-DAYS.md` is stale.** `runs/108618583430` is an older run. The
 >   current one a logged-out visitor should be sent to is
->   **`https://github.com/ajitheee/mendr-demo/runs/109424680822`** — `Mendr audit`,
->   `action_required`, title **`gpt-4-0613 stops serving in 24 days · 1 patch eligible`**. Re-check
->   it the hour you send; scheduled runs replace it.
+>   **`https://github.com/ajitheee/mendr-demo/runs/112337907157`** — `Mendr audit`,
+>   `action_required`, title **`gpt-4-0613 stops serving in 17 days · 1 patch eligible`**. It was
+>   produced by `v0.5.8-alpha`, and on 2026-10-06 it opened with no GitHub login (HTTP 200, title
+>   on the page). Re-check it the hour you send; scheduled runs replace it.
 > - **The draft undersells it.** It describes what the report refuses to claim — which is good and
 >   true — but never mentions that the check *title itself* is a countdown. That is the line most
 >   likely to make someone look.
@@ -136,8 +160,8 @@ category and pretending otherwise wastes an ask.
 > hey [NAME] — no install, just a link and one question.
 >
 > github.com/ajitheee/mendr-demo is a small service that calls `gpt-4-0613`. openai switches
-> that id off on 2026-10-23 — 24 days. the audit runs in that repo's own ci; the current run
-> found it and posted the evidence as a check, titled "gpt-4-0613 stops serving in 24 days ·
+> that id off on 2026-10-23 — 17 days. the audit runs in that repo's own ci; the current run
+> found it and posted the evidence as a check, titled "gpt-4-0613 stops serving in 17 days ·
 > 1 patch eligible".
 >
 > one thing up front, before you go looking and find it yourself: this repository is a
