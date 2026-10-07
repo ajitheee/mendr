@@ -175,9 +175,10 @@ describe('the SHIPPED registry footer', () => {
   it('prints the measured shape of the shipped registry', () => {
     const lines = formatRegistryProvenanceLines(registryProvenance(loadLlmRegistry()));
     // 2026-10-04: -4 gpt-5 aliases (no provider date), +10 ids OpenAI retires
-    // 2026-10-23, and the 4 reasoning.mode: pro replacements moved to quarantine.
-    expect(lines[0]).toBe('registry: 163 records');
+    // 2026-10-23, and the 4 reasoning.mode: pro replacements moved to quarantine. 2026-10-06:
+    // +1 claude-sonnet-4-5-20250929, quarantined (Sonnet 5.5 rejects settings an id swap keeps).
+    expect(lines[0]).toBe('registry: 164 records');
     expect(lines[1]).toBe('auto-fix eligible: 135');
-    expect(lines[2]).toBe('review-only: 28 (quarantined 17, unverified 5, unverifiable 6)');
+    expect(lines[2]).toBe('review-only: 29 (quarantined 18, unverified 5, unverifiable 6)');
   });
 });

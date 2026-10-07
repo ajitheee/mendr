@@ -222,7 +222,7 @@ describe('the shipped registry', () => {
       result.violations.map((v) => `${v.entryId}: ${v.code}`),
       formatValidation(result).join('\n'),
     ).toEqual([]);
-    expect(result.recordsChecked).toBe(163); // 157 - 4 gpt-5 aliases + 10 ids retiring 2026-10-23
+    expect(result.recordsChecked).toBe(164); // 157 - 4 gpt-5 aliases + 10 ids retiring 2026-10-23 + claude-sonnet-4-5-20250929
   });
 });
 

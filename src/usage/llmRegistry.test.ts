@@ -309,21 +309,42 @@ describe('hasSelfContradictingReasons (the CI lint)', () => {
 // be held back for real, in the file that actually ships -- and held back by
 // their STATUS, so the hold survives someone tidying the prose.
 describe('the shipped registry', () => {
-  it('quarantines the twelve records whose research contradicts a verified stamp, the restricted-access one, and the four pro-mode ones', () => {
+  it('quarantines the twelve records whose research contradicts a verified stamp, the restricted-access one, the four pro-mode ones, and Sonnet 4.5', () => {
     const entries = modelIdEntries(loadLlmRegistry(resolveRegistryPath()));
     const quarantined = entries.filter((e) => e.verification?.status === 'quarantined');
     // 12 held because their own research undercuts a verified stamp, plus gpt-5.4-cyber:
     // its replacement needs separate provisioning, and only a quarantine survives a
     // re-stamp that later finds gpt-5.6-cyber in a catalog. Plus, from 2026-10-04,
     // the four whose provider replacement is "gpt-5.6-sol (reasoning.mode: pro)":
-    // an id swap would silently drop pro mode.
-    expect(quarantined).toHaveLength(17);
+    // an id swap would silently drop pro mode. Plus, from 2026-10-06,
+    // claude-sonnet-4-5-20250929 (see the next test).
+    expect(quarantined).toHaveLength(18);
     for (const entry of quarantined) {
       expect(isVerified(entry), entry.deprecated).toBe(false);
       // Every quarantine says what has to be resolved. A hold nobody can act
       // on is a hold that never gets lifted.
       expect(entry.verification!.quarantineReason, entry.deprecated).toBeTruthy();
     }
+  });
+
+  it('holds claude-sonnet-4-5-20250929 back from any automatic swap to claude-sonnet-5-5', () => {
+    // Promoted 2026-10-06 through the candidate gate, which stamped it verified. It is held
+    // because Anthropic's Sonnet 5.5 migration guide names settings Sonnet 4.5 accepts that
+    // return a 400 on Sonnet 5.5 (thinking budgets, sampling parameters, assistant prefill,
+    // forced tool choice, thinking type "disabled") and turns thinking on by default, so code
+    // reading content[0].text breaks. No parameter rule covers Sonnet 5.5 (extending the
+    // sampling rules to it made fix-llm drop these call sites from its report), and the
+    // Python path has no parameter guard, so the quarantine is what keeps every call site in
+    // review, in audit and fix-llm alike.
+    const entry = modelIdEntries(loadLlmRegistry(resolveRegistryPath())).find(
+      (e) => e.deprecated === 'claude-sonnet-4-5-20250929',
+    )!;
+    expect(entry).toBeTruthy();
+    expect(entry.replacement).toBe('claude-sonnet-5-5');
+    expect(entry.shutdownDate).toBe('2026-11-30');
+    expect(entry.verification?.status).toBe('quarantined');
+    expect(entry.verification?.autoApplyAllowed).toBe(false);
+    expect(isVerified(entry)).toBe(false);
   });
 
   it('leaves no auto-appliable record carrying a caveat in its reasons', () => {
@@ -362,9 +383,10 @@ describe('the shipped registry', () => {
     // silently.
     // 2026-10-04: -4 gpt-5 aliases (no provider date), +10 ids OpenAI retires
     // 2026-10-23 (2 of them pro-mode), and 2 shipping pro-mode records quarantined.
-    expect(provenance.activeEntries).toBe(163);
+    // 2026-10-06: +1 claude-sonnet-4-5-20250929, quarantined, so auto-fix eligible is unchanged.
+    expect(provenance.activeEntries).toBe(164);
     expect(provenance.autoFixEligible).toBe(135);
-    expect(provenance.reviewOnlyCounts.quarantined).toBe(17);
+    expect(provenance.reviewOnlyCounts.quarantined).toBe(18);
     expect(provenance.reviewOnlyCounts.unverified).toBe(5);
     expect(provenance.reviewOnlyCounts.unverifiable).toBe(6);
     // Nothing ships in the defence-in-depth state; the validator forbids it.
