@@ -163,6 +163,49 @@ export function findParamSites(project: Project, registry: LlmRegistry): ParamMa
   return out;
 }
 
+/** The node a `model` property's value is written in: the literal, or the one-hop const's literal. */
+function modelLiteralNode(modelProp: Node | undefined): Node | undefined {
+  if (!modelProp) return undefined;
+  let expr: Expression | undefined;
+  if (Node.isPropertyAssignment(modelProp)) expr = modelProp.getInitializer();
+  else if (Node.isShorthandPropertyAssignment(modelProp)) expr = modelProp.getNameNode();
+  if (!expr) return undefined;
+  if (literalStringValue(expr) !== undefined) return expr;
+  if (Node.isIdentifier(expr)) {
+    const decl = expr.getSymbol()?.getValueDeclaration();
+    if (decl && Node.isVariableDeclaration(decl)) {
+      const init = decl.getInitializer();
+      if (literalStringValue(init) !== undefined) return init;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Drop the param sites on calls the model-id scan HELD for review (position `surface_capped`):
+ * an example tree, a proxy or partner client, a gateway-prefixed id, a coupled parameter. A held
+ * call is reported as "review required, no patch generated", so no pass may edit its request
+ * either; the param pass used to, which left the same call in Tier B and in the Tier A diff.
+ *
+ * Matched by file, line and model value of the call's model literal, not by node identity:
+ * the param pass scans AFTER the model-id swaps have edited the file, and a held literal is
+ * never swapped, so its line and value still match the pre-edit scan.
+ */
+export function withoutHeldCalls(
+  sites: ParamMatch[],
+  held: ReadonlyArray<{ value: string; location: SourceLocation }>,
+): ParamMatch[] {
+  if (held.length === 0) return sites;
+  const keys = new Set(held.map((h) => `${h.location.file}\n${h.location.line}\n${h.value}`));
+  return sites.filter((site) => {
+    const literal = modelLiteralNode(site.object.getProperty('model'));
+    if (!literal) return true;
+    const sf = literal.getSourceFile();
+    const { line } = sf.getLineAndColumnAtPos(literal.getStart());
+    return !keys.has(`${sf.getFilePath()}\n${line}\n${site.model}`);
+  });
+}
+
 /** Rename a property key to `replacement`, preserving a quoted-key's quote style. */
 function renameKey(paramProp: PropertyAssignment, replacement: string): void {
   const nameNode = paramProp.getNameNode();

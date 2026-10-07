@@ -46,6 +46,9 @@ const EVERY_REASON: TierBReason[] = [
   'coupled_param_unverified',
   // Added 2026-10-05: a covering rule that starts applying only on the replacement.
   'param_behaviour_change',
+  // Added 2026-10-07: a call held at review by a surface rule (example tree, gateway prefix,
+  // wrapper class, proxy or partner client), which used to borrow `platform_blocked`.
+  'surface_capped',
   'type_cast_masked',
 ];
 
@@ -599,6 +602,7 @@ describe('the replacement verdict on a Tier B finding', () => {
       usage_unverified: 'unverified -- no traced sink in this file',
       replacement_unverified: 'confirmed live model argument',
       platform_blocked: 'unverified -- sits under a deployment key, not in a model argument',
+      surface_capped: 'unverified -- held for where or how the call is made',
       coupled_param_unverified:
         'confirmed live model argument -- the request parameters are what is unverified',
       param_behaviour_change: 'confirmed live model argument -- a parameter rule changes what the request asks for',

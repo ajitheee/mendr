@@ -58,7 +58,10 @@ The fix pass still writes the edit when a person approves. Only the automatic pa
 - **The "B" column is `audit`'s.** `fix-llm` did not list these calls at all: it reported "Nothing to
   fix" and passed `--fail-on tierB`, for every TypeScript call the scanner caps at review. That
   includes this probe's `gpt-3.5-turbo` row and every Anthropic call that passes `max_tokens`. It
-  shipped that way in `v0.5.8-alpha`, and was fixed on branch `fix/fix-llm-reports-capped-calls`.
+  shipped that way in `v0.5.8-alpha`, and was fixed in
+  [PR #47](https://github.com/ajitheee/mendr/pull/47) (`138181f`). A follow-up stopped the
+  parameter pass from editing a held call's request, and gave calls held for their surface
+  their own reason code, `surface_capped`, in place of `platform_blocked`.
 - **No command writes the edit, approved or not.** `migrate --only gpt-3.5-turbo` on that call
   reports "No verified Tier-A migration was found. Nothing to apply and nothing to verify."
   Review means a person makes the change by hand.

@@ -13,7 +13,7 @@ import {
   type ModelIdDataLocate,
 } from '../usage/scanLiterals.js';
 import { applyModelIdFixes } from './modelId.js';
-import { applyParamFixes } from './paramFix.js';
+import { applyParamFixes, findParamSites, withoutHeldCalls } from './paramFix.js';
 
 // LLM mode — combined fix. `fix-llm` runs TWO independent codemod passes over
 // the same repo and folds them into ONE diff and ONE Tier A/C gate decision:
@@ -91,9 +91,15 @@ export function applyLlmFixesToProject(
   const azureMatches = toAzureDeploymentMatches(literalMatches);
 
   // Pass 1: model-id swaps (reusing the single scan). Pass 2: model-coupled
-  // param transforms — scanned AFTER pass 1 so they see the models it updated.
+  // param transforms — scanned AFTER pass 1 so they see the models it updated,
+  // and never on a call pass 1's scan held for review (withoutHeldCalls).
   const modelIdSites = applyModelIdFixes(project, registry, literalMatches).length;
-  const paramEdits = applyParamFixes(project, registry);
+  const heldCalls = literalMatches.filter((m) => m.position === 'surface_capped');
+  const paramEdits = applyParamFixes(
+    project,
+    registry,
+    withoutHeldCalls(findParamSites(project, registry), heldCalls),
+  );
   const paramsRemoved = paramEdits.filter((e) => e.kind === 'param_removal').length;
   const paramsRenamed = paramEdits.filter((e) => e.kind === 'param_rename').length;
   const paramLabels = [

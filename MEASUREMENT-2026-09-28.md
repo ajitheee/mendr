@@ -533,6 +533,10 @@ non-semantic rather than assumed.
    — refusing to offer the patch is correct — but "Nothing to fix" is the wrong words for it.
    **Not fixed.**
 
+   *Fixed 2026-10-07 in [PR #47](https://github.com/ajitheee/mendr/pull/47) (`138181f`):
+   `fix-llm` lists every held call in Tier B with the reason `audit` gives it, and
+   `--fail-on tierB` fails on them. The text above is left as it was measured.*
+
 ---
 
 # Amendment, 2026-09-29 — run 7: entry-scoped stub detection in gateway configs

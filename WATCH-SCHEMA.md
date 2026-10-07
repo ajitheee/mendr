@@ -100,7 +100,12 @@ model-level action from `highestTier`.**
 - `tier`: `"A"` (auto-fixable) · `"B"` (review) · `"C"` (data). Same tiers as
   `fix-llm`.
 - `reason` (Tier B only): `usage_unverified` · `replacement_unverified` ·
-  `platform_blocked` · `type_cast_masked`. `null` for A and C.
+  `coupled_param_unverified` · `param_behaviour_change` · `surface_capped` ·
+  `platform_blocked` · `type_cast_masked`. `null` for A and C. The codes mean what
+  the README's Tier B table says. Before `v0.5.9-alpha`, a call held for its
+  surface (a sample tree, a gateway-prefixed id, a wrapper class, a proxy client)
+  was reported as `platform_blocked`; it is now `surface_capped`, and
+  `platform_blocked` means a `deployment` key and nothing else.
 - `usageVerdict`: `"confirmed"` (a live model argument) · `"unverified"` (not tied
   to a live call) · `"n/a"` (a data position).
 

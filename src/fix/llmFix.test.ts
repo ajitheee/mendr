@@ -102,6 +102,24 @@ export async function run(messages: any) {
     );
   });
 
+  it('never runs the param pass over a call the scan held for review', () => {
+    // ADDED 2026-10-07. A call under examples/ is held at review (a sample is never patched),
+    // so pass 1 leaves its model id alone. Pass 2 used to rename its max_tokens anyway: the
+    // model id was "no patch generated" while the same call's request sat in the diff.
+    const source = `
+import OpenAI from "openai";
+const client = new OpenAI();
+export const demo = (messages: any) => client.chat.completions.create({ model: "o1", max_tokens: 500, messages });
+`.trimStart();
+    const project = inMemoryProject('examples/demo.ts', source);
+    const result = applyLlmFixesToProject(project, REASONING_REGISTRY);
+
+    expect(result.modelIdSites).toBe(0);
+    expect(result.paramsRenamed).toBe(0);
+    expect(result.diff).toBe('');
+    expect(project.getSourceFileOrThrow('examples/demo.ts').getFullText()).toBe(source);
+  });
+
   it('is a no-op with an empty diff when nothing matches', () => {
     const project = inMemoryProject(
       'src/clean.ts',

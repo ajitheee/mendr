@@ -20,6 +20,8 @@ import { isCoupledParamReason, isParamBehaviourReason } from '../usage/coupledPa
 //   model_arg + not verified     -> Tier B (replacement_unverified)
 //   usage_unverified (py sink)   -> Tier B (usage_unverified)
 //   azure_deployment             -> Tier B (platform_blocked)
+//   surface_capped               -> Tier B (param_behaviour_change, coupled_param_unverified,
+//                                   or surface_capped for every other surface rule)
 //   data behind an `as` cast     -> Tier B (type_cast_masked)
 //   data otherwise               -> Tier C (informational)
 
@@ -49,14 +51,15 @@ export function classifyOccurrenceTier(m: OccurrenceInput): OccurrenceTier {
   if (m.position === 'azure_deployment') return { tier: 'B', reason: 'platform_blocked' };
   // A real call site the guards capped at review — never an unattended swap.
   if (m.position === 'surface_capped') {
-    // Distinguished because the advice differs and `platform_blocked` reads
-    // "deployment-alias", which would send the reviewer to look for an Azure
-    // deployment key that is not there. Here the call site is fine and the
-    // REQUEST is the question. See coupledParams.ts.
+    // The parameter guards say the REQUEST is the question (see coupledParams.ts); every other
+    // surface rule says the call's surface is. Neither is a deployment key: these used to fall
+    // back to `platform_blocked`, whose sentence ("sits under a deployment key") was false for
+    // an example tree, a gateway prefix, a wrapper class or a proxy client, and which put those
+    // calls in fix-llm's legacy `azure` array.
     if (isParamBehaviourReason(m.reason)) return { tier: 'B', reason: 'param_behaviour_change' };
     return isCoupledParamReason(m.reason)
       ? { tier: 'B', reason: 'coupled_param_unverified' }
-      : { tier: 'B', reason: 'platform_blocked' };
+      : { tier: 'B', reason: 'surface_capped' };
   }
   if (m.reason === TYPE_CAST_REASON) return { tier: 'B', reason: 'type_cast_masked' };
   return { tier: 'C' };
@@ -67,6 +70,7 @@ export const TIER_B_SHORT: Record<TierBReason, string> = {
   usage_unverified: 'usage-unverified',
   replacement_unverified: 'unverified-replacement',
   platform_blocked: 'deployment-alias',
+  surface_capped: 'held-at-surface',
   coupled_param_unverified: 'coupled-param-unverified',
   param_behaviour_change: 'param-changes-request',
   type_cast_masked: 'type-cast-masked',

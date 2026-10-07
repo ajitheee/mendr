@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Project } from 'ts-morph';
 import type { LlmRegistry } from '../types.js';
-import { findParamSites, applyParamFixes, applyParamFixesToProject } from './paramFix.js';
+import { findParamSites, applyParamFixes, applyParamFixesToProject, withoutHeldCalls } from './paramFix.js';
 
 // Hermetic tests for the MODEL-COUPLED param codemod. The Project is built
 // in-memory from source strings and the registry is an inline literal, so there
@@ -122,6 +122,45 @@ export async function run() {
     expect(text).toContain('{ model: "o1-mini", max_completion_tokens: 100 }');
     // gpt-4o accepts max_tokens: kept verbatim.
     expect(text).toContain('{ model: "gpt-4o", max_tokens: 100 }');
+  });
+});
+
+describe('withoutHeldCalls: a call held at review is never edited, its request included', () => {
+  // Two reasoning-model calls the rename rule fires on, plus a const-resolved one. The scan held
+  // the first (an example, a proxy client: any surface rule) and the const-resolved one; the
+  // second is an ordinary call and keeps its edit.
+  const SOURCE = `
+import OpenAI from "openai";
+const client = new OpenAI();
+const reasoningModel = "o3-mini";
+export async function run() {
+  const held = await client.chat.completions.create({ model: "o3-mini", max_tokens: 50 });
+  const plain = await client.chat.completions.create({ model: "o1-mini", max_tokens: 50 });
+  const viaConst = await client.chat.completions.create({ model: reasoningModel, max_tokens: 50 });
+  return { held, plain, viaConst };
+}
+`.trimStart();
+
+  it('drops exactly the sites whose model literal the scan held, by file, line and value', () => {
+    const project = inMemoryProject('src/calls.ts', SOURCE);
+    const file = project.getSourceFileOrThrow('src/calls.ts').getFilePath();
+    const sites = findParamSites(project, REGISTRY);
+    expect(sites.map((s) => s.model).sort()).toEqual(['o1-mini', 'o3-mini', 'o3-mini']);
+
+    const kept = withoutHeldCalls(sites, [
+      { value: 'o3-mini', location: { file, line: 5, column: 63 } },
+      { value: 'o3-mini', location: { file, line: 3, column: 24 } },
+    ]);
+    expect(kept.map((s) => s.model)).toEqual(['o1-mini']);
+  });
+
+  it('keeps every site when nothing was held, and keeps a held value on another line', () => {
+    const project = inMemoryProject('src/calls.ts', SOURCE);
+    const file = project.getSourceFileOrThrow('src/calls.ts').getFilePath();
+    const sites = findParamSites(project, REGISTRY);
+    expect(withoutHeldCalls(sites, [])).toHaveLength(3);
+    // Same value, different line: not the held call, so its sibling's edit stands.
+    expect(withoutHeldCalls(sites, [{ value: 'o3-mini', location: { file, line: 99, column: 1 } }])).toHaveLength(3);
   });
 });
 

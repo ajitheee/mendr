@@ -44,6 +44,14 @@ export const TIER_B_REASON_TEXT: Record<TierBReason, string> = {
   // marks the provisioning conclusion as the inference it is.
   platform_blocked:
     'sits under a deployment key rather than in a model argument; on Azure and similar platforms that key names a provisioned deployment, so changing it is likely a provisioning change rather than a code change.',
+  // WHAT WAS ACTUALLY CHECKED: the scanner found the literal at a call and then capped the
+  // call at review by a SURFACE rule (tsSurface.ts, scanPy.ts): where or how the call is made,
+  // not the id or its parameters. Each rule writes its own sentence, which the human report
+  // prints beneath this one. The JSON shape carries only this sentence (`detail` stays out of
+  // it), so it has to stand alone: it says the call is held, names the kinds of surface, and
+  // says the hold is not a doubt about the id. The list is "such as": there are more rules.
+  surface_capped:
+    'sits in a call mendr holds for review because of where or how the call is made, such as a sample tree, a gateway-prefixed id, a wrapper class, a proxy or partner client, a client mendr cannot resolve, or a request made at import time; the hold is not a doubt about the id, but an unattended swap is not safe there.',
   dynamic_model_value:
     'the model value is assembled at runtime, so no single literal here can carry the migration.',
   insufficient_dataflow:
@@ -86,6 +94,7 @@ export const TIER_B_REASON_ORDER: readonly TierBReason[] = [
   'replacement_unverified',
   'coupled_param_unverified',
   'param_behaviour_change',
+  'surface_capped',
   'platform_blocked',
   'usage_unverified',
   'type_cast_masked',
@@ -499,6 +508,9 @@ export const TIER_B_USAGE_VERDICT_TEXT: Record<TierBReason, string> = {
   // reports the key, which is the fact, and leaves the provisioning inference
   // to the `reason:` row below it, which already hedges it.
   platform_blocked: 'unverified -- sits under a deployment key, not in a model argument',
+  // The surface rules cap calls whose usage ranges from a real example request to a client
+  // mendr cannot resolve, so the row claims no more than the weakest of them.
+  surface_capped: 'unverified -- held for where or how the call is made',
   // Like `replacement_unverified`, the USAGE here is fine and saying otherwise would
   // send the reviewer looking for the wrong thing: the literal is a confirmed live
   // model argument and the mapping is verified. What is unproven is the REQUEST
