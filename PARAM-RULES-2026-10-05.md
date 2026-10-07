@@ -53,6 +53,16 @@ A five-call probe, main's build against this one:
 
 The fix pass still writes the edit when a person approves. Only the automatic patch is withheld.
 
+**Corrected 2026-10-06: two statements above were not true of every command.**
+
+- **The "B" column is `audit`'s.** `fix-llm` did not list these calls at all: it reported "Nothing to
+  fix" and passed `--fail-on tierB`, for every TypeScript call the scanner caps at review. That
+  includes this probe's `gpt-3.5-turbo` row and every Anthropic call that passes `max_tokens`. It
+  shipped that way in `v0.5.8-alpha`, and was fixed on branch `fix/fix-llm-reports-capped-calls`.
+- **No command writes the edit, approved or not.** `migrate --only gpt-3.5-turbo` on that call
+  reports "No verified Tier-A migration was found. Nothing to apply and nothing to verify."
+  Review means a person makes the change by hand.
+
 ## The corpus: no collateral change, and no case for the guard to act on
 
 **Setup.** These were the same 12 repositories as the L1/L2 run, at the same commits. Each was

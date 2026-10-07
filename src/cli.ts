@@ -102,6 +102,7 @@ import {
   type TierCounts,
   type TierOccurrence,
 } from './report/tiers.js';
+import { classifyOccurrenceTier } from './report/classifyOccurrence.js';
 import {
   countUniqueOccurrences,
   formatRunFooterLines,
@@ -596,6 +597,21 @@ program
     // Usage-unverified candidates (Python sink rule): model-like assignments
     // never traced to an in-file sink. Manual review only — never auto-applied.
     const usageUnverifiedAll = pyResult.usageUnverifiedMatches;
+    // Live TS calls the scanner CAPPED at review (position `surface_capped`): a parameter
+    // rule that starts applying at the replacement, a model-dependent param no rule covers,
+    // a call in an example tree, a gateway-prefixed id, a wrapper class. audit has always
+    // listed them as Tier B; fix-llm used to drop them, print "Nothing to fix" and pass
+    // `--fail-on tierB` (measured on v0.5.8-alpha). Python's capped matches already ride in
+    // usageUnverifiedAll. One finding per call site: the scan emits one match per matching
+    // registry record.
+    const cappedSites = new Set<string>();
+    const cappedAll = modelMatches.filter((m) => {
+      if (m.position !== 'surface_capped') return false;
+      const site = `${m.location.file}:${m.location.line}:${m.location.column}`;
+      if (cappedSites.has(site)) return false;
+      cappedSites.add(site);
+      return true;
+    });
     const allDataViews: DataFindingView[] = [
       ...toModelIdDataMatches(modelMatches),
       ...pyResult.dataMatches,
@@ -757,6 +773,29 @@ program
             withheldSwitches: withheldSwitchesOf(u.value),
           },
           'usage_unverified',
+        ),
+      ),
+      // The reason code is the one audit gives the same call (classifyOccurrenceTier), so the
+      // two commands cannot disagree about it; the scanner's own sentence says why it is held.
+      ...cappedAll.map((m) =>
+        tierBFinding(
+          {
+            file: rel(m.location.file),
+            line: m.location.line,
+            column: m.location.column,
+            modelId: m.value,
+            entryId: entryIdOf(m.value),
+            replacement: m.deprecation.replacement,
+            registryVerdict: verdictFor(m.value),
+            verdictCheckedAt: verdictDateFor(m.value),
+            quarantineReason: quarantineReasonOf(m.value),
+            withheldSwitches: withheldSwitchesOf(m.value),
+            detail: [
+              ...heldBackDetail(effectiveVerificationState(m.deprecation)),
+              ...(m.reason ? [m.reason] : []),
+            ],
+          },
+          classifyOccurrenceTier(m).reason ?? 'platform_blocked',
         ),
       ),
       ...castMaskedViews.map((d) =>
