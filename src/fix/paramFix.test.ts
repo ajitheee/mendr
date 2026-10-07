@@ -184,6 +184,97 @@ export async function run() {
     ]);
   });
 
+  // REGRESSION (review of PR #50, round three): a nested request behind a ternary branch, a
+  // logical operand or a type assertion was still renamed inside a held call.
+  it('holds a nested request selected by a ternary, ||, ??, && or <T>, and keeps them in an ordinary call', () => {
+    const selected = (receiver: string) => `${HEADER}
+export async function run(allow: boolean, extra?: object) {
+  return ${receiver}.chat.completions.create({
+    model: "o3-mini",
+    messages: [],
+    a: allow ? [{ model: "o3-mini", max_tokens: 11 }] : undefined,
+    b: extra || { model: "o3-mini", max_tokens: 12 },
+    c: extra ?? { model: "o3-mini", max_tokens: 13 },
+    d: allow && { model: "o3-mini", max_tokens: 14 },
+    e: <object>{ model: "o3-mini", max_tokens: 15 },
+    f: { ...{ g: [{ model: "o3-mini", max_tokens: 16 }] } },
+  });
+}
+`;
+    expect(keptSites(inMemoryProject('src/held.ts', selected('proxy')))).toEqual([]);
+    expect(keptSites(inMemoryProject('src/plain.ts', selected('client'))).sort()).toEqual([
+      'o3-mini:11',
+      'o3-mini:12',
+      'o3-mini:13',
+      'o3-mini:14',
+      'o3-mini:15',
+      'o3-mini:16',
+    ]);
+  });
+
+  it('does not climb out of a ternary\'s condition or an operator that does not select a value', () => {
+    const project = inMemoryProject(
+      'src/cond.ts',
+      `${HEADER}
+export async function run(other: object) {
+  return proxy.chat.completions.create({
+    model: "o3-mini",
+    messages: [],
+    pick: { model: "o1-mini", max_tokens: 9 } ? 1 : 2,
+    same: { model: "o1-mini", max_tokens: 8 } === other,
+  });
+}
+`,
+    );
+    expect(keptSites(project).sort()).toEqual(['o1-mini:8', 'o1-mini:9']);
+  });
+
+  it('holds the nested requests of a call whose own model is an expression the scan sees through', () => {
+    // The scan holds `opts.model || "o3-mini"`, `"o3-mini" as const` and a ternary of literals
+    // at a proxy call; the guard has to find those literals too, not only a bare one.
+    const project = inMemoryProject(
+      'src/expr.ts',
+      `${HEADER}
+export async function run(opts: { model?: string }, fast: boolean) {
+  await proxy.chat.completions.create({ model: opts.model || "o3-mini", messages: [], fallbacks: [{ model: "o3-mini", max_tokens: 21 }] });
+  await proxy.chat.completions.create({ model: "o3-mini" as const, messages: [], fallbacks: [{ model: "o3-mini", max_tokens: 22 }] });
+  await proxy.chat.completions.create({ model: fast ? "o3-mini" : "o4-mini", messages: [], fallbacks: [{ model: "o3-mini", max_tokens: 23 }] });
+  return client.chat.completions.create({ model: opts.model || "o3-mini", messages: [], fallbacks: [{ model: "o3-mini", max_tokens: 24 }] });
+}
+`,
+    );
+    expect(keptSites(project)).toEqual(['o3-mini:24']);
+  });
+
+  it('holds every real request fed a gateway-prefixed const, and nothing fed a plain one', () => {
+    const fed = (model: string) => `${HEADER}
+const MODEL = "${model}";
+export async function run() {
+  return client.chat.completions.create({ model: MODEL, messages: [], fallbacks: [{ model: "o3-mini", max_tokens: 5 }] });
+}
+`;
+    expect(keptSites(inMemoryProject('src/gw.ts', fed('openai/o3-mini')))).toEqual([]);
+    expect(keptSites(inMemoryProject('src/plain.ts', fed('o3-mini')))).toEqual(['o3-mini:5']);
+  });
+
+  it('keeps a standalone object fed a held const outside an example tree', () => {
+    const registry: LlmRegistry = [
+      ...HELD_REGISTRY,
+      { provider: 'openai', kind: 'param_removal', param: 'temperature', on_models: ['o3'] },
+    ];
+    const project = inMemoryProject(
+      'src/standalone.ts',
+      `${HEADER}
+const MODEL = "o3-mini";
+export const settings = { model: MODEL, temperature: 0 };
+export async function run() {
+  return proxy.chat.completions.create({ model: MODEL, messages: [] });
+}
+`,
+    );
+    expect(keptSites(project, registry)).toEqual(['o3-mini:0']);
+  });
+
   it('stops climbing at the request: a call inside a held call\'s callback is its own call', () => {
     const project = inMemoryProject(
       'src/retry.ts',

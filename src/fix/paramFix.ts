@@ -17,6 +17,7 @@ import {
   enclosingNewOfObject,
   hasCatalogSiblings,
   TS_EXAMPLE_CALL_REASON,
+  TS_PREFIXED_REASON,
 } from '../usage/tsSurface.js';
 
 // LLM mode — fix (MODEL-COUPLED param transform). This is the flagship
@@ -244,23 +245,96 @@ function isHeldSite(site: ParamMatch, reasonsByNode: ReadonlyMap<Node, (string |
  */
 function requestObjectsAround(obj: ObjectLiteralExpression): ObjectLiteralExpression[] {
   const out = [obj];
-  let parent = obj.getParent();
-  while (
-    parent &&
-    (Node.isObjectLiteralExpression(parent) ||
-      Node.isPropertyAssignment(parent) ||
-      Node.isArrayLiteralExpression(parent) ||
-      Node.isSpreadAssignment(parent) ||
-      Node.isSpreadElement(parent) ||
-      Node.isParenthesizedExpression(parent) ||
-      Node.isAsExpression(parent) ||
-      Node.isSatisfiesExpression(parent) ||
-      Node.isNonNullExpression(parent))
+  let child: Node = obj;
+  for (
+    let parent: Node | undefined = obj.getParent();
+    parent && selectsValueOf(parent, child);
+    parent = parent.getParent()
   ) {
     if (Node.isObjectLiteralExpression(parent)) out.push(parent);
-    parent = parent.getParent();
+    child = parent;
   }
   return out;
+}
+
+/**
+ * Does `parent` only carry or select `child`'s value, inside one expression? Objects, arrays,
+ * spreads, parentheses and type wrappers carry it; `||`, `??`, `&&` and a ternary's branches
+ * select it (review of PR #50, round three: `fallbacks: allow ? [{ … }] : undefined` inside a
+ * held gateway call was still edited). A ternary's CONDITION, a call, a function and a
+ * statement are none of these, so the climb never leaves the request.
+ */
+function selectsValueOf(parent: Node, child: Node): boolean {
+  if (
+    Node.isObjectLiteralExpression(parent) ||
+    Node.isPropertyAssignment(parent) ||
+    Node.isArrayLiteralExpression(parent) ||
+    Node.isSpreadAssignment(parent) ||
+    Node.isSpreadElement(parent) ||
+    Node.isParenthesizedExpression(parent) ||
+    Node.isAsExpression(parent) ||
+    Node.isSatisfiesExpression(parent) ||
+    Node.isTypeAssertion(parent) ||
+    Node.isNonNullExpression(parent)
+  ) {
+    return true;
+  }
+  if (Node.isConditionalExpression(parent)) {
+    return parent.getWhenTrue() === child || parent.getWhenFalse() === child;
+  }
+  if (Node.isBinaryExpression(parent)) {
+    const op = parent.getOperatorToken().getKind();
+    return (
+      op === SyntaxKind.BarBarToken ||
+      op === SyntaxKind.QuestionQuestionToken ||
+      op === SyntaxKind.AmpersandAmpersandToken
+    );
+  }
+  return false;
+}
+
+/** One string literal a `model` value can take, and whether it was reached through a declaration. */
+interface ModelLeaf {
+  node: Node;
+  viaDeclaration: boolean;
+}
+
+/**
+ * Every string literal a `model` property's value can take, through the wrappers the scanner
+ * treats as transparent for a value (isValueTransparent: parentheses, `as`, `||`, `??`, a
+ * ternary's branches) and one hop through a const. The scanner holds a call whose model is
+ * `opts.model || "o3-mini"` or `"o3-mini" as const` (review of PR #50, round three), so the
+ * guard has to find that literal too, not only a bare one.
+ */
+function modelValueLeaves(modelProp: Node | undefined): ModelLeaf[] {
+  if (!modelProp || !Node.isPropertyAssignment(modelProp)) {
+    // Shorthand `{ model }` and anything else: the one-hop rule modelLiteralNode follows.
+    const node = modelLiteralNode(modelProp);
+    return node ? [{ node, viaDeclaration: true }] : [];
+  }
+  const init = modelProp.getInitializer();
+  return init ? valueLeaves(init, false) : [];
+}
+
+function valueLeaves(expr: Node, viaDeclaration: boolean): ModelLeaf[] {
+  if (Node.isStringLiteral(expr) || Node.isNoSubstitutionTemplateLiteral(expr)) return [{ node: expr, viaDeclaration }];
+  if (Node.isParenthesizedExpression(expr) || Node.isAsExpression(expr)) {
+    return valueLeaves(expr.getExpression(), viaDeclaration);
+  }
+  if (Node.isConditionalExpression(expr)) {
+    return [...valueLeaves(expr.getWhenTrue(), viaDeclaration), ...valueLeaves(expr.getWhenFalse(), viaDeclaration)];
+  }
+  if (Node.isBinaryExpression(expr)) {
+    const op = expr.getOperatorToken().getKind();
+    if (op !== SyntaxKind.BarBarToken && op !== SyntaxKind.QuestionQuestionToken) return [];
+    return [...valueLeaves(expr.getLeft(), viaDeclaration), ...valueLeaves(expr.getRight(), viaDeclaration)];
+  }
+  if (Node.isIdentifier(expr) && !viaDeclaration) {
+    const decl = expr.getSymbol()?.getValueDeclaration();
+    const init = decl && Node.isVariableDeclaration(decl) ? decl.getInitializer() : undefined;
+    return init ? valueLeaves(init, true) : [];
+  }
+  return [];
 }
 
 /** Is this request object one the scan held, judged by the rule the scan applied to its model? */
@@ -268,22 +342,30 @@ function isHeldObject(
   obj: ObjectLiteralExpression,
   reasonsByNode: ReadonlyMap<Node, (string | undefined)[]>,
 ): boolean {
-  const modelProp = obj.getProperty('model');
-  const literal = modelLiteralNode(modelProp);
-  if (!literal) return false;
-  const reasons = reasonsByNode.get(literal);
-  if (!reasons) return false;
-  // The object's own literal: the scan judged this very request.
-  if (Node.isPropertyAssignment(modelProp) && modelProp.getInitializer() === literal) return true;
-  // Through a declaration. The scan judges a declaration by the consumers in its own file
-  // (collectTsSinks is per file), so a consumer elsewhere was never part of that verdict.
+  for (const leaf of modelValueLeaves(obj.getProperty('model'))) {
+    const reasons = reasonsByNode.get(leaf.node);
+    if (!reasons) continue;
+    // The object's own value: the scan judged this very request.
+    if (!leaf.viaDeclaration) return true;
+    if (isHeldConsumer(obj, leaf.node, reasons)) return true;
+  }
+  return false;
+}
+
+/**
+ * A request fed a declaration the scan held. The scan holds a declaration when ANY consumer
+ * is held, so judge THIS consumer the way the scan judges a literal written in it
+ * (classifyByEnclosure, then the example-tree and gateway-prefix rules in findModelIdLiterals).
+ */
+function isHeldConsumer(obj: ObjectLiteralExpression, literal: Node, reasons: (string | undefined)[]): boolean {
+  // The scan judges a declaration by the consumers in its own file (collectTsSinks is per
+  // file), so a consumer elsewhere was never part of that verdict.
   if (literal.getSourceFile() !== obj.getSourceFile()) return false;
-  // Judge THIS consumer the way the scan judges a literal written in it (classifyByEnclosure,
-  // then the example-tree rule in findModelIdLiterals).
   const call = enclosingCallOfObject(obj);
   const wrapperCtor = !call && enclosingNewOfObject(obj) !== undefined && !hasCatalogSiblings(obj);
-  if (reasons.includes(TS_EXAMPLE_CALL_REASON)) {
-    // An example tree holds every real request in the file, and nothing that is data.
+  // An example tree, and a gateway-prefixed id, hold every real request that uses the value,
+  // and nothing that is data.
+  if (reasons.includes(TS_EXAMPLE_CALL_REASON) || reasons.includes(TS_PREFIXED_REASON)) {
     return call ? classifyCallSurface(call).position !== 'data' : wrapperCtor;
   }
   if (call) return classifyCallSurface(call).position === 'surface_capped';
