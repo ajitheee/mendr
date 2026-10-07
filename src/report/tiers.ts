@@ -44,14 +44,21 @@ export const TIER_B_REASON_TEXT: Record<TierBReason, string> = {
   // marks the provisioning conclusion as the inference it is.
   platform_blocked:
     'sits under a deployment key rather than in a model argument; on Azure and similar platforms that key names a provisioned deployment, so changing it is likely a provisioning change rather than a code change.',
-  // WHAT WAS ACTUALLY CHECKED: the scanner found the literal at a call and then capped the
-  // call at review by a SURFACE rule (tsSurface.ts, scanPy.ts): where or how the call is made,
-  // not the id or its parameters. Each rule writes its own sentence, which the human report
-  // prints beneath this one. The JSON shape carries only this sentence (`detail` stays out of
-  // it), so it has to stand alone: it says the call is held, names the kinds of surface, and
-  // says the hold is not a doubt about the id. The list is "such as": there are more rules.
+  // WHAT WAS ACTUALLY CHECKED: the scanner capped the occurrence at review by a SURFACE rule
+  // (tsSurface.ts, scanPy.ts): where or how the value is used, not the parameters around it.
+  // Each rule writes its own sentence, which the human report prints beneath this one. The JSON
+  // shape carries only this sentence (`detail` stays out of it), so it has to stand alone, and it
+  // has to be true of every rule that lands here. The 2026-10-07 review found three ways an
+  // earlier wording was not:
+  //   - not every occurrence is in a call: a gateway-prefixed id in an untraced const or a
+  //     default-config object is held too, so the sentence says "used", not "sits in a call";
+  //   - on an Azure client the value names a DEPLOYMENT, so the change can be a provisioning
+  //     one, the advice platform_blocked gives for a `deployment` key;
+  //   - a gateway prefix IS a question about the id string (the successor may need another
+  //     prefix), so the sentence makes no claim that the hold is "not about the id".
+  // The list is "such as": there are more rules.
   surface_capped:
-    'sits in a call mendr holds for review because of where or how the call is made, such as a sample tree, a gateway-prefixed id, a wrapper class, a proxy or partner client, a client mendr cannot resolve, or a request made at import time; the hold is not a doubt about the id, but an unattended swap is not safe there.',
+    'is held for review because of where or how it is used, such as in a sample tree, as a gateway-prefixed id, behind a wrapper class, through a proxy or partner client or one mendr cannot resolve, or in a request made at import time; an unattended swap is not safe there. On an Azure client the value names a deployment, so the change may be a provisioning one.',
   dynamic_model_value:
     'the model value is assembled at runtime, so no single literal here can carry the migration.',
   insufficient_dataflow:
@@ -510,7 +517,7 @@ export const TIER_B_USAGE_VERDICT_TEXT: Record<TierBReason, string> = {
   platform_blocked: 'unverified -- sits under a deployment key, not in a model argument',
   // The surface rules cap calls whose usage ranges from a real example request to a client
   // mendr cannot resolve, so the row claims no more than the weakest of them.
-  surface_capped: 'unverified -- held for where or how the call is made',
+  surface_capped: 'unverified -- held for where or how it is used',
   // Like `replacement_unverified`, the USAGE here is fine and saying otherwise would
   // send the reviewer looking for the wrong thing: the literal is a confirmed live
   // model argument and the mapping is verified. What is unproven is the REQUEST

@@ -611,7 +611,8 @@ program
     // listed them as Tier B; fix-llm used to drop them, print "Nothing to fix" and pass
     // `--fail-on tierB` (measured on v0.5.8-alpha). Python's capped matches already ride in
     // usageUnverifiedAll. One finding per call site, and none for a site another stream already
-    // reports (see toHeldCallMatches), so every occurrence lands in exactly one tier.
+    // reports (see toHeldCallMatches), so no held occurrence lands in two tiers. Not yet closed:
+    // a TypeScript `usage_unverified` occurrence, which audit lists in Tier B, has no stream here.
     const cappedAll = toHeldCallMatches(modelMatches);
     const allDataViews: DataFindingView[] = [
       ...toModelIdDataMatches(modelMatches),

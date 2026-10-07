@@ -13,7 +13,7 @@ import {
   type ModelIdDataLocate,
 } from '../usage/scanLiterals.js';
 import { applyModelIdFixes } from './modelId.js';
-import { applyParamFixes, findParamSites, withoutHeldCalls } from './paramFix.js';
+import { applyParamFixes, findParamSites, onSwappedCalls, withoutHeldCalls } from './paramFix.js';
 
 // LLM mode — combined fix. `fix-llm` runs TWO independent codemod passes over
 // the same repo and folds them into ONE diff and ONE Tier A/C gate decision:
@@ -63,6 +63,19 @@ export interface LlmFixResult {
   azureMatches: AzureDeploymentLocate[];
 }
 
+/** How far pass 2 reaches. */
+export interface LlmFixOptions {
+  /**
+   * Apply parameter rules ONLY at calls whose model pass 1 swapped. `migrate --only` sets this:
+   * the person approved those models and nothing else, and restrictRegistry keeps every
+   * parameter rule on the stated grounds that a rule "only applies when that swap happens".
+   * Without this, pass 2 edited the request of any call whose current model a rule names: a
+   * call on a model nobody approved, and a call the full scan holds for review, which the
+   * restricted scan cannot see as held because its model is not in the restricted registry.
+   */
+  paramsOnSwappedCallsOnly?: boolean;
+}
+
 /**
  * Apply BOTH LLM codemod passes to an already-loaded, in-memory `project` and
  * return a single combined diff plus a per-transform breakdown. The project is
@@ -72,6 +85,7 @@ export function applyLlmFixesToProject(
   project: Project,
   registry: LlmRegistry,
   rootDir?: string,
+  options: LlmFixOptions = {},
 ): LlmFixResult {
   // Snapshot ORIGINAL text of every source file BEFORE either pass runs.
   const originals = new Map<string, string>();
@@ -93,12 +107,14 @@ export function applyLlmFixesToProject(
   // Pass 1: model-id swaps (reusing the single scan). Pass 2: model-coupled
   // param transforms — scanned AFTER pass 1 so they see the models it updated,
   // and never on a call pass 1's scan held for review (withoutHeldCalls).
-  const modelIdSites = applyModelIdFixes(project, registry, literalMatches).length;
+  const swapped = applyModelIdFixes(project, registry, literalMatches);
+  const modelIdSites = swapped.length;
   const heldCalls = literalMatches.filter((m) => m.position === 'surface_capped');
+  const paramSites = withoutHeldCalls(findParamSites(project, registry), heldCalls);
   const paramEdits = applyParamFixes(
     project,
     registry,
-    withoutHeldCalls(findParamSites(project, registry), heldCalls),
+    options.paramsOnSwappedCallsOnly ? onSwappedCalls(paramSites, new Set(swapped)) : paramSites,
   );
   const paramsRemoved = paramEdits.filter((e) => e.kind === 'param_removal').length;
   const paramsRenamed = paramEdits.filter((e) => e.kind === 'param_rename').length;

@@ -22,6 +22,7 @@ import {
   TIER_B_HEADING,
   TIER_B_REASON_ORDER,
   TIER_B_REASON_TEXT,
+  TIER_B_USAGE_VERDICT_TEXT,
   TIER_PRECEDENCE,
   type RegistryVerdict,
   type Tier,
@@ -101,6 +102,17 @@ describe('TIER_B_REASON_TEXT', () => {
     // (or the repo's "type registry") exists.
     expect(TIER_B_REASON_TEXT.type_cast_masked).not.toContain('the model-id union');
     expect(TIER_B_REASON_TEXT.type_cast_masked).toContain('may');
+  });
+
+  // The same lock for `surface_capped`, from the 2026-10-07 review of its first wording. Its
+  // rules hold a prefixed id that sits in no call (an untraced const), a value on an Azure client
+  // that names a deployment, and a prefixed id whose successor may need another prefix.
+  it('says nothing about surface_capped that one of its rules contradicts', () => {
+    const text = TIER_B_REASON_TEXT.surface_capped;
+    expect(text).not.toContain('sits in a call');
+    expect(text).not.toContain('not a doubt about the id');
+    expect(text).toContain('deployment');
+    expect(TIER_B_USAGE_VERDICT_TEXT.surface_capped).not.toContain('call');
   });
 });
 
@@ -602,7 +614,7 @@ describe('the replacement verdict on a Tier B finding', () => {
       usage_unverified: 'unverified -- no traced sink in this file',
       replacement_unverified: 'confirmed live model argument',
       platform_blocked: 'unverified -- sits under a deployment key, not in a model argument',
-      surface_capped: 'unverified -- held for where or how the call is made',
+      surface_capped: 'unverified -- held for where or how it is used',
       coupled_param_unverified:
         'confirmed live model argument -- the request parameters are what is unverified',
       param_behaviour_change: 'confirmed live model argument -- a parameter rule changes what the request asks for',

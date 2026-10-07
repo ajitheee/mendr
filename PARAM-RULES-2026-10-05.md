@@ -107,3 +107,5 @@ review on main's build, so no edit would ship. LibreChat has no Tier A location 
   LibreChat that is 5 of 7 review findings (the title call, an edit-message mutation, three image
   calls), and none has a deployment key. Across the 12 repositories, `platform_blocked` is the reason
   on 23 of the 55 review findings. Only LibreChat's 5 were read.
+  *Fixed 2026-10-07: those calls now carry `surface_capped`, and `platform_blocked` means a
+  `deployment` key only.*

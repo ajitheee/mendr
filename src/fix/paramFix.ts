@@ -10,7 +10,14 @@ import type {
 import type { LlmParamDeprecation, LlmRegistry, SourceLocation } from '../types.js';
 import { loadProject } from '../usage/scanRepo.js';
 import { modelMatches, paramEntries } from '../usage/llmRegistry.js';
-import { isTestPath } from '../usage/scanLiterals.js';
+import { fileAnnotation, isTestPath } from '../usage/scanLiterals.js';
+import {
+  classifyCallSurface,
+  enclosingCallOfObject,
+  enclosingNewOfObject,
+  hasCatalogSiblings,
+  TS_EXAMPLE_CALL_REASON,
+} from '../usage/tsSurface.js';
 
 // LLM mode — fix (MODEL-COUPLED param transform). This is the flagship
 // "AST beats regex" case, and the ONE correctness property that matters is:
@@ -132,6 +139,10 @@ export function findParamSites(project: Project, registry: LlmRegistry): ParamMa
     const file = sf.getFilePath();
     if (file.includes('/node_modules/')) continue;
     if (isTestPath(file)) continue;
+    // A file the repo annotated `mendr: ignore-file` or `mendr: model-catalog` is never edited,
+    // the same rule the model-id scan follows. The param pass used to skip that check, and
+    // renamed `max_tokens` inside a catalog row the report listed as "no action".
+    if (fileAnnotation(sf.getFullText()) !== undefined) continue;
 
     for (const object of sf.getDescendantsOfKind(SyntaxKind.ObjectLiteralExpression)) {
       const modelProp = object.getProperty('model');
@@ -181,28 +192,64 @@ function modelLiteralNode(modelProp: Node | undefined): Node | undefined {
   return undefined;
 }
 
+/** A literal the model-id scan held for review: the node itself, and the scan's reason. */
+export interface HeldLiteral {
+  node: Node;
+  reason?: string;
+}
+
 /**
  * Drop the param sites on calls the model-id scan HELD for review (position `surface_capped`):
  * an example tree, a proxy or partner client, a gateway-prefixed id, a coupled parameter. A held
  * call is reported as "review required, no patch generated", so no pass may edit its request
  * either; the param pass used to, which left the same call in Tier B and in the Tier A diff.
  *
- * Matched by file, line and model value of the call's model literal, not by node identity:
- * the param pass scans AFTER the model-id swaps have edited the file, and a held literal is
- * never swapped, so its line and value still match the pre-edit scan.
+ * DECIDED PER CALL, NOT PER LITERAL. The first version keyed on the model literal's file, line
+ * and value, and the 2026-10-07 review of it found two ways that held back calls nobody held:
+ *   - a `const MODEL` shared by a held call and an ordinary one. The scan holds the DECLARATION
+ *     when any consumer is held (judgeDeclarationSinks: "any capped consumer wins"), so keying
+ *     on the declaration dropped the ordinary call's parameter fix as well;
+ *   - two calls with the same model on one line, one held and one not.
+ * So a site is held when its OWN model literal is a held node (node identity: a held literal is
+ * never swapped, so its wrapper survives pass 1's edits elsewhere in the file), or, when the
+ * model comes through a declaration the scan held, when the rule that held the declaration also
+ * holds THIS call: the file is an example tree, or this call's own surface is capped.
  */
-export function withoutHeldCalls(
-  sites: ParamMatch[],
-  held: ReadonlyArray<{ value: string; location: SourceLocation }>,
-): ParamMatch[] {
+export function withoutHeldCalls(sites: ParamMatch[], held: ReadonlyArray<HeldLiteral>): ParamMatch[] {
   if (held.length === 0) return sites;
-  const keys = new Set(held.map((h) => `${h.location.file}\n${h.location.line}\n${h.value}`));
+  const reasonsByNode = new Map<Node, (string | undefined)[]>();
+  for (const h of held) {
+    const list = reasonsByNode.get(h.node);
+    if (list) list.push(h.reason);
+    else reasonsByNode.set(h.node, [h.reason]);
+  }
+  return sites.filter((site) => !isHeldSite(site, reasonsByNode));
+}
+
+function isHeldSite(site: ParamMatch, reasonsByNode: ReadonlyMap<Node, (string | undefined)[]>): boolean {
+  const modelProp = site.object.getProperty('model');
+  const literal = modelLiteralNode(modelProp);
+  if (!literal) return false;
+  const reasons = reasonsByNode.get(literal);
+  if (!reasons) return false;
+  // The call's own literal: the scan judged this very call.
+  if (Node.isPropertyAssignment(modelProp) && modelProp.getInitializer() === literal) return true;
+  // Through a declaration. The scan judges a declaration by the consumers in its own file
+  // (collectTsSinks is per file), so a consumer elsewhere was never part of that verdict.
+  if (literal.getSourceFile() !== site.object.getSourceFile()) return false;
+  // An example tree holds every real call in the file, so it holds this one.
+  if (reasons.includes(TS_EXAMPLE_CALL_REASON)) return true;
+  // Otherwise a consumer's surface held the declaration: is THIS call's surface one of them?
+  const call = enclosingCallOfObject(site.object);
+  if (call) return classifyCallSurface(call).position === 'surface_capped';
+  return enclosingNewOfObject(site.object) !== undefined && !hasCatalogSiblings(site.object);
+}
+
+/** Keep only the param sites whose model literal pass 1 swapped (see LlmFixOptions). */
+export function onSwappedCalls(sites: ParamMatch[], swapped: ReadonlySet<Node>): ParamMatch[] {
   return sites.filter((site) => {
     const literal = modelLiteralNode(site.object.getProperty('model'));
-    if (!literal) return true;
-    const sf = literal.getSourceFile();
-    const { line } = sf.getLineAndColumnAtPos(literal.getStart());
-    return !keys.has(`${sf.getFilePath()}\n${line}\n${site.model}`);
+    return literal !== undefined && swapped.has(literal);
   });
 }
 

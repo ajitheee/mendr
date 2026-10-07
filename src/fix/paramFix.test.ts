@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { Project } from 'ts-morph';
 import type { LlmRegistry } from '../types.js';
+import { autoApplyVerification } from '../usage/llmRegistry.js';
+import { findModelIdLiterals } from '../usage/scanLiterals.js';
 import { findParamSites, applyParamFixes, applyParamFixesToProject, withoutHeldCalls } from './paramFix.js';
 
 // Hermetic tests for the MODEL-COUPLED param codemod. The Project is built
@@ -125,42 +127,153 @@ export async function run() {
   });
 });
 
-describe('withoutHeldCalls: a call held at review is never edited, its request included', () => {
-  // Two reasoning-model calls the rename rule fires on, plus a const-resolved one. The scan held
-  // the first (an example, a proxy client: any surface rule) and the const-resolved one; the
-  // second is an ordinary call and keeps its edit.
-  const SOURCE = `
-import OpenAI from "openai";
-const client = new OpenAI();
-const reasoningModel = "o3-mini";
+describe('withoutHeldCalls: a call held at review is never edited, and only a held call is skipped', () => {
+  // The REAL scanner decides what is held, so these tests exercise the same verdicts fix-llm
+  // and migrate act on. o3-mini is a retiring id here; the rename rule covers o3 and the
+  // replacement alike, so a direct call on it is an ordinary swap (not held for its params).
+  const HELD_REGISTRY: LlmRegistry = [
+    {
+      provider: 'openai',
+      kind: 'model_id',
+      deprecated: 'o3-mini',
+      replacement: 'gpt-5.6-sol',
+      verification: autoApplyVerification(),
+    },
+    {
+      provider: 'openai',
+      kind: 'param_rename',
+      param: 'max_tokens',
+      replacement: 'max_completion_tokens',
+      on_models: ['o1', 'o3', 'gpt-5.6'],
+    },
+  ];
+  const HEADER = [
+    'import OpenAI from "openai";',
+    'const client = new OpenAI();',
+    'const proxy = new OpenAI({ baseURL: "https://llm-proxy.internal/v1" });',
+  ].join('\n');
+
+  /** The param sites the guard keeps, as `model:max_tokens value`, for one in-memory project. */
+  function keptSites(project: Project): string[] {
+    const held = findModelIdLiterals(project, HELD_REGISTRY).filter((m) => m.position === 'surface_capped');
+    return withoutHeldCalls(findParamSites(project, HELD_REGISTRY), held).map(
+      (s) => `${s.model}:${s.paramProp.getInitializer()?.getText()}`,
+    );
+  }
+
+  it('skips a held call and keeps an ordinary one in the same file', () => {
+    const project = inMemoryProject(
+      'src/calls.ts',
+      `${HEADER}
 export async function run() {
-  const held = await client.chat.completions.create({ model: "o3-mini", max_tokens: 50 });
-  const plain = await client.chat.completions.create({ model: "o1-mini", max_tokens: 50 });
-  const viaConst = await client.chat.completions.create({ model: reasoningModel, max_tokens: 50 });
-  return { held, plain, viaConst };
+  const held = await proxy.chat.completions.create({ model: "o3-mini", max_tokens: 1 });
+  const plain = await client.chat.completions.create({ model: "o1-mini", max_tokens: 2 });
+  return { held, plain };
 }
-`.trimStart();
-
-  it('drops exactly the sites whose model literal the scan held, by file, line and value', () => {
-    const project = inMemoryProject('src/calls.ts', SOURCE);
-    const file = project.getSourceFileOrThrow('src/calls.ts').getFilePath();
-    const sites = findParamSites(project, REGISTRY);
-    expect(sites.map((s) => s.model).sort()).toEqual(['o1-mini', 'o3-mini', 'o3-mini']);
-
-    const kept = withoutHeldCalls(sites, [
-      { value: 'o3-mini', location: { file, line: 5, column: 63 } },
-      { value: 'o3-mini', location: { file, line: 3, column: 24 } },
-    ]);
-    expect(kept.map((s) => s.model)).toEqual(['o1-mini']);
+`,
+    );
+    expect(keptSites(project)).toEqual(['o1-mini:2']);
   });
 
-  it('keeps every site when nothing was held, and keeps a held value on another line', () => {
-    const project = inMemoryProject('src/calls.ts', SOURCE);
-    const file = project.getSourceFileOrThrow('src/calls.ts').getFilePath();
-    const sites = findParamSites(project, REGISTRY);
-    expect(withoutHeldCalls(sites, [])).toHaveLength(3);
-    // Same value, different line: not the held call, so its sibling's edit stands.
-    expect(withoutHeldCalls(sites, [{ value: 'o3-mini', location: { file, line: 99, column: 1 } }])).toHaveLength(3);
+  // REGRESSION (review of PR #50, 2026-10-07): the first version keyed on the model LITERAL, and
+  // the scan holds a shared declaration when ANY consumer is held, so the direct call lost a
+  // parameter fix nobody held. Base made that edit; it must stand.
+  it('keeps the ordinary consumer of a const that a held consumer shares', () => {
+    const project = inMemoryProject(
+      'src/shared.ts',
+      `${HEADER}
+const MODEL = "o3-mini";
+export async function run() {
+  const viaProxy = await proxy.chat.completions.create({ model: MODEL, max_tokens: 1 });
+  const direct = await client.chat.completions.create({ model: MODEL, max_tokens: 2 });
+  return { viaProxy, direct };
+}
+`,
+    );
+    const held = findModelIdLiterals(project, HELD_REGISTRY).filter((m) => m.position === 'surface_capped');
+    // The precondition the bug needed: the scan held the shared declaration itself.
+    expect(held.map((m) => m.location.line)).toEqual([4]);
+    expect(keptSites(project)).toEqual(['o3-mini:2']);
+  });
+
+  it('keeps an ordinary call on the same line as a held call with the same model', () => {
+    const project = inMemoryProject(
+      'src/line.ts',
+      `${HEADER}
+export async function run() {
+  return [await proxy.chat.completions.create({ model: "o3-mini", max_tokens: 1 }), await client.chat.completions.create({ model: "o3-mini", max_tokens: 2 })];
+}
+`,
+    );
+    expect(keptSites(project)).toEqual(['o3-mini:2']);
+  });
+
+  it('skips every consumer of a const in an example tree', () => {
+    const project = inMemoryProject(
+      'examples/demo.ts',
+      `${HEADER}
+const MODEL = "o3-mini";
+export async function demo() {
+  const a = await client.chat.completions.create({ model: MODEL, max_tokens: 1 });
+  const b = await client.chat.completions.create({ model: "o3-mini", max_tokens: 2 });
+  return { a, b };
+}
+`,
+    );
+    expect(keptSites(project)).toEqual([]);
+  });
+
+  it('skips a direct call the scan held for its parameters, though its surface is ordinary', () => {
+    // A first-party client inside a function: classifyCallSurface alone says "model_arg". The
+    // scan held it anyway, for a parameter no rule covers on the replacement, so the call's OWN
+    // held literal has to decide; re-judging the surface would let its max_tokens be renamed.
+    const project = inMemoryProject(
+      'src/coupled.ts',
+      `${HEADER}
+export async function run() {
+  return client.chat.completions.create({ model: "o3-mini", max_tokens: 1, temperature: 0 });
+}
+`,
+    );
+    const held = findModelIdLiterals(project, HELD_REGISTRY).filter((m) => m.position === 'surface_capped');
+    expect(held).toHaveLength(1);
+    expect(keptSites(project)).toEqual([]);
+  });
+
+  it('keeps a consumer in another file of a global held in an example tree', () => {
+    // Two classic scripts (no import/export) share one global scope, so `MODEL` in src/ resolves
+    // to the declaration in examples/. The scan judged that declaration by the calls in ITS file.
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      'examples/models.ts',
+      [
+        'declare const OpenAI: any;',
+        'var demoClient = new OpenAI();',
+        'var MODEL = "o3-mini";',
+        'function demo() { return demoClient.chat.completions.create({ model: MODEL, max_tokens: 1 }); }',
+        '',
+      ].join('\n'),
+    );
+    project.createSourceFile(
+      'src/run.ts',
+      'function run(client: any) { return client.chat.completions.create({ model: MODEL, max_tokens: 2 }); }\n',
+    );
+    const held = findModelIdLiterals(project, HELD_REGISTRY).filter((m) => m.position === 'surface_capped');
+    expect(held.map((m) => m.location.file.replace(/^.*\/(examples|src)\//, '$1/'))).toEqual(['examples/models.ts']);
+    expect(keptSites(project)).toEqual(['o3-mini:2']);
+  });
+
+  it('keeps every site when nothing was held', () => {
+    const project = inMemoryProject(
+      'src/plain.ts',
+      `${HEADER}
+export async function run() {
+  return client.chat.completions.create({ model: "o3-mini", max_tokens: 2 });
+}
+`,
+    );
+    expect(withoutHeldCalls(findParamSites(project, HELD_REGISTRY), [])).toHaveLength(1);
+    expect(keptSites(project)).toEqual(['o3-mini:2']);
   });
 });
 
@@ -202,6 +315,20 @@ export async function run(messages: any) {
     const text = project.getSourceFileOrThrow('src/env-model.ts').getFullText();
     // Untouched: an unprovable model is left exactly as the developer wrote it.
     expect(text).toContain('temperature: 0');
+  });
+
+  it('SKIPS a file annotated mendr: ignore-file or mendr: model-catalog', () => {
+    // ADDED 2026-10-07: the model-id scan never edits these files, and the param pass did.
+    for (const annotation of ['ignore-file', 'model-catalog']) {
+      const source = `// mendr: ${annotation}\nexport const MODELS = [{ model: "o1-mini", max_tokens: 4096, label: "o1 mini" }];\n`;
+      const project = inMemoryProject('src/catalog.ts', source);
+      expect(findParamSites(project, REGISTRY), annotation).toHaveLength(0);
+      expect(applyParamFixes(project, REGISTRY), annotation).toHaveLength(0);
+      expect(project.getSourceFileOrThrow('src/catalog.ts').getFullText()).toBe(source);
+    }
+    // Control: the same row without the annotation is a param site.
+    const plain = inMemoryProject('src/catalog.ts', 'export const MODELS = [{ model: "o1-mini", max_tokens: 4096 }];\n');
+    expect(findParamSites(plain, REGISTRY)).toHaveLength(1);
   });
 
   it('SKIPS an object literal that has the param but no model property', () => {

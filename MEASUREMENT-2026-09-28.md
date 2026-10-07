@@ -534,8 +534,9 @@ non-semantic rather than assumed.
    **Not fixed.**
 
    *Fixed 2026-10-07 in [PR #47](https://github.com/ajitheee/mendr/pull/47) (`138181f`):
-   `fix-llm` lists every held call in Tier B with the reason `audit` gives it, and
-   `--fail-on tierB` fails on them. The text above is left as it was measured.*
+   `fix-llm` lists every TypeScript/JavaScript held call in Tier B with the reason `audit`
+   gives it, and `--fail-on tierB` fails on them. A Python held call was always listed, as
+   `usage_unverified`. The text above is left as it was measured.*
 
 ---
 

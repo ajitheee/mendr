@@ -101,7 +101,7 @@ model-level action from `highestTier`.**
   `fix-llm`.
 - `reason` (Tier B only): `usage_unverified` · `replacement_unverified` ·
   `coupled_param_unverified` · `param_behaviour_change` · `surface_capped` ·
-  `platform_blocked` · `type_cast_masked`. `null` for A and C. The codes mean what
+  `platform_blocked` · `type_cast_masked`. Absent for A and C. The codes mean what
   the README's Tier B table says. Before `v0.5.9-alpha`, a call held for its
   surface (a sample tree, a gateway-prefixed id, a wrapper class, a proxy client)
   was reported as `platform_blocked`; it is now `surface_capped`, and
@@ -121,3 +121,8 @@ from source on every run and never trusts a committed `exposure.json` as input.
 
 The schema tag (`mendr-exposure/v2`) changes only on a breaking shape change.
 Fields may be added within a version; consumers should ignore unknown fields.
+Tier B `reason` codes may also be added within a version; a consumer should
+treat a code it does not know as Tier B review. `v0.5.9-alpha` added
+`surface_capped`, so a committed `.mendr/exposure.json` changes once on the
+first run after the upgrade, for every held call that used to read
+`platform_blocked`.
