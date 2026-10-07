@@ -537,6 +537,95 @@ describe('a Tier A candidate that fails its gates', () => {
   }, 120_000);
 });
 
+/**
+ * A repo whose ONLY findings are live calls the scanner CAPS at review (position
+ * `surface_capped`), one per kind of cap. audit has always listed these as Tier B;
+ * fix-llm used to drop them, print "Nothing to fix" and pass `--fail-on tierB`
+ * (measured on v0.5.8-alpha, 2026-10-06):
+ *   - `gpt-3.5-turbo` + `max_tokens: 20`: the replacement gpt-5.6-terra brings a rule the
+ *     source never had (param_behaviour_change);
+ *   - `claude-opus-4-1-20250805` + `max_tokens`: a model-dependent param no Anthropic rule
+ *     covers (coupled_param_unverified);
+ *   - a real SDK call under `examples/`: a sample is capped at review, never patched.
+ */
+function makeCappedRepo(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'mendr-capped-'));
+  created.push(dir);
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'capped-fixture' }, null, 2));
+  mkdirSync(join(dir, 'src'));
+  mkdirSync(join(dir, 'examples'));
+  writeFileSync(
+    join(dir, 'src', 'title.ts'),
+    [
+      'import OpenAI from "openai";',
+      'const client = new OpenAI();',
+      'export async function title() {',
+      "  return client.chat.completions.create({ model: 'gpt-3.5-turbo', max_tokens: 20, messages: [] });",
+      '}',
+      '',
+    ].join('\n'),
+  );
+  writeFileSync(
+    join(dir, 'src', 'opus.ts'),
+    [
+      'import Anthropic from "@anthropic-ai/sdk";',
+      'const client = new Anthropic();',
+      'export async function ask() {',
+      "  return client.messages.create({ model: 'claude-opus-4-1-20250805', max_tokens: 1024, messages: [] });",
+      '}',
+      '',
+    ].join('\n'),
+  );
+  writeFileSync(
+    join(dir, 'examples', 'agent.ts'),
+    [
+      'import OpenAI from "openai";',
+      'const client = new OpenAI();',
+      'export async function demo() {',
+      "  return client.chat.completions.create({ model: 'gpt-4-0613', messages: [] });",
+      '}',
+      '',
+    ].join('\n'),
+  );
+  return dir;
+}
+
+describe('a call the scanner caps at review', () => {
+  it('is listed in Tier B with the reason audit gives it, and never patched', async () => {
+    const repo = makeCappedRepo();
+    const { stdout } = await runFixLlm([repo, '--skip-gates', '--json']);
+    const report = JSON.parse(stdout) as JsonReport;
+    const at = (file: string) => report.tierB.filter((f) => f.file === file);
+
+    expect(at('src/title.ts').map((f) => [f.modelId, f.line, f.reason])).toEqual([
+      ['gpt-3.5-turbo', 4, 'param_behaviour_change'],
+    ]);
+    expect(at('src/opus.ts').map((f) => [f.modelId, f.line, f.reason])).toEqual([
+      ['claude-opus-4-1-20250805', 4, 'coupled_param_unverified'],
+    ]);
+    expect(at('examples/agent.ts').map((f) => [f.modelId, f.line])).toEqual([['gpt-4-0613', 4]]);
+    expect(report.tierB).toHaveLength(3);
+    expect(report.tierA).toEqual([]);
+  }, 120_000);
+
+  it('does not report the repo as clean, and says why each call is held', async () => {
+    const repo = makeCappedRepo();
+    const { stdout } = await runFixLlm([repo, '--skip-gates']);
+    expect(stdout).not.toContain('Nothing to fix');
+    expect(stdout).toContain('Found: 0 tier A');
+    expect(stdout).toContain('3 tier B');
+    // The scanner's own sentence for each cap reaches the reader, not just a code.
+    expect(stdout).toMatch(/max_completion_tokens/);
+    expect(stdout).toMatch(/max_tokens/);
+  }, 120_000);
+
+  it('fails a --fail-on tierB gate', async () => {
+    const repo = makeCappedRepo();
+    const { exitCode } = await runFixLlm([repo, '--skip-gates', '--fail-on', 'tierB']);
+    expect(exitCode).toBe(1);
+  }, 120_000);
+});
+
 describe('fix-llm --fail-on', () => {
   it('gates on tierB', async () => {
     const repo = makeRepo();
