@@ -5037,5 +5037,41 @@
         "excerpt": "October 23, 2026 | o1-pro-2025-03-19 | o1-pro | gpt-5.6-sol ( reasoning.mode: pro )"
       }
     ]
+  },
+  {
+    "entryId": "anthropic.claude-sonnet-4-5-20250929.retirement-2026-11-30",
+    "provider": "anthropic",
+    "kind": "model_id",
+    "deprecated": "claude-sonnet-4-5-20250929",
+    "replacement": "claude-sonnet-5-5",
+    "status": "deprecated",
+    "shutdownDate": "2026-11-30",
+    "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+    "note": "discovered from the anthropic deprecation table; row read as: November 30, 2026 | claude-sonnet-4-5-20250929 | claude-sonnet-5-5. Detect-only: moving to Claude Sonnet 5.5 needs changes to the request and to how the response is read, which an id swap does not make.",
+    "verification": {
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": false,
+      "quarantineReason": "the replacement, Claude Sonnet 5.5, changes the request and the response, not just the id: Anthropic’s migration guide names, among other changes, five settings that return a 400 error on it (thinking budgets, sampling parameters, assistant prefill, forced tool choice, and thinking type “disabled”) and says thinking runs on requests that omitted it, so code that reads content[0].text breaks; swapping the id alone can turn a call that works today into one that fails, so the change needs a person who can adjust the request and how the response is read",
+      "checkedAt": "2026-10-06",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"claude-sonnet-5-5\" is live in a public catalog",
+        "the deprecation claim for \"claude-sonnet-4-5-20250929\" is self-consistent (status \"deprecated\", shutdown 2026-11-30) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)",
+        "Anthropic’s Claude Sonnet 5.5 migration guide (https://platform.claude.com/docs/en/models/sonnet-5-5/migration-guide) names request settings that return a 400 error on the replacement and says thinking runs by default: an id swap without those changes can break working calls, so this entry is detect-only"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+        "contentHash": "sha256:73391ff2e85ce434e7bfb42f54fd1d0b57a62ab013c8cb906b9ad3c762f7a37a",
+        "retrievedAt": "2026-10-05T03:51:08.630Z",
+        "excerpt": "November 30, 2026 | claude-sonnet-4-5-20250929 | claude-sonnet-5-5"
+      }
+    ]
   }
 ]
