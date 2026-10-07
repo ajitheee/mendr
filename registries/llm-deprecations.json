@@ -4572,15 +4572,15 @@
     ]
   },
   {
-    "entryId": "google.gemini-omni-flash-preview.retirement-2026-09-30",
+    "entryId": "google.gemini-omni-flash-preview.retirement-2026-10-22",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-omni-flash-preview",
     "replacement": "gemini-omni-1.1-flash",
     "status": "deprecated",
-    "shutdownDate": "2026-09-30",
+    "shutdownDate": "2026-10-22",
     "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-    "note": "gemini-omni-flash-preview shuts down 2026-09-30; Google names gemini-omni-1.1-flash, GA since 2026-08-27 on the same Interactions API. Detect-only: the public catalogs do not list the GA id yet.",
+    "note": "gemini-omni-flash-preview shuts down 2026-10-22; Google names gemini-omni-1.1-flash, GA since 2026-08-27 on the same Interactions API. Detect-only: the public catalogs did not list the GA id when last checked (2026-09-18).",
     "verification": {
       "status": "unverified",
       "officialSourceConfirmed": true,
@@ -4592,7 +4592,7 @@
         "provider pages"
       ],
       "reasons": [
-        "Google deprecation page (live 2026-09-18, updated 2026-09-17) matches the stored row: shutdown September 30, 2026, replacement gemini-omni-1.1-flash",
+        "Google deprecation page (read 2026-10-07) states shutdown October 22, 2026, replacement gemini-omni-1.1-flash; on 2026-09-18 it stated September 30, 2026",
         "gemini-omni-1.1-flash is GA per the Google changelog (2026-08-27), the model page (\"Stable\") and pricing (\"now generally available\"); the models overview lists the endpoint but still shows the Gemini Omni Flash card under Preview; its own deprecation row says \"No shutdown date announced\"",
         "not catalog-verified: OpenRouter and models.dev do not list gemini-omni-1.1-flash yet, so the gate refuses it; re-run `mendr verify-registry` once they do",
         "paid tier only, like the preview it replaces; video generation and editing model"
@@ -4601,9 +4601,9 @@
     "evidence": [
       {
         "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-        "contentHash": "sha256:f634c61e6afb848a868052963eef89696dd7ae544aaac846f8d31514c61b9c36",
-        "retrievedAt": "2026-09-14T23:54:46.353Z",
-        "excerpt": "gemini-omni-flash-preview | June 30, 2026 | September 30, 2026 | gemini-omni-1.1-flash"
+        "contentHash": "sha256:0f8321f80b83e858f58c3506f51b2e444623776ff6ab59be880a0bd28e42a8a9",
+        "retrievedAt": "2026-10-07T04:20:16.058Z",
+        "excerpt": "gemini-omni-flash-preview | June 30, 2026 | October 22, 2026 | gemini-omni-1.1-flash"
       }
     ]
   },
@@ -4644,45 +4644,38 @@
     ]
   },
   {
-    "entryId": "google.gemini-2.5-flash-image.retirement-2026-10-02",
+    "entryId": "google.gemini-2.5-flash-image.retirement-2027-03-15",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-2.5-flash-image",
-    "replacement": "gemini-3.1-flash-image",
+    "replacement": "gemini-3.1-flash-lite-image",
     "status": "deprecated",
-    "shutdownDate": "2026-10-02",
+    "shutdownDate": "2027-03-15",
     "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-    "note": "gemini-2.5-flash-image shuts down 2026-10-02. Google's table names gemini-3.1-flash-image-preview, but the same page shut that preview down on 2026-06-25 in favour of gemini-3.1-flash-image, so this entry follows the chain to the GA model. Google's pages name two successors: the pricing page says to migrate to \"Gemini 3.1 Flash Image or Gemini 3.1 Flash Lite Image\", and the image guide strongly recommends Nano Banana 2 Lite (gemini-3.1-flash-lite-image), the cheaper, 1K-only model. Detect-only.",
+    "note": "gemini-2.5-flash-image shuts down 2027-03-15. Google's table names gemini-3.1-flash-lite-image as the recommended replacement. Until the table changed, it named gemini-3.1-flash-image-preview and this entry followed that chain to gemini-3.1-flash-image. Detect-only.",
     "verification": {
       "status": "unverifiable",
       "officialSourceConfirmed": true,
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-18",
+      "checkedAt": "2026-10-07",
       "sources": [
         "provider pages"
       ],
       "reasons": [
-        "Google deprecation page (live 2026-09-18) matches the stored row: shutdown October 2, 2026; the pricing page also says it \"will be shut down on October 2, 2026\"",
-        "replacement CORRECTED from the table's gemini-3.1-flash-image-preview, which the same page shut down on June 25, 2026 with replacement gemini-3.1-flash-image (second evidence ref)",
-        "gemini-3.1-flash-image is GA (\"Stable\") with no shutdown date; paid tier only, like the model it replaces",
-        "not catalog-verified: Mendr's gate treats image-class ids as out-of-class and does not check them against catalogs (OpenRouter and models.dev do list gemini-3.1-flash-image as of 2026-09-18)",
-        "successor is ambiguous across Google's pages (table chain and pricing: gemini-3.1-flash-image; image guide: gemini-3.1-flash-lite-image), so the choice stays with a human"
+        "Google deprecation page (read 2026-10-07) states shutdown March 15, 2027 and recommended replacement gemini-3.1-flash-lite-image; on 2026-09-18 it stated October 2, 2026 and gemini-3.1-flash-image-preview",
+        "gemini-3.1-flash-lite-image is listed on the same page with no shutdown date announced",
+        "not catalog-verified: Mendr’s gate treats image-class ids as out-of-class and does not check them against catalogs",
+        "Google’s pricing page named both gemini-3.1-flash-image and gemini-3.1-flash-lite-image when read on 2026-09-18, so the choice of successor stays with a human"
       ]
     },
     "evidence": [
       {
         "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-        "contentHash": "sha256:f634c61e6afb848a868052963eef89696dd7ae544aaac846f8d31514c61b9c36",
-        "retrievedAt": "2026-09-14T23:54:46.353Z",
-        "excerpt": "gemini-2.5-flash-image | October 2, 2025 | October 2, 2026 | gemini-3.1-flash-image-preview"
-      },
-      {
-        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-        "contentHash": "sha256:f634c61e6afb848a868052963eef89696dd7ae544aaac846f8d31514c61b9c36",
-        "retrievedAt": "2026-09-14T23:54:46.353Z",
-        "excerpt": "gemini-3.1-flash-image-preview | February 26, 2026 | June 25, 2026 | gemini-3.1-flash-image"
+        "contentHash": "sha256:0f8321f80b83e858f58c3506f51b2e444623776ff6ab59be880a0bd28e42a8a9",
+        "retrievedAt": "2026-10-07T04:20:16.058Z",
+        "excerpt": "gemini-2.5-flash-image | October 2, 2025 | March 15, 2027 | gemini-3.1-flash-lite-image"
       }
     ]
   },
