@@ -105,7 +105,8 @@ model-level action from `highestTier`.**
   the README's Tier B table says. Before `v0.5.9-alpha`, a call held for its
   surface (a sample tree, a gateway-prefixed id, a wrapper class, a proxy client)
   was reported as `platform_blocked`; it is now `surface_capped`, and
-  `platform_blocked` means a `deployment` key and nothing else.
+  `platform_blocked` means a value under a deployment-named key or identifier
+  (`deployment`, `deploymentName`, `deployment_name`).
 - `usageVerdict`: `"confirmed"` (a live model argument) · `"unverified"` (not tied
   to a live call) · `"n/a"` (a data position).
 

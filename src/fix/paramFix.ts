@@ -226,23 +226,68 @@ export function withoutHeldCalls(sites: ParamMatch[], held: ReadonlyArray<HeldLi
   return sites.filter((site) => !isHeldSite(site, reasonsByNode));
 }
 
+/**
+ * A site is held when its request object is held, or when that object sits inside a held
+ * request: `fallbacks: [{ model, max_tokens }]` or `override: { … }` within a held call's own
+ * argument. The nested object's literal is data to the scan (it is not a call argument), so its
+ * own verdict cannot say the call is held; the request it is part of can. (Review of PR #50,
+ * round two: the nested `max_tokens` was still renamed inside a call listed as held.)
+ */
 function isHeldSite(site: ParamMatch, reasonsByNode: ReadonlyMap<Node, (string | undefined)[]>): boolean {
-  const modelProp = site.object.getProperty('model');
+  return requestObjectsAround(site.object).some((obj) => isHeldObject(obj, reasonsByNode));
+}
+
+/**
+ * `obj`, then every object literal it is nested in, climbing only through one argument's own
+ * expression tree (objects, arrays, spreads, parentheses, casts). The climb stops at anything
+ * else, so it never leaves the request: not through a call, a function body or a statement.
+ */
+function requestObjectsAround(obj: ObjectLiteralExpression): ObjectLiteralExpression[] {
+  const out = [obj];
+  let parent = obj.getParent();
+  while (
+    parent &&
+    (Node.isObjectLiteralExpression(parent) ||
+      Node.isPropertyAssignment(parent) ||
+      Node.isArrayLiteralExpression(parent) ||
+      Node.isSpreadAssignment(parent) ||
+      Node.isSpreadElement(parent) ||
+      Node.isParenthesizedExpression(parent) ||
+      Node.isAsExpression(parent) ||
+      Node.isSatisfiesExpression(parent) ||
+      Node.isNonNullExpression(parent))
+  ) {
+    if (Node.isObjectLiteralExpression(parent)) out.push(parent);
+    parent = parent.getParent();
+  }
+  return out;
+}
+
+/** Is this request object one the scan held, judged by the rule the scan applied to its model? */
+function isHeldObject(
+  obj: ObjectLiteralExpression,
+  reasonsByNode: ReadonlyMap<Node, (string | undefined)[]>,
+): boolean {
+  const modelProp = obj.getProperty('model');
   const literal = modelLiteralNode(modelProp);
   if (!literal) return false;
   const reasons = reasonsByNode.get(literal);
   if (!reasons) return false;
-  // The call's own literal: the scan judged this very call.
+  // The object's own literal: the scan judged this very request.
   if (Node.isPropertyAssignment(modelProp) && modelProp.getInitializer() === literal) return true;
   // Through a declaration. The scan judges a declaration by the consumers in its own file
   // (collectTsSinks is per file), so a consumer elsewhere was never part of that verdict.
-  if (literal.getSourceFile() !== site.object.getSourceFile()) return false;
-  // An example tree holds every real call in the file, so it holds this one.
-  if (reasons.includes(TS_EXAMPLE_CALL_REASON)) return true;
-  // Otherwise a consumer's surface held the declaration: is THIS call's surface one of them?
-  const call = enclosingCallOfObject(site.object);
+  if (literal.getSourceFile() !== obj.getSourceFile()) return false;
+  // Judge THIS consumer the way the scan judges a literal written in it (classifyByEnclosure,
+  // then the example-tree rule in findModelIdLiterals).
+  const call = enclosingCallOfObject(obj);
+  const wrapperCtor = !call && enclosingNewOfObject(obj) !== undefined && !hasCatalogSiblings(obj);
+  if (reasons.includes(TS_EXAMPLE_CALL_REASON)) {
+    // An example tree holds every real request in the file, and nothing that is data.
+    return call ? classifyCallSurface(call).position !== 'data' : wrapperCtor;
+  }
   if (call) return classifyCallSurface(call).position === 'surface_capped';
-  return enclosingNewOfObject(site.object) !== undefined && !hasCatalogSiblings(site.object);
+  return wrapperCtor;
 }
 
 /** Keep only the param sites whose model literal pass 1 swapped (see LlmFixOptions). */

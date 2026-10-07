@@ -63,8 +63,9 @@ export const TIER_B_REASON_TEXT: Record<TierBReason, string> = {
     'the model value is assembled at runtime, so no single literal here can carry the migration.',
   insufficient_dataflow:
     'the value could not be traced to a definite use, so the migration cannot be shown to be safe.',
-  // WHAT WAS ACTUALLY CHECKED: the literal IS a live model argument and the
-  // replacement IS verified -- this is not a doubt about either. What is missing is
+  // WHAT WAS ACTUALLY CHECKED: the literal IS a live model argument -- this is not a doubt
+  // about the position. The cap is applied before the verification gate, so the replacement
+  // may be verified or not; the replacement verdict row says which. What is missing is
   // the REQUEST around the id: the replacement belongs to a model family the registry
   // records parameter rules for, this call passes a model-dependent parameter, and no
   // rule covers that parameter for that model. mendr has NOT tested the parameter
@@ -72,8 +73,9 @@ export const TIER_B_REASON_TEXT: Record<TierBReason, string> = {
   // survives the swap. Silence in the registry is not compatibility.
   coupled_param_unverified:
     'sits in a live model argument, but the replacement model belongs to a family whose accepted request parameters differ, and this call passes a parameter no migration rule covers; swapping the id alone could leave a request the provider rejects.',
-  // WHAT WAS ACTUALLY CHECKED: the literal IS a live model argument, the replacement IS
-  // verified, and a rule DOES cover the parameter, but the rule starts applying only on the
+  // WHAT WAS ACTUALLY CHECKED: the literal IS a live model argument and a rule DOES cover the
+  // parameter (the replacement may be verified or not, as for coupled_param_unverified above;
+  // the replacement verdict row says which), but the rule starts applying only on the
   // replacement, so it changes what the call asks for (a token limit that now also counts
   // reasoning tokens; a temperature that is dropped). The request will be accepted; whether
   // the value still does what it did is the question, and only a person can answer it.
@@ -520,7 +522,8 @@ export const TIER_B_USAGE_VERDICT_TEXT: Record<TierBReason, string> = {
   surface_capped: 'unverified -- held for where or how it is used',
   // Like `replacement_unverified`, the USAGE here is fine and saying otherwise would
   // send the reviewer looking for the wrong thing: the literal is a confirmed live
-  // model argument and the mapping is verified. What is unproven is the REQUEST
+  // model argument (the mapping's own status is the replacement verdict row's to say).
+  // What is unproven is the REQUEST
   // around it, so this row confirms the usage and lets the `reason:` row carry the
   // parameter.
   coupled_param_unverified: 'confirmed live model argument -- the request parameters are what is unverified',

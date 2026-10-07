@@ -154,12 +154,74 @@ describe('withoutHeldCalls: a call held at review is never edited, and only a he
   ].join('\n');
 
   /** The param sites the guard keeps, as `model:max_tokens value`, for one in-memory project. */
-  function keptSites(project: Project): string[] {
-    const held = findModelIdLiterals(project, HELD_REGISTRY).filter((m) => m.position === 'surface_capped');
-    return withoutHeldCalls(findParamSites(project, HELD_REGISTRY), held).map(
+  function keptSites(project: Project, registry: LlmRegistry = HELD_REGISTRY): string[] {
+    const held = findModelIdLiterals(project, registry).filter((m) => m.position === 'surface_capped');
+    return withoutHeldCalls(findParamSites(project, registry), held).map(
       (s) => `${s.model}:${s.paramProp.getInitializer()?.getText()}`,
     );
   }
+
+  // REGRESSION (review of PR #50, round two): a parameter in an object NESTED inside a held
+  // call's request (a fallback list, an override block) was still renamed. The nested literal is
+  // data to the scan, so only the request it sits in can say the call is held.
+  it('skips the nested request objects of a held call, and keeps them in an ordinary call', () => {
+    const nested = (receiver: string) => `${HEADER}
+export async function run() {
+  return ${receiver}.chat.completions.create({
+    model: "o3-mini",
+    max_tokens: 50,
+    messages: [],
+    fallbacks: [{ model: "o3-mini", max_tokens: 51 }],
+    override: { model: "o3-mini", max_tokens: 52 },
+  });
+}
+`;
+    expect(keptSites(inMemoryProject('src/held.ts', nested('proxy')))).toEqual([]);
+    expect(keptSites(inMemoryProject('src/plain.ts', nested('client'))).sort()).toEqual([
+      'o3-mini:50',
+      'o3-mini:51',
+      'o3-mini:52',
+    ]);
+  });
+
+  it('stops climbing at the request: a call inside a held call\'s callback is its own call', () => {
+    const project = inMemoryProject(
+      'src/retry.ts',
+      `${HEADER}
+export async function run() {
+  return proxy.chat.completions.create({
+    model: "o3-mini",
+    messages: [],
+    onRetry: () => client.chat.completions.create({ model: "o1-mini", max_tokens: 2 }),
+  });
+}
+`,
+    );
+    expect(keptSites(project)).toEqual(['o1-mini:2']);
+  });
+
+  it('holds a wrapper class fed a held const, and not a catalog row fed the same const', () => {
+    // max_tokens is itself a catalog sibling key, so this branch needs a rule on another
+    // parameter to be reachable at all: temperature, removed on o3 here.
+    const registry: LlmRegistry = [
+      ...HELD_REGISTRY,
+      { provider: 'openai', kind: 'param_removal', param: 'temperature', on_models: ['o3'] },
+    ];
+    const project = inMemoryProject(
+      'src/wrap.ts',
+      `${HEADER}
+declare class Wrapper { constructor(o: object); }
+const MODEL = "o3-mini";
+export async function run() {
+  await proxy.chat.completions.create({ model: MODEL, messages: [] });
+  const w = new Wrapper({ model: MODEL, temperature: 0 });
+  const card = new Wrapper({ model: MODEL, temperature: 1, label: "o3 mini" });
+  return { w, card };
+}
+`,
+    );
+    expect(keptSites(project, registry)).toEqual(['o3-mini:1']);
+  });
 
   it('skips a held call and keeps an ordinary one in the same file', () => {
     const project = inMemoryProject(
@@ -221,6 +283,22 @@ export async function demo() {
 `,
     );
     expect(keptSites(project)).toEqual([]);
+  });
+
+  it('in an example tree, keeps a standalone config object fed a held const, as the scan does', () => {
+    // An inline `{ model: "o3-mini", max_tokens }` that is not a request is example DATA to the
+    // scan, never held; the same object fed through a held const must be judged the same way.
+    const project = inMemoryProject(
+      'examples/cfg.ts',
+      `${HEADER}
+const MODEL = "o3-mini";
+export const cfg = { model: MODEL, max_tokens: 43 };
+export async function demo() {
+  return client.chat.completions.create({ model: MODEL, max_tokens: 1 });
+}
+`,
+    );
+    expect(keptSites(project)).toEqual(['o3-mini:43']);
   });
 
   it('skips a direct call the scan held for its parameters, though its surface is ordinary', () => {
