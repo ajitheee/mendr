@@ -4,9 +4,11 @@ import type { LlmModelIdDeprecation, LlmRegistry, SourceLocation } from '../type
 import {
   classifyCallSurface,
   collectTsSinks,
+  consumersOf,
   enclosingCallOfObject,
   enclosingNewOfObject,
   hasCatalogSiblings,
+  insideArgumentsOf,
   isCliModelOptionDefault,
   isCliOptionCall,
   isInDefaultContainer,
@@ -15,6 +17,7 @@ import {
   TS_DEFAULT_CONTAINER_REASON,
   TS_EXAMPLE_REASON,
   TS_EXAMPLE_CALL_REASON,
+  TS_IN_HELD_CALL_REASON,
   TS_MODEL_FACTORIES,
   TS_PREFIXED_REASON,
   TS_WRAPPER_CTOR_REASON,
@@ -122,6 +125,11 @@ export interface LiteralMatch {
   reason?: string;
   /** True when the literal is `provider/id` or `provider:id` — a gateway/registry selector, never swapped. */
   prefixed?: boolean;
+  /**
+   * For a held (`surface_capped`) match: the calls or `new` expressions the scan holds because of
+   * it. Nothing written inside their arguments is edited by any pass (see holdWholeCalls).
+   */
+  heldCalls?: Node[];
 }
 
 /** A matched-but-rejected literal (used as data), for Tier C locate-only reporting. */
@@ -769,6 +777,7 @@ export function findModelIdLiterals(
     // correct selector classification from the same parser. The analysis was already
     // right; the path rule was throwing it away.
     const sinks = collectTsSinks(sf);
+    const fileStart = out.length;
 
     const literals = [
       ...sf.getDescendantsOfKind(SyntaxKind.StringLiteral),
@@ -867,9 +876,100 @@ export function findModelIdLiterals(
         });
       }
     }
+    holdWholeCalls(out, fileStart, sinks);
   }
 
   return out;
+}
+
+/**
+ * The calls (or `new` expressions) a matched literal's value reaches, as the scan sees it: the
+ * call its options object is passed to, the factory call it is an argument of, or, for a
+ * model-named declaration, the consumer calls in scope (the sink rule's own view).
+ */
+function callsFedBy(literal: Node, sinks: TsSinkMap): { calls: Node[]; declaration: boolean } {
+  let node: Node = literal;
+  let parent = node.getParent();
+  while (parent && isValueTransparent(parent, node)) {
+    node = parent;
+    parent = node.getParent();
+  }
+  if (!parent) return { calls: [], declaration: false };
+  if (Node.isPropertyAssignment(parent) && parent.getInitializer() === node) {
+    const obj = parent.getParent();
+    const call = obj ? enclosingCallOfObject(obj) : undefined;
+    if (call) return { calls: [call], declaration: false };
+    const ctor = obj ? enclosingNewOfObject(obj) : undefined;
+    return { calls: ctor ? [ctor] : [], declaration: false };
+  }
+  if ((Node.isVariableDeclaration(parent) || Node.isPropertyDeclaration(parent)) && parent.getInitializer() === node) {
+    return { calls: consumersOf(parent, parent.getName(), sinks), declaration: true };
+  }
+  if (
+    Node.isBinaryExpression(parent) &&
+    parent.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
+    parent.getRight() === node
+  ) {
+    const left = parent.getLeft();
+    const name = Node.isIdentifier(left)
+      ? left.getText()
+      : Node.isPropertyAccessExpression(left)
+        ? left.getName()
+        : undefined;
+    return { calls: name ? consumersOf(parent, name, sinks) : [], declaration: true };
+  }
+  if (Node.isCallExpression(parent) && (parent.getArguments() as Node[]).includes(node)) {
+    return { calls: [parent], declaration: false };
+  }
+  return { calls: [], declaration: false };
+}
+
+/**
+ * ONE CALL, ONE VERDICT. Records on every held match the calls it holds (LiteralMatch.heldCalls),
+ * then holds every other model value written inside those calls' arguments, or declared and fed
+ * into one of them. Without this, a held call could still be edited in part: the plain branch of
+ * `useGw ? "openai/o3-mini" : "o3-mini"` was a Tier A swap inside a call the same report listed as
+ * held, and so was an `openai("o3-mini")` factory call nested in a held request (review of PR #50,
+ * round four). The param pass reads the same `heldCalls`, so the scan and every write agree on
+ * what a held call is.
+ *
+ * A declaration the sink rule held is held because of its CAPPED consumers, and only those calls
+ * are held for it: an ordinary consumer of the same const stays an ordinary call. An example tree
+ * or a gateway prefix holds every consumer.
+ */
+function holdWholeCalls(out: LiteralMatch[], from: number, sinks: TsSinkMap): void {
+  const fed = new Map<LiteralMatch, { calls: Node[]; declaration: boolean }>();
+  const feeds = (m: LiteralMatch) => {
+    let f = fed.get(m);
+    if (!f) {
+      f = callsFedBy(m.node, sinks);
+      fed.set(m, f);
+    }
+    return f;
+  };
+  const held = new Set<Node>();
+  for (let i = from; i < out.length; i++) {
+    const m = out[i]!;
+    if (m.position !== 'surface_capped') continue;
+    const { calls, declaration } = feeds(m);
+    const everyConsumer = m.reason === TS_EXAMPLE_CALL_REASON || m.reason === TS_PREFIXED_REASON;
+    m.heldCalls =
+      declaration && !everyConsumer
+        ? calls.filter((c) => Node.isCallExpression(c) && classifyCallSurface(c).position === 'surface_capped')
+        : calls;
+    for (const c of m.heldCalls) held.add(c);
+  }
+  if (held.size === 0) return;
+  for (let i = from; i < out.length; i++) {
+    const m = out[i]!;
+    if (m.position !== 'model_arg') continue;
+    const { calls, declaration } = feeds(m);
+    if (insideArgumentsOf(m.node, held) || (declaration && calls.some((c) => held.has(c)))) {
+      m.position = 'surface_capped';
+      m.reason = TS_IN_HELD_CALL_REASON;
+      m.heldCalls = [];
+    }
+  }
 }
 
 /**

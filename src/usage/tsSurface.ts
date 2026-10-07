@@ -101,6 +101,14 @@ export const TS_WRAPPER_CTOR_REASON =
   'model argument to a constructor: a real selection, but the constructor is not a provider SDK request, so the swap is not verifiable here — review';
 export const TS_EXAMPLE_CALL_REASON =
   'example / sample tree, but the id is passed to a real provider request here: runnable, so it breaks at retirement — review, never an unattended swap';
+/**
+ * A model value that would be an ordinary swap on its own, but sits inside the arguments of a
+ * call the scan holds (the other branch of a ternary whose first branch is a gateway id, a
+ * `openai("…")` factory call inside a held request), or is a declaration a held call uses.
+ * One call gets one verdict: patching part of a held call is still patching it.
+ */
+export const TS_IN_HELD_CALL_REASON =
+  'inside a call that is held for review, so it is held with that call rather than patched in part';
 export const TS_DEFAULT_UNTRACED_REASON =
   'model-named declaration not traced to any provider request in this file';
 export const TS_DEFAULT_CONTAINER_REASON =
@@ -619,8 +627,30 @@ function sinkInScope(decl: Node, call: CallExpression): boolean {
  * every in-scope consumer is a resolved first-party request inside a function.
  * No consumer → `usage_unverified` (review). Any capped consumer → the cap wins.
  */
+/** The calls in scope of a model-named declaration that consume it (the sink rule's view of its uses). */
+export function consumersOf(decl: Node, name: string, sinks: TsSinkMap | undefined): CallExpression[] {
+  return (sinks?.get(name) ?? []).filter((c) => sinkInScope(decl, c));
+}
+
+/**
+ * Is `node` written inside the ARGUMENTS of one of `calls` (a call or `new` expression), at any
+ * depth: its options object, anything nested in it, a callback or another call inside it?
+ * Position only, so it agrees with the scan by construction: a call the scan held is held as a
+ * whole, whatever shape its arguments take.
+ */
+export function insideArgumentsOf(node: Node, calls: ReadonlySet<Node>): boolean {
+  if (calls.size === 0) return false;
+  let child: Node = node;
+  for (let parent = node.getParent(); parent; child = parent, parent = parent.getParent()) {
+    if ((Node.isCallExpression(parent) || Node.isNewExpression(parent)) && calls.has(parent)) {
+      if ((parent.getArguments() as Node[]).includes(child)) return true;
+    }
+  }
+  return false;
+}
+
 export function judgeDeclarationSinks(decl: Node, name: string, sinks: TsSinkMap | undefined): SurfaceClassification {
-  const calls = (sinks?.get(name) ?? []).filter((c) => sinkInScope(decl, c));
+  const calls = consumersOf(decl, name, sinks);
   if (calls.length === 0) return { position: 'usage_unverified', reason: TS_DEFAULT_UNTRACED_REASON };
   for (const call of calls) {
     const v = classifyCallSurface(call);

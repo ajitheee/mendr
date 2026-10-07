@@ -60,8 +60,8 @@ The fix pass still writes the edit when a person approves. Only the automatic pa
   includes this probe's `gpt-3.5-turbo` row and every Anthropic call that passes `max_tokens`. It
   shipped that way in `v0.5.8-alpha`, and was fixed in
   [PR #47](https://github.com/ajitheee/mendr/pull/47) (`138181f`). A follow-up stopped the
-  parameter pass from editing a held call's own request objects (see the README's
-  `surface_capped` row for what is not yet covered), and gave calls held for their surface
+  parameter pass from editing anything written inside a held call's arguments (see the
+  README's `surface_capped` row for what is not covered), and gave calls held for their surface
   their own reason code, `surface_capped`, in place of `platform_blocked`.
 - **No command writes the edit, approved or not.** `migrate --only gpt-3.5-turbo` on that call
   reports "No verified Tier-A migration was found. Nothing to apply and nothing to verify."

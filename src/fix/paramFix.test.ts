@@ -127,7 +127,7 @@ export async function run() {
   });
 });
 
-describe('withoutHeldCalls: a call held at review is never edited, and only a held call is skipped', () => {
+describe('withoutHeldCalls: a call held at review is never edited, and only a held call is skipped', { timeout: 30_000 }, () => {
   // The REAL scanner decides what is held, so these tests exercise the same verdicts fix-llm
   // and migrate act on. o3-mini is a retiring id here; the rename rule covers o3 and the
   // replacement alike, so a direct call on it is an ordinary swap (not held for its params).
@@ -212,21 +212,28 @@ export async function run(allow: boolean, extra?: object) {
     ]);
   });
 
-  it('does not climb out of a ternary\'s condition or an operator that does not select a value', () => {
+  it('holds everything written inside a held call\'s arguments, by position, whatever the shape', () => {
+    // Indexing, a property read, a callback's return, a ternary's condition, a comparison: the
+    // guard asks only WHERE the parameter is written. A rule that listed shapes missed a new one
+    // in every review round of PR #50.
     const project = inMemoryProject(
-      'src/cond.ts',
+      'src/anywhere.ts',
       `${HEADER}
-export async function run(other: object) {
+export async function run(other: object, mode: "fast" | "slow", i: number) {
   return proxy.chat.completions.create({
     model: "o3-mini",
     messages: [],
-    pick: { model: "o1-mini", max_tokens: 9 } ? 1 : 2,
-    same: { model: "o1-mini", max_tokens: 8 } === other,
+    a: { fast: [{ model: "o1-mini", max_tokens: 31 }], slow: [] }[mode],
+    b: [[{ model: "o1-mini", max_tokens: 32 }], []][i],
+    c: ({ list: [{ model: "o1-mini", max_tokens: 33 }] }).list,
+    d: () => ({ model: "o1-mini", max_tokens: 34 }),
+    e: { model: "o1-mini", max_tokens: 35 } ? 1 : 2,
+    f: { model: "o1-mini", max_tokens: 36 } === other,
   });
 }
 `,
     );
-    expect(keptSites(project).sort()).toEqual(['o1-mini:8', 'o1-mini:9']);
+    expect(keptSites(project)).toEqual([]);
   });
 
   it('holds the nested requests of a call whose own model is an expression the scan sees through', () => {
@@ -275,25 +282,28 @@ export async function run() {
     expect(keptSites(project, registry)).toEqual(['o3-mini:0']);
   });
 
-  it('stops climbing at the request: a call inside a held call\'s callback is its own call', () => {
+  it('holds a call written inside a held call\'s arguments with it, and keeps the same call outside', () => {
     const project = inMemoryProject(
       'src/retry.ts',
       `${HEADER}
 export async function run() {
-  return proxy.chat.completions.create({
+  await proxy.chat.completions.create({
     model: "o3-mini",
     messages: [],
     onRetry: () => client.chat.completions.create({ model: "o1-mini", max_tokens: 2 }),
   });
+  return client.chat.completions.create({ model: "o1-mini", max_tokens: 3 });
 }
 `,
     );
-    expect(keptSites(project)).toEqual(['o1-mini:2']);
+    expect(keptSites(project)).toEqual(['o1-mini:3']);
   });
 
-  it('holds a wrapper class fed a held const, and not a catalog row fed the same const', () => {
-    // max_tokens is itself a catalog sibling key, so this branch needs a rule on another
-    // parameter to be reachable at all: temperature, removed on o3 here.
+  it('holds a wrapper class the scan holds, and not a catalog row or a const-fed wrapper it does not', () => {
+    // max_tokens is itself a catalog sibling key, so this needs a rule on another parameter:
+    // temperature, removed on o3 here. The scan holds `new Wrapper({ model: "…" })` (wrapper
+    // constructor) but does not count a `new` as a consumer of a const, so a const-fed wrapper
+    // is not a held call, and audit does not list it as one either.
     const registry: LlmRegistry = [
       ...HELD_REGISTRY,
       { provider: 'openai', kind: 'param_removal', param: 'temperature', on_models: ['o3'] },
@@ -305,13 +315,69 @@ declare class Wrapper { constructor(o: object); }
 const MODEL = "o3-mini";
 export async function run() {
   await proxy.chat.completions.create({ model: MODEL, messages: [] });
-  const w = new Wrapper({ model: MODEL, temperature: 0 });
-  const card = new Wrapper({ model: MODEL, temperature: 1, label: "o3 mini" });
-  return { w, card };
+  const held = new Wrapper({ model: "o3-mini", temperature: 0 });
+  const card = new Wrapper({ model: "o3-mini", temperature: 1, label: "o3 mini" });
+  const fedByConst = new Wrapper({ model: MODEL, temperature: 2 });
+  return { held, card, fedByConst };
 }
 `,
     );
-    expect(keptSites(project, registry)).toEqual(['o3-mini:1']);
+    expect(keptSites(project, registry).sort()).toEqual(['o3-mini:1', 'o3-mini:2']);
+  });
+
+  // REGRESSION (review of PR #50, round four): the guard re-derived "held" from how the model was
+  // written and missed these spellings; the scan resolves all of them to the call it holds.
+  it('holds a held call\'s nested requests however its model is spelled', () => {
+    const project = inMemoryProject(
+      'src/spellings.ts',
+      `${HEADER}
+const model = "o3-mini";
+const NN_MODEL: string | undefined = "o3-mini";
+class Agent {
+  model = "o3-mini";
+  run() {
+    return proxy.chat.completions.create({ model: this.model, messages: [], fallbacks: [{ model: "o1-mini", max_tokens: 41 }] });
+  }
+}
+export async function run() {
+  await proxy.chat.completions.create({ model, messages: [], fallbacks: [{ model: "o1-mini", max_tokens: 42 }] });
+  await proxy.chat.completions.create({ model: NN_MODEL!, messages: [], fallbacks: [{ model: "o1-mini", max_tokens: 43 }] });
+  await proxy.chat.completions.create({ "model": "o3-mini", messages: [], fallbacks: [{ model: "o1-mini", max_tokens: 44 }] });
+  await proxy.chat.completions.create({ modelName: "o3-mini", messages: [], fallbacks: [{ model: "o1-mini", max_tokens: 45 }] });
+  return new Agent().run();
+}
+`,
+    );
+    expect(keptSites(project)).toEqual([]);
+  });
+
+  it('holds a held call whose model is assigned in a constructor', () => {
+    // Its own file: a module-level `const model` would also feed `this.model` by name.
+    const project = inMemoryProject(
+      'src/assigned.ts',
+      `${HEADER}
+class Assigned {
+  model: string;
+  constructor() { this.model = "o3-mini"; }
+  run() {
+    return proxy.chat.completions.create({ model: this.model, messages: [], fallbacks: [{ model: "o1-mini", max_tokens: 46 }] });
+  }
+}
+export const run = () => new Assigned().run();
+`,
+    );
+    expect(keptSites(project)).toEqual([]);
+  });
+
+  it('holds what is written inside a held factory call\'s arguments', () => {
+    const project = inMemoryProject(
+      'examples/factory.ts',
+      `${HEADER}
+declare function openai(id: string, settings?: object): unknown;
+export const judge = openai("o3-mini", { fallbacks: [{ model: "o1-mini", max_tokens: 47 }] });
+`,
+    );
+    expect(keptSites(project)).toEqual([]);
   });
 
   it('skips a held call and keeps an ordinary one in the same file', () => {

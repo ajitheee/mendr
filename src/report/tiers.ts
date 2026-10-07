@@ -58,7 +58,7 @@ export const TIER_B_REASON_TEXT: Record<TierBReason, string> = {
   //     prefix), so the sentence makes no claim that the hold is "not about the id".
   // The list is "such as": there are more rules.
   surface_capped:
-    'is held for review because of where or how it is used, such as in a sample tree, as a gateway-prefixed id, behind a wrapper class, through a proxy or partner client or one mendr cannot resolve, or in a request made at import time; an unattended swap is not safe there. On an Azure client the value names a deployment, so the change may be a provisioning one.',
+    'is held for review because of where or how it is used, such as in a sample tree, as a gateway-prefixed id, behind a wrapper class, through a proxy or partner client or one mendr cannot resolve, in a request made at import time, or inside a call held for one of these; an unattended swap is not safe there. On an Azure client the value names a deployment, so the change may be a provisioning one.',
   dynamic_model_value:
     'the model value is assembled at runtime, so no single literal here can carry the migration.',
   insufficient_dataflow:
