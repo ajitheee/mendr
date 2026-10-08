@@ -572,7 +572,8 @@ program
     }
 
     const modelMatches = findModelIdLiterals(scanProject, registry, resolved);
-    // A call held at review is never edited, its request included (see withoutHeldCalls).
+    // Skip param sites in a call held at review, as far as withoutHeldCalls can tie them to it
+    // (the README's "Held calls: what is and is not protected" lists the shapes it cannot yet).
     const paramMatches = withoutHeldCalls(
       findParamSites(scanProject, registry),
       modelMatches.filter((m) => m.position === 'surface_capped'),
