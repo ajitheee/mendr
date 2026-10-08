@@ -319,7 +319,7 @@ Two further codes, `dynamic_model_value` and `insufficient_dataflow`, exist in t
 - a nested request reached by indexing, a property read, a callback, or a call inside the arguments (`.filter(Boolean)`, `.map(…)`);
 - a request built in a variable, or spread in from one.
 
-A second model value inside a held call that is not itself held can still be swapped: the plain branch of `useGw ? 'openai/…' : '…'`, or a factory call such as `openai('…')` inside the request. Python has no parameter pass; a model value inside a held Python call can be swapped the same way. A call is held only when a retiring id sits in it (under `model` or another model-like key). A sample or proxy call with no retiring id is not held, and neither is a call mendr reports as Tier C or as an untraced const (`usage_unverified`); parameter rules apply to those like any other.
+A second model value inside a held call that is not itself held can still be swapped: the plain branch of `useGw ? 'openai/…' : '…'`, or a factory call such as `openai('…')` inside the request. Python has no parameter pass; a model value inside a held Python call can be swapped the same way. A call can be held only when a retiring id reaches it: in the call under `model` or another model-like key, as a model factory's argument such as `openai('…')`, or through a same-file const the call uses. A sample or proxy call with no retiring id is not held, and neither is a call mendr reports as Tier C or as an untraced const (`usage_unverified`); parameter rules apply to those like any other.
 
 A Tier B finding prints like this — location, both ids, **each dimension on its own row**, both forms of the reason, and the record to go read:
 
