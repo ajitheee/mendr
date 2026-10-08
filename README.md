@@ -315,11 +315,11 @@ Two further codes, `dynamic_model_value` and `insufficient_dataflow`, exist in t
 
 **Held calls: what is and is not protected.** The model id that put a call on hold at review (`surface_capped`, `coupled_param_unverified`, `param_behaviour_change`) is never swapped. `fix-llm --write` and `migrate` also skip parameter edits (such as renaming `max_tokens`) that they can tie to the held call. That covers its options object, and objects nested in it through objects, arrays, spreads, casts, ternaries, `||`, `??` or `&&`, when the call's model is a string literal, a `||` / `??` / ternary of literals, or a const declared in the same file. Not covered yet, so a parameter rule can still edit a held call's request:
 
-- the held call's model written as shorthand `{ model }`, `this.model`, `MODEL!`, a quoted `"model"` key or `modelName`;
+- the held call's model written as shorthand `{ model }`, `this.model`, `MODEL!` or a quoted `"model"` key, or the held id under any model-like key other than `model` (`modelName`, `modelId`, `model_name`, `fallbackModel`, …);
 - a nested request reached by indexing, a property read, a callback, or a call inside the arguments (`.filter(Boolean)`, `.map(…)`);
 - a request built in a variable, or spread in from one.
 
-A second model value inside a held call that is not itself held can still be swapped: the plain branch of `useGw ? 'openai/…' : '…'`, or a factory call such as `openai('…')` inside the request. Python has no parameter pass; a model value inside a held Python call can be swapped the same way. Only a call on a retiring id is held: a sample or proxy call on a current model is not, and a parameter rule can still apply to it.
+A second model value inside a held call that is not itself held can still be swapped: the plain branch of `useGw ? 'openai/…' : '…'`, or a factory call such as `openai('…')` inside the request. Python has no parameter pass; a model value inside a held Python call can be swapped the same way. A call is held only when a retiring id sits in it (under `model` or another model-like key). A sample or proxy call with no retiring id is not held, and neither is a call mendr reports as Tier C or as an untraced const (`usage_unverified`); parameter rules apply to those like any other.
 
 A Tier B finding prints like this — location, both ids, **each dimension on its own row**, both forms of the reason, and the record to go read:
 

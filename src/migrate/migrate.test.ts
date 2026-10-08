@@ -86,7 +86,8 @@ describe('runMigration — plan without touching the working tree', () => {
 // the grounds that a rule only applies where a swap happens, and nothing enforced that, so the
 // parameter pass edited calls on models nobody approved, held calls included (the restricted
 // scan cannot see a call as held when its model is not in the restricted registry).
-describe('runMigration --only edits nothing outside the approved swaps', () => {
+// Each case runs a full migration plan, about 2s alone; the timeout leaves room for a loaded machine.
+describe('runMigration --only edits nothing outside the approved swaps', { timeout: 30_000 }, () => {
   const ONLY_REG: LlmRegistry = [
     ...REG,
     { provider: 'openai', kind: 'model_id', deprecated: 'o3-mini', replacement: 'gpt-5.6-sol', status: 'deprecated', shutdownDate: '2026-10-23', verification: autoApplyVerification() },

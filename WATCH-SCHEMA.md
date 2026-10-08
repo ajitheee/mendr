@@ -76,7 +76,7 @@ default branch, and cannot bypass Mendr's deterministic safety gate.
     { "file": "agent_app/simulator.py", "line": 166, "column": 13,
       "tier": "B", "reason": "usage_unverified", "usageVerdict": "unverified" },
     { "file": "agent_app/simulator.py", "line": 12, "column": 5,
-      "tier": "C", "reason": null, "usageVerdict": "n/a" }
+      "tier": "C", "usageVerdict": "n/a" }
   ]
 }
 ```
