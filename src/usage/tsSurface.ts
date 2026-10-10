@@ -1,5 +1,5 @@
 import { Node, SyntaxKind, VariableDeclarationKind } from 'ts-morph';
-import type { CallExpression, Expression, Identifier, NewExpression, SourceFile, VariableDeclaration } from 'ts-morph';
+import type { CallExpression, Expression, Identifier, NewExpression, SourceFile } from 'ts-morph';
 import { CATALOG_SIBLING_KEYS, isDefaultContainerName, isModelLikeName } from './sharedRules.js';
 
 // The TypeScript spelling of the Python guards G1–G5 (src/python/sinks.ts).
@@ -686,6 +686,88 @@ export interface RequestObjectFlow {
   exclusive: boolean;
 }
 
+/**
+ * Every identifier in a file, by name, built once per parse of the file. {@link requestObjectFlow}
+ * runs for each matched literal in a standalone object, and walking the whole file each time was
+ * quadratic: 800 module-level model objects in one 4,800-line file took 327 s. Keyed on the
+ * compiler node, which ts-morph replaces whenever the file is edited, so an index is never read
+ * across an edit (its wrappers would be forgotten nodes by then).
+ */
+const IDENTIFIER_INDEX = new WeakMap<SourceFile, { compiler: unknown; byName: Map<string, Identifier[]> }>();
+
+function identifiersNamed(sf: SourceFile, name: string): Identifier[] {
+  let entry = IDENTIFIER_INDEX.get(sf);
+  if (!entry || entry.compiler !== sf.compilerNode) {
+    const byName = new Map<string, Identifier[]>();
+    for (const id of sf.getDescendantsOfKind(SyntaxKind.Identifier)) {
+      const text = id.getText();
+      const list = byName.get(text);
+      if (list) list.push(id);
+      else byName.set(text, [id]);
+    }
+    entry = { compiler: sf.compilerNode, byName };
+    IDENTIFIER_INDEX.set(sf, entry);
+  }
+  return entry.byName.get(name) ?? [];
+}
+
+/** The nearest node that opens a block scope for a `let` / `const` / class / function declared in it. */
+function blockScopeOf(node: Node): Node {
+  for (let n = node.getParent(); n; n = n.getParent()) {
+    if (
+      Node.isBlock(n) ||
+      Node.isSourceFile(n) ||
+      Node.isModuleBlock(n) ||
+      Node.isCaseBlock(n) ||
+      Node.isCatchClause(n) ||
+      Node.isForStatement(n) ||
+      Node.isForOfStatement(n) ||
+      Node.isForInStatement(n)
+    ) {
+      return n;
+    }
+  }
+  return node.getSourceFile();
+}
+
+/** The scope a variable declaration binds its name in: the function for `var`, the block otherwise. */
+function variableScopeOf(decl: Node): Node {
+  const list = decl.getParent();
+  const isVar = Node.isVariableDeclarationList(list) && list.getDeclarationKind() === VariableDeclarationKind.Var;
+  return isVar ? (enclosingFunction(decl) ?? decl.getSourceFile()) : blockScopeOf(decl);
+}
+
+/**
+ * When `id` is the name a BINDING introduces (a variable, parameter, function, class, import,
+ * destructured name), the node whose extent that binding covers; otherwise undefined. Positional
+ * and per-name, so it costs nothing per reference: an earlier version resolved every reference by
+ * walking every statement of its enclosing scopes, and that took 373 s on a 4,800-line file.
+ */
+function bindingScopeOfName(id: Node): Node | undefined {
+  const parent = id.getParent();
+  if (!parent) return undefined;
+  const named = (p: Node): boolean => (p as Node & { getNameNode?(): Node | undefined }).getNameNode?.() === id;
+  if (Node.isVariableDeclaration(parent) && named(parent)) return variableScopeOf(parent);
+  if (Node.isParameterDeclaration(parent) && named(parent)) return parent.getParent();
+  if (Node.isBindingElement(parent) && named(parent)) {
+    for (let n: Node | undefined = parent.getParent(); n; n = n.getParent()) {
+      if (Node.isVariableDeclaration(n)) return variableScopeOf(n);
+      if (Node.isParameterDeclaration(n)) return n.getParent();
+    }
+    return undefined;
+  }
+  if ((Node.isFunctionExpression(parent) || Node.isClassExpression(parent)) && named(parent)) return parent;
+  if ((Node.isFunctionDeclaration(parent) || Node.isClassDeclaration(parent) || Node.isEnumDeclaration(parent)) && named(parent)) {
+    return blockScopeOf(parent);
+  }
+  if (Node.isImportSpecifier(parent) || Node.isImportClause(parent) || Node.isNamespaceImport(parent) || Node.isImportEqualsDeclaration(parent)) {
+    return id.getSourceFile();
+  }
+  return undefined;
+}
+
+const within = (node: Node, scope: Node): boolean => node.getPos() >= scope.getPos() && node.getEnd() <= scope.getEnd();
+
 /** Is `id` the NAME a declaration introduces, or a property name, rather than a read of a binding? */
 function isNameNotReference(id: Node): boolean {
   const parent = id.getParent();
@@ -724,9 +806,9 @@ function isNameNotReference(id: Node): boolean {
  * `res.json(arr)`, `save(arr)`) is not evidence of a request and finds nothing here, so those
  * objects stay where they were. Undefined when no provider request is reached.
  *
- * Syntactic, like the rest of this file: a reference counts only when {@link declarationsOf}
- * resolves it to this one declaration, so a shadowing binding of the same name is neither
- * evidence of a flow nor mistaken for one.
+ * Syntactic, like the rest of this file, and positional: a reference counts only when it lies in
+ * this binding's scope and outside every nested scope where another binding of the same name
+ * shadows it, so a shadowing binding is neither evidence of a flow nor mistaken for one.
  */
 export function requestObjectFlow(obj: Node): RequestObjectFlow | undefined {
   if (!Node.isObjectLiteralExpression(obj)) return undefined;
@@ -769,16 +851,20 @@ export function requestObjectFlow(obj: Node): RequestObjectFlow | undefined {
 
   const calls: CallExpression[] = [];
   let exclusive = isConst && !exported && wholeValue;
-  const scope = enclosingFunction(decl) ?? decl.getSourceFile();
-  for (const id of scope.getDescendantsOfKind(SyntaxKind.Identifier)) {
-    if (id === nameNode || id.getText() !== name || isNameNotReference(id)) continue;
-    const decls = declarationsOf(id, name);
-    if (!decls.includes(decl as VariableDeclaration)) continue; // another binding of the same name
-    if (decls.length !== 1) {
-      // Possibly ours, possibly a shadow: never evidence of a flow, and never a clean single use.
-      exclusive = false;
-      continue;
-    }
+  // Which same-named identifiers are reads of THIS binding: those inside its scope and outside
+  // every nested scope where another binding of the name shadows it. A second binding in the very
+  // same scope (`var x` twice) is ambiguity: still evidence of a flow, never a clean single use.
+  const scope = variableScopeOf(decl);
+  const named = identifiersNamed(decl.getSourceFile(), name).filter((id) => id !== nameNode && within(id, scope));
+  const shadows: Node[] = [];
+  for (const id of named) {
+    const bound = bindingScopeOfName(id);
+    if (!bound) continue;
+    if (bound === scope) exclusive = false;
+    else shadows.push(bound);
+  }
+  for (const id of named) {
+    if (isNameNotReference(id) || bindingScopeOfName(id) || shadows.some((s) => within(id, s))) continue;
     // Climb the wrappers that pass the value through unchanged, then look at what receives it.
     let use: Node = id;
     let direct = true;

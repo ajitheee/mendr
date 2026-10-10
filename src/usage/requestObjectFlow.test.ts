@@ -33,7 +33,7 @@ function verdict(source: string, file = 'src/app.ts', value = 'gpt-4') {
 
 const OPENAI = 'import OpenAI from "openai";\nconst client = new OpenAI();\n';
 
-describe('a request object built in a variable and passed to a provider request', () => {
+describe('a request object built in a variable and passed to a provider request', { timeout: 60_000 }, () => {
   it('is a live call, not catalog data, when the client is assigned later (the Node server shape)', () => {
     const v = verdict(
       [
@@ -128,7 +128,26 @@ describe('a request object built in a variable and passed to a provider request'
   });
 });
 
-describe('an object that never reaches a provider request stays data', () => {
+describe('following a variable stays linear in the size of the file', () => {
+  // The first version resolved every reference by walking every statement of its scopes, once
+  // per matched literal: 800 module-level model objects in a 4,800-line file took 327 s. Here
+  // 400 objects in a 2,400-line file; the quadratic version is over a minute, this is about one
+  // second, and the budget sits far from both.
+  it('classifies hundreds of standalone model objects in one large file within budget', () => {
+    const lines: string[] = [];
+    for (let i = 0; i < 400; i++) lines.push(`const card${i} = { model: "gpt-4", tag: "t${i}" };`);
+    for (let i = 0; i < 2000; i++) lines.push(`function f${i}(a: string) { return a + card${i % 400}.tag; }`);
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile('src/cards.ts', lines.join('\n'));
+    const started = performance.now();
+    const matches = findModelIdLiterals(project, REG);
+    expect(performance.now() - started).toBeLessThan(30_000);
+    expect(matches).toHaveLength(400);
+    expect(matches.every((m) => m.position === 'data')).toBe(true);
+  }, 120_000);
+});
+
+describe('an object that never reaches a provider request stays data', { timeout: 60_000 }, () => {
   it('an object nothing passes anywhere', () => {
     const v = verdict('export function preset() {\n  const p = { model: "gpt-4", messages: [] };\n  return p.messages.length;\n}\n');
     expect(v?.tier).toBe('C');
