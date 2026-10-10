@@ -6,7 +6,13 @@ import { foldConfigExposure, scanConfigText } from '../config/scanConfig.js';
 import type { ConfigMatch } from '../config/scanConfig.js';
 import type { ExposedModel } from '../watch/exposure.js';
 import { buildInvestigations, type AuditCoverage } from './investigation.js';
-import { NO_RUNTIME_EVIDENCE, runtimeEvidenceFromUsage, type RuntimeEvidence } from '../runtime/evidence.js';
+import {
+  NO_RUNTIME_EVIDENCE,
+  foldObservations,
+  runtimeEvidenceFromUsage,
+  toObservation,
+  type RuntimeEvidence,
+} from '../runtime/evidence.js';
 import { renderAuditReport, type AuditMeta } from '../report/auditReport.js';
 
 const REGISTRY: LlmRegistry = [
@@ -153,6 +159,64 @@ describe('buildInvestigations — usage without any located selector => REVIEW (
     expect(inv.decision).toBe('review');
     expect(inv.locations.selectors).toHaveLength(0);
     expect(inv.reason).toContain('no code or config location was found');
+  });
+});
+
+// The same fine-tune traffic must give the same answer whichever way it arrives. A --runtime
+// file folded ft:babbage-002:... into babbage-002 before the registry was consulted, so the
+// key-free path reported a fine-tune OpenAI runs to 2026-10-23 as retired 2026-09-28, with the
+// base model's auto-appliable swap, while a usage fixture gave its own row's date and a hold.
+describe('buildInvestigations — a fine-tune joins its own row on every runtime path', () => {
+  const held = withheldVerification('quarantined', { quarantineReason: 'a fine-tune cannot be swapped' });
+  const FT_REGISTRY: LlmRegistry = [
+    { provider: 'openai', kind: 'model_id', deprecated: 'babbage-002', replacement: 'gpt-5.6-terra', status: 'retired', shutdownDate: '2026-09-28', verification: autoApplyVerification() },
+    { provider: 'openai', kind: 'model_id', deprecated: 'ft-babbage-002', replacement: 'gpt-5.6-terra', status: 'deprecated', shutdownDate: '2026-10-23', verification: held },
+  ];
+  const TODAY = new Date('2026-10-10T00:00:00Z');
+  const fromFile: RuntimeEvidence = {
+    connected: true,
+    source: 'usage_export',
+    observations: foldObservations(
+      [toObservation({ provider: 'openai', model: 'ft:babbage-002:acme::9abc', requests: 120 })].filter(
+        (o) => o !== null,
+      ),
+    ),
+    notes: [],
+  };
+  const fromApi = runtimeEvidenceFromUsage(
+    auditUsage(
+      [{ provider: 'openai', model: 'ft:babbage-002:acme::9abc', requests: 120, inputTokens: 1, outputTokens: 1, costUsd: 3 }],
+      FT_REGISTRY,
+      TODAY,
+    ),
+  );
+
+  it("dates a runtime-file fine-tune by its own row, held, not by the base model's", () => {
+    const [inv] = buildInvestigations(fromFile, [], TODAY, [], FT_REGISTRY);
+    expect(inv.model).toBe('ft-babbage-002');
+    expect(inv.retirementEvidence.shutdownDate).toBe('2026-10-23');
+    expect(inv.retirementEvidence.replacementVerdict).toBe('quarantined');
+    expect(inv.productionUsage.requests).toBe(120);
+  });
+
+  it('gives the runtime file and the provider usage API the same investigation', () => {
+    const pick = (inv: ReturnType<typeof buildInvestigations>[number]) => ({
+      model: inv.model,
+      entryId: inv.entryId,
+      retirement: inv.retirementEvidence,
+      requests: inv.productionUsage.requests,
+      decision: inv.decision,
+    });
+    const [file] = buildInvestigations(fromFile, [], TODAY, [], FT_REGISTRY);
+    const [api] = buildInvestigations(fromApi, [], TODAY, [], FT_REGISTRY);
+    expect(pick(file)).toEqual(pick(api));
+  });
+
+  it('still joins a fine-tune to its base model when no row covers its fine-tunes', () => {
+    const baseOnly = FT_REGISTRY.filter((e) => e.kind === 'model_id' && !e.deprecated.startsWith('ft-'));
+    const [inv] = buildInvestigations(fromFile, [], TODAY, [], baseOnly);
+    expect(inv.model).toBe('babbage-002');
+    expect(inv.retirementEvidence.shutdownDate).toBe('2026-09-28');
   });
 });
 

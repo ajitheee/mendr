@@ -186,6 +186,99 @@ describe('the 2026-10-23 rows that used to evaporate', () => {
   });
 });
 
+/**
+ * Google's Veo rows as served at ai.google.dev/gemini-api/docs/deprecations on 2026-10-10,
+ * markup unchanged. Until then Google's prefix list had no `veo-`, so these rows were invisible
+ * to discovery and to `check-dates`: a shipped Veo date could never be confirmed, only fail.
+ */
+const GOOGLE_VEO_ROWS = `<table class="pricing-table">
+  <thead>
+    <tr>
+      <td><b>Model</b></td>
+      <td><b>Release date</b></td>
+      <td><b>Shutdown date</b></td>
+      <td><b>Recommended replacement</b></td>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td colspan="4">Preview models</td>
+    </tr>
+    <tr>
+      <td><code translate="no" dir="ltr">veo-3.1-lite-generate-preview</code></td>
+      <td>March 31, 2026</td>
+      <td>October 22, 2026</td>
+      <td><code translate="no" dir="ltr">gemini-omni-1.1-flash</code></td>
+    </tr>
+    <tr>
+      <td><code translate="no" dir="ltr">veo-3.1-generate-preview</code></td>
+      <td>October 15, 2025</td>
+      <td>October 22, 2026</td>
+      <td><code translate="no" dir="ltr">gemini-omni-1.1-flash</code></td>
+    </tr>
+  </tbody>
+</table>`;
+
+describe("Google's Veo rows", () => {
+  it('reads a Veo id with its date and replacement', () => {
+    const { rows, skipped } = extractRows(GOOGLE_VEO_ROWS, 'google');
+    expect(rows.map((r) => r.deprecated)).toEqual(['veo-3.1-lite-generate-preview', 'veo-3.1-generate-preview']);
+    for (const row of rows) {
+      expect(row).toMatchObject({ replacement: 'gemini-omni-1.1-flash', shutdownDate: '2026-10-22' });
+    }
+    expect(skipped).toEqual([]);
+  });
+
+  it('accepts veo- for Google only', () => {
+    expect(extractRows(GOOGLE_VEO_ROWS, 'openai').rows).toHaveLength(0);
+  });
+});
+
+/**
+ * OpenAI's fine-tune rows as served at developers.openai.com/api/docs/deprecations on
+ * 2026-10-10 (two of five, markup unchanged). OpenAI spells a fine-tune row `ft-<base>`; until
+ * then no `ft-` id was read, so babbage-002's fine-tunes, which outlive it by 25 days, were
+ * invisible to discovery and to `check-dates`.
+ */
+const OPENAI_FINE_TUNE_ROWS = `<table class="w-full">
+<thead>
+<tr>
+<th>Shutdown date</th>
+<th>Model snapshot</th>
+<th>Recommended replacement base model</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>October 23, 2026</td>
+<td><code>ft-gpt-4</code></td>
+<td><code>gpt-5.6-sol</code></td>
+</tr>
+<tr>
+<td>October 23, 2026</td>
+<td><code>ft-babbage-002</code></td>
+<td><code>gpt-5.6-terra</code></td>
+</tr>
+</tbody>
+</table>`;
+
+describe("OpenAI's fine-tune rows", () => {
+  it('reads an ft- row with its date and replacement base model', () => {
+    const { rows, skipped } = extractRows(OPENAI_FINE_TUNE_ROWS, 'openai');
+    expect(rows).toEqual([
+      expect.objectContaining({ deprecated: 'ft-gpt-4', replacement: 'gpt-5.6-sol', shutdownDate: '2026-10-23' }),
+      expect.objectContaining({ deprecated: 'ft-babbage-002', replacement: 'gpt-5.6-terra', shutdownDate: '2026-10-23' }),
+    ]);
+    expect(skipped).toEqual([]);
+  });
+
+  it('accepts ft- only in front of a base family OpenAI fine-tunes', () => {
+    const html = `<table><tr><th>Shutdown date</th><th>Model snapshot</th><th>Recommended replacement base model</th></tr>
+      <tr><td>October 23, 2026</td><td><code>ft-something-else</code></td><td><code>gpt-5.6-terra</code></td></tr></table>`;
+    expect(extractRows(html, 'openai').rows).toHaveLength(0);
+  });
+});
+
 describe('several-id cells that are still a human call', () => {
   const { rows, skipped } = extractRows(STILL_SKIPPED_HTML, 'openai');
   const reasons = skipped.map((s) => s.reason).join('\n');

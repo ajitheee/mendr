@@ -14,7 +14,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -50,7 +50,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -86,7 +86,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -110,42 +110,6 @@
   {
     "provider": "google",
     "kind": "model_id",
-    "deprecated": "gemini-2.5-flash-lite-preview-09-2025",
-    "replacement": "gemini-3.1-flash-lite",
-    "status": "retired",
-    "shutdownDate": "2026-03-31",
-    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-    "note": "discovered from the google deprecation table; row read as: gemini-2.5-flash-lite-preview-09-2025 | September 25, 2025 | March 31, 2026 | gemini-3.1-flash-lite",
-    "verification": {
-      "status": "unverified",
-      "officialSourceConfirmed": true,
-      "replacementConfirmed": false,
-      "autoApplyAllowed": false,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "replacement \"gemini-3.1-flash-lite\" is ITSELF deprecated in this registry (deprecated, shutdown 2027-05-07); a migration must not point at a retiring id"
-      ]
-    },
-    "evidence": [
-      {
-        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-        "contentHash": "sha256:f634c61e6afb848a868052963eef89696dd7ae544aaac846f8d31514c61b9c36",
-        "retrievedAt": "2026-09-14T23:54:46.353Z",
-        "excerpt": "gemini-2.5-flash-lite-preview-09-2025 | September 25, 2025 | March 31, 2026 | gemini-3.1-flash-lite"
-      }
-    ],
-    "candidateId": "google:gemini-2-5-flash-lite-preview-09-2025",
-    "proposedBy": "discovery",
-    "proposedAt": "2026-09-14T23:54:45.972Z"
-  },
-  {
-    "provider": "google",
-    "kind": "model_id",
     "deprecated": "gemini-2.5-flash-image-preview",
     "replacement": "gemini-2.5-flash-image",
     "status": "retired",
@@ -158,7 +122,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -194,7 +158,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -218,108 +182,6 @@
   {
     "provider": "google",
     "kind": "model_id",
-    "deprecated": "gemini-2.5-flash-native-audio-preview-12-2025",
-    "replacement": "gemini-3.1-flash-live-preview",
-    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-    "note": "discovered from the google deprecation table; row read as: gemini-2.5-flash-native-audio-preview-12-2025 | December 12, 2025 | No shutdown date announced | gemini-3.1-flash-live-preview",
-    "verification": {
-      "status": "unverifiable",
-      "officialSourceConfirmed": false,
-      "replacementConfirmed": false,
-      "autoApplyAllowed": false,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "\"gemini-2.5-flash-native-audio-preview-12-2025\" is a audio model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gemini-3.1-flash-live-preview\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)"
-      ]
-    },
-    "evidence": [
-      {
-        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-        "contentHash": "sha256:f634c61e6afb848a868052963eef89696dd7ae544aaac846f8d31514c61b9c36",
-        "retrievedAt": "2026-09-14T23:54:46.353Z",
-        "excerpt": "gemini-2.5-flash-native-audio-preview-12-2025 | December 12, 2025 | No shutdown date announced | gemini-3.1-flash-live-preview"
-      }
-    ],
-    "candidateId": "google:gemini-2-5-flash-native-audio-preview-12-2025",
-    "proposedBy": "discovery",
-    "proposedAt": "2026-09-14T23:54:45.972Z"
-  },
-  {
-    "provider": "google",
-    "kind": "model_id",
-    "deprecated": "gemini-2.5-flash-preview-tts",
-    "replacement": "gemini-3.1-flash-tts-preview",
-    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-    "note": "discovered from the google deprecation table; row read as: gemini-2.5-flash-preview-tts | May 20, 2025 | No shutdown date announced | gemini-3.1-flash-tts-preview",
-    "verification": {
-      "status": "unverifiable",
-      "officialSourceConfirmed": false,
-      "replacementConfirmed": false,
-      "autoApplyAllowed": false,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "\"gemini-2.5-flash-preview-tts\" is a tts model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gemini-3.1-flash-tts-preview\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)"
-      ]
-    },
-    "evidence": [
-      {
-        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-        "contentHash": "sha256:f634c61e6afb848a868052963eef89696dd7ae544aaac846f8d31514c61b9c36",
-        "retrievedAt": "2026-09-14T23:54:46.353Z",
-        "excerpt": "gemini-2.5-flash-preview-tts | May 20, 2025 | No shutdown date announced | gemini-3.1-flash-tts-preview"
-      }
-    ],
-    "candidateId": "google:gemini-2-5-flash-preview-tts",
-    "proposedBy": "discovery",
-    "proposedAt": "2026-09-14T23:54:45.972Z"
-  },
-  {
-    "provider": "google",
-    "kind": "model_id",
-    "deprecated": "gemini-2.5-pro-preview-tts",
-    "replacement": "gemini-3.1-flash-tts-preview",
-    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-    "note": "discovered from the google deprecation table; row read as: gemini-2.5-pro-preview-tts | May 20, 2025 | No shutdown date announced | gemini-3.1-flash-tts-preview",
-    "verification": {
-      "status": "unverifiable",
-      "officialSourceConfirmed": false,
-      "replacementConfirmed": false,
-      "autoApplyAllowed": false,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "\"gemini-2.5-pro-preview-tts\" is a tts model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gemini-3.1-flash-tts-preview\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)"
-      ]
-    },
-    "evidence": [
-      {
-        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-        "contentHash": "sha256:f634c61e6afb848a868052963eef89696dd7ae544aaac846f8d31514c61b9c36",
-        "retrievedAt": "2026-09-14T23:54:46.353Z",
-        "excerpt": "gemini-2.5-pro-preview-tts | May 20, 2025 | No shutdown date announced | gemini-3.1-flash-tts-preview"
-      }
-    ],
-    "candidateId": "google:gemini-2-5-pro-preview-tts",
-    "proposedBy": "discovery",
-    "proposedAt": "2026-09-14T23:54:45.972Z"
-  },
-  {
-    "provider": "google",
-    "kind": "model_id",
     "deprecated": "imagen-4.0-generate-001",
     "replacement": "gemini-3.1-flash-image",
     "status": "retired",
@@ -332,7 +194,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -368,7 +230,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -404,7 +266,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -440,7 +302,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -476,7 +338,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -512,7 +374,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -548,7 +410,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -584,7 +446,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -608,42 +470,6 @@
   {
     "provider": "openai",
     "kind": "model_id",
-    "deprecated": "gpt-audio",
-    "replacement": "gpt-audio-1.5",
-    "status": "deprecated",
-    "shutdownDate": "2027-01-20",
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "discovered from the openai deprecation table; row read as: Jan 20, 2027 | gpt-audio | gpt-audio-1.5",
-    "verification": {
-      "status": "unverifiable",
-      "officialSourceConfirmed": true,
-      "replacementConfirmed": false,
-      "autoApplyAllowed": false,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "\"gpt-audio\" is a audio model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-audio-1.5\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)"
-      ]
-    },
-    "evidence": [
-      {
-        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
-        "retrievedAt": "2026-09-14T23:54:48.968Z",
-        "excerpt": "Jan 20, 2027 | gpt-audio | gpt-audio-1.5"
-      }
-    ],
-    "candidateId": "openai:gpt-audio",
-    "proposedBy": "discovery",
-    "proposedAt": "2026-09-14T23:54:48.821Z"
-  },
-  {
-    "provider": "openai",
-    "kind": "model_id",
     "deprecated": "gpt-4o-audio",
     "replacement": "gpt-audio-1.5",
     "status": "deprecated",
@@ -656,7 +482,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -680,78 +506,6 @@
   {
     "provider": "openai",
     "kind": "model_id",
-    "deprecated": "gpt-realtime-mini",
-    "replacement": "gpt-realtime-2.1-mini",
-    "status": "deprecated",
-    "shutdownDate": "2027-01-20",
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "discovered from the openai deprecation table; row read as: Jan 20, 2027 | gpt-realtime-mini | gpt-realtime-2.1-mini",
-    "verification": {
-      "status": "unverified",
-      "officialSourceConfirmed": true,
-      "replacementConfirmed": false,
-      "autoApplyAllowed": false,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "replacement \"gpt-realtime-2.1-mini\" was not found live in any public catalog (models.dev / OpenRouter)"
-      ]
-    },
-    "evidence": [
-      {
-        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
-        "retrievedAt": "2026-09-14T23:54:48.968Z",
-        "excerpt": "Jan 20, 2027 | gpt-realtime-mini | gpt-realtime-2.1-mini"
-      }
-    ],
-    "candidateId": "openai:gpt-realtime-mini",
-    "proposedBy": "discovery",
-    "proposedAt": "2026-09-14T23:54:48.821Z"
-  },
-  {
-    "provider": "openai",
-    "kind": "model_id",
-    "deprecated": "gpt-audio-mini",
-    "replacement": "gpt-audio-1.5",
-    "status": "deprecated",
-    "shutdownDate": "2027-01-20",
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "discovered from the openai deprecation table; row read as: Jan 20, 2027 | gpt-audio-mini | gpt-audio-1.5",
-    "verification": {
-      "status": "unverifiable",
-      "officialSourceConfirmed": true,
-      "replacementConfirmed": false,
-      "autoApplyAllowed": false,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "\"gpt-audio-mini\" is a audio model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-audio-1.5\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)"
-      ]
-    },
-    "evidence": [
-      {
-        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
-        "retrievedAt": "2026-09-14T23:54:48.968Z",
-        "excerpt": "Jan 20, 2027 | gpt-audio-mini | gpt-audio-1.5"
-      }
-    ],
-    "candidateId": "openai:gpt-audio-mini",
-    "proposedBy": "discovery",
-    "proposedAt": "2026-09-14T23:54:48.821Z"
-  },
-  {
-    "provider": "openai",
-    "kind": "model_id",
     "deprecated": "gpt-4o-mini-realtime",
     "replacement": "gpt-realtime-2.1-mini",
     "status": "deprecated",
@@ -764,7 +518,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -800,7 +554,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -824,150 +578,6 @@
   {
     "provider": "openai",
     "kind": "model_id",
-    "deprecated": "gpt-4o-mini-transcribe-2025-03-20",
-    "replacement": "gpt-4o-mini-transcribe-2025-12-15",
-    "status": "deprecated",
-    "shutdownDate": "2027-01-20",
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "discovered from the openai deprecation table; row read as: Jan 20, 2027 | gpt-4o-mini-transcribe-2025-03-20 | gpt-4o-mini-transcribe-2025-12-15",
-    "verification": {
-      "status": "unverifiable",
-      "officialSourceConfirmed": true,
-      "replacementConfirmed": false,
-      "autoApplyAllowed": false,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "\"gpt-4o-mini-transcribe-2025-03-20\" is a audio model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-4o-mini-transcribe-2025-12-15\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)"
-      ]
-    },
-    "evidence": [
-      {
-        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
-        "retrievedAt": "2026-09-14T23:54:48.968Z",
-        "excerpt": "Jan 20, 2027 | gpt-4o-mini-transcribe-2025-03-20 | gpt-4o-mini-transcribe-2025-12-15"
-      }
-    ],
-    "candidateId": "openai:gpt-4o-mini-transcribe-2025-03-20",
-    "proposedBy": "discovery",
-    "proposedAt": "2026-09-14T23:54:48.821Z"
-  },
-  {
-    "provider": "openai",
-    "kind": "model_id",
-    "deprecated": "gpt-image-1-mini",
-    "replacement": "gpt-image-2",
-    "status": "deprecated",
-    "shutdownDate": "2026-12-01",
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "discovered from the openai deprecation table; row read as: Dec 1, 2026 | gpt-image-1-mini | gpt-image-2",
-    "verification": {
-      "status": "unverifiable",
-      "officialSourceConfirmed": true,
-      "replacementConfirmed": false,
-      "autoApplyAllowed": false,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "\"gpt-image-1-mini\" is a image model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-image-2\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)"
-      ]
-    },
-    "evidence": [
-      {
-        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
-        "retrievedAt": "2026-09-14T23:54:48.968Z",
-        "excerpt": "Dec 1, 2026 | gpt-image-1-mini | gpt-image-2"
-      }
-    ],
-    "candidateId": "openai:gpt-image-1-mini",
-    "proposedBy": "discovery",
-    "proposedAt": "2026-09-14T23:54:48.821Z"
-  },
-  {
-    "provider": "openai",
-    "kind": "model_id",
-    "deprecated": "gpt-image-1.5",
-    "replacement": "gpt-image-2",
-    "status": "deprecated",
-    "shutdownDate": "2026-12-01",
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "discovered from the openai deprecation table; row read as: Dec 1, 2026 | gpt-image-1.5 | gpt-image-2",
-    "verification": {
-      "status": "unverifiable",
-      "officialSourceConfirmed": true,
-      "replacementConfirmed": false,
-      "autoApplyAllowed": false,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "\"gpt-image-1.5\" is a image model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-image-2\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)"
-      ]
-    },
-    "evidence": [
-      {
-        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
-        "retrievedAt": "2026-09-14T23:54:48.968Z",
-        "excerpt": "Dec 1, 2026 | gpt-image-1.5 | gpt-image-2"
-      }
-    ],
-    "candidateId": "openai:gpt-image-1-5",
-    "proposedBy": "discovery",
-    "proposedAt": "2026-09-14T23:54:48.821Z"
-  },
-  {
-    "provider": "openai",
-    "kind": "model_id",
-    "deprecated": "chatgpt-image-latest",
-    "replacement": "gpt-image-2",
-    "status": "deprecated",
-    "shutdownDate": "2026-12-01",
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "discovered from the openai deprecation table; row read as: Dec 1, 2026 | chatgpt-image-latest | gpt-image-2",
-    "verification": {
-      "status": "unverifiable",
-      "officialSourceConfirmed": true,
-      "replacementConfirmed": false,
-      "autoApplyAllowed": false,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "\"chatgpt-image-latest\" is a image model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-image-2\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)"
-      ]
-    },
-    "evidence": [
-      {
-        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
-        "retrievedAt": "2026-09-14T23:54:48.968Z",
-        "excerpt": "Dec 1, 2026 | chatgpt-image-latest | gpt-image-2"
-      }
-    ],
-    "candidateId": "openai:chatgpt-image-latest",
-    "proposedBy": "discovery",
-    "proposedAt": "2026-09-14T23:54:48.821Z"
-  },
-  {
-    "provider": "openai",
-    "kind": "model_id",
     "deprecated": "gpt-5.2-chat-latest",
     "replacement": "gpt-5.6-sol",
     "status": "retired",
@@ -980,7 +590,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1016,7 +626,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1052,7 +662,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1088,7 +698,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1124,7 +734,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1148,78 +758,6 @@
   {
     "provider": "openai",
     "kind": "model_id",
-    "deprecated": "gpt-audio-mini-2025-10-06",
-    "replacement": "gpt-audio-1.5",
-    "status": "retired",
-    "shutdownDate": "2026-07-23",
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "discovered from the openai deprecation table; row read as: July 23, 2026 | gpt-audio-mini-2025-10-06 | gpt-audio-1.5",
-    "verification": {
-      "status": "unverifiable",
-      "officialSourceConfirmed": true,
-      "replacementConfirmed": false,
-      "autoApplyAllowed": false,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "\"gpt-audio-mini-2025-10-06\" is a audio model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-audio-1.5\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)"
-      ]
-    },
-    "evidence": [
-      {
-        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
-        "retrievedAt": "2026-09-14T23:54:48.968Z",
-        "excerpt": "July 23, 2026 | gpt-audio-mini-2025-10-06 | gpt-audio-1.5"
-      }
-    ],
-    "candidateId": "openai:gpt-audio-mini-2025-10-06",
-    "proposedBy": "discovery",
-    "proposedAt": "2026-09-14T23:54:48.821Z"
-  },
-  {
-    "provider": "openai",
-    "kind": "model_id",
-    "deprecated": "gpt-realtime-mini-2025-10-06",
-    "replacement": "gpt-realtime-2.1-mini",
-    "status": "retired",
-    "shutdownDate": "2026-07-23",
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "discovered from the openai deprecation table; row read as: July 23, 2026 | gpt-realtime-mini-2025-10-06 | gpt-realtime-2.1-mini",
-    "verification": {
-      "status": "unverified",
-      "officialSourceConfirmed": true,
-      "replacementConfirmed": false,
-      "autoApplyAllowed": false,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "replacement \"gpt-realtime-2.1-mini\" was not found live in any public catalog (models.dev / OpenRouter)"
-      ]
-    },
-    "evidence": [
-      {
-        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
-        "retrievedAt": "2026-09-14T23:54:48.968Z",
-        "excerpt": "July 23, 2026 | gpt-realtime-mini-2025-10-06 | gpt-realtime-2.1-mini"
-      }
-    ],
-    "candidateId": "openai:gpt-realtime-mini-2025-10-06",
-    "proposedBy": "discovery",
-    "proposedAt": "2026-09-14T23:54:48.821Z"
-  },
-  {
-    "provider": "openai",
-    "kind": "model_id",
     "deprecated": "gpt-5.2-codex",
     "replacement": "gpt-5.6-sol",
     "status": "retired",
@@ -1232,7 +770,7 @@
       "replacementConfirmed": true,
       "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1268,7 +806,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1292,114 +830,6 @@
   {
     "provider": "openai",
     "kind": "model_id",
-    "deprecated": "gpt-4o-realtime-preview",
-    "replacement": "gpt-realtime-1.5",
-    "status": "retired",
-    "shutdownDate": "2026-05-07",
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "discovered from the openai deprecation table; row read as: 2026-05-07 | gpt-4o-realtime-preview | gpt-realtime-1.5",
-    "verification": {
-      "status": "unverified",
-      "officialSourceConfirmed": true,
-      "replacementConfirmed": false,
-      "autoApplyAllowed": false,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "replacement \"gpt-realtime-1.5\" was not found live in any public catalog (models.dev / OpenRouter)"
-      ]
-    },
-    "evidence": [
-      {
-        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
-        "retrievedAt": "2026-09-14T23:54:48.968Z",
-        "excerpt": "2026-05-07 | gpt-4o-realtime-preview | gpt-realtime-1.5"
-      }
-    ],
-    "candidateId": "openai:gpt-4o-realtime-preview",
-    "proposedBy": "discovery",
-    "proposedAt": "2026-09-14T23:54:48.821Z"
-  },
-  {
-    "provider": "openai",
-    "kind": "model_id",
-    "deprecated": "gpt-4o-realtime-preview-2025-06-03",
-    "replacement": "gpt-realtime-1.5",
-    "status": "retired",
-    "shutdownDate": "2026-05-07",
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "discovered from the openai deprecation table; row read as: 2026-05-07 | gpt-4o-realtime-preview-2025-06-03 | gpt-realtime-1.5",
-    "verification": {
-      "status": "unverified",
-      "officialSourceConfirmed": true,
-      "replacementConfirmed": false,
-      "autoApplyAllowed": false,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "replacement \"gpt-realtime-1.5\" was not found live in any public catalog (models.dev / OpenRouter)"
-      ]
-    },
-    "evidence": [
-      {
-        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
-        "retrievedAt": "2026-09-14T23:54:48.968Z",
-        "excerpt": "2026-05-07 | gpt-4o-realtime-preview-2025-06-03 | gpt-realtime-1.5"
-      }
-    ],
-    "candidateId": "openai:gpt-4o-realtime-preview-2025-06-03",
-    "proposedBy": "discovery",
-    "proposedAt": "2026-09-14T23:54:48.821Z"
-  },
-  {
-    "provider": "openai",
-    "kind": "model_id",
-    "deprecated": "gpt-4o-realtime-preview-2024-12-17",
-    "replacement": "gpt-realtime-1.5",
-    "status": "retired",
-    "shutdownDate": "2026-05-07",
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "discovered from the openai deprecation table; row read as: 2026-05-07 | gpt-4o-realtime-preview-2024-12-17 | gpt-realtime-1.5",
-    "verification": {
-      "status": "unverified",
-      "officialSourceConfirmed": true,
-      "replacementConfirmed": false,
-      "autoApplyAllowed": false,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "replacement \"gpt-realtime-1.5\" was not found live in any public catalog (models.dev / OpenRouter)"
-      ]
-    },
-    "evidence": [
-      {
-        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
-        "retrievedAt": "2026-09-14T23:54:48.968Z",
-        "excerpt": "2026-05-07 | gpt-4o-realtime-preview-2024-12-17 | gpt-realtime-1.5"
-      }
-    ],
-    "candidateId": "openai:gpt-4o-realtime-preview-2024-12-17",
-    "proposedBy": "discovery",
-    "proposedAt": "2026-09-14T23:54:48.821Z"
-  },
-  {
-    "provider": "openai",
-    "kind": "model_id",
     "deprecated": "gpt-4o-mini-realtime-preview",
     "replacement": "gpt-realtime-mini",
     "status": "retired",
@@ -1412,7 +842,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1436,42 +866,6 @@
   {
     "provider": "openai",
     "kind": "model_id",
-    "deprecated": "gpt-4o-audio-preview",
-    "replacement": "gpt-audio-1.5",
-    "status": "retired",
-    "shutdownDate": "2026-05-07",
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "discovered from the openai deprecation table; row read as: 2026-05-07 | gpt-4o-audio-preview | gpt-audio-1.5",
-    "verification": {
-      "status": "unverifiable",
-      "officialSourceConfirmed": true,
-      "replacementConfirmed": false,
-      "autoApplyAllowed": false,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "\"gpt-4o-audio-preview\" is a audio model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-audio-1.5\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)"
-      ]
-    },
-    "evidence": [
-      {
-        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
-        "retrievedAt": "2026-09-14T23:54:48.968Z",
-        "excerpt": "2026-05-07 | gpt-4o-audio-preview | gpt-audio-1.5"
-      }
-    ],
-    "candidateId": "openai:gpt-4o-audio-preview",
-    "proposedBy": "discovery",
-    "proposedAt": "2026-09-14T23:54:48.821Z"
-  },
-  {
-    "provider": "openai",
-    "kind": "model_id",
     "deprecated": "gpt-4o-mini-audio-preview",
     "replacement": "gpt-audio-mini",
     "status": "retired",
@@ -1484,7 +878,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1508,78 +902,6 @@
   {
     "provider": "openai",
     "kind": "model_id",
-    "deprecated": "gpt-4o-realtime-preview-2024-10-01",
-    "replacement": "gpt-realtime-1.5",
-    "status": "retired",
-    "shutdownDate": "2025-10-10",
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "discovered from the openai deprecation table; row read as: 2025-10-10 | gpt-4o-realtime-preview-2024-10-01 | gpt-realtime-1.5",
-    "verification": {
-      "status": "unverified",
-      "officialSourceConfirmed": true,
-      "replacementConfirmed": false,
-      "autoApplyAllowed": false,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "replacement \"gpt-realtime-1.5\" was not found live in any public catalog (models.dev / OpenRouter)"
-      ]
-    },
-    "evidence": [
-      {
-        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
-        "retrievedAt": "2026-09-14T23:54:48.968Z",
-        "excerpt": "2025-10-10 | gpt-4o-realtime-preview-2024-10-01 | gpt-realtime-1.5"
-      }
-    ],
-    "candidateId": "openai:gpt-4o-realtime-preview-2024-10-01",
-    "proposedBy": "discovery",
-    "proposedAt": "2026-09-14T23:54:48.821Z"
-  },
-  {
-    "provider": "openai",
-    "kind": "model_id",
-    "deprecated": "gpt-4o-audio-preview-2024-10-01",
-    "replacement": "gpt-audio-1.5",
-    "status": "retired",
-    "shutdownDate": "2025-10-10",
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "discovered from the openai deprecation table; row read as: 2025-10-10 | gpt-4o-audio-preview-2024-10-01 | gpt-audio-1.5",
-    "verification": {
-      "status": "unverifiable",
-      "officialSourceConfirmed": true,
-      "replacementConfirmed": false,
-      "autoApplyAllowed": false,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "\"gpt-4o-audio-preview-2024-10-01\" is a audio model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-audio-1.5\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)"
-      ]
-    },
-    "evidence": [
-      {
-        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
-        "retrievedAt": "2026-09-14T23:54:48.968Z",
-        "excerpt": "2025-10-10 | gpt-4o-audio-preview-2024-10-01 | gpt-audio-1.5"
-      }
-    ],
-    "candidateId": "openai:gpt-4o-audio-preview-2024-10-01",
-    "proposedBy": "discovery",
-    "proposedAt": "2026-09-14T23:54:48.821Z"
-  },
-  {
-    "provider": "openai",
-    "kind": "model_id",
     "deprecated": "text-moderation-007",
     "replacement": "omni-moderation",
     "status": "retired",
@@ -1592,7 +914,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1628,7 +950,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1664,7 +986,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1700,7 +1022,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1736,7 +1058,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1772,7 +1094,7 @@
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -1794,25 +1116,6 @@
     "proposedAt": "2026-09-14T23:54:48.821Z"
   },
   {
-    "provider": "google",
-    "kind": "model_id",
-    "deprecated": "gemini-3.1-flash-live-preview",
-    "replacement": "gemini-3.8-live",
-    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-    "note": "discovered from the google deprecation table; row read as: gemini-3.1-flash-live-preview | March 11, 2026 | No shutdown date announced | gemini-3.8-live",
-    "evidence": [
-      {
-        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-        "contentHash": "sha256:6b297468864ce69f64c3afb225717d2296f58283d396c9b3cedafe6b717a9d39",
-        "retrievedAt": "2026-09-18T20:14:36.540Z",
-        "excerpt": "gemini-3.1-flash-live-preview | March 11, 2026 | No shutdown date announced | gemini-3.8-live"
-      }
-    ],
-    "candidateId": "google:gemini-3-1-flash-live-preview",
-    "proposedBy": "discovery",
-    "proposedAt": "2026-09-18T20:14:35.879Z"
-  },
-  {
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-5.3-codex",
@@ -1821,6 +1124,21 @@
     "shutdownDate": "2027-04-01",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
     "note": "discovered from the openai deprecation table; row read as: Apr 1, 2027 | gpt-5.3-codex | gpt-6-sol",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-6-sol\" is live in a public catalog"
+      ]
+    },
     "evidence": [
       {
         "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
@@ -1842,6 +1160,21 @@
     "shutdownDate": "2027-04-01",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
     "note": "discovered from the openai deprecation table; row read as: Apr 1, 2027 | gpt-5.4-nano | gpt-6-luna",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-6-luna\" is live in a public catalog"
+      ]
+    },
     "evidence": [
       {
         "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
@@ -1863,6 +1196,21 @@
     "shutdownDate": "2027-04-01",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
     "note": "discovered from the openai deprecation table; row read as: Apr 1, 2027 | gpt-5.1 | gpt-6-sol",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-6-sol\" is live in a public catalog"
+      ]
+    },
     "evidence": [
       {
         "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
@@ -1884,6 +1232,21 @@
     "shutdownDate": "2027-01-06",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
     "note": "discovered from the openai deprecation table; row read as: Jan 6, 2027 | tts-1 | gpt-realtime-2.1-mini",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"tts-1\" is a tts model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-realtime-2.1-mini\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)"
+      ]
+    },
     "evidence": [
       {
         "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
@@ -1905,6 +1268,21 @@
     "shutdownDate": "2027-01-06",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
     "note": "discovered from the openai deprecation table; row read as: Jan 6, 2027 | tts-1-hd | gpt-realtime-2.1-mini",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"tts-1-hd\" is a tts model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-realtime-2.1-mini\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)"
+      ]
+    },
     "evidence": [
       {
         "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
@@ -1926,6 +1304,21 @@
     "shutdownDate": "2027-01-06",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
     "note": "discovered from the openai deprecation table; row read as: Jan 6, 2027 | gpt-4o-mini-tts-2025-03-20 | gpt-realtime-2.1-mini",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"gpt-4o-mini-tts-2025-03-20\" is a tts model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-realtime-2.1-mini\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)"
+      ]
+    },
     "evidence": [
       {
         "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
@@ -1947,6 +1340,21 @@
     "shutdownDate": "2027-01-06",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
     "note": "discovered from the openai deprecation table; row read as: Jan 6, 2027 | gpt-4o-mini-tts-2025-12-15 | gpt-realtime-2.1-mini",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"gpt-4o-mini-tts-2025-12-15\" is a tts model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-realtime-2.1-mini\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)"
+      ]
+    },
     "evidence": [
       {
         "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
@@ -1968,6 +1376,21 @@
     "shutdownDate": "2026-07-23",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
     "note": "discovered from the openai deprecation table; row read as: July 23, 2026 | o3-deep-research-2025-06-26 | o3-deep-research | gpt-5.6-sol; the model cell lists 2 ids (o3-deep-research-2025-06-26, o3-deep-research), read as one entry per id with the row's date and replacement",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog"
+      ]
+    },
     "evidence": [
       {
         "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
@@ -1989,6 +1412,21 @@
     "shutdownDate": "2026-07-23",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
     "note": "discovered from the openai deprecation table; row read as: July 23, 2026 | o3-deep-research-2025-06-26 | o3-deep-research | gpt-5.6-sol; the model cell lists 2 ids (o3-deep-research, o3-deep-research-2025-06-26), read as one entry per id with the row's date and replacement",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog"
+      ]
+    },
     "evidence": [
       {
         "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
@@ -2010,6 +1448,21 @@
     "shutdownDate": "2026-07-23",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
     "note": "discovered from the openai deprecation table; row read as: July 23, 2026 | o4-mini-deep-research-2025-06-26 | o4-mini-deep-research | gpt-5.6-sol; the model cell lists 2 ids (o4-mini-deep-research-2025-06-26, o4-mini-deep-research), read as one entry per id with the row's date and replacement",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog"
+      ]
+    },
     "evidence": [
       {
         "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
@@ -2031,6 +1484,21 @@
     "shutdownDate": "2026-07-23",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
     "note": "discovered from the openai deprecation table; row read as: July 23, 2026 | o4-mini-deep-research-2025-06-26 | o4-mini-deep-research | gpt-5.6-sol; the model cell lists 2 ids (o4-mini-deep-research, o4-mini-deep-research-2025-06-26), read as one entry per id with the row's date and replacement",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog"
+      ]
+    },
     "evidence": [
       {
         "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
@@ -2052,6 +1520,21 @@
     "shutdownDate": "2026-07-28",
     "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
     "note": "discovered from the google deprecation table; row read as: gemini-2.5-computer-use-preview-10-2025 | October 7, 2025 | July 28, 2026 | gemini-3.8-flash",
+    "verification": {
+      "status": "verified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gemini-3.8-flash\" is live in a public catalog"
+      ]
+    },
     "evidence": [
       {
         "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",

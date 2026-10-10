@@ -3,19 +3,52 @@
 
 import type { LlmModelIdDeprecation, LlmRegistry } from '../types.js';
 import { displayEntryId } from '../registry/entryId.js';
-import { effectiveVerificationState, modelIdEntries } from '../usage/llmRegistry.js';
+import { effectiveVerificationState, modelIdEntries, modelMatches } from '../usage/llmRegistry.js';
 import { daysUntil } from '../watch/exposure.js';
 import type { CostRegression, ExposureFinding, UsageAudit, UsageRow } from './types.js';
 
 /**
- * Normalize a provider-reported model string to the id the registry keys on.
- * Fine-tunes report as `ft:<base>:<org>::<id>` — the deprecation applies to the
- * base model, so we strip to the base. (Rolling aliases like `-latest` are left
- * as-is: they are a separate, deliberate concern.)
+ * Normalize a provider-reported model string to its base model id.
+ * Fine-tunes report as `ft:<base>:<org>::<id>`; we strip to the base. (Rolling
+ * aliases like `-latest` are left as-is: they are a separate, deliberate
+ * concern.) Which registry row a fine-tune joins is {@link registryModelId}'s
+ * call, not this function's.
  */
 export function normalizeModelId(raw: string): string {
   const ft = /^ft:([^:]+):/.exec(raw);
   return ft ? ft[1] : raw;
+}
+
+/** How OpenAI's deprecations page names a row that retires fine-tunes: `ft-<base>`. */
+const FINE_TUNE_ROW = 'ft-';
+
+/**
+ * The registry id an observed model string joins on.
+ *
+ * A fine-tune joins its base model, unless the provider retires fine-tunes of
+ * that base in a row of their own. OpenAI does (`ft-babbage-002`, `ft-gpt-4`),
+ * and not always on the base model's date: babbage-002 shut down 2026-09-28,
+ * while its fine-tunes run until 2026-10-23. Joining the base reported a
+ * working fine-tune as already dead. A row names a base model or a family of
+ * snapshots, so `ft-gpt-3.5-turbo` covers `ft:gpt-3.5-turbo-1106:...`, by the
+ * exact-segment rule parameter rules use ({@link modelMatches}); the most
+ * specific row wins.
+ */
+export function registryModelId(
+  raw: string,
+  provider: string,
+  entries: readonly LlmModelIdDeprecation[],
+): string {
+  const base = normalizeModelId(raw);
+  if (base === raw) return raw;
+  let row: string | undefined;
+  for (const e of entries) {
+    if (!e.deprecated.startsWith(FINE_TUNE_ROW)) continue;
+    if (e.provider !== provider && provider !== 'unknown') continue;
+    if (!modelMatches(base, [e.deprecated.slice(FINE_TUNE_ROW.length)])) continue;
+    if (row === undefined || e.deprecated.length > row.length) row = e.deprecated;
+  }
+  return row ?? base;
 }
 
 /** Pick the registry entry for a model id: prefer the soonest-shutting (most urgent) wave. */
@@ -37,11 +70,14 @@ function entryForModel(
   })[0];
 }
 
-/** Aggregate raw usage rows by (provider, normalized model) — providers return per-bucket rows. */
-function aggregate(rows: readonly UsageRow[]): Map<string, UsageRow & { observed: string }> {
+/** Aggregate raw usage rows by (provider, registry model id) — providers return per-bucket rows. */
+function aggregate(
+  rows: readonly UsageRow[],
+  entries: readonly LlmModelIdDeprecation[],
+): Map<string, UsageRow & { observed: string }> {
   const byModel = new Map<string, UsageRow & { observed: string }>();
   for (const row of rows) {
-    const model = normalizeModelId(row.model);
+    const model = registryModelId(row.model, row.provider, entries);
     const key = `${row.provider}:${model}`;
     const existing = byModel.get(key);
     if (existing) {
@@ -74,7 +110,7 @@ export function auditUsage(
   const entries = modelIdEntries(registry);
   const findings: ExposureFinding[] = [];
 
-  for (const agg of aggregate(rows).values()) {
+  for (const agg of aggregate(rows, entries).values()) {
     const entry = entryForModel(agg.model, agg.provider, entries);
     findings.push({
       provider: agg.provider,

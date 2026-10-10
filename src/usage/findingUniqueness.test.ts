@@ -59,7 +59,7 @@ function makeRepo(): string {
   mkdirSync(join(dir, 'sim'));
   mkdirSync(join(dir, 'examples'));
 
-  // Live calls: one verified (Tier A), one not (Tier B).
+  // Live calls: one verified (Tier A), one quarantined (Tier B).
   writeFileSync(
     join(dir, 'src', 'live.ts'),
     [
@@ -69,7 +69,7 @@ function makeRepo(): string {
       "  return client.chat.completions.create({ model: 'gpt-4-0613', messages: [] });",
       '}',
       'export async function b() {',
-      "  return client.chat.completions.create({ model: 'gpt-4-0314', messages: [] });",
+      "  return client.chat.completions.create({ model: 'gpt-3.5-turbo-16k', messages: [] });",
       '}',
       '',
     ].join('\n'),
@@ -136,7 +136,7 @@ function makeRepo(): string {
       '    return client.chat.completions.create(model="gpt-4-0613", messages=[])',
       '',
       'def blocked(client):',
-      '    return client.chat.completions.create(model="gpt-4-0314", messages=[])',
+      '    return client.chat.completions.create(model="gpt-3.5-turbo-16k", messages=[])',
       '',
       'def event():',
       '    model = "o1-preview"',

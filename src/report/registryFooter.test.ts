@@ -177,8 +177,20 @@ describe('the SHIPPED registry footer', () => {
     // 2026-10-04: -4 gpt-5 aliases (no provider date), +10 ids OpenAI retires
     // 2026-10-23, and the 4 reasoning.mode: pro replacements moved to quarantine. 2026-10-06:
     // +1 claude-sonnet-4-5-20250929, quarantined (Sonnet 5.5 rejects settings an id swap keeps).
-    expect(lines[0]).toBe('registry: 164 records');
+    // 2026-10-10: the two retired Live API ids move to gemini-3.8-live, which no public catalog
+    // lists yet, so they leave auto-fix for unverified; gpt-5.2 is removed (OpenAI does not
+    // deprecate it); three image models retiring 2026-12-01 are added, unverifiable by class;
+    // the providers' pages settle 11 quarantines and one unverified hold; eight Google ids
+    // retiring 2026-10-22 and 2026-11-17 are added, all detect-only; so are OpenAI's six
+    // fine-tune rows, quarantined. Then 13 discovered candidates the gate cannot check, added
+    // review-only: 6 OpenAI realtime ids and gemini-2.5-flash-lite-preview-09-2025 (unverified),
+    // 6 OpenAI audio ids (unverifiable by class). Then 9 of the settled records go back to
+    // review-only, unverified by the gate's own curated rows: 3 whose OpenAI row names two
+    // targets ("gpt-5 or gpt-4.1*"), and 6 that carry the end of a chain instead of the target
+    // the provider names (gpt-3.5-turbo-0301, -16k-0613, text-davinci-003, -002,
+    // gemini-2.0-flash-lite, -001).
+    expect(lines[0]).toBe('registry: 193 records');
     expect(lines[1]).toBe('auto-fix eligible: 135');
-    expect(lines[2]).toBe('review-only: 29 (quarantined 18, unverified 5, unverifiable 6)');
+    expect(lines[2]).toBe('review-only: 58 (quarantined 16, unverified 23, unverifiable 19)');
   });
 });

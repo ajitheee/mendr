@@ -41,9 +41,14 @@ export const RUNTIME_SOURCE_LABEL: Record<RuntimeSource, string> = {
  */
 export interface RuntimeObservation {
   provider: string;
-  /** Normalized model id (fine-tune prefix stripped) — what joins the registry. */
+  /**
+   * The model id the source reported. A runtime file keeps it as observed (a fine-tune stays
+   * `ft:<base>:<org>::<id>`); the provider-API path carries the registry id its usage audit
+   * already chose. Either way the registry row is decided from `observed`, in
+   * buildInvestigations, by registryModelId.
+   */
   model: string;
-  /** The raw model string as observed, when it differed from the normalized id. */
+  /** The raw model string as observed. */
   observed: string;
   service: string | null;
   environment: string | null;
@@ -141,8 +146,12 @@ function failuresOf(row: Row): number {
 export function toObservation(row: Row): RuntimeObservation | null {
   const rawModel = asString(pick(row, MODEL_KEYS));
   if (!rawModel) return null;
-  const model = normalizeModelId(rawModel);
-  const provider = asString(pick(row, PROVIDER_KEYS)) ?? inferProvider(model);
+  // The id stays as observed. Folding a fine-tune into its base here, before the registry is
+  // consulted, joined ft:babbage-002:<org>::<id> to babbage-002's row: a fine-tune OpenAI runs
+  // until 2026-10-23 read as 12 days overdue, with the base model's swap offered for it.
+  // buildInvestigations decides the row, with the registry in hand (registryModelId).
+  const model = rawModel;
+  const provider = asString(pick(row, PROVIDER_KEYS)) ?? inferProvider(normalizeModelId(rawModel));
   const requestsRaw = pick(row, REQUEST_KEYS);
   const costRaw = pick(row, COST_KEYS);
   return {
