@@ -1,5 +1,15 @@
 import { Node, SyntaxKind, VariableDeclarationKind } from 'ts-morph';
-import type { CallExpression, Expression, Identifier, NewExpression, SourceFile } from 'ts-morph';
+import type {
+  AsExpression,
+  CallExpression,
+  Expression,
+  Identifier,
+  NewExpression,
+  NonNullExpression,
+  ParenthesizedExpression,
+  SatisfiesExpression,
+  SourceFile,
+} from 'ts-morph';
 import { CATALOG_SIBLING_KEYS, isDefaultContainerName, isModelLikeName } from './sharedRules.js';
 
 // The TypeScript spelling of the Python guards G1–G5 (src/python/sinks.ts).
@@ -581,6 +591,85 @@ export function collectTsSinks(sf: SourceFile): TsSinkMap {
   return sinks;
 }
 
+// --- request parameter keys ---------------------------------------------------------
+//
+// The parameter guards (coupledParams.ts) judge a swap by the keys of the request its model
+// reaches. Three things have to agree for that to be honest: which key a property names, which
+// wrappers a model value can sit in and still be that property's value, and which requests a
+// declaration's model reaches. They live here, beside the sink rule, so the scanner and the
+// parameter pass read keys one way.
+
+/**
+ * The key a property names, unquoted: `max_tokens`, `"max_tokens"` and `'max_tokens'` are one
+ * key. A computed key (`[k]`) is returned as written, because its name is not known here.
+ */
+export function propertyKeyName(nameNode: Node): string {
+  if (Node.isStringLiteral(nameNode) || Node.isNoSubstitutionTemplateLiteral(nameNode)) {
+    return nameNode.getLiteralValue();
+  }
+  return nameNode.getText();
+}
+
+/** The keys of a request object, unquoted: the parameters the call passes beside its model. */
+export function requestParamKeys(obj: Node): string[] {
+  if (!Node.isObjectLiteralExpression(obj)) return [];
+  const keys: string[] = [];
+  for (const p of obj.getProperties()) {
+    if (Node.isPropertyAssignment(p) || Node.isShorthandPropertyAssignment(p)) {
+      const name = propertyKeyName(p.getNameNode());
+      if (name) keys.push(name);
+    }
+  }
+  return keys;
+}
+
+/**
+ * Wrappers that change neither a value nor where it goes: parentheses, `as`, `satisfies`, `!`.
+ * A `||`, `??` or ternary is NOT one of them: it can hand the property a different value.
+ * (`satisfies` is listed so the rule is complete, but no parameter check meets one today:
+ * classifyLiteral does not see through it and collectTsSinks does not unwrap it, so a model id
+ * behind `satisfies` never earns `model_arg`.)
+ */
+export function isValueWrapper(
+  node: Node,
+): node is ParenthesizedExpression | AsExpression | SatisfiesExpression | NonNullExpression {
+  return (
+    Node.isParenthesizedExpression(node) ||
+    Node.isAsExpression(node) ||
+    Node.isSatisfiesExpression(node) ||
+    Node.isNonNullExpression(node)
+  );
+}
+
+/** `expr` with its value wrappers ({@link isValueWrapper}) taken off. */
+export function unwrapValueWrappers(expr: Node): Node {
+  let n = expr;
+  while (isValueWrapper(n)) n = n.getExpression();
+  return n;
+}
+
+/**
+ * The parameter keys of each request in `call` whose model is `name`, read the way an inline
+ * literal's keys are read: an object-literal argument whose model-like property is `{ name }` or
+ * `name` behind value wrappers only. A model reached through a fallback (`x || name`) is not this
+ * request's model alone, and its inline twin is not judged by its keys either, so it adds nothing.
+ * A factory consumer (`openai(name)`) carries no request keys of its own, like its inline twin.
+ */
+export function consumerRequestKeys(call: CallExpression, name: string): string[][] {
+  const out: string[][] = [];
+  for (const arg of call.getArguments()) {
+    if (!Node.isObjectLiteralExpression(arg)) continue;
+    const carries = arg.getProperties().some((prop) => {
+      if (Node.isShorthandPropertyAssignment(prop)) return prop.getName() === name && isModelLikeName(name);
+      if (!Node.isPropertyAssignment(prop) || !isModelLikeName(prop.getName())) return false;
+      const init = prop.getInitializer();
+      return !!init && traceableName(unwrapValueWrappers(init)) === name;
+    });
+    if (carries) out.push(requestParamKeys(arg));
+  }
+  return out;
+}
+
 /** The identifier leaves of a value expression through `||` / `??` / parens / ternaries. */
 function leavesOf(expr: Node): Node[] {
   if (Node.isParenthesizedExpression(expr) || Node.isAsExpression(expr) || Node.isNonNullExpression(expr)) {
@@ -623,13 +712,18 @@ function sinkInScope(decl: Node, call: CallExpression): boolean {
   return false;
 }
 
+/** The calls that consume `name` and can see `decl`: the consumers the declaration is judged by. */
+export function inScopeSinks(decl: Node, name: string, sinks: TsSinkMap | undefined): CallExpression[] {
+  return (sinks?.get(name) ?? []).filter((c) => sinkInScope(decl, c));
+}
+
 /**
  * Rule (b), the sink rule: a model-named declaration is swap-eligible only when
  * every in-scope consumer is a resolved first-party request inside a function.
  * No consumer → `usage_unverified` (review). Any capped consumer → the cap wins.
  */
 export function judgeDeclarationSinks(decl: Node, name: string, sinks: TsSinkMap | undefined): SurfaceClassification {
-  const calls = (sinks?.get(name) ?? []).filter((c) => sinkInScope(decl, c));
+  const calls = inScopeSinks(decl, name, sinks);
   if (calls.length === 0) return { position: 'usage_unverified', reason: TS_DEFAULT_UNTRACED_REASON };
   for (const call of calls) {
     const v = classifyCallSurface(call);

@@ -1,17 +1,22 @@
 import { Node, SyntaxKind } from 'ts-morph';
-import type { CallExpression, NoSubstitutionTemplateLiteral, Project, StringLiteral } from 'ts-morph';
+import type { AsExpression, CallExpression, NoSubstitutionTemplateLiteral, Project, StringLiteral } from 'ts-morph';
 import type { LlmModelIdDeprecation, LlmRegistry, SourceLocation } from '../types.js';
 import {
   classifyCallSurface,
   collectTsSinks,
+  consumerRequestKeys,
   enclosingCallOfObject,
   enclosingNewOfObject,
   hasCatalogSiblings,
+  inScopeSinks,
   isCliModelOptionDefault,
   isCliOptionCall,
   isInDefaultContainer,
+  isValueWrapper,
   judgeDeclarationSinks,
+  propertyKeyName,
   requestObjectFlow,
+  requestParamKeys,
   TS_CLI_DEFAULT_REASON,
   TS_DEFAULT_CONTAINER_REASON,
   TS_EXAMPLE_REASON,
@@ -23,12 +28,7 @@ import {
   type TsSinkMap,
 } from './tsSurface.js';
 import { isExamplePath, isModelLikeName, splitProviderPrefix } from './sharedRules.js';
-import {
-  paramRulesStartingAt,
-  TS_COUPLED_PARAM_REASON,
-  TS_PARAM_BEHAVIOUR_REASON,
-  unresolvedCoupledParams,
-} from './coupledParams.js';
+import { paramHoldReason } from './coupledParams.js';
 import {
   effectiveVerificationState,
   isVerified,
@@ -382,12 +382,14 @@ function isValueTransparent(parent: Node, child: Node): boolean {
   return false;
 }
 
-/** The (unquoted) key name of a property assignment, or its raw text if computed. */
-function propertyKeyName(nameNode: Node): string {
-  if (Node.isStringLiteral(nameNode) || Node.isNoSubstitutionTemplateLiteral(nameNode)) {
-    return nameNode.getLiteralValue();
-  }
-  return nameNode.getText();
+/**
+ * Does this `as` cast mask the model-id union? Any target but `string` or `const` does: the repo
+ * keeps its own type for model ids, which a raw string swap would bypass (see TYPE_CAST_REASON).
+ * `as string` and `as const` mask nothing, so a literal behind one is swapped like a bare one.
+ */
+export function isMaskingCast(cast: AsExpression): boolean {
+  const typeText = cast.getTypeNode()?.getText().trim();
+  return !!typeText && typeText !== 'string' && typeText !== 'const';
 }
 
 /** The last identifier of a call's callee: `google` or, for `x.chat(...)`, `chat`. */
@@ -421,24 +423,49 @@ export function isEnclosingObjectACallArgument(prop: Node): boolean {
 }
 
 /**
- * The keys of the object literal this value sits in — the siblings of `model:`, which are the
- * request parameters the call passes alongside it. Empty when the literal is not a property
- * value of an object literal, which is the honest answer: no siblings are visible, so nothing
- * can be claimed about them.
+ * The parameter keys of every request a `model_arg` literal's value reaches, one key set per
+ * request. The parameter guards judge the swap by these (paramHoldReason).
+ *
+ *   - Inline, `create({ model: '…', max_tokens })`: the keys of the object it is the `model:` of —
+ *     the siblings of `model:`, unquoted. The literal may sit behind value wrappers (`as string`,
+ *     parentheses, `satisfies`, `!`) and still be that property's value. It used to have to be the
+ *     property's direct child, so `model: 'gpt-4-0613' as string` was swapped while its bare twin
+ *     was held.
+ *   - A declaration, `const MODEL = '…'` (also a class property or `x.model = '…'`): the keys of
+ *     each request of each in-scope consumer the sink rule judged it by (collectTsSinks,
+ *     inScopeSinks). It used to be none at all, so `create({ model: MODEL, max_tokens })` and
+ *     `create({ model, max_tokens })` were swapped while the inline twin was held.
+ *   - Anything else (a factory argument, a `||` fallback, a ternary branch): none, the honest
+ *     answer when no request's siblings are this value's own. Unchanged.
  */
-function siblingParamKeys(node: Node): string[] {
-  const prop = node.getParent();
-  if (!prop || !Node.isPropertyAssignment(prop)) return [];
-  const obj = prop.getParent();
-  if (!obj || !Node.isObjectLiteralExpression(obj)) return [];
-  const keys: string[] = [];
-  for (const p of obj.getProperties()) {
-    if (Node.isPropertyAssignment(p) || Node.isShorthandPropertyAssignment(p)) {
-      const name = propertyKeyName(p.getNameNode());
-      if (name) keys.push(name);
-    }
+function requestKeySets(literal: Node, sinks: TsSinkMap | undefined): string[][] {
+  let top = literal;
+  let parent = top.getParent();
+  while (parent && isValueWrapper(parent)) {
+    top = parent;
+    parent = top.getParent();
   }
-  return keys;
+  if (!parent) return [];
+  if (Node.isPropertyAssignment(parent)) {
+    return parent.getInitializer() === top ? [requestParamKeys(parent.getParent())] : [];
+  }
+  const declared =
+    (Node.isVariableDeclaration(parent) || Node.isPropertyDeclaration(parent)) && parent.getInitializer() === top
+      ? parent.getName()
+      : Node.isBinaryExpression(parent) &&
+          parent.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
+          parent.getRight() === top
+        ? assignedName(parent.getLeft())
+        : undefined;
+  if (declared === undefined) return [];
+  return inScopeSinks(parent, declared, sinks).flatMap((call) => consumerRequestKeys(call, declared));
+}
+
+/** The name an assignment target binds, as the sink rule traces it: `model` or `this.model`. */
+function assignedName(left: Node): string | undefined {
+  if (Node.isIdentifier(left)) return left.getText();
+  if (Node.isPropertyAccessExpression(left)) return left.getName();
+  return undefined;
 }
 
 /** The full classification of a matched literal: position + (for data) purpose. */
@@ -498,10 +525,7 @@ export function classifyLiteral(
   let node: Node = literal;
   let parent = node.getParent();
   while (parent && isValueTransparent(parent, node)) {
-    if (Node.isAsExpression(parent)) {
-      const typeText = parent.getTypeNode()?.getText().trim();
-      if (typeText && typeText !== 'string' && typeText !== 'const') maskingCast = true;
-    }
+    if (Node.isAsExpression(parent) && isMaskingCast(parent)) maskingCast = true;
     node = parent;
     parent = node.getParent();
   }
@@ -816,6 +840,8 @@ export function findModelIdLiterals(
       // record — then emit one match per record so each entryId flows through.
       const { line, column } = sf.getLineAndColumnAtPos(node.getStart());
       let classification: LiteralClassification = classifyLiteral(node, sinks);
+      // The parameters of the requests this value reaches, read once per node (see requestKeySets).
+      let keySets: string[][] | undefined;
       // An example tree is informational BY DEFAULT — a sample is not a dependency of the
       // shipped product, and that rule is why litellm's `example_config_yaml/` and a dozen
       // doc snippets stay out of the review bucket. It is kept.
@@ -845,37 +871,17 @@ export function findModelIdLiterals(
         // known to constrain a parameter this call passes, and NO registry rule covers that
         // parameter, the swap drops to review — absence of a rule is not evidence of
         // compatibility. Regression case: coupledParams.test.ts
-        // (recommended_replacement_requires_coupled_parameter_migration).
+        // (recommended_replacement_requires_coupled_parameter_migration). Every parameter
+        // being covered is not the end of it either: a rule that applies only from the
+        // replacement on changes what the call asks for (paramRulesStartingAt).
+        //
+        // The requests are the ones this value REACHES (requestKeySets): its own object when the
+        // id is written in the call, every consumer's when it is declared once and used by name.
         let coupled = classification;
         if (coupled.position === 'model_arg') {
-          const unresolved = unresolvedCoupledParams(
-            siblingParamKeys(node),
-            deprecation.provider,
-            deprecation.replacement,
-            registry,
-          );
-          if (unresolved.length > 0) {
-            coupled = {
-              position: 'surface_capped',
-              reason: TS_COUPLED_PARAM_REASON(deprecation.replacement, unresolved),
-            };
-          } else {
-            // Every parameter is covered by a rule, but a rule that applies only from the
-            // replacement on changes what the call asks for. See paramRulesStartingAt.
-            const starting = paramRulesStartingAt(
-              siblingParamKeys(node),
-              deprecation.provider,
-              deprecation.deprecated,
-              deprecation.replacement,
-              registry,
-            );
-            if (starting.length > 0) {
-              coupled = {
-                position: 'surface_capped',
-                reason: TS_PARAM_BEHAVIOUR_REASON(deprecation.deprecated, deprecation.replacement, starting),
-              };
-            }
-          }
+          keySets ??= requestKeySets(node, sinks);
+          const reason = paramHoldReason(keySets, deprecation, registry);
+          if (reason !== undefined) coupled = { position: 'surface_capped', reason };
         }
         out.push({
           node,

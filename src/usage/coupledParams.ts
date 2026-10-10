@@ -1,4 +1,4 @@
-import type { LlmParamDeprecation, LlmRegistry } from '../types.js';
+import type { LlmModelIdDeprecation, LlmParamDeprecation, LlmRegistry } from '../types.js';
 
 // COUPLED PARAMETERS — why a verified model-id replacement is not yet a safe patch.
 //
@@ -163,6 +163,36 @@ export function paramRulesStartingAt(
       modelInFamily(replacement, e.on_models) &&
       !modelInFamily(source, e.on_models),
   );
+}
+
+/**
+ * The review reason a swap earns from the requests its model reaches, or undefined when the
+ * parameters of none of them hold it. One key set per request: an inline model id reaches one
+ * request (its own object); a declaration reaches every in-scope consumer, and is held when ANY
+ * of them would be held, with the reason that consumer's inline twin would carry. A parameter no
+ * rule covers is the stronger reason (the provider rejects the request), so it is looked for in
+ * every request before a behaviour change is.
+ *
+ * For a single key set this is exactly the check an inline `create({ model: '…', … })` gets, so
+ * an id written in the call and the same id read through a const, a shorthand or a cast are held
+ * by one rule, with one sentence. (Found 2026-10-07: those three shapes skipped the check and
+ * were swapped unattended while the inline twin was held.)
+ */
+export function paramHoldReason(
+  keySets: readonly (readonly string[])[],
+  deprecation: Pick<LlmModelIdDeprecation, 'provider' | 'deprecated' | 'replacement'>,
+  registry: LlmRegistry,
+): string | undefined {
+  const { provider, deprecated, replacement } = deprecation;
+  for (const keys of keySets) {
+    const unresolved = unresolvedCoupledParams(keys, provider, replacement, registry);
+    if (unresolved.length > 0) return TS_COUPLED_PARAM_REASON(replacement, unresolved);
+  }
+  for (const keys of keySets) {
+    const starting = paramRulesStartingAt(keys, provider, deprecated, replacement, registry);
+    if (starting.length > 0) return TS_PARAM_BEHAVIOUR_REASON(deprecated, replacement, starting);
+  }
+  return undefined;
 }
 
 /** The sentence a rule's behaviour change is explained by: its `behaviour` quote, else its `rule` quote. */

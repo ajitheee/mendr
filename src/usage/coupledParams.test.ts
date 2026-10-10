@@ -177,6 +177,148 @@ describe('recommended_replacement_requires_coupled_parameter_migration', () => {
   });
 });
 
+// REGRESSION (review of PR #50, 2026-10-07): the parameter guards ran only on a literal that was
+// the DIRECT value of `model:`. The same id read through a const, a `{ model }` shorthand or an
+// `as string` cast skipped both checks and was swapped unattended, while the inline twin was held:
+// `const model = 'gpt-4-0613'; create({ model, max_tokens: 13 })` became `'gpt-5.6-sol'` with
+// `max_tokens` still on it, which the bundled rule says gpt-5.6 rejects.
+describe('an id read through a const, a shorthand or a cast is held exactly as its inline twin is', () => {
+  const HEAD = ["import OpenAI from 'openai';", 'const openai = new OpenAI();'];
+  /** One call, written with `model` as given and `params` beside it. */
+  const call = (model: string, params: string, before: string[] = []) =>
+    [
+      ...HEAD,
+      'export async function title() {',
+      ...before.map((l) => `  ${l}`),
+      `  return openai.chat.completions.create({ ${model}, ${params}, messages: [] });`,
+      '}',
+    ].join('\n');
+  const inlineTwin = (params: string) => verdict(call("model: 'gpt-3.5-turbo'", params), 'gpt-3.5-turbo');
+
+  const shapes: Array<[string, (params: string) => string]> = [
+    ['a shorthand `{ model }`', (p) => call('model', p, ["const model = 'gpt-3.5-turbo';"])],
+    [
+      'a module-level const',
+      (p) =>
+        [
+          ...HEAD,
+          "const TITLE_MODEL = 'gpt-3.5-turbo';",
+          'export async function title() {',
+          `  return openai.chat.completions.create({ model: TITLE_MODEL, ${p}, messages: [] });`,
+          '}',
+        ].join('\n'),
+    ],
+    ['a const read behind `as string`', (p) => call('model: TITLE_MODEL as string', p, ["const TITLE_MODEL = 'gpt-3.5-turbo' as const;"])],
+    ['a const read behind `!`', (p) => call('model: TITLE_MODEL!', p, ["const TITLE_MODEL = 'gpt-3.5-turbo';"])],
+    ['an assignment `model = …`', (p) => call('model', p, ['let model: string;', "model = 'gpt-3.5-turbo';"])],
+    [
+      'a class property read as `this.model`',
+      (p) =>
+        [
+          ...HEAD,
+          'export class Titles {',
+          "  model = 'gpt-3.5-turbo';",
+          '  async title() {',
+          `    return openai.chat.completions.create({ model: this.model, ${p}, messages: [] });`,
+          '  }',
+          '}',
+        ].join('\n'),
+    ],
+    ['an `as string` cast', (p) => call("model: 'gpt-3.5-turbo' as string", p)],
+    ['parentheses', (p) => call("model: ('gpt-3.5-turbo')", p)],
+    ['quoted keys', (p) => call('"model": "gpt-3.5-turbo"', p.replace(/(\w+):/g, '"$1":'))],
+  ];
+
+  for (const [name, shape] of shapes) {
+    it(`${name}: a rule that starts at the replacement holds it, with the twin's sentence`, () => {
+      const twin = inlineTwin('max_tokens: 20');
+      expect(twin?.reason).toContain('changes what this call asks for'); // the twin is held
+      const v = verdict(shape('max_tokens: 20'), 'gpt-3.5-turbo');
+      expect(v).toEqual(twin);
+      expect(v?.tier).toBe('B');
+    });
+
+    it(`${name}: a parameter no rule covers holds it, with the twin's sentence`, () => {
+      const twin = inlineTwin('temperature: 0.7, max_tokens: 20');
+      expect(twin?.reason).toBe(TS_COUPLED_PARAM_REASON('gpt-5.6-terra', ['temperature']));
+      expect(verdict(shape('temperature: 0.7, max_tokens: 20'), 'gpt-3.5-turbo')).toEqual(twin);
+    });
+
+    it(`${name}: no model-dependent parameter leaves it Tier A, like the twin`, () => {
+      expect(inlineTwin('stream: false')?.tier).toBe('A');
+      expect(verdict(shape('stream: false'), 'gpt-3.5-turbo')?.tier).toBe('A');
+    });
+  }
+
+  const DECL = [...HEAD, "const TITLE_MODEL = 'gpt-3.5-turbo';"];
+
+  it('a const consumed only by calls with no model-dependent parameter stays Tier A', () => {
+    const src = [
+      ...DECL,
+      'export const a = async () => openai.chat.completions.create({ model: TITLE_MODEL, messages: [] });',
+      'export const b = async () => openai.chat.completions.create({ model: TITLE_MODEL, messages: [], stream: true });',
+    ].join('\n');
+    expect(verdict(src, 'gpt-3.5-turbo')).toMatchObject({ tier: 'A', position: 'model_arg' });
+  });
+
+  it('a const consumed by one held call and one free call is held, with the held call\'s sentence', () => {
+    const src = [
+      ...DECL,
+      'export const free = async () => openai.chat.completions.create({ model: TITLE_MODEL, messages: [] });',
+      'export const held = async () => openai.chat.completions.create({ model: TITLE_MODEL, max_tokens: 20, messages: [] });',
+    ].join('\n');
+    expect(verdict(src, 'gpt-3.5-turbo')).toEqual(inlineTwin('max_tokens: 20'));
+  });
+
+  it('a parameter no rule covers wins over a behaviour change, whichever consumer comes first', () => {
+    const src = [
+      ...DECL,
+      'export const a = async () => openai.chat.completions.create({ model: TITLE_MODEL, max_tokens: 20, messages: [] });',
+      'export const b = async () => openai.chat.completions.create({ model: TITLE_MODEL, top_p: 0.5, messages: [] });',
+    ].join('\n');
+    expect(verdict(src, 'gpt-3.5-turbo')?.reason).toBe(TS_COUPLED_PARAM_REASON('gpt-5.6-terra', ['top_p']));
+  });
+
+  it('reads the request that carries the const, not another object argument of the same call', () => {
+    for (const other of ["{ model: 'x', max_tokens: 20 }", '{ fallbackModel, max_tokens: 20 }']) {
+      const src = [
+        ...DECL,
+        `export const a = async (fallbackModel: string) => openai.chat.completions.create({ model: TITLE_MODEL, messages: [] }, ${other});`,
+      ].join('\n');
+      expect(verdict(src, 'gpt-3.5-turbo'), other).toMatchObject({ tier: 'A', position: 'model_arg' });
+    }
+  });
+
+  it('a call that cannot see the declaration does not hold it', () => {
+    // `model` in b() is b's own parameter, not the const in a(): the sink rule's scope applies.
+    const src = [
+      ...HEAD,
+      'export async function a() {',
+      "  const model = 'gpt-3.5-turbo';",
+      '  return openai.chat.completions.create({ model, messages: [] });',
+      '}',
+      'export async function b(model: string) {',
+      '  return openai.chat.completions.create({ model, max_tokens: 20, messages: [] });',
+      '}',
+    ].join('\n');
+    expect(verdict(src, 'gpt-3.5-turbo')).toMatchObject({ tier: 'A', position: 'model_arg' });
+  });
+
+  it('a fallback is judged the same way inline and through a const (neither form is widened here)', () => {
+    const inline = verdict(call("model: process.env.M || 'gpt-3.5-turbo'", 'max_tokens: 20'), 'gpt-3.5-turbo');
+    const viaConst = verdict(
+      call('model: TITLE_MODEL', 'max_tokens: 20', ["const TITLE_MODEL = process.env.M || 'gpt-3.5-turbo';"]),
+      'gpt-3.5-turbo',
+    );
+    const viaConsumer = verdict(
+      call('model: process.env.M || TITLE_MODEL', 'max_tokens: 20', ["const TITLE_MODEL = 'gpt-3.5-turbo';"]),
+      'gpt-3.5-turbo',
+    );
+    expect(viaConst?.tier).toBe(inline?.tier);
+    expect(viaConsumer?.tier).toBe(inline?.tier);
+  });
+});
+
 // paramRulesStartingAt: the rules a swap STARTS applying, for parameters the call passes.
 describe('paramRulesStartingAt', () => {
   const rename = REG[2] as Extract<LlmRegistry[number], { kind: 'param_rename' }>;

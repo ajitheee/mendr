@@ -145,6 +145,34 @@ export const other = (messages: any) => client.chat.completions.create({ model: 
     expect(applyLlmFixesToProject(full, REASONING_REGISTRY).paramsRenamed).toBe(2);
   });
 
+  // REGRESSION (2026-10-07): a swap through a `{ model }` shorthand, an `as string` cast or quoted
+  // keys was "swapped alone": pass 1 rewrote the id and pass 2 could not see the request, so
+  // `max_tokens` stayed on gpt-5.6-sol while the inline twin had it renamed.
+  it('follows a swap through a shorthand, a cast or quoted keys with its parameter fix, as inline', () => {
+    const source = `
+import OpenAI from "openai";
+const client = new OpenAI();
+export async function run(messages: any) {
+  const model = "o1";
+  const a = await client.chat.completions.create({ model, max_tokens: 1, messages });
+  const b = await client.chat.completions.create({ model: "o1" as string, max_tokens: 2, messages });
+  const c = await client.chat.completions.create({ "model": "o1", "max_tokens": 3, messages });
+  return { a, b, c };
+}
+`.trimStart();
+    for (const paramsOnSwappedCallsOnly of [false, true]) {
+      const project = inMemoryProject('src/r.ts', source);
+      const result = applyLlmFixesToProject(project, REASONING_REGISTRY, undefined, { paramsOnSwappedCallsOnly });
+      expect(result.modelIdSites, String(paramsOnSwappedCallsOnly)).toBe(3);
+      expect(result.paramsRenamed, String(paramsOnSwappedCallsOnly)).toBe(3);
+      const text = project.getSourceFileOrThrow('src/r.ts').getFullText();
+      expect(text).toContain('const model = "gpt-5.6-sol";');
+      expect(text).toContain('{ model, max_completion_tokens: 1, messages }');
+      expect(text).toContain('{ model: "gpt-5.6-sol" as string, max_completion_tokens: 2, messages }');
+      expect(text).toContain('{ "model": "gpt-5.6-sol", "max_completion_tokens": 3, messages }');
+    }
+  });
+
   it('is a no-op with an empty diff when nothing matches', () => {
     const project = inMemoryProject(
       'src/clean.ts',

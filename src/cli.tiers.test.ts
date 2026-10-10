@@ -755,6 +755,203 @@ const SHARED_CONST_SOURCE = [
   '',
 ].join('\n');
 
+/**
+ * A repo where a retiring id reaches a request that passes `max_tokens` by every route the
+ * parameter guards used to miss, each beside its inline twin (which was always held: the bundled
+ * max_tokens rule starts at gpt-5.6, so the swap changes what the call asks for). Measured on
+ * 0df2dce, 2026-10-07: every shape below was a Tier A swap, and the declaration's max_tokens was
+ * renamed unattended.
+ */
+const CLIENT = ['import OpenAI from "openai";', 'const client = new OpenAI();'];
+const create = (args: string) => `  return client.chat.completions.create({ ${args}, messages: [] });`;
+const BYPASS_SHAPES: Record<string, string> = {
+  'src/shorthand.ts': [
+    ...CLIENT,
+    'export async function viaShorthand() {',
+    "  const model = 'gpt-4-0613';",
+    create('model, max_tokens: 13'),
+    '}',
+    'export async function inlineTwin() {',
+    create("model: 'gpt-4-0613', max_tokens: 13"),
+    '}',
+    '',
+  ].join('\n'),
+  'src/declaration.ts': [
+    ...CLIENT,
+    "const GPT4_MODEL = 'gpt-4-0613';",
+    'export async function viaConst() {',
+    create('model: GPT4_MODEL, max_tokens: 7'),
+    '}',
+    'export async function inlineTwin() {',
+    create("model: 'gpt-4-0613', max_tokens: 7"),
+    '}',
+    '',
+  ].join('\n'),
+  'src/cast.ts': [
+    ...CLIENT,
+    'export async function viaCast() {',
+    create("model: 'gpt-4-0613' as string, max_tokens: 1"),
+    '}',
+    'export async function inlineTwin() {',
+    create("model: 'gpt-4-0613', max_tokens: 1"),
+    '}',
+    '',
+  ].join('\n'),
+  'src/quoted.ts': [
+    ...CLIENT,
+    'export async function quotedParam() {',
+    create(`model: 'gpt-4-0613', "max_tokens": 2`),
+    '}',
+    'export async function quotedBoth() {',
+    create(`"model": "gpt-4-0613", "max_tokens": 2`),
+    '}',
+    'export async function inlineTwin() {',
+    create("model: 'gpt-4-0613', max_tokens: 2"),
+    '}',
+    '',
+  ].join('\n'),
+  // Control: one consumer held for its parameters, one free. Any held consumer holds the const.
+  'src/mixed.ts': [
+    ...CLIENT,
+    "const GPT4_MODEL = 'gpt-4-0613';",
+    'export async function held() {',
+    create('model: GPT4_MODEL, max_tokens: 7'),
+    '}',
+    'export async function free() {',
+    create('model: GPT4_MODEL'),
+    '}',
+    '',
+  ].join('\n'),
+};
+/** Controls that stay Tier A: no consumer passes a model-dependent parameter; quoted keys on o3. */
+const BYPASS_CONTROLS: Record<string, string> = {
+  'src/free.ts': [
+    ...CLIENT,
+    "const GPT4_MODEL = 'gpt-4-0613';",
+    'export async function a() {',
+    create('model: GPT4_MODEL'),
+    '}',
+    'export async function b() {',
+    create('model: GPT4_MODEL, stream: false'),
+    '}',
+    '',
+  ].join('\n'),
+  // o3-mini -> gpt-5.6-sol: the rule covers both, so the inline twin is a swap plus a rename.
+  'src/quotedO3.ts': [
+    ...CLIENT,
+    'export async function quotedParam() {',
+    create(`model: 'o3-mini', "max_tokens": 2`),
+    '}',
+    'export async function quotedBoth() {',
+    create(`"model": "o3-mini", "max_tokens": 2`),
+    '}',
+    '',
+  ].join('\n'),
+};
+
+function makeBypassRepo(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'mendr-bypass-'));
+  created.push(dir);
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'bypass-fixture' }, null, 2));
+  mkdirSync(join(dir, 'src'));
+  for (const [file, text] of Object.entries({ ...BYPASS_SHAPES, ...BYPASS_CONTROLS })) {
+    writeFileSync(join(dir, file), text);
+  }
+  return dir;
+}
+
+async function runMendr(command: string, args: string[]): Promise<{ exitCode: number; stdout: string }> {
+  const result = await execa('tsx', ['src/cli.ts', command, ...args], {
+    cwd: MENDR_ROOT,
+    preferLocal: true,
+    reject: false,
+    env: { ...process.env, MENDR_REGISTRY_MAX_AGE_DAYS: '100000' },
+  });
+  return { exitCode: result.exitCode ?? 0, stdout: result.stdout };
+}
+
+describe('a model id read through a const, a shorthand, a cast or quoted keys', () => {
+  const HELD = 'param_behaviour_change';
+  /** file -> the held lines: each shape, then its inline twin. */
+  const EXPECTED_HELD: Record<string, number[]> = {
+    'src/shorthand.ts': [4, 8],
+    'src/declaration.ts': [3, 8],
+    'src/cast.ts': [4, 7],
+    'src/quoted.ts': [4, 7, 10],
+    'src/mixed.ts': [3],
+  };
+
+  it('is Tier B with its inline twin\'s reason, and fix-llm, watch and audit agree', async () => {
+    const repo = makeBypassRepo();
+    const { stdout } = await runFixLlm([repo, '--skip-gates', '--json']);
+    const report = JSON.parse(stdout) as JsonReport & { tierA: { file: string; from: string; to: string }[] };
+    const heldAt = (file: string) => report.tierB.filter((f) => f.file === file).map((f) => [f.line, f.reason]);
+    for (const [file, lines] of Object.entries(EXPECTED_HELD)) {
+      expect(heldAt(file), file).toEqual(lines.map((l) => [l, HELD]));
+    }
+    expect(report.tierB).toHaveLength(10);
+    // The controls stay automatic: the const nobody passes a parameter beside, and the quoted o3
+    // calls (swapped and renamed, like their twin).
+    expect(report.tierA.map((a) => [a.file, a.from, a.to]).sort()).toEqual(
+      [
+        ['src/free.ts', 'gpt-4-0613', 'gpt-5.6-sol'],
+        ['src/quotedO3.ts', 'o3-mini', 'gpt-5.6-sol'],
+        ['src/quotedO3.ts', 'o3-mini', 'gpt-5.6-sol'],
+        ['src/quotedO3.ts', 'max_tokens', 'max_completion_tokens'],
+        ['src/quotedO3.ts', 'max_tokens', 'max_completion_tokens'],
+      ].sort(),
+    );
+
+    // The human report gives each shape the scanner's own sentence, the same as its twin's.
+    const human = await runFixLlm([repo, '--skip-gates']);
+    const sentences = new Map<string, string>();
+    for (const block of human.stdout.split(/\n(?=src\/\S+:\d+:\d+\n)/)) {
+      const at = /^src\/\S+:\d+:\d+/.exec(block);
+      const sentence = /\n\s+- (moving from .*)\n/.exec(block);
+      if (at && sentence) sentences.set(at[0], sentence[1]);
+    }
+    expect([...sentences.keys()].sort()).toEqual(report.tierB.map((f) => `${f.file}:${f.line}:${f.column}`).sort());
+    const distinct = [...new Set(sentences.values())];
+    expect(distinct).toHaveLength(1);
+    expect(distinct[0]).toContain('moving from gpt-4-0613 to gpt-5.6-sol changes what this call asks for');
+
+    // watch and audit read the same scan through the same classifier.
+    const watch = JSON.parse((await runMendr('watch', [repo, '--json', '--no-exposure-file'])).stdout) as {
+      models: { locations: { file: string; line: number; tier: string; reason?: string }[] }[];
+    };
+    const watched = watch.models.flatMap((m) => m.locations).filter((l) => l.file in EXPECTED_HELD);
+    expect(watched.map((l) => `${l.file}:${l.line} ${l.tier} ${l.reason}`).sort()).toEqual(
+      report.tierB.map((f) => `${f.file}:${f.line} B ${f.reason}`).sort(),
+    );
+    const audit = JSON.parse((await runMendr('audit', [repo, '--json'])).stdout) as {
+      investigations: { locations: { selectors: { file: string; line: number; tier: string }[] } }[];
+    };
+    const audited = audit.investigations.flatMap((i) => i.locations.selectors).filter((s) => s.file in EXPECTED_HELD);
+    expect(audited.map((s) => `${s.file}:${s.line} ${s.tier}`).sort()).toEqual(
+      report.tierB.map((f) => `${f.file}:${f.line} B`).sort(),
+    );
+  }, 240_000);
+
+  it('under --write, leaves every held shape untouched and still applies the controls', async () => {
+    const repo = makeBypassRepo();
+    writeFileSync(
+      join(repo, 'mendr.config.json'),
+      JSON.stringify({ gates: { typecheck: { required: false }, tests: { required: false } } }),
+    );
+    const { stdout } = await runFixLlm([repo, '--write']);
+    for (const [file, text] of Object.entries(BYPASS_SHAPES)) {
+      expect(readFileSync(join(repo, file), 'utf8'), file).toBe(text);
+    }
+    expect(readFileSync(join(repo, 'src', 'free.ts'), 'utf8')).toBe(
+      BYPASS_CONTROLS['src/free.ts'].replace("'gpt-4-0613'", "'gpt-5.6-sol'"),
+    );
+    const quoted = readFileSync(join(repo, 'src', 'quotedO3.ts'), 'utf8');
+    expect(quoted).toContain(`create({ model: 'gpt-5.6-sol', "max_completion_tokens": 2, messages: [] })`);
+    expect(quoted).toContain(`create({ "model": "gpt-5.6-sol", "max_completion_tokens": 2, messages: [] })`);
+    expect(stdout).toContain('files modified: 2');
+  }, 180_000);
+});
+
 describe('fix-llm --fail-on', () => {
   it('gates on tierB', async () => {
     const repo = makeRepo();

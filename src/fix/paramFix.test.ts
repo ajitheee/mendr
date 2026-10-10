@@ -156,7 +156,7 @@ describe('withoutHeldCalls: a call held at review is never edited, and only a he
   /** The param sites the guard keeps, as `model:max_tokens value`, for one in-memory project. */
   function keptSites(project: Project, registry: LlmRegistry = HELD_REGISTRY): string[] {
     const held = findModelIdLiterals(project, registry).filter((m) => m.position === 'surface_capped');
-    return withoutHeldCalls(findParamSites(project, registry), held).map(
+    return withoutHeldCalls(findParamSites(project, registry), held, registry).map(
       (s) => `${s.model}:${s.paramProp.getInitializer()?.getText()}`,
     );
   }
@@ -432,6 +432,75 @@ export async function run() {
     expect(keptSites(project)).toEqual(['o3-mini:2']);
   });
 
+  // REGRESSION (2026-10-07): the scan now holds a const, a `{ model }` shorthand or a quoted-key
+  // request for its parameters, as it holds the inline twin. The param pass must see the same
+  // request as held, or it would edit a call listed as "review required, no patch generated".
+  it('skips a held call whose model is a `{ model }` shorthand', () => {
+    const project = inMemoryProject(
+      'src/shorthand.ts',
+      `${HEADER}
+export async function run() {
+  const model = "o3-mini";
+  return client.chat.completions.create({ model, max_tokens: 1, temperature: 0 });
+}
+`,
+    );
+    const held = findModelIdLiterals(project, HELD_REGISTRY).filter((m) => m.position === 'surface_capped');
+    expect(held.map((m) => m.location.line)).toEqual([5]);
+    // The param pass sees the shorthand's model (it did not before), so withoutHeldCalls decides.
+    expect(findParamSites(project, HELD_REGISTRY).map((s) => s.model)).toEqual(['o3-mini']);
+    expect(keptSites(project)).toEqual([]);
+  });
+
+  it('skips a held call written with quoted keys', () => {
+    const project = inMemoryProject(
+      'src/quoted.ts',
+      `${HEADER}
+export async function run() {
+  return client.chat.completions.create({ "model": "o3-mini", "max_tokens": 1, "temperature": 0 });
+}
+`,
+    );
+    expect(findParamSites(project, HELD_REGISTRY)).toHaveLength(1);
+    expect(keptSites(project)).toEqual([]);
+  });
+
+  it('judges each consumer of a const held for its parameters by its own parameters', () => {
+    // Call a passes a parameter no rule covers on the replacement, so the scan holds MODEL; call
+    // b passes none, and its own fix (max_tokens on o3-mini, which the rule names) stands.
+    const project = inMemoryProject(
+      'src/consumers.ts',
+      `${HEADER}
+const MODEL = "o3-mini";
+export async function run() {
+  const a = await client.chat.completions.create({ model: MODEL, max_tokens: 1, temperature: 0 });
+  const b = await client.chat.completions.create({ model: MODEL, max_tokens: 2 });
+  return { a, b };
+}
+`,
+    );
+    const held = findModelIdLiterals(project, HELD_REGISTRY).filter((m) => m.position === 'surface_capped');
+    expect(held.map((m) => m.location.line)).toEqual([4]);
+    expect(keptSites(project)).toEqual(['o3-mini:2']);
+  });
+
+  it('holds a direct consumer by its own parameters when the const was held at another call\'s surface', () => {
+    // The proxy call holds MODEL at its surface; the scan never reached the parameter check. The
+    // direct call with `temperature` would be held inline, so its request is not edited either.
+    const project = inMemoryProject(
+      'src/surface.ts',
+      `${HEADER}
+const MODEL = "o3-mini";
+export async function run() {
+  await proxy.chat.completions.create({ model: MODEL, messages: [] });
+  await client.chat.completions.create({ model: MODEL, max_tokens: 1, temperature: 0 });
+  return client.chat.completions.create({ model: MODEL, max_tokens: 2 });
+}
+`,
+    );
+    expect(keptSites(project)).toEqual(['o3-mini:2']);
+  });
+
   it('keeps every site when nothing was held', () => {
     const project = inMemoryProject(
       'src/plain.ts',
@@ -441,7 +510,7 @@ export async function run() {
 }
 `,
     );
-    expect(withoutHeldCalls(findParamSites(project, HELD_REGISTRY), [])).toHaveLength(1);
+    expect(withoutHeldCalls(findParamSites(project, HELD_REGISTRY), [], HELD_REGISTRY)).toHaveLength(1);
     expect(keptSites(project)).toEqual(['o3-mini:2']);
   });
 });
@@ -466,6 +535,63 @@ export async function run(messages: any) {
     const text = project.getSourceFileOrThrow('src/const-model.ts').getFullText();
     expect(text).toContain('{ model: m, messages }');
     expect(text).not.toContain('temperature');
+  });
+
+  // REGRESSION (2026-10-07): `getNameNode().getSymbol()` on a shorthand is the PROPERTY's symbol,
+  // so `{ model }` never resolved, and a swap of `const model = '…'` left the request unfixed.
+  it('resolves a `{ model }` shorthand through the variable it names', () => {
+    const project = inMemoryProject(
+      'src/shorthand.ts',
+      'export async function run(client: any) {\n  const model = "o1-mini";\n  return client.chat.completions.create({ model, max_tokens: 100 });\n}\n',
+    );
+    expect(applyParamFixes(project, REGISTRY)).toEqual([
+      { kind: 'param_rename', param: 'max_tokens', replacement: 'max_completion_tokens', model: 'o1-mini' },
+    ]);
+    expect(project.getSourceFileOrThrow('src/shorthand.ts').getFullText()).toContain(
+      '{ model, max_completion_tokens: 100 }',
+    );
+  });
+
+  // REGRESSION (2026-10-07): `getProperty(name)` compares a key as written, so a quoted key was
+  // invisible: the model was swapped and `"max_tokens"` beside it never renamed.
+  it('finds quoted keys, and renames them in their own quote style', () => {
+    const project = inMemoryProject(
+      'src/quoted.ts',
+      [
+        'export const a = (c: any) => c.chat.completions.create({ "model": "o1-mini", "max_tokens": 1 });',
+        "export const b = (c: any) => c.chat.completions.create({ model: 'o1-mini', 'max_tokens': 2 });",
+        '',
+      ].join('\n'),
+    );
+    expect(applyParamFixes(project, REGISTRY)).toHaveLength(2);
+    const text = project.getSourceFileOrThrow('src/quoted.ts').getFullText();
+    expect(text).toContain('{ "model": "o1-mini", "max_completion_tokens": 1 }');
+    expect(text).toContain("{ model: 'o1-mini', 'max_completion_tokens': 2 }");
+  });
+
+  it('reads a model through parentheses and a cast that masks nothing, never through one that does', () => {
+    // Pass 1 swaps a literal behind `as string` / `as const` / parentheses, so pass 2 has to read
+    // it there too. A cast to the repo's own type masks the id and pass 1 does not swap it.
+    const project = inMemoryProject(
+      'src/casts.ts',
+      [
+        'type ModelId = "o1-mini" | "gpt-4o";',
+        'const M = "o1-mini" as const;',
+        'export const a = (c: any) => c.chat.completions.create({ model: "o1-mini" as string, max_tokens: 1 });',
+        'export const b = (c: any) => c.chat.completions.create({ model: ("o1-mini"), max_tokens: 2 });',
+        'export const d = (c: any) => c.chat.completions.create({ model: M, max_tokens: 3 });',
+        'export const e = (c: any) => c.chat.completions.create({ model: "o1-mini" as ModelId, max_tokens: 4 });',
+        'export const f = (c: any) => c.chat.completions.create({ model: M as string, max_tokens: 5 });',
+        '',
+      ].join('\n'),
+    );
+    applyParamFixes(project, REGISTRY);
+    const text = project.getSourceFileOrThrow('src/casts.ts').getFullText();
+    expect(text).toContain('{ model: "o1-mini" as string, max_completion_tokens: 1 }');
+    expect(text).toContain('{ model: ("o1-mini"), max_completion_tokens: 2 }');
+    expect(text).toContain('{ model: M, max_completion_tokens: 3 }');
+    expect(text).toContain('{ model: "o1-mini" as ModelId, max_tokens: 4 }');
+    expect(text).toContain('{ model: M as string, max_completion_tokens: 5 }');
   });
 
   it('SKIPS a site whose model cannot be resolved to a concrete string', () => {

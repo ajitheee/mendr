@@ -2,20 +2,25 @@ import { relative } from 'node:path';
 import { gitUnifiedPatch } from '../report/diff.js';
 import { Node, SyntaxKind } from 'ts-morph';
 import type {
-  Expression,
+  NoSubstitutionTemplateLiteral,
+  ObjectLiteralElementLike,
   ObjectLiteralExpression,
   Project,
   PropertyAssignment,
+  StringLiteral,
 } from 'ts-morph';
-import type { LlmParamDeprecation, LlmRegistry, SourceLocation } from '../types.js';
+import type { LlmModelIdDeprecation, LlmParamDeprecation, LlmRegistry, SourceLocation } from '../types.js';
 import { loadProject } from '../usage/scanRepo.js';
 import { modelMatches, paramEntries } from '../usage/llmRegistry.js';
-import { fileAnnotation, isTestPath } from '../usage/scanLiterals.js';
+import { fileAnnotation, isMaskingCast, isTestPath } from '../usage/scanLiterals.js';
+import { paramHoldReason } from '../usage/coupledParams.js';
 import {
   classifyCallSurface,
   enclosingCallOfObject,
   enclosingNewOfObject,
   hasCatalogSiblings,
+  propertyKeyName,
+  requestParamKeys,
   TS_EXAMPLE_CALL_REASON,
   TS_PREFIXED_REASON,
 } from '../usage/tsSurface.js';
@@ -80,44 +85,78 @@ export interface ParamEdit {
   model: string;
 }
 
-/** The literal string value of a string/template-literal expression, else undefined. */
-function literalStringValue(expr: Expression | undefined): string | undefined {
-  if (!expr) return undefined;
-  if (Node.isStringLiteral(expr) || Node.isNoSubstitutionTemplateLiteral(expr)) {
-    return expr.getLiteralValue();
+type ModelLiteral = StringLiteral | NoSubstitutionTemplateLiteral;
+
+/**
+ * `expr` seen through the wrappers the model-id swap sees through: parentheses and a cast that
+ * masks nothing (`as string`, `as const`; see isMaskingCast). The param pass has to read a model
+ * exactly where pass 1 writes one, or a swap behind a cast is followed by no parameter fix:
+ * `{ model: 'o3-mini' as string, max_tokens }` became `'gpt-5.6-sol' as string` with `max_tokens`
+ * left on it, while the bare twin had it renamed.
+ */
+function swapTransparent(expr: Node | undefined): Node | undefined {
+  let n = expr;
+  while (n && (Node.isParenthesizedExpression(n) || (Node.isAsExpression(n) && !isMaskingCast(n)))) {
+    n = n.getExpression();
   }
-  return undefined;
+  return n;
+}
+
+/** The string literal `expr` is, through {@link swapTransparent} wrappers. */
+function swapTransparentLiteral(expr: Node | undefined): ModelLiteral | undefined {
+  const n = swapTransparent(expr);
+  return n && (Node.isStringLiteral(n) || Node.isNoSubstitutionTemplateLiteral(n)) ? n : undefined;
 }
 
 /**
- * Resolve a `model` property's value to a concrete compile-time string, or
- * `undefined` if it cannot be proven. Handles:
- *   - `{ model: "claude-opus-5" }`         (inline string / template literal)
- *   - `{ model: m }` with `const m = "…"`   (one-hop const/let, literal init)
+ * The property of a request object that names `name`, quoted or not: `max_tokens`, `"max_tokens"`
+ * and `'max_tokens'` are one key to the provider and to the scan (requestParamKeys).
+ * `ObjectLiteralExpression.getProperty(name)` compares the key AS WRITTEN, so a quoted key was
+ * invisible here: the model was swapped and the `"max_tokens"` beside it was never renamed.
+ */
+function propertyNamed(obj: ObjectLiteralExpression, name: string): ObjectLiteralElementLike | undefined {
+  return obj.getProperties().find((p) => !Node.isSpreadAssignment(p) && propertyKeyName(p.getNameNode()) === name);
+}
+
+/** The literal a `model` property's own value is written as, or undefined when it is not one. */
+function ownModelLiteral(modelProp: Node | undefined): ModelLiteral | undefined {
+  return modelProp && Node.isPropertyAssignment(modelProp) ? swapTransparentLiteral(modelProp.getInitializer()) : undefined;
+}
+
+/**
+ * The node a `model` property's value is written in: its own literal, or the literal a one-hop
+ * const/let is initialised with. Handles:
+ *   - `{ model: "claude-opus-5" }`, `{ model: "…" as string }`  (inline string / template literal)
+ *   - `{ model: m }` with `const m = "…"`                        (one-hop const/let, literal init)
  *   - `{ model }`     shorthand, same rule
  * Anything else (env var, concatenation, interpolation, import) is unresolvable.
+ *
+ * The shorthand is resolved through its VALUE symbol. `getNameNode().getSymbol()` on `{ model }`
+ * is the PROPERTY's symbol, whose declaration is the shorthand itself, so the shorthand never
+ * resolved: `const model = 'o3-mini'; create({ model, max_tokens })` was swapped and its
+ * `max_tokens` never renamed, and a held one was invisible to withoutHeldCalls.
+ *
+ * resolveModel reads its answer from here, so the param pass and withoutHeldCalls cannot disagree
+ * about which literal a request's model is.
  */
+function modelLiteralNode(modelProp: Node | undefined): ModelLiteral | undefined {
+  if (!modelProp) return undefined;
+  const own = ownModelLiteral(modelProp);
+  if (own) return own;
+  const value = Node.isPropertyAssignment(modelProp) ? swapTransparent(modelProp.getInitializer()) : undefined;
+  const symbol =
+    value && Node.isIdentifier(value)
+      ? value.getSymbol()
+      : Node.isShorthandPropertyAssignment(modelProp)
+        ? modelProp.getValueSymbol()
+        : undefined;
+  const decl = symbol?.getValueDeclaration();
+  return decl && Node.isVariableDeclaration(decl) ? swapTransparentLiteral(decl.getInitializer()) : undefined;
+}
+
+/** A `model` property's value as a concrete compile-time string, or undefined if it cannot be proven. */
 function resolveModel(modelProp: Node): string | undefined {
-  let expr: Expression | undefined;
-  if (Node.isPropertyAssignment(modelProp)) {
-    expr = modelProp.getInitializer();
-  } else if (Node.isShorthandPropertyAssignment(modelProp)) {
-    // `{ model }` — the value is whatever the identifier `model` is bound to.
-    expr = modelProp.getNameNode();
-  }
-  if (!expr) return undefined;
-
-  const direct = literalStringValue(expr);
-  if (direct !== undefined) return direct;
-
-  // One-hop identifier resolution: a local const/let with a literal initializer.
-  if (Node.isIdentifier(expr)) {
-    const decl = expr.getSymbol()?.getValueDeclaration();
-    if (decl && Node.isVariableDeclaration(decl)) {
-      return literalStringValue(decl.getInitializer());
-    }
-  }
-  return undefined;
+  return modelLiteralNode(modelProp)?.getLiteralValue();
 }
 
 /**
@@ -146,7 +185,7 @@ export function findParamSites(project: Project, registry: LlmRegistry): ParamMa
     if (fileAnnotation(sf.getFullText()) !== undefined) continue;
 
     for (const object of sf.getDescendantsOfKind(SyntaxKind.ObjectLiteralExpression)) {
-      const modelProp = object.getProperty('model');
+      const modelProp = propertyNamed(object, 'model');
       if (!modelProp) continue; // not a request-options object
 
       // Resolve the model ONCE per object; skip the whole object if we can't.
@@ -154,7 +193,7 @@ export function findParamSites(project: Project, registry: LlmRegistry): ParamMa
       if (model === undefined) continue;
 
       for (const entry of entries) {
-        const paramProp = object.getProperty(entry.param);
+        const paramProp = propertyNamed(object, entry.param);
         // We only transform a plain `key: value` property. A shorthand/spread/
         // method sharing the name is left untouched (we can't safely rewrite it).
         if (!paramProp || !Node.isPropertyAssignment(paramProp)) continue;
@@ -175,28 +214,15 @@ export function findParamSites(project: Project, registry: LlmRegistry): ParamMa
   return out;
 }
 
-/** The node a `model` property's value is written in: the literal, or the one-hop const's literal. */
-function modelLiteralNode(modelProp: Node | undefined): Node | undefined {
-  if (!modelProp) return undefined;
-  let expr: Expression | undefined;
-  if (Node.isPropertyAssignment(modelProp)) expr = modelProp.getInitializer();
-  else if (Node.isShorthandPropertyAssignment(modelProp)) expr = modelProp.getNameNode();
-  if (!expr) return undefined;
-  if (literalStringValue(expr) !== undefined) return expr;
-  if (Node.isIdentifier(expr)) {
-    const decl = expr.getSymbol()?.getValueDeclaration();
-    if (decl && Node.isVariableDeclaration(decl)) {
-      const init = decl.getInitializer();
-      if (literalStringValue(init) !== undefined) return init;
-    }
-  }
-  return undefined;
-}
-
-/** A literal the model-id scan held for review: the node itself, and the scan's reason. */
+/**
+ * A literal the model-id scan held for review: the node itself, the scan's reason, and the record
+ * it was held under (a LiteralMatch carries all three), so a consumer reached through a held
+ * declaration can be judged by the parameter rule the scan applies to an inline literal.
+ */
 export interface HeldLiteral {
   node: Node;
   reason?: string;
+  deprecation?: LlmModelIdDeprecation;
 }
 
 /**
@@ -216,17 +242,23 @@ export interface HeldLiteral {
  * So a site is held when its OWN model literal is a held node (node identity: a held literal is
  * never swapped, so its wrapper survives pass 1's edits elsewhere in the file), or, when the
  * model comes through a declaration the scan held, when the rule that held the declaration also
- * holds THIS call: the file is an example tree, or this call's own surface is capped.
+ * holds THIS call: the file is an example tree, this call's own surface is capped, or this call's
+ * own parameters hold it (the scan now holds a declaration for its consumers' parameters, so
+ * `registry` is the one the scan ran with, to judge them by the same rule).
  */
-export function withoutHeldCalls(sites: ParamMatch[], held: ReadonlyArray<HeldLiteral>): ParamMatch[] {
+export function withoutHeldCalls(
+  sites: ParamMatch[],
+  held: ReadonlyArray<HeldLiteral>,
+  registry: LlmRegistry,
+): ParamMatch[] {
   if (held.length === 0) return sites;
-  const reasonsByNode = new Map<Node, (string | undefined)[]>();
+  const heldByNode = new Map<Node, HeldLiteral[]>();
   for (const h of held) {
-    const list = reasonsByNode.get(h.node);
-    if (list) list.push(h.reason);
-    else reasonsByNode.set(h.node, [h.reason]);
+    const list = heldByNode.get(h.node);
+    if (list) list.push(h);
+    else heldByNode.set(h.node, [h]);
   }
-  return sites.filter((site) => !isHeldSite(site, reasonsByNode));
+  return sites.filter((site) => !isHeldSite(site, heldByNode, registry));
 }
 
 /**
@@ -236,8 +268,8 @@ export function withoutHeldCalls(sites: ParamMatch[], held: ReadonlyArray<HeldLi
  * own verdict cannot say the call is held; the request it is part of can. (Review of PR #50,
  * round two: the nested `max_tokens` was still renamed inside a call listed as held.)
  */
-function isHeldSite(site: ParamMatch, reasonsByNode: ReadonlyMap<Node, (string | undefined)[]>): boolean {
-  return requestObjectsAround(site.object).some((obj) => isHeldObject(obj, reasonsByNode));
+function isHeldSite(site: ParamMatch, heldByNode: ReadonlyMap<Node, HeldLiteral[]>, registry: LlmRegistry): boolean {
+  return requestObjectsAround(site.object).some((obj) => isHeldObject(obj, heldByNode, registry));
 }
 
 /**
@@ -342,14 +374,15 @@ function valueLeaves(expr: Node, viaDeclaration: boolean): ModelLeaf[] {
 /** Is this request object one the scan held, judged by the rule the scan applied to its model? */
 function isHeldObject(
   obj: ObjectLiteralExpression,
-  reasonsByNode: ReadonlyMap<Node, (string | undefined)[]>,
+  heldByNode: ReadonlyMap<Node, HeldLiteral[]>,
+  registry: LlmRegistry,
 ): boolean {
-  for (const leaf of modelValueLeaves(obj.getProperty('model'))) {
-    const reasons = reasonsByNode.get(leaf.node);
-    if (!reasons) continue;
+  for (const leaf of modelValueLeaves(propertyNamed(obj, 'model'))) {
+    const held = heldByNode.get(leaf.node);
+    if (!held) continue;
     // The object's own value: the scan judged this very request.
     if (!leaf.viaDeclaration) return true;
-    if (isHeldConsumer(obj, leaf.node, reasons)) return true;
+    if (isHeldConsumer(obj, leaf.node, held, registry)) return true;
   }
   return false;
 }
@@ -357,9 +390,15 @@ function isHeldObject(
 /**
  * A request fed a declaration the scan held. The scan holds a declaration when ANY consumer
  * is held, so judge THIS consumer the way the scan judges a literal written in it
- * (classifyByEnclosure, then the example-tree and gateway-prefix rules in findModelIdLiterals).
+ * (classifyByEnclosure, then the example-tree, gateway-prefix and parameter rules in
+ * findModelIdLiterals).
  */
-function isHeldConsumer(obj: ObjectLiteralExpression, literal: Node, reasons: (string | undefined)[]): boolean {
+function isHeldConsumer(
+  obj: ObjectLiteralExpression,
+  literal: Node,
+  held: readonly HeldLiteral[],
+  registry: LlmRegistry,
+): boolean {
   // The scan judges a declaration by the consumers in its own file (collectTsSinks is per
   // file), so a consumer elsewhere was never part of that verdict.
   if (literal.getSourceFile() !== obj.getSourceFile()) return false;
@@ -367,17 +406,25 @@ function isHeldConsumer(obj: ObjectLiteralExpression, literal: Node, reasons: (s
   const wrapperCtor = !call && enclosingNewOfObject(obj) !== undefined && !hasCatalogSiblings(obj);
   // An example tree, and a gateway-prefixed id, hold every real request that uses the value,
   // and nothing that is data.
-  if (reasons.includes(TS_EXAMPLE_CALL_REASON) || reasons.includes(TS_PREFIXED_REASON)) {
+  if (held.some((h) => h.reason === TS_EXAMPLE_CALL_REASON || h.reason === TS_PREFIXED_REASON)) {
     return call ? classifyCallSurface(call).position !== 'data' : wrapperCtor;
   }
-  if (call) return classifyCallSurface(call).position === 'surface_capped';
-  return wrapperCtor;
+  if (!call) return wrapperCtor;
+  const surface = classifyCallSurface(call).position;
+  if (surface === 'surface_capped') return true;
+  // An ordinary request is held by its own parameters, as its inline twin would be. A declaration
+  // shared by a call held for its parameters and one that is not keeps the other's fix.
+  const keys = [requestParamKeys(obj)];
+  return (
+    surface === 'model_arg' &&
+    held.some((h) => h.deprecation !== undefined && paramHoldReason(keys, h.deprecation, registry) !== undefined)
+  );
 }
 
 /** Keep only the param sites whose model literal pass 1 swapped (see LlmFixOptions). */
 export function onSwappedCalls(sites: ParamMatch[], swapped: ReadonlySet<Node>): ParamMatch[] {
   return sites.filter((site) => {
-    const literal = modelLiteralNode(site.object.getProperty('model'));
+    const literal = modelLiteralNode(propertyNamed(site.object, 'model'));
     return literal !== undefined && swapped.has(literal);
   });
 }
