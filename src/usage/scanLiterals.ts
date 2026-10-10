@@ -35,6 +35,7 @@ import {
   modelIdEntries,
   type EffectiveVerificationState,
 } from './llmRegistry.js';
+import { fineTuneHoldReason, resolveSourceFineTune } from './fineTune.js';
 
 // LLM mode — locate.
 //
@@ -124,6 +125,11 @@ export interface LiteralMatch {
   reason?: string;
   /** True when the literal is `provider/id` or `provider:id` — a gateway/registry selector, never swapped. */
   prefixed?: boolean;
+  /**
+   * The base model when the literal is a fine-tuned model id (`ft:<base>:<org>:<suffix>:<id>`),
+   * matched through the registry's row for fine-tunes of that base. Never swapped.
+   */
+  fineTuneOf?: string;
 }
 
 /** A matched-but-rejected literal (used as data), for Tier C locate-only reporting. */
@@ -750,8 +756,9 @@ export function findModelIdLiterals(
   // entryId but only ever saw the first). So one match is emitted PER MATCHING
   // ENTRY below, so every entryId reaches the consumers; the fix path collapses
   // those back to one edit per physical literal (see applyModelIdFixes).
+  const entries = modelIdEntries(registry);
   const byValue = new Map<string, LlmModelIdDeprecation[]>();
-  for (const dep of modelIdEntries(registry)) {
+  for (const dep of entries) {
     const list = byValue.get(dep.deprecated);
     if (list) list.push(dep);
     else byValue.set(dep.deprecated, [dep]);
@@ -801,12 +808,27 @@ export function findModelIdLiterals(
       const value = node.getLiteralValue();
       let deprecations = byValue.get(value);
       let prefixed = false;
+      // `ft:gpt-3.5-turbo-0125:acme::9abc`: a fine-tuned model id. It joins the registry's row for
+      // fine-tunes of its base, or its base model's row, by the usage audit's rule (fineTune.ts).
+      // The WHOLE value must be a fine-tune id, so a string that only contains one never matches.
+      let fineTuneOf: string | undefined;
+      if (!deprecations) {
+        const ft = resolveSourceFineTune(value, byValue, entries);
+        deprecations = ft?.records;
+        fineTuneOf = ft?.base;
+      }
       if (!deprecations) {
         // `openai/gpt-5-nano` / `openai:gpt-5-mini`: a gateway or provider-registry
         // selector carrying a registry id. Real, never swap-eligible (the successor
         // may need a different prefix). Anything else stays exact-value only.
         const split = splitProviderPrefix(value);
         deprecations = split ? byValue.get(split.id) : undefined;
+        if (split && !deprecations) {
+          // `openai/ft:gpt-4-0613:acme::abc`: a fine-tune behind a gateway prefix.
+          const ft = resolveSourceFineTune(split.id, byValue, entries);
+          deprecations = ft?.records;
+          fineTuneOf = ft?.base;
+        }
         if (!deprecations) continue; // exact-value guard: no substring matching
         prefixed = true;
       }
@@ -839,15 +861,27 @@ export function findModelIdLiterals(
         classification = { position: 'surface_capped', reason: TS_PREFIXED_REASON };
       }
       for (const deprecation of deprecations) {
-        // A verified replacement is not yet a safe patch. The `model_id` record says which id
-        // to put there; it says nothing about the request around it, and a model swap can
-        // change which parameters the provider accepts. Where the replacement's family is
-        // known to constrain a parameter this call passes, and NO registry rule covers that
-        // parameter, the swap drops to review — absence of a rule is not evidence of
-        // compatibility. Regression case: coupledParams.test.ts
-        // (recommended_replacement_requires_coupled_parameter_migration).
         let coupled = classification;
-        if (coupled.position === 'model_arg') {
+        // A fine-tune is never swapped, whatever its record says: every replacement is a base
+        // model, and swapping one in drops the customer's training. Wherever a plain id would be
+        // a live or reviewable selector, the fine-tune is held for review with that sentence. In
+        // a data position (a list, a lookup key, a catalog row) it stays data, like any other id.
+        // The cast guard demotes a model argument to data; a fine-tune there is held all the same.
+        if (fineTuneOf !== undefined) {
+          if (coupled.position !== 'data' || coupled.reason === TYPE_CAST_REASON) {
+            coupled = {
+              position: 'surface_capped',
+              reason: fineTuneHoldReason(value, fineTuneOf, deprecation.replacement),
+            };
+          }
+        } else if (coupled.position === 'model_arg') {
+          // A verified replacement is not yet a safe patch. The `model_id` record says which id
+          // to put there; it says nothing about the request around it, and a model swap can
+          // change which parameters the provider accepts. Where the replacement's family is
+          // known to constrain a parameter this call passes, and NO registry rule covers that
+          // parameter, the swap drops to review — absence of a rule is not evidence of
+          // compatibility. Regression case: coupledParams.test.ts
+          // (recommended_replacement_requires_coupled_parameter_migration).
           const unresolved = unresolvedCoupledParams(
             siblingParamKeys(node),
             deprecation.provider,
@@ -886,6 +920,7 @@ export function findModelIdLiterals(
           purpose: coupled.purpose,
           reason: coupled.reason,
           prefixed,
+          ...(fineTuneOf !== undefined ? { fineTuneOf } : {}),
         });
       }
     }
