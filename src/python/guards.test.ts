@@ -381,3 +381,60 @@ def ask(q):
     expect(hit?.tier).toBe('B');
   }, 60_000);
 });
+
+// A CLIENT STORED ON `self` AND SET UP IN ANOTHER METHOD (Open-Finance-Lab/AgenticTrading,
+// 2026-10-09; the fixtures are written for this suite). `__init__` sets the attribute to None and
+// an init method sets it to `AsyncOpenAI(...)` once a key is found. Counting the None as a second
+// binding made the receiver "ambiguous", and fix-llm then printed the held call as
+// `usage_unverified` — "no supported SDK call ... was found in this file" — beside one.
+describe('a client attribute declared None, then built in another method', () => {
+  const agent = (extra = '') => `
+from openai import AsyncOpenAI
+
+class Agent:
+    def __init__(self):
+        self.llm_client = None${extra}
+
+    def _initialize_llm(self, key):
+        self.llm_client = AsyncOpenAI(api_key=key)
+
+    async def analyze(self, prompt):
+        if not self.llm_client:
+            return None
+        return await self.llm_client.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": prompt}],
+        )
+`;
+
+  it('resolves to the first-party client: None is a placeholder, not a second client', async () => {
+    const hit = (await tiers('agents/momentum.py', agent())).find((x) => x.value === 'gpt-4');
+    expect(hit?.tier).toBe('A');
+    expect(hit?.position).toBe('model_arg');
+  }, 60_000);
+
+  it('is still held when a host in the file caps its surface, and the reason names that host', async () => {
+    const hit = (await tiers('agents/momentum.py', agent('\n        self.memory_url = "http://127.0.0.1:8010"'))).find(
+      (x) => x.value === 'gpt-4',
+    );
+    expect(hit?.tier).toBe('B');
+    expect(hit?.position).toBe('surface_capped');
+    expect(hit?.reason).toContain('openai_compatible_proxy');
+    expect(hit?.reason).toContain('127.0.0.1');
+  }, 60_000);
+
+  it('is held when a second real binding exists besides the None', async () => {
+    const two = agent().replace(
+      '    async def analyze',
+      '    def _use_gateway(self):\n        self.llm_client = AsyncOpenAI(base_url="https://gateway.internal/v1")\n\n    async def analyze',
+    );
+    expect((await tiers('agents/momentum.py', two)).find((x) => x.value === 'gpt-4')?.tier).toBe('B');
+  }, 60_000);
+
+  it('is held when the only other binding is not a first-party constructor', async () => {
+    const built = agent().replace('self.llm_client = AsyncOpenAI(api_key=key)', 'self.llm_client = make_client(key)');
+    const hit = (await tiers('agents/momentum.py', built)).find((x) => x.value === 'gpt-4');
+    expect(hit?.tier).toBe('B');
+    expect(hit?.position).toBe('surface_capped');
+  }, 60_000);
+});

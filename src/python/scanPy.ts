@@ -12,7 +12,7 @@ import {
   splitProviderPrefix,
 } from '../usage/sharedRules.js';
 import {
-  detectPySurface,
+  explainPySurface,
   dottedCallee,
   enclosingCall,
   inCollectionDisplay,
@@ -509,12 +509,20 @@ export function collectPySinkNames(tree: Tree): Set<string> {
 /** Per-file evidence the guards need: the provider surface of this file. */
 export interface PyGuardContext {
   surface: PySurface;
+  /** What in the file decided a non-direct `surface` (see explainPySurface), for the reason. */
+  surfaceVia?: string;
   value?: string;
   /** Where each traced name flows — lets the caps follow a variable hop. */
   sinkTargets?: Map<string, PySinkTarget[]>;
 }
 
 export const PY_SURFACE_REASON = 'provider surface is not a verified direct provider — a direct replacement is not valid here';
+
+/** {@link PY_SURFACE_REASON}, naming the surface and, when known, the evidence in the file. */
+function surfaceCapReason(surface: PySurface, ctx?: PyGuardContext): string {
+  return `${PY_SURFACE_REASON} (${surface}${ctx?.surfaceVia ? `: ${ctx.surfaceVia}` : ''})`;
+}
+
 export const PY_ENDPOINT_REASON = 'the successor is not endpoint-compatibility verified for this endpoint';
 export const PY_LEGACY_SDK_REASON = 'legacy provider SDK — the migration differs from the modern client';
 export const PY_MODULE_REQUEST_REASON = 'a provider request executed at module import — real, but not an unattended swap';
@@ -679,7 +687,7 @@ function capFactory(
   }
   const surface = ctx?.surface ?? 'unknown_wrapper';
   if (SURFACE_MAX_TIER[surface] !== 'A') {
-    return { position: 'surface_capped', reason: `${PY_SURFACE_REASON} (${surface})` };
+    return { position: 'surface_capped', reason: surfaceCapReason(surface, ctx) };
   }
   return null;
 }
@@ -817,7 +825,7 @@ export function applyPyGuards(
     // G4 — the surface caps the tier. Only a verified direct provider reaches A.
     const surface = ctx?.surface ?? 'unknown_wrapper';
     if (SURFACE_MAX_TIER[surface] !== 'A') {
-      return { position: 'surface_capped', reason: `${PY_SURFACE_REASON} (${surface})` };
+      return { position: 'surface_capped', reason: surfaceCapReason(surface, ctx) };
     }
     // G4 (receiver-bound). A file-wide text signal cannot say WHICH object the
     // call is made on. Without this, one unused import — or the word "openai" in
@@ -905,7 +913,7 @@ function judgeSinkCall(
   }
   const surface = ctx?.surface ?? 'unknown_wrapper';
   if (SURFACE_MAX_TIER[surface] !== 'A') {
-    return { position: 'surface_capped', reason: `${PY_SURFACE_REASON} (${surface})` };
+    return { position: 'surface_capped', reason: surfaceCapReason(surface, ctx) };
   }
   const receiver = receiverOf(dotted ?? '', sink.suffix);
   const bound = receiver ? resolveReceiverSurface(literal, receiver) : null;
@@ -1244,7 +1252,7 @@ export async function findPyModelIdLiterals(
       const sinkNames = collectPySinkNames(tree);
       const sinkTargets = collectPySinkTargets(tree);
       // G4: the provider surface, resolved once per file, caps every tier below.
-      const surface = detectPySurface(source.path, source.text);
+      const { surface, via: surfaceVia } = explainPySurface(source.path, source.text);
       // An examples/samples/demos/docs tree is informational by rule (C3).
       const example = isExamplePath(source.path);
       for (const node of tree.rootNode.descendantsOfType('string')) {
@@ -1264,7 +1272,7 @@ export async function findPyModelIdLiterals(
         // Position/purpose belong to the CST node, not the registry entry, so
         // classify once and emit one match per matching record (multimap).
         let classification: { position: LiteralPosition; purpose?: DataPurpose; reason?: string } =
-          classifyPyLiteral(node, sinkNames, { surface, sinkTargets });
+          classifyPyLiteral(node, sinkNames, { surface, surfaceVia, sinkTargets });
         // Rule C3, narrowed 2026-09-28 — the PYTHON half of the same change made in
         // scanLiterals.ts. An example tree is informational BY DEFAULT, and everything the
         // parser reads as data there still is. But a sample that actually reaches a provider

@@ -283,23 +283,51 @@ export function stripPyComments(text: string): string {
 }
 
 export function detectPySurface(file: string, rawText: string): PySurface {
+  return explainPySurface(file, rawText).surface;
+}
+
+/** A file's provider surface, and the evidence that decided it. */
+export interface PySurfaceVerdict {
+  surface: PySurface;
+  /**
+   * What in the file decided a non-direct surface, in words a reviewer can check against the
+   * source. The cap is file-wide on purpose, so a host named for an unrelated service caps a
+   * genuine first-party call too; without this the finding said only "openai_compatible_proxy"
+   * beside a client built with no base URL, and the reader could not see why
+   * (Open-Finance-Lab/AgenticTrading, 2026-10-09: a memory service on 127.0.0.1).
+   */
+  via?: string;
+}
+
+/** {@link detectPySurface}, with the evidence it went on. The rules and their order are the same. */
+export function explainPySurface(file: string, rawText: string): PySurfaceVerdict {
   const text = stripPyComments(rawText);
   const p = file.replace(/\\/g, '/').toLowerCase();
+  let m: RegExpExecArray | null;
   // `api_version =` alone is NOT Azure — plenty of code has an unrelated one.
   // Require a real Azure client construction, or an azure path segment.
-  if (/(^|\/)(azure|azure_openai)(\/|_|$)/.test(p) || /Azure(Async)?OpenAI\s*\(/.test(text)) {
-    return 'azure_openai';
+  if (/(^|\/)(azure|azure_openai)(\/|_|$)/.test(p)) return { surface: 'azure_openai', via: 'the file path names Azure' };
+  if ((m = /Azure(Async)?OpenAI\s*\(/.exec(text))) {
+    return { surface: 'azure_openai', via: `this file builds ${m[0].replace(/\s*\($/, '')}(…)` };
   }
-  if (/(^|\/)(bedrock|sagemaker)(\/|_|$)/.test(p) || /boto3\.client\(\s*["']bedrock/.test(text)) return 'aws_bedrock';
-  if (/(^|\/)(vertex|vertex_ai)(\/|_|$)/.test(p) || /aiplatform|vertexai/.test(text)) return 'google_vertex';
-  if (/(^|\/)openrouter(\/|_|$)/.test(p) || /openrouter\.ai/i.test(text)) return 'openrouter';
-  if (PROXY_HOSTS.test(p) || PROXY_HOSTS.test(text)) return 'openai_compatible_proxy';
+  if (/(^|\/)(bedrock|sagemaker)(\/|_|$)/.test(p)) return { surface: 'aws_bedrock', via: 'the file path names Bedrock / SageMaker' };
+  if (/boto3\.client\(\s*["']bedrock/.test(text)) return { surface: 'aws_bedrock', via: 'this file builds a Bedrock client' };
+  if (/(^|\/)(vertex|vertex_ai)(\/|_|$)/.test(p)) return { surface: 'google_vertex', via: 'the file path names Vertex' };
+  if ((m = /aiplatform|vertexai/.exec(text))) return { surface: 'google_vertex', via: `this file names "${m[0]}"` };
+  if (/(^|\/)openrouter(\/|_|$)/.test(p)) return { surface: 'openrouter', via: 'the file path names OpenRouter' };
+  if (/openrouter\.ai/i.test(text)) return { surface: 'openrouter', via: 'this file names openrouter.ai' };
+  if ((m = PROXY_HOSTS.exec(p))) return { surface: 'openai_compatible_proxy', via: `the file path names "${m[0]}"` };
+  if ((m = PROXY_HOSTS.exec(text))) {
+    return { surface: 'openai_compatible_proxy', via: `this file names the host "${m[0]}", for any client in it` };
+  }
   // A base_url / api_base sourced from credentials or env is operator-overridable:
   // the namespace is not provably the vendor's.
-  if (/(base_url|api_base|endpoint_url)\s*=\s*(credentials|config|os\.environ|os\.getenv|self\.)/i.test(text)) {
-    return 'openai_compatible_proxy';
+  if ((m = /(base_url|api_base|endpoint_url)\s*=\s*(credentials|config|os\.environ|os\.getenv|self\.)/i.exec(text))) {
+    return { surface: 'openai_compatible_proxy', via: `${m[1]} is read from configuration in this file` };
   }
-  if (/OAICompat|OpenAICompatible|openai_api_compatible/i.test(text)) return 'openai_compatible_proxy';
+  if ((m = /OAICompat|OpenAICompatible|openai_api_compatible/i.exec(text))) {
+    return { surface: 'openai_compatible_proxy', via: `this file names "${m[0]}"` };
+  }
 
   // FAIL CLOSED. `direct` is the only surface that permits Tier A, so it must be
   // EARNED by positive evidence that this file builds/imports a first-party
@@ -307,7 +335,9 @@ export function detectPySurface(file: string, rawText: string): PySurface {
   // parameter, a client pulled out of a dict, a method chain that merely LOOKS
   // like the SDK path, and a locally-shadowed `create`. In each the client type is
   // unresolved — and an unresolved client must reduce authority, not grant it.
-  return hasDirectClientEvidence(text) ? 'direct' : 'unknown_wrapper';
+  return hasDirectClientEvidence(text)
+    ? { surface: 'direct' }
+    : { surface: 'unknown_wrapper', via: 'this file imports or builds no first-party client' };
 }
 
 /**
@@ -377,7 +407,8 @@ function rootOf(node: PyNode): PyNode {
  * right-hand side is a first-party constructor with no base_url/api_base override.
  * Anything else — a function parameter, a subscript, a call result, a name bound
  * more than once, or no binding at all — is unresolved, and unresolved must
- * reduce authority.
+ * reduce authority. A binding to `None` is not counted: it is the "not set yet"
+ * placeholder, and it cannot send a request anywhere.
  */
 export function resolveReceiverSurface(
   literal: PyNode,
@@ -392,6 +423,11 @@ export function resolveReceiverSurface(
     const right = assign.childForFieldName('right');
     if (!left || !right) continue;
     if (left.text.replace(/\s+/g, '') !== receiver) continue;
+    // `self.client = None` in __init__, then `self.client = OpenAI()` once a key is found: the
+    // declare-then-initialise idiom. None is not a client — a call on it raises before any request
+    // leaves — so it is not a second binding that could point the call somewhere else. Every other
+    // right-hand side still counts. (Open-Finance-Lab/AgenticTrading, 2026-10-09.)
+    if (right.type === 'none') continue;
     bindings++;
     if (right.type !== 'call') continue;
     const dotted = dottedCallee(right);
