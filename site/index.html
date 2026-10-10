@@ -225,6 +225,36 @@
   .strip .dv{font-size:1rem}.strip .dv.mono{font-family:var(--mono);font-size:.9rem}
 
   /* commands */
+  /* pricing: three hairline columns, not cards; the pilot is the one lifted column */
+  .plans{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-top:1px solid var(--hair)}
+  .plan{padding:28px clamp(18px,2.2vw,30px) 30px;border-right:1px solid var(--hair);display:flex;flex-direction:column;gap:18px}
+  .plan:first-child{padding-left:0}
+  .plan:last-child{border-right:0;padding-right:0}
+  .plan.hl{background:var(--data);border-top:2px solid var(--cobalt);margin-top:-1px}
+  .plan .pk{font-family:var(--mono);font-size:.8rem;letter-spacing:.04em;color:var(--carbon);margin:0;display:flex;flex-wrap:wrap;align-items:baseline;gap:10px}
+  .plan .pnow{font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;color:var(--grey)}
+  .plan .pnow.pl{color:var(--grey)}
+  .plan .pp{margin:0;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .plan .pa{font-size:clamp(2rem,3.4vw,2.6rem);font-weight:600;letter-spacing:-.02em;line-height:1;font-variant-numeric:tabular-nums}
+  .plan .pu{font-family:var(--mono);font-size:.82rem;color:var(--grey)}
+  .plan .pf{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px;flex:1}
+  .plan .pf li{font-size:.98rem;line-height:1.45;color:var(--ink-2);padding-left:18px;position:relative}
+  .plan .pf li::before{content:"";position:absolute;left:0;top:.62em;width:8px;height:2px;background:var(--cobalt)}
+  .plan .btn,.plan .tlink{align-self:flex-start}
+  .plan .tiers{display:flex;flex-direction:column;gap:6px;flex:1}
+  .plan .tr{margin:12px 0 0;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .plan .tr:first-child{margin-top:0}
+  .plan .tn{font-weight:600}
+  .plan .ta{font-weight:600;font-variant-numeric:tabular-nums}
+  .plan .tu{font-family:var(--mono);font-size:.78rem;color:var(--grey)}
+  .plan .td{margin:0;font-size:.95rem;line-height:1.45;color:var(--ink-2)}
+  .plan .pnote{margin:0;font-size:.9rem;line-height:1.45;color:var(--grey);border-top:1px solid var(--hair-2);padding-top:14px}
+  .pfine{margin:18px 0 0;font-family:var(--mono);font-size:.74rem;color:var(--grey)}
+  @media (max-width:900px){
+    .plans{grid-template-columns:1fr}
+    .plan,.plan:first-child,.plan:last-child{padding:26px 0;border-right:0;border-bottom:1px solid var(--hair)}
+    .plan.hl{padding:26px 18px;margin:0 -18px}
+  }
   .cmds{border-top:1px solid var(--hair);margin-top:8px}
   .cmd{display:grid;grid-template-columns:minmax(0,26ch) 1fr;gap:6px 24px;padding:18px 0;border-bottom:1px solid var(--hair);align-items:baseline}
   @media (max-width:620px){.cmd{grid-template-columns:1fr}}
@@ -263,7 +293,7 @@
 <header>
   <div class="nav">
     <a class="mark" href="#" aria-label="mendr"><svg class="m" viewBox="15 30 77 62" aria-hidden="true"><rect x="15" y="30" width="77" height="14" fill="var(--cobalt)"/><rect x="15" y="30" width="14" height="62" fill="var(--cobalt)"/><rect x="43" y="30" width="14" height="62" fill="var(--cobalt)"/><rect x="78" y="30" width="14" height="34" fill="var(--cobalt)"/><rect x="78" y="78" width="14" height="14" fill="var(--amber)"/></svg>endr</a>
-    <nav class="links"><a href="#demo">Demo</a><a href="#detect">How it works</a><a href="#evidence">Evidence</a><a href="#safety">Security</a><a href="https://github.com/ajitheee/mendr">GitHub</a></nav>
+    <nav class="links"><a href="#demo">Demo</a><a href="#detect">How it works</a><a href="#evidence">Evidence</a><a href="#safety">Security</a><a href="#pricing">Pricing</a><a href="https://github.com/ajitheee/mendr">GitHub</a></nav>
     <a class="run" href="https://mendr-app.onrender.com">Connect GitHub →</a>
   </div>
 </header>
@@ -509,6 +539,55 @@ Conclusion: <span class="am">EXPOSURE DETECTED</span>
   Decision: PATCH ELIGIBLE · <span class="dim">No change applied</span></div>
       </figure>
     </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section id="pricing">
+  <div class="wrap">
+    <div class="ev-head">
+      <p class="kick">Pricing</p>
+      <h2>Free while it is in alpha. Free for a year for five design partners.</h2>
+      <p class="body">Everything mendr does today is free. Before setting a public price, we are working with five design partners whose product breaks when a model id goes dark. They help shape mendr, and use it free for 12 months.</p>
+    </div>
+    <div class="plans">
+      <div class="plan">
+        <p class="pk">Free <span class="pnow">available now</span></p>
+        <p class="pp"><span class="pa">$0</span></p>
+        <ul class="pf">
+          <li>The CLI, unlimited, in your own environment: <span class="mono">audit</span>, <span class="mono">fix-llm</span>, <span class="mono">watch</span></li>
+          <li>The retirement registry for OpenAI, Anthropic and Google</li>
+          <li>The GitHub App: the deadline on the check run, one self-updating issue per repo</li>
+          <li>Fix pull requests from your own CI, only after the swap passes your type-check; a failing test suite blocks it</li>
+          <li>Our servers never clone or read your repository</li>
+        </ul>
+        <a class="tlink" href="#install">Run the audit <span aria-hidden="true">→</span></a>
+      </div>
+      <div class="plan hl">
+        <p class="pk">Design partner <span class="pnow">5 teams</span></p>
+        <p class="pp"><span class="pa">$0</span> <span class="pu">for 12 months</span></p>
+        <ul class="pf">
+          <li>Everything in Free</li>
+          <li>Set up with you on your main product repository, in your own CI</li>
+          <li>We work through each retirement that hits your code with you, starting with OpenAI's 2026-10-23 wave</li>
+          <li>A direct line to the person who builds mendr</li>
+          <li>In return: your feedback on what breaks, what is missing and what you would pay for</li>
+          <li>After 12 months, the regular price of the plan you choose</li>
+        </ul>
+        <a class="btn" href="https://github.com/ajitheee/mendr/issues/new?title=Design%20partner&body=Company%20and%20product%3A%0ARepo%20(or%20say%20%22private%22)%3A%0AProviders%20you%20call%20(OpenAI%20%2F%20Anthropic%20%2F%20Google)%3A%0AWhat%20breaks%20when%20a%20model%20id%20is%20retired%3A%0ABest%20way%20to%20reach%20you%20(we%20move%20to%20email%20if%20you%20prefer)%3A" rel="noopener">Apply to be a design partner</a>
+      </div>
+      <div class="plan">
+        <p class="pk">Regular plans <span class="pnow pl">planned, not on sale</span></p>
+        <div class="tiers">
+          <p class="tr"><span class="tn">Team</span> <span class="ta">$49/mo</span> <span class="tu">or $490/yr, 2 months free</span></p>
+          <p class="td">Up to 10 private repositories watched. Next-business-day support.</p>
+          <p class="tr"><span class="tn">Business</span> <span class="ta">$199/mo</span> <span class="tu">or $1,990/yr</span></p>
+          <p class="td">Unlimited repositories. Same-day support from a named contact.</p>
+        </div>
+        <p class="pnote">Priced per company, never per seat: the risk grows with the model calls in your code, not with the size of your team.</p>
+      </div>
+    </div>
+    <p class="pfine">Prices in USD. Planned prices may change before they go on sale. Design partners move to the regular price after their 12 free months.</p>
   </div>
 </section>
 
