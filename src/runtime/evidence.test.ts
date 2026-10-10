@@ -18,10 +18,27 @@ const write = (name: string, text: string): string => {
 };
 
 describe('toObservation — reads only the fields we are allowed to read', () => {
-  it('normalizes a fine-tuned id to its base while keeping the raw value', () => {
+  // Folding a fine-tune into its base here, before the registry was consulted, joined
+  // ft:babbage-002:... to babbage-002's 2026-09-28 row although OpenAI runs its fine-tunes to
+  // 2026-10-23. Which row a fine-tune joins is buildInvestigations' call (registryModelId).
+  it('keeps a fine-tuned id as observed, and still infers its provider from the base', () => {
     const o = toObservation({ model: 'ft:gpt-4:acme::abc', requests: 12 });
-    expect(o?.model).toBe('gpt-4');
+    expect(o?.model).toBe('ft:gpt-4:acme::abc');
     expect(o?.observed).toBe('ft:gpt-4:acme::abc');
+    expect(o?.provider).toBe('openai');
+  });
+
+  it('does not fold a fine-tune into its base model', () => {
+    const folded = foldObservations(
+      [
+        toObservation({ model: 'ft:babbage-002:acme::9abc', requests: 120 }),
+        toObservation({ model: 'babbage-002', requests: 5 }),
+      ].filter((o) => o !== null),
+    );
+    expect(folded.map((o) => [o.model, o.requests])).toEqual([
+      ['ft:babbage-002:acme::9abc', 120],
+      ['babbage-002', 5],
+    ]);
   });
 
   it('accepts OTel gen_ai.* attribute names', () => {
