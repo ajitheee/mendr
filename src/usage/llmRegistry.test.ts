@@ -321,8 +321,9 @@ describe('the shipped registry', () => {
     // an id swap would silently drop pro mode. Plus, from 2026-10-06,
     // claude-sonnet-4-5-20250929 (see the next test). Plus, from 2026-10-10, the three Veo
     // previews: Google's replacement is Gemini Omni Flash, another model family called through
-    // another API, so an id swap is not the migration.
-    expect(quarantined).toHaveLength(10);
+    // another API, so an id swap is not the migration. Plus OpenAI's six fine-tune rows
+    // (ft-babbage-002 ...): the replacement is a base model, and a swap drops the training.
+    expect(quarantined).toHaveLength(16);
     for (const entry of quarantined) {
       expect(isVerified(entry), entry.deprecated).toBe(false);
       // Every quarantine says what has to be resolved. A hold nobody can act
@@ -400,10 +401,11 @@ describe('the shipped registry', () => {
     // quarantines and gemini-2.0-flash-lite-001's hold: +12 eligible, -11 quarantined,
     // -1 unverified. +8 Google ids, all detect-only: 3 Veo previews retiring 2026-10-22
     // (quarantined), gemini-3.1-flash-live-preview (unverified: no catalog lists gemini-3.8-live)
-    // and 4 audio/TTS models retiring 2026-11-17 (unverifiable by class).
-    expect(provenance.activeEntries).toBe(174);
+    // and 4 audio/TTS models retiring 2026-11-17 (unverifiable by class). +6 OpenAI fine-tune
+    // rows retiring 2026-10-23, quarantined.
+    expect(provenance.activeEntries).toBe(180);
     expect(provenance.autoFixEligible).toBe(144);
-    expect(provenance.reviewOnlyCounts.quarantined).toBe(10);
+    expect(provenance.reviewOnlyCounts.quarantined).toBe(16);
     expect(provenance.reviewOnlyCounts.unverified).toBe(7);
     expect(provenance.reviewOnlyCounts.unverifiable).toBe(13);
     // Nothing ships in the defence-in-depth state; the validator forbids it.

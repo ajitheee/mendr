@@ -62,9 +62,14 @@ export const PROVIDER_SOURCES: Record<DiscoverProvider, string> = {
  * Google's Veo models (`veo-3.1-generate-preview`) sit in the same tables as
  * Gemini's. Until 2026-10-10 the prefix was missing, so neither discovery nor
  * the check that every shipped date is on the page could see a Veo row at all.
+ *
+ * OpenAI retires fine-tuned models in rows of their own, spelled `ft-<base>`
+ * (`ft-babbage-002`, `ft-gpt-4`), and not always on the base model's date:
+ * babbage-002 shut down 2026-09-28, its fine-tunes run until 2026-10-23. Only a
+ * base family OpenAI fine-tunes is accepted after `ft-`.
  */
 const PROVIDER_ID_PREFIXES: Record<DiscoverProvider, RegExp> = {
-  openai: /^(?:gpt|o[1-9]|chatgpt|codex|text-|code-|davinci-|babbage-|curie-|ada-|whisper-|tts-|dall-e|omni-)/,
+  openai: /^(?:gpt|o[1-9]|chatgpt|codex|text-|code-|davinci-|babbage-|curie-|ada-|whisper-|tts-|dall-e|omni-|ft-(?:gpt|o[1-9]|davinci-|babbage-))/,
   anthropic: /^claude-/,
   google: /^(?:gemini|palm|imagen|veo-|text-bison|chat-bison)/,
 };

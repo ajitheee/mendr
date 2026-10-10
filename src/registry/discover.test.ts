@@ -234,6 +234,51 @@ describe("Google's Veo rows", () => {
   });
 });
 
+/**
+ * OpenAI's fine-tune rows as served at developers.openai.com/api/docs/deprecations on
+ * 2026-10-10 (two of five, markup unchanged). OpenAI spells a fine-tune row `ft-<base>`; until
+ * then no `ft-` id was read, so babbage-002's fine-tunes, which outlive it by 25 days, were
+ * invisible to discovery and to `check-dates`.
+ */
+const OPENAI_FINE_TUNE_ROWS = `<table class="w-full">
+<thead>
+<tr>
+<th>Shutdown date</th>
+<th>Model snapshot</th>
+<th>Recommended replacement base model</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>October 23, 2026</td>
+<td><code>ft-gpt-4</code></td>
+<td><code>gpt-5.6-sol</code></td>
+</tr>
+<tr>
+<td>October 23, 2026</td>
+<td><code>ft-babbage-002</code></td>
+<td><code>gpt-5.6-terra</code></td>
+</tr>
+</tbody>
+</table>`;
+
+describe("OpenAI's fine-tune rows", () => {
+  it('reads an ft- row with its date and replacement base model', () => {
+    const { rows, skipped } = extractRows(OPENAI_FINE_TUNE_ROWS, 'openai');
+    expect(rows).toEqual([
+      expect.objectContaining({ deprecated: 'ft-gpt-4', replacement: 'gpt-5.6-sol', shutdownDate: '2026-10-23' }),
+      expect.objectContaining({ deprecated: 'ft-babbage-002', replacement: 'gpt-5.6-terra', shutdownDate: '2026-10-23' }),
+    ]);
+    expect(skipped).toEqual([]);
+  });
+
+  it('accepts ft- only in front of a base family OpenAI fine-tunes', () => {
+    const html = `<table><tr><th>Shutdown date</th><th>Model snapshot</th><th>Recommended replacement base model</th></tr>
+      <tr><td>October 23, 2026</td><td><code>ft-something-else</code></td><td><code>gpt-5.6-terra</code></td></tr></table>`;
+    expect(extractRows(html, 'openai').rows).toHaveLength(0);
+  });
+});
+
 describe('several-id cells that are still a human call', () => {
   const { rows, skipped } = extractRows(STILL_SKIPPED_HTML, 'openai');
   const reasons = skipped.map((s) => s.reason).join('\n');

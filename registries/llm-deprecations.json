@@ -5650,5 +5650,227 @@
         "excerpt": "gemini-2.5-pro-preview-tts | May 20, 2025 | November 17, 2026 | gemini-3.8-flash-tts or gemini-3.8-flash-lite-tts"
       }
     ]
+  },
+  {
+    "entryId": "openai.ft-gpt-3.5-turbo.retirement-2026-10-23",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "ft-gpt-3.5-turbo",
+    "replacement": "gpt-5.6-terra",
+    "status": "deprecated",
+    "shutdownDate": "2026-10-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "Fine-tuned models built on gpt-3.5-turbo shut down 2026-10-23. OpenAI writes the row as ft-gpt-3.5-turbo and names gpt-5.6-terra as the replacement base model. The id never appears in code as written: the usage audit joins a fine-tune of any gpt-3.5-turbo snapshot (ft:gpt-3.5-turbo-0125:...) to this row. Detect-only: moving means fine-tuning gpt-5.6-terra again, not swapping an id.",
+    "verification": {
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": false,
+      "quarantineReason": "the replacement is a base model, not a fine-tune: swapping a fine-tune of gpt-3.5-turbo for gpt-5.6-terra would silently drop the customer's training, so the change needs a person who can fine-tune the replacement or accept the base model",
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-terra\" is live in a public catalog",
+        "OpenAI deprecation page (read 2026-10-10), \"We are also removing fine-tuned versions as below\": October 23, 2026 | ft-gpt-3.5-turbo | gpt-5.6-terra (column \"Recommended replacement base model\")",
+        "OpenAI's fine-tuning notice on the same page: \"Inference on fine-tuned models will continue to be available until the base models are deprecated.\"",
+        "detect-only by design: the provider names a base model to move to, and an id swap cannot carry a fine-tune across"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T04:58:56.260Z",
+        "excerpt": "October 23, 2026 | ft-gpt-3.5-turbo | gpt-5.6-terra"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.ft-gpt-4.retirement-2026-10-23",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "ft-gpt-4",
+    "replacement": "gpt-5.6-sol",
+    "status": "deprecated",
+    "shutdownDate": "2026-10-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "Fine-tuned models built on gpt-4 shut down 2026-10-23. OpenAI writes the row as ft-gpt-4 and names gpt-5.6-sol as the replacement base model. The id never appears in code as written: the usage audit joins a fine-tune of gpt-4 or any of its snapshots (ft:gpt-4-0613:...), never gpt-4o or gpt-4.1 to this row. Detect-only: moving means fine-tuning gpt-5.6-sol again, not swapping an id.",
+    "verification": {
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": false,
+      "quarantineReason": "the replacement is a base model, not a fine-tune: swapping a fine-tune of gpt-4 for gpt-5.6-sol would silently drop the customer's training, so the change needs a person who can fine-tune the replacement or accept the base model",
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
+        "OpenAI deprecation page (read 2026-10-10), \"We are also removing fine-tuned versions as below\": October 23, 2026 | ft-gpt-4 | gpt-5.6-sol (column \"Recommended replacement base model\")",
+        "OpenAI's fine-tuning notice on the same page: \"Inference on fine-tuned models will continue to be available until the base models are deprecated.\"",
+        "detect-only by design: the provider names a base model to move to, and an id swap cannot carry a fine-tune across"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T04:58:56.260Z",
+        "excerpt": "October 23, 2026 | ft-gpt-4 | gpt-5.6-sol"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.ft-gpt-4.1-nano-2025-04-14.retirement-2026-10-23",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "ft-gpt-4.1-nano-2025-04-14",
+    "replacement": "gpt-5.6-luna",
+    "status": "deprecated",
+    "shutdownDate": "2026-10-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "Fine-tuned models built on gpt-4.1-nano-2025-04-14 shut down 2026-10-23. OpenAI writes the row as ft-gpt-4.1-nano-2025-04-14 and names gpt-5.6-luna as the replacement base model. The id never appears in code as written: the usage audit joins a fine-tune of that snapshot (ft:gpt-4.1-nano-2025-04-14:...) to this row. Detect-only: moving means fine-tuning gpt-5.6-luna again, not swapping an id.",
+    "verification": {
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": false,
+      "quarantineReason": "the replacement is a base model, not a fine-tune: swapping a fine-tune of gpt-4.1-nano-2025-04-14 for gpt-5.6-luna would silently drop the customer's training, so the change needs a person who can fine-tune the replacement or accept the base model",
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-luna\" is live in a public catalog",
+        "OpenAI deprecation page (read 2026-10-10), \"We are also removing fine-tuned versions as below\": October 23, 2026 | ft-gpt-4.1-nano-2025-04-14 | gpt-5.6-luna (column \"Recommended replacement base model\")",
+        "OpenAI's fine-tuning notice on the same page: \"Inference on fine-tuned models will continue to be available until the base models are deprecated.\"",
+        "detect-only by design: the provider names a base model to move to, and an id swap cannot carry a fine-tune across"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T04:58:56.260Z",
+        "excerpt": "October 23, 2026 | ft-gpt-4.1-nano-2025-04-14 | gpt-5.6-luna"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.ft-o4-mini-2025-04-16.retirement-2026-10-23",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "ft-o4-mini-2025-04-16",
+    "replacement": "gpt-5.6-terra",
+    "status": "deprecated",
+    "shutdownDate": "2026-10-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "Fine-tuned models built on o4-mini-2025-04-16 shut down 2026-10-23. OpenAI writes the row as ft-o4-mini-2025-04-16 and names gpt-5.6-terra as the replacement base model. The id never appears in code as written: the usage audit joins a fine-tune of that snapshot (ft:o4-mini-2025-04-16:...) to this row. Detect-only: moving means fine-tuning gpt-5.6-terra again, not swapping an id.",
+    "verification": {
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": false,
+      "quarantineReason": "the replacement is a base model, not a fine-tune: swapping a fine-tune of o4-mini-2025-04-16 for gpt-5.6-terra would silently drop the customer's training, so the change needs a person who can fine-tune the replacement or accept the base model",
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-terra\" is live in a public catalog",
+        "OpenAI deprecation page (read 2026-10-10), \"2026-04-22: Legacy GPT model snapshots\": October 23, 2026 | ft-o4-mini-2025-04-16 | gpt-5.6-terra",
+        "OpenAI's fine-tuning notice on the same page: \"Inference on fine-tuned models will continue to be available until the base models are deprecated.\"",
+        "detect-only by design: the provider names a base model to move to, and an id swap cannot carry a fine-tune across"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T04:58:56.260Z",
+        "excerpt": "October 23, 2026 | ft-o4-mini-2025-04-16 | gpt-5.6-terra"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.ft-babbage-002.retirement-2026-10-23",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "ft-babbage-002",
+    "replacement": "gpt-5.6-terra",
+    "status": "deprecated",
+    "shutdownDate": "2026-10-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "Fine-tuned models built on babbage-002 shut down 2026-10-23. That is later than babbage-002 itself, which shut down 2026-09-28. OpenAI writes the row as ft-babbage-002 and names gpt-5.6-terra as the replacement base model. The id never appears in code as written: the usage audit joins a fine-tune of babbage-002 (ft:babbage-002:...) to this row. Detect-only: moving means fine-tuning gpt-5.6-terra again, not swapping an id.",
+    "verification": {
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": false,
+      "quarantineReason": "the replacement is a base model, not a fine-tune: swapping a fine-tune of babbage-002 for gpt-5.6-terra would silently drop the customer's training, so the change needs a person who can fine-tune the replacement or accept the base model",
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-terra\" is live in a public catalog",
+        "OpenAI deprecation page (read 2026-10-10), \"We are also removing fine-tuned versions as below\": October 23, 2026 | ft-babbage-002 | gpt-5.6-terra (column \"Recommended replacement base model\")",
+        "OpenAI's fine-tuning notice on the same page: \"Inference on fine-tuned models will continue to be available until the base models are deprecated.\"",
+        "detect-only by design: the provider names a base model to move to, and an id swap cannot carry a fine-tune across"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T04:58:56.260Z",
+        "excerpt": "October 23, 2026 | ft-babbage-002 | gpt-5.6-terra"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.ft-davinci-002.retirement-2026-10-23",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "ft-davinci-002",
+    "replacement": "gpt-5.6-terra",
+    "status": "deprecated",
+    "shutdownDate": "2026-10-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "Fine-tuned models built on davinci-002 shut down 2026-10-23. That is later than davinci-002 itself, which shut down 2026-09-28. OpenAI writes the row as ft-davinci-002 and names gpt-5.6-terra as the replacement base model. The id never appears in code as written: the usage audit joins a fine-tune of davinci-002 (ft:davinci-002:...) to this row. Detect-only: moving means fine-tuning gpt-5.6-terra again, not swapping an id.",
+    "verification": {
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": false,
+      "quarantineReason": "the replacement is a base model, not a fine-tune: swapping a fine-tune of davinci-002 for gpt-5.6-terra would silently drop the customer's training, so the change needs a person who can fine-tune the replacement or accept the base model",
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-5.6-terra\" is live in a public catalog",
+        "OpenAI deprecation page (read 2026-10-10), \"We are also removing fine-tuned versions as below\": October 23, 2026 | ft-davinci-002 | gpt-5.6-terra (column \"Recommended replacement base model\")",
+        "OpenAI's fine-tuning notice on the same page: \"Inference on fine-tuned models will continue to be available until the base models are deprecated.\"",
+        "detect-only by design: the provider names a base model to move to, and an id swap cannot carry a fine-tune across"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T04:58:56.260Z",
+        "excerpt": "October 23, 2026 | ft-davinci-002 | gpt-5.6-terra"
+      }
+    ]
   }
 ]

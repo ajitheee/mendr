@@ -225,8 +225,8 @@ describe('the shipped registry', () => {
     // 157 - 4 gpt-5 aliases + 10 ids retiring 2026-10-23 + claude-sonnet-4-5-20250929, then
     // 2026-10-10: - gpt-5.2 (OpenAI does not deprecate it), + gpt-image-1-mini, gpt-image-1.5 and
     // chatgpt-image-latest (2026-12-01), + 3 Veo previews (2026-10-22) and 5 Live/TTS models
-    // (2026-11-17).
-    expect(result.recordsChecked).toBe(174);
+    // (2026-11-17), + 6 OpenAI fine-tune rows (2026-10-23).
+    expect(result.recordsChecked).toBe(180);
   });
 });
 
