@@ -1,4 +1,6 @@
 import { createHmac } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT, type JWTPayload } from 'jose';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { buildManifest, createApp } from './app.js';
@@ -692,6 +694,30 @@ describe('approvals: decided in Mendr, carried out by the customer\'s own CI', (
     expect(body.deployment.id).toBeTruthy();
     expect(h.logs).toContain('healthz: database unavailable');
     expect(JSON.stringify(body) + JSON.stringify(h.logEvents)).not.toContain('hunter2-not-for-logs');
+  });
+
+  it("/livez, Render's health check, answers without the database, so the probe never keeps a scale-to-zero database awake", async () => {
+    const h = harness();
+    const touched: string[] = [];
+    for (const name of Object.getOwnPropertyNames(MemoryStore.prototype)) {
+      if (name === 'constructor') continue;
+      (h.store as unknown as Record<string, unknown>)[name] = () => {
+        touched.push(name);
+        throw new Error('the database is gone');
+      };
+    }
+    const res = await h.app.request('/livez');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(touched).toEqual([]);
+    // The database check is still there, on /healthz, for people and monitors.
+    expect((await h.app.request('/healthz')).status).toBe(503);
+    expect(touched).toEqual(['encryptionStatus']);
+  });
+
+  it("render.yaml points Render's health check at /livez, not at the path that queries the database", () => {
+    const blueprint = readFileSync(fileURLToPath(new URL('../../render.yaml', import.meta.url)), 'utf8');
+    expect(blueprint).toMatch(/^\s*healthCheckPath: \/livez\s*$/m);
   });
 
   it('a run that could not verify closes the approval as failed and offers the decision again', async () => {

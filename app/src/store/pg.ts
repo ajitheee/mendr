@@ -552,9 +552,11 @@ export class PgStore implements Store {
 }
 
 /**
- * How long the App waits for the database before saying so. Without it, pg waits forever: an
- * unreachable DATABASE_URL left boot pending, the server never listened, and Render's health
- * check timed out with nothing in the log.
+ * How long the App waits on the database before saying so: for a new connection, and for the
+ * answer to any one query. Without it, pg waits forever: an unreachable DATABASE_URL left boot
+ * pending, the server never listened, and Render's health check timed out with nothing in the
+ * log. A database that goes silent on a connection the pool already holds hangs a query the same
+ * way, and a connect timeout alone never fires for that.
  */
 export const DB_TIMEOUT_MS = 10_000;
 
@@ -571,7 +573,17 @@ export function createPool(connectionString: string, timeoutMs = DB_TIMEOUT_MS, 
   // fail, which is why it is conditional. rejectUnauthorized:false accepts the
   // provider's managed certificate chain.
   const needsSsl = /sslmode=require/i.test(connectionString) || /\.render\.com|\.rds\.amazonaws\.com|\.neon\.tech|\.supabase\.co/i.test(connectionString);
-  const pool = new pg.Pool({ connectionString, max: 5, connectionTimeoutMillis: timeoutMs, ...(needsSsl ? { ssl: { rejectUnauthorized: false } } : {}) });
+  // query_timeout is enforced here, in the client: the query fails with "Query read timeout" and
+  // the pool throws that connection away instead of lending it to the next request. Not
+  // statement_timeout: that is enforced by a server that may no longer be answering, and it is
+  // sent as a startup parameter, which a connection pooler in front of the database can refuse.
+  const pool = new pg.Pool({
+    connectionString,
+    max: 5,
+    connectionTimeoutMillis: timeoutMs,
+    query_timeout: timeoutMs,
+    ...(needsSsl ? { ssl: { rejectUnauthorized: false } } : {}),
+  });
   // An idle client whose connection drops (a restart, a free database suspending itself) makes
   // the pool emit 'error', and an unhandled 'error' event kills the process. The pool has
   // already discarded that client; the next query opens a fresh one.

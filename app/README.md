@@ -29,7 +29,8 @@ telemetry. The full statement is in [TRUST.md](../TRUST.md).
 
 | Route | Purpose |
 |---|---|
-| `GET /healthz` | Liveness, whether credentials are configured, which store is in use. |
+| `GET /livez` | Liveness only, and Render's health check: never touches the database, so the probe cannot keep a scale-to-zero Postgres awake. |
+| `GET /healthz` | Health including the database (`503` within 10 s when it cannot be reached), whether credentials are configured, which store is in use, encryption at rest. |
 | `GET /setup` | Create the GitHub App from its manifest (one click on GitHub). `?org=<login>` creates it under an organization. |
 | `GET /setup/callback` | GitHub returns here; the credentials are shown once as environment lines. Not stored. |
 | `GET /setup/installed` | Post-install page with the exact workflow step to add. |

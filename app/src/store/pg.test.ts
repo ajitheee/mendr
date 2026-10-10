@@ -25,6 +25,10 @@ async function fakePostgres(onConnection: (s: Socket) => void): Promise<string> 
 
 const blackHole = () => fakePostgres(() => undefined);
 const hangsUp = () => fakePostgres((s) => s.destroy());
+// Completes the handshake (AuthenticationOk, then ReadyForQuery idle), then never answers a
+// query: a database that went silent while the pool still holds an open connection to it.
+const READY = Buffer.from([0x52, 0, 0, 0, 8, 0, 0, 0, 0, 0x5a, 0, 0, 0, 5, 0x49]);
+const goesSilent = () => fakePostgres((s) => s.once('data', () => s.write(READY)));
 
 afterEach(async () => {
   for (const { server, sockets } of open.splice(0)) {
@@ -51,10 +55,26 @@ describe('the database never hangs the App silently', () => {
     expect(err.message).not.toContain(url);
   });
 
-  it('bounds every connection at 10 s, not only the one at boot', async () => {
+  it('bounds every connection and every query at 10 s, not only the ones at boot', async () => {
     const pool = createPool('postgres://mendr:x@127.0.0.1:1/mendr');
     expect(DB_TIMEOUT_MS).toBe(10_000);
     expect(pool.options.connectionTimeoutMillis).toBe(10_000);
+    expect(pool.options.query_timeout).toBe(10_000);
+    await pool.end();
+  });
+
+  it('gives up on a query the database stops answering on an open connection, and drops that connection', async () => {
+    const pool = createPool(await goesSilent(), 200, () => undefined);
+    // An idle pooled connection, as after a boot that went fine.
+    (await pool.connect()).release();
+    expect(pool.idleCount).toBe(1);
+    const started = Date.now();
+    const err = await pool.query('SELECT 1').catch((e: unknown) => e as Error);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toBe('Query read timeout');
+    expect(Date.now() - started).toBeLessThan(3_000);
+    // Not lent to the next request: the next query opens a fresh connection.
+    expect(pool.totalCount).toBe(0);
     await pool.end();
   });
 

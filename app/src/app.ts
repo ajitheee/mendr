@@ -236,6 +236,15 @@ export function createApp(deps: AppDeps): Hono {
 
   // --- status ---------------------------------------------------------------
 
+  // Render's health check (render.yaml healthCheckPath): this process is up and serving, and
+  // nothing else. It never touches the database. Render probes every few seconds, and /healthz
+  // runs three queries, so probing /healthz would keep a scale-to-zero database (Neon's free plan
+  // suspends after 5 idle minutes and caps compute hours a month) awake for as long as the
+  // instance runs, until the allowance is spent and the database is suspended: the outage this
+  // exists to avoid. Boot already proved the database (no database, no listening port), and a
+  // restart cannot bring a lost database back, so the database check stays on /healthz.
+  app.get('/livez', (c) => c.json({ ok: true }));
+
   // Health, plus proof of encryption at rest from the outside: is a data key
   // configured, how many stored reports are sealed vs plaintext, and does the
   // newest sealed one open with the current key. Counts and a verdict — never data.

@@ -22,7 +22,10 @@ services:
     plan: free
     buildCommand: npm ci && npm run build
     startCommand: node dist/server.js
-    healthCheckPath: /healthz
+    # /livez never touches the database. Render probes every few seconds, and
+    # /healthz queries the database, which would keep a scale-to-zero Postgres
+    # (Neon's free plan) awake around the clock and spend its monthly compute.
+    healthCheckPath: /livez
     autoDeploy: true
     envVars:
       - key: NODE_VERSION
@@ -36,7 +39,9 @@ services:
       # --- set in the Render dashboard (sync:false = not committed) ---
       # 0. An external Postgres that does not expire (e.g. Neon's free plan):
       #    paste its connection string. Without it the App boots on the
-      #    in-memory store and forgets everything on restart.
+      #    in-memory store and forgets everything on restart. Moving off the
+      #    old mendr-db? Copy its data first (app/DEPLOY.md): installs live
+      #    only there, and an empty database refuses every existing install.
       - key: DATABASE_URL
         sync: false
       # 1. After the FIRST deploy, set APP_URL to this service's public URL
