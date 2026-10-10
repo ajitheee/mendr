@@ -58,11 +58,15 @@ export const PROVIDER_SOURCES: Record<DiscoverProvider, string> = {
  * prefix is the cheapest reliable way to keep those out. Precision over recall:
  * a real model id we do not recognize is simply not proposed, which costs a
  * human one manual entry — a bogus one costs trust in the whole queue.
+ *
+ * Google's Veo models (`veo-3.1-generate-preview`) sit in the same tables as
+ * Gemini's. Until 2026-10-10 the prefix was missing, so neither discovery nor
+ * the check that every shipped date is on the page could see a Veo row at all.
  */
 const PROVIDER_ID_PREFIXES: Record<DiscoverProvider, RegExp> = {
   openai: /^(?:gpt|o[1-9]|chatgpt|codex|text-|code-|davinci-|babbage-|curie-|ada-|whisper-|tts-|dall-e|omni-)/,
   anthropic: /^claude-/,
-  google: /^(?:gemini|palm|imagen|text-bison|chat-bison)/,
+  google: /^(?:gemini|palm|imagen|veo-|text-bison|chat-bison)/,
 };
 
 /**

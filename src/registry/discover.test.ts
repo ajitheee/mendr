@@ -186,6 +186,54 @@ describe('the 2026-10-23 rows that used to evaporate', () => {
   });
 });
 
+/**
+ * Google's Veo rows as served at ai.google.dev/gemini-api/docs/deprecations on 2026-10-10,
+ * markup unchanged. Until then Google's prefix list had no `veo-`, so these rows were invisible
+ * to discovery and to `check-dates`: a shipped Veo date could never be confirmed, only fail.
+ */
+const GOOGLE_VEO_ROWS = `<table class="pricing-table">
+  <thead>
+    <tr>
+      <td><b>Model</b></td>
+      <td><b>Release date</b></td>
+      <td><b>Shutdown date</b></td>
+      <td><b>Recommended replacement</b></td>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td colspan="4">Preview models</td>
+    </tr>
+    <tr>
+      <td><code translate="no" dir="ltr">veo-3.1-lite-generate-preview</code></td>
+      <td>March 31, 2026</td>
+      <td>October 22, 2026</td>
+      <td><code translate="no" dir="ltr">gemini-omni-1.1-flash</code></td>
+    </tr>
+    <tr>
+      <td><code translate="no" dir="ltr">veo-3.1-generate-preview</code></td>
+      <td>October 15, 2025</td>
+      <td>October 22, 2026</td>
+      <td><code translate="no" dir="ltr">gemini-omni-1.1-flash</code></td>
+    </tr>
+  </tbody>
+</table>`;
+
+describe("Google's Veo rows", () => {
+  it('reads a Veo id with its date and replacement', () => {
+    const { rows, skipped } = extractRows(GOOGLE_VEO_ROWS, 'google');
+    expect(rows.map((r) => r.deprecated)).toEqual(['veo-3.1-lite-generate-preview', 'veo-3.1-generate-preview']);
+    for (const row of rows) {
+      expect(row).toMatchObject({ replacement: 'gemini-omni-1.1-flash', shutdownDate: '2026-10-22' });
+    }
+    expect(skipped).toEqual([]);
+  });
+
+  it('accepts veo- for Google only', () => {
+    expect(extractRows(GOOGLE_VEO_ROWS, 'openai').rows).toHaveLength(0);
+  });
+});
+
 describe('several-id cells that are still a human call', () => {
   const { rows, skipped } = extractRows(STILL_SKIPPED_HTML, 'openai');
   const reasons = skipped.map((s) => s.reason).join('\n');

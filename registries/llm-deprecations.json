@@ -5355,5 +5355,300 @@
         "excerpt": "Dec 1, 2026 | chatgpt-image-latest | gpt-image-2.5-sunburst or gpt-image-2.5-flare"
       }
     ]
+  },
+  {
+    "entryId": "google.veo-3.1-generate-preview.retirement-2026-10-22",
+    "provider": "google",
+    "kind": "model_id",
+    "deprecated": "veo-3.1-generate-preview",
+    "replacement": "gemini-omni-1.1-flash",
+    "status": "deprecated",
+    "shutdownDate": "2026-10-22",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "note": "veo-3.1-generate-preview shuts down 2026-10-22; Google names gemini-omni-1.1-flash, its Omni video model, generally available since 2026-08-27. Detect-only: moving from Veo to Omni changes the model family and the request, so an id swap is not the migration.",
+    "verification": {
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": "the replacement is another model family with another request: Google's Veo guide calls models/<veo id>:predictLongRunning, while its video overview and changelog describe Gemini Omni Flash as used through the Interactions API, with its own tasks (extend, image_to_video) and video_config; swapping the model id alone does not turn a Veo request into an Omni request, so the change needs a person",
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gemini-omni-1.1-flash\" was not found live in any public catalog (models.dev / OpenRouter)",
+        "Google deprecation page (read 2026-10-10) states shutdown October 22, 2026 and recommended replacement gemini-omni-1.1-flash",
+        "gemini-omni-1.1-flash is listed on the same page with no shutdown date announced; Google's changelog (2026-08-27) calls it the generally available version of its \"conversational video generation and editing model\"",
+        "Google's video overview: Gemini Omni Flash \"lets you refine results across multiple turns using the Interactions API\"; the Veo guide sends requests to models/veo-3.1-generate-preview:predictLongRunning, so this entry is detect-only"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:d8b5a2b597a3462a09f0c94808b1c71a9be2eaf46f7c190f68e6d3c9349b2c06",
+        "retrievedAt": "2026-10-10T04:58:57.129Z",
+        "excerpt": "veo-3.1-generate-preview | October 15, 2025 | October 22, 2026 | gemini-omni-1.1-flash"
+      }
+    ]
+  },
+  {
+    "entryId": "google.veo-3.1-fast-generate-preview.retirement-2026-10-22",
+    "provider": "google",
+    "kind": "model_id",
+    "deprecated": "veo-3.1-fast-generate-preview",
+    "replacement": "gemini-omni-1.1-flash",
+    "status": "deprecated",
+    "shutdownDate": "2026-10-22",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "note": "veo-3.1-fast-generate-preview shuts down 2026-10-22; Google names gemini-omni-1.1-flash, its Omni video model, generally available since 2026-08-27. Detect-only: moving from Veo to Omni changes the model family and the request, so an id swap is not the migration.",
+    "verification": {
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": "the replacement is another model family with another request: Google's Veo guide calls models/<veo id>:predictLongRunning, while its video overview and changelog describe Gemini Omni Flash as used through the Interactions API, with its own tasks (extend, image_to_video) and video_config; swapping the model id alone does not turn a Veo request into an Omni request, so the change needs a person",
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gemini-omni-1.1-flash\" was not found live in any public catalog (models.dev / OpenRouter)",
+        "Google deprecation page (read 2026-10-10) states shutdown October 22, 2026 and recommended replacement gemini-omni-1.1-flash",
+        "gemini-omni-1.1-flash is listed on the same page with no shutdown date announced; Google's changelog (2026-08-27) calls it the generally available version of its \"conversational video generation and editing model\"",
+        "Google's video overview: Gemini Omni Flash \"lets you refine results across multiple turns using the Interactions API\"; the Veo guide sends requests to models/veo-3.1-generate-preview:predictLongRunning, so this entry is detect-only"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:d8b5a2b597a3462a09f0c94808b1c71a9be2eaf46f7c190f68e6d3c9349b2c06",
+        "retrievedAt": "2026-10-10T04:58:57.129Z",
+        "excerpt": "veo-3.1-fast-generate-preview | October 15, 2025 | October 22, 2026 | gemini-omni-1.1-flash"
+      }
+    ]
+  },
+  {
+    "entryId": "google.veo-3.1-lite-generate-preview.retirement-2026-10-22",
+    "provider": "google",
+    "kind": "model_id",
+    "deprecated": "veo-3.1-lite-generate-preview",
+    "replacement": "gemini-omni-1.1-flash",
+    "status": "deprecated",
+    "shutdownDate": "2026-10-22",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "note": "veo-3.1-lite-generate-preview shuts down 2026-10-22; Google names gemini-omni-1.1-flash, its Omni video model, generally available since 2026-08-27. Detect-only: moving from Veo to Omni changes the model family and the request, so an id swap is not the migration.",
+    "verification": {
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": "the replacement is another model family with another request: Google's Veo guide calls models/<veo id>:predictLongRunning, while its video overview and changelog describe Gemini Omni Flash as used through the Interactions API, with its own tasks (extend, image_to_video) and video_config; swapping the model id alone does not turn a Veo request into an Omni request, so the change needs a person",
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gemini-omni-1.1-flash\" was not found live in any public catalog (models.dev / OpenRouter)",
+        "Google deprecation page (read 2026-10-10) states shutdown October 22, 2026 and recommended replacement gemini-omni-1.1-flash",
+        "gemini-omni-1.1-flash is listed on the same page with no shutdown date announced; Google's changelog (2026-08-27) calls it the generally available version of its \"conversational video generation and editing model\"",
+        "Google's video overview: Gemini Omni Flash \"lets you refine results across multiple turns using the Interactions API\"; the Veo guide sends requests to models/veo-3.1-generate-preview:predictLongRunning, so this entry is detect-only"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:d8b5a2b597a3462a09f0c94808b1c71a9be2eaf46f7c190f68e6d3c9349b2c06",
+        "retrievedAt": "2026-10-10T04:58:57.129Z",
+        "excerpt": "veo-3.1-lite-generate-preview | March 31, 2026 | October 22, 2026 | gemini-omni-1.1-flash"
+      }
+    ]
+  },
+  {
+    "entryId": "google.gemini-3.1-flash-live-preview.retirement-2026-11-17",
+    "provider": "google",
+    "kind": "model_id",
+    "deprecated": "gemini-3.1-flash-live-preview",
+    "replacement": "gemini-3.8-live",
+    "status": "deprecated",
+    "shutdownDate": "2026-11-17",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "note": "gemini-3.1-flash-live-preview shuts down 2026-11-17; Google names gemini-3.8-live, the Live API model it made generally available on 2026-09-15. Detect-only until the gate can check the replacement.",
+    "verification": {
+      "status": "unverified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gemini-3.8-live\" was not found live in any public catalog (models.dev / OpenRouter)",
+        "Google deprecation page (read 2026-10-10) states shutdown November 17, 2026 and recommended replacement gemini-3.8-live",
+        "gemini-3.8-live is generally available per Google's changelog (2026-09-15) and listed on the deprecations page with no shutdown date announced",
+        "not catalog-verified: OpenRouter and models.dev do not list gemini-3.8-live yet, so the gate refuses it; re-run `mendr verify-registry` once they do"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:d8b5a2b597a3462a09f0c94808b1c71a9be2eaf46f7c190f68e6d3c9349b2c06",
+        "retrievedAt": "2026-10-10T04:58:57.129Z",
+        "excerpt": "gemini-3.1-flash-live-preview | March 11, 2026 | November 17, 2026 | gemini-3.8-live"
+      }
+    ]
+  },
+  {
+    "entryId": "google.gemini-2.5-flash-native-audio-preview-12-2025.retirement-2026-11-17",
+    "provider": "google",
+    "kind": "model_id",
+    "deprecated": "gemini-2.5-flash-native-audio-preview-12-2025",
+    "replacement": "gemini-3.8-live",
+    "status": "deprecated",
+    "shutdownDate": "2026-11-17",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "note": "gemini-2.5-flash-native-audio-preview-12-2025 shuts down 2026-11-17; Google names gemini-3.8-live, the Live API model it made generally available on 2026-09-15. Detect-only until the gate can check the replacement.",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"gemini-2.5-flash-native-audio-preview-12-2025\" is a audio model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gemini-3.8-live\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
+        "Google deprecation page (read 2026-10-10) states shutdown November 17, 2026 and recommended replacement gemini-3.8-live",
+        "gemini-3.8-live is generally available per Google's changelog (2026-09-15) and listed on the deprecations page with no shutdown date announced"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:d8b5a2b597a3462a09f0c94808b1c71a9be2eaf46f7c190f68e6d3c9349b2c06",
+        "retrievedAt": "2026-10-10T04:58:57.129Z",
+        "excerpt": "gemini-2.5-flash-native-audio-preview-12-2025 | December 12, 2025 | November 17, 2026 | gemini-3.8-live"
+      }
+    ]
+  },
+  {
+    "entryId": "google.gemini-3.1-flash-tts-preview.retirement-2026-11-17",
+    "provider": "google",
+    "kind": "model_id",
+    "deprecated": "gemini-3.1-flash-tts-preview",
+    "replacement": "gemini-3.8-flash-tts",
+    "status": "deprecated",
+    "shutdownDate": "2026-11-17",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "note": "gemini-3.1-flash-tts-preview shuts down 2026-11-17. Google names two replacements, gemini-3.8-flash-tts or gemini-3.8-flash-lite-tts, both generally available since 2026-09-22. This entry carries gemini-3.8-flash-tts, the first one named. Detect-only: which of the two fits stays a person's choice, and the gate does not catalog-check TTS models.",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"gemini-3.1-flash-tts-preview\" is a tts model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gemini-3.8-flash-tts\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
+        "Google deprecation page (read 2026-10-10) states shutdown November 17, 2026 and names \"gemini-3.8-flash-tts or gemini-3.8-flash-lite-tts\"",
+        "both replacements are listed on the same page with no shutdown date announced, and are generally available per Google's changelog (2026-09-22)",
+        "two replacements are named, so the choice between them stays with a human"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:d8b5a2b597a3462a09f0c94808b1c71a9be2eaf46f7c190f68e6d3c9349b2c06",
+        "retrievedAt": "2026-10-10T04:58:57.129Z",
+        "excerpt": "gemini-3.1-flash-tts-preview | February 26, 2026 | November 17, 2026 | gemini-3.8-flash-tts or gemini-3.8-flash-lite-tts"
+      }
+    ]
+  },
+  {
+    "entryId": "google.gemini-2.5-flash-preview-tts.retirement-2026-11-17",
+    "provider": "google",
+    "kind": "model_id",
+    "deprecated": "gemini-2.5-flash-preview-tts",
+    "replacement": "gemini-3.8-flash-tts",
+    "status": "deprecated",
+    "shutdownDate": "2026-11-17",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "note": "gemini-2.5-flash-preview-tts shuts down 2026-11-17. Google names two replacements, gemini-3.8-flash-tts or gemini-3.8-flash-lite-tts, both generally available since 2026-09-22. This entry carries gemini-3.8-flash-tts, the first one named. Detect-only: which of the two fits stays a person's choice, and the gate does not catalog-check TTS models.",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"gemini-2.5-flash-preview-tts\" is a tts model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gemini-3.8-flash-tts\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
+        "Google deprecation page (read 2026-10-10) states shutdown November 17, 2026 and names \"gemini-3.8-flash-tts or gemini-3.8-flash-lite-tts\"",
+        "both replacements are listed on the same page with no shutdown date announced, and are generally available per Google's changelog (2026-09-22)",
+        "two replacements are named, so the choice between them stays with a human"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:d8b5a2b597a3462a09f0c94808b1c71a9be2eaf46f7c190f68e6d3c9349b2c06",
+        "retrievedAt": "2026-10-10T04:58:57.129Z",
+        "excerpt": "gemini-2.5-flash-preview-tts | May 20, 2025 | November 17, 2026 | gemini-3.8-flash-tts or gemini-3.8-flash-lite-tts"
+      }
+    ]
+  },
+  {
+    "entryId": "google.gemini-2.5-pro-preview-tts.retirement-2026-11-17",
+    "provider": "google",
+    "kind": "model_id",
+    "deprecated": "gemini-2.5-pro-preview-tts",
+    "replacement": "gemini-3.8-flash-tts",
+    "status": "deprecated",
+    "shutdownDate": "2026-11-17",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "note": "gemini-2.5-pro-preview-tts shuts down 2026-11-17. Google names two replacements, gemini-3.8-flash-tts or gemini-3.8-flash-lite-tts, both generally available since 2026-09-22. This entry carries gemini-3.8-flash-tts, the first one named. Detect-only: which of the two fits stays a person's choice, and the gate does not catalog-check TTS models.",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"gemini-2.5-pro-preview-tts\" is a tts model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gemini-3.8-flash-tts\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
+        "Google deprecation page (read 2026-10-10) states shutdown November 17, 2026 and names \"gemini-3.8-flash-tts or gemini-3.8-flash-lite-tts\"",
+        "both replacements are listed on the same page with no shutdown date announced, and are generally available per Google's changelog (2026-09-22)",
+        "two replacements are named, so the choice between them stays with a human"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:d8b5a2b597a3462a09f0c94808b1c71a9be2eaf46f7c190f68e6d3c9349b2c06",
+        "retrievedAt": "2026-10-10T04:58:57.129Z",
+        "excerpt": "gemini-2.5-pro-preview-tts | May 20, 2025 | November 17, 2026 | gemini-3.8-flash-tts or gemini-3.8-flash-lite-tts"
+      }
+    ]
   }
 ]

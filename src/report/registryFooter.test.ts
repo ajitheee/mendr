@@ -180,9 +180,10 @@ describe('the SHIPPED registry footer', () => {
     // 2026-10-10: the two retired Live API ids move to gemini-3.8-live, which no public catalog
     // lists yet, so they leave auto-fix for unverified; gpt-5.2 is removed (OpenAI does not
     // deprecate it); three image models retiring 2026-12-01 are added, unverifiable by class;
-    // the providers' pages settle 11 quarantines and one unverified hold.
-    expect(lines[0]).toBe('registry: 166 records');
+    // the providers' pages settle 11 quarantines and one unverified hold; eight Google ids
+    // retiring 2026-10-22 and 2026-11-17 are added, all detect-only.
+    expect(lines[0]).toBe('registry: 174 records');
     expect(lines[1]).toBe('auto-fix eligible: 144');
-    expect(lines[2]).toBe('review-only: 22 (quarantined 7, unverified 6, unverifiable 9)');
+    expect(lines[2]).toBe('review-only: 30 (quarantined 10, unverified 7, unverifiable 13)');
   });
 });

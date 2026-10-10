@@ -89,6 +89,24 @@ describe('checkDates: the date the registry ships must be on the provider page',
     expect(one({}).replacementOnPage).toBeUndefined();
   });
 
+  it("confirms a Veo date: Google's veo- ids are read off the page", () => {
+    // Until 2026-10-10 the page reader dropped every veo- row, so this entry could only be
+    // reported "absent" from a page that states its date.
+    const google = `<table><tr><td><b>Model</b></td><td><b>Release date</b></td><td><b>Shutdown date</b></td><td><b>Recommended replacement</b></td></tr>
+<tr><td><code>veo-3.1-generate-preview</code></td><td>October 15, 2025</td><td>October 22, 2026</td><td><code>gemini-omni-1.1-flash</code></td></tr></table>`;
+    const result = one(
+      {
+        provider: 'google',
+        deprecated: 'veo-3.1-generate-preview',
+        replacement: 'gemini-omni-1.1-flash',
+        shutdownDate: '2026-10-22',
+        sourceUrl: PROVIDER_SOURCES.google,
+      },
+      { google: readModelRows(google, 'google').facts },
+    );
+    expect(result).toMatchObject({ verdict: 'confirmed', pageDates: ['2026-10-22'] });
+  });
+
   it('does not judge an entry whose source is a page this check does not read', () => {
     const result = one({ deprecated: 'o9-imaginary', sourceUrl: 'https://developers.openai.com/api/docs/models/o9' });
     expect(result.verdict).toBe('unchecked');

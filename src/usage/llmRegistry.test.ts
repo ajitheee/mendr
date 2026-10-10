@@ -319,8 +319,10 @@ describe('the shipped registry', () => {
     // quarantine survives a re-stamp that later finds gpt-5.6-cyber in a catalog. Plus, from
     // 2026-10-04, the four whose provider replacement is "gpt-5.6-sol (reasoning.mode: pro)":
     // an id swap would silently drop pro mode. Plus, from 2026-10-06,
-    // claude-sonnet-4-5-20250929 (see the next test).
-    expect(quarantined).toHaveLength(7);
+    // claude-sonnet-4-5-20250929 (see the next test). Plus, from 2026-10-10, the three Veo
+    // previews: Google's replacement is Gemini Omni Flash, another model family called through
+    // another API, so an id swap is not the migration.
+    expect(quarantined).toHaveLength(10);
     for (const entry of quarantined) {
       expect(isVerified(entry), entry.deprecated).toBe(false);
       // Every quarantine says what has to be resolved. A hold nobody can act
@@ -396,12 +398,14 @@ describe('the shipped registry', () => {
     // is removed, -1 eligible: OpenAI does not deprecate it. +3 image models retiring 2026-12-01,
     // unverifiable: catalogs do not list image models. The providers' pages settle 11
     // quarantines and gemini-2.0-flash-lite-001's hold: +12 eligible, -11 quarantined,
-    // -1 unverified.
-    expect(provenance.activeEntries).toBe(166);
+    // -1 unverified. +8 Google ids, all detect-only: 3 Veo previews retiring 2026-10-22
+    // (quarantined), gemini-3.1-flash-live-preview (unverified: no catalog lists gemini-3.8-live)
+    // and 4 audio/TTS models retiring 2026-11-17 (unverifiable by class).
+    expect(provenance.activeEntries).toBe(174);
     expect(provenance.autoFixEligible).toBe(144);
-    expect(provenance.reviewOnlyCounts.quarantined).toBe(7);
-    expect(provenance.reviewOnlyCounts.unverified).toBe(6);
-    expect(provenance.reviewOnlyCounts.unverifiable).toBe(9);
+    expect(provenance.reviewOnlyCounts.quarantined).toBe(10);
+    expect(provenance.reviewOnlyCounts.unverified).toBe(7);
+    expect(provenance.reviewOnlyCounts.unverifiable).toBe(13);
     // Nothing ships in the defence-in-depth state; the validator forbids it.
     expect(provenance.reviewOnlyCounts.withheld).toBe(0);
   });

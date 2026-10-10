@@ -218,108 +218,6 @@
   {
     "provider": "google",
     "kind": "model_id",
-    "deprecated": "gemini-2.5-flash-native-audio-preview-12-2025",
-    "replacement": "gemini-3.1-flash-live-preview",
-    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-    "note": "discovered from the google deprecation table; row read as: gemini-2.5-flash-native-audio-preview-12-2025 | December 12, 2025 | No shutdown date announced | gemini-3.1-flash-live-preview",
-    "verification": {
-      "status": "unverifiable",
-      "officialSourceConfirmed": false,
-      "replacementConfirmed": false,
-      "autoApplyAllowed": false,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "\"gemini-2.5-flash-native-audio-preview-12-2025\" is a audio model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gemini-3.1-flash-live-preview\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)"
-      ]
-    },
-    "evidence": [
-      {
-        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-        "contentHash": "sha256:f634c61e6afb848a868052963eef89696dd7ae544aaac846f8d31514c61b9c36",
-        "retrievedAt": "2026-09-14T23:54:46.353Z",
-        "excerpt": "gemini-2.5-flash-native-audio-preview-12-2025 | December 12, 2025 | No shutdown date announced | gemini-3.1-flash-live-preview"
-      }
-    ],
-    "candidateId": "google:gemini-2-5-flash-native-audio-preview-12-2025",
-    "proposedBy": "discovery",
-    "proposedAt": "2026-09-14T23:54:45.972Z"
-  },
-  {
-    "provider": "google",
-    "kind": "model_id",
-    "deprecated": "gemini-2.5-flash-preview-tts",
-    "replacement": "gemini-3.1-flash-tts-preview",
-    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-    "note": "discovered from the google deprecation table; row read as: gemini-2.5-flash-preview-tts | May 20, 2025 | No shutdown date announced | gemini-3.1-flash-tts-preview",
-    "verification": {
-      "status": "unverifiable",
-      "officialSourceConfirmed": false,
-      "replacementConfirmed": false,
-      "autoApplyAllowed": false,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "\"gemini-2.5-flash-preview-tts\" is a tts model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gemini-3.1-flash-tts-preview\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)"
-      ]
-    },
-    "evidence": [
-      {
-        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-        "contentHash": "sha256:f634c61e6afb848a868052963eef89696dd7ae544aaac846f8d31514c61b9c36",
-        "retrievedAt": "2026-09-14T23:54:46.353Z",
-        "excerpt": "gemini-2.5-flash-preview-tts | May 20, 2025 | No shutdown date announced | gemini-3.1-flash-tts-preview"
-      }
-    ],
-    "candidateId": "google:gemini-2-5-flash-preview-tts",
-    "proposedBy": "discovery",
-    "proposedAt": "2026-09-14T23:54:45.972Z"
-  },
-  {
-    "provider": "google",
-    "kind": "model_id",
-    "deprecated": "gemini-2.5-pro-preview-tts",
-    "replacement": "gemini-3.1-flash-tts-preview",
-    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-    "note": "discovered from the google deprecation table; row read as: gemini-2.5-pro-preview-tts | May 20, 2025 | No shutdown date announced | gemini-3.1-flash-tts-preview",
-    "verification": {
-      "status": "unverifiable",
-      "officialSourceConfirmed": false,
-      "replacementConfirmed": false,
-      "autoApplyAllowed": false,
-      "quarantineReason": null,
-      "checkedAt": "2026-09-15",
-      "sources": [
-        "openrouter",
-        "models.dev"
-      ],
-      "reasons": [
-        "\"gemini-2.5-pro-preview-tts\" is a tts model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gemini-3.1-flash-tts-preview\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)"
-      ]
-    },
-    "evidence": [
-      {
-        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-        "contentHash": "sha256:f634c61e6afb848a868052963eef89696dd7ae544aaac846f8d31514c61b9c36",
-        "retrievedAt": "2026-09-14T23:54:46.353Z",
-        "excerpt": "gemini-2.5-pro-preview-tts | May 20, 2025 | No shutdown date announced | gemini-3.1-flash-tts-preview"
-      }
-    ],
-    "candidateId": "google:gemini-2-5-pro-preview-tts",
-    "proposedBy": "discovery",
-    "proposedAt": "2026-09-14T23:54:45.972Z"
-  },
-  {
-    "provider": "google",
-    "kind": "model_id",
     "deprecated": "imagen-4.0-generate-001",
     "replacement": "gemini-3.1-flash-image",
     "status": "retired",
@@ -1684,25 +1582,6 @@
     "candidateId": "openai:code-davinci-002",
     "proposedBy": "discovery",
     "proposedAt": "2026-09-14T23:54:48.821Z"
-  },
-  {
-    "provider": "google",
-    "kind": "model_id",
-    "deprecated": "gemini-3.1-flash-live-preview",
-    "replacement": "gemini-3.8-live",
-    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-    "note": "discovered from the google deprecation table; row read as: gemini-3.1-flash-live-preview | March 11, 2026 | No shutdown date announced | gemini-3.8-live",
-    "evidence": [
-      {
-        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-        "contentHash": "sha256:6b297468864ce69f64c3afb225717d2296f58283d396c9b3cedafe6b717a9d39",
-        "retrievedAt": "2026-09-18T20:14:36.540Z",
-        "excerpt": "gemini-3.1-flash-live-preview | March 11, 2026 | No shutdown date announced | gemini-3.8-live"
-      }
-    ],
-    "candidateId": "google:gemini-3-1-flash-live-preview",
-    "proposedBy": "discovery",
-    "proposedAt": "2026-09-18T20:14:35.879Z"
   },
   {
     "provider": "openai",
