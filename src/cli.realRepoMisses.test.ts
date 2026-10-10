@@ -190,6 +190,37 @@ describe('an untraced TypeScript default (miss 3: audit said review, fix-llm sai
   }, 180_000);
 });
 
+describe('the audit JSON snippet (miss 5: a token limit printed as a redacted secret)', () => {
+  it('keeps a max_tokens parameter as written, and still redacts a key on the next line', async () => {
+    const dir = repo({
+      'src/chat.js': [
+        "const { OpenAI } = require('openai');",
+        'const client = new OpenAI();',
+        'async function chat(config, messages) {',
+        '  return client.chat.completions.create({',
+        "    model: config?.llm?.model || 'gpt-3.5-turbo',",
+        '    messages,',
+        '    max_tokens: config?.llm?.max_tokens || 1024,',
+        "    user: 'sk-abcdefghijklmnopqrstuvwxyz0123',",
+        '  });',
+        '}',
+        'module.exports = { chat };',
+        '',
+      ].join('\n'),
+    });
+    const { stdout } = await run('audit', [dir, '--offline', '--json']);
+    expect(stdout).not.toContain('sk-abcdefghijklmnopqrstuvwxyz0123');
+    const report = JSON.parse(stdout) as {
+      investigations: { locations: { selectors: { file: string; snippet: { lines: string[] } | null }[] } }[];
+    };
+    const loc = report.investigations.flatMap((i) => i.locations.selectors).find((l) => l.file === 'src/chat.js');
+    const snippet = loc?.snippet?.lines.join('\n') ?? '';
+    expect(snippet).toContain('max_tokens: config?.llm?.max_tokens || 1024,');
+    expect(snippet).not.toContain('max_tokens=***REDACTED***');
+    expect(snippet).toContain('REDACTED');
+  }, 180_000);
+});
+
 describe('a request object built in a variable (miss 1: a live call reported as catalog data)', () => {
   it('is listed in fix-llm Tier B, and audit puts the same line in the same tier', async () => {
     const dir = repo({ 'src/server.js': SERVER_JS, 'src/proxy.ts': PROXY_TS });

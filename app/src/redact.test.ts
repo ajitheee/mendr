@@ -63,4 +63,11 @@ describe('the App redacts exactly what the CLI redacts', () => {
       expect(redactSecrets(c)).toContain('REDACTED');
     }
   });
+
+  // The CLI's carve-out for token COUNTS (max_tokens, maxOutputTokens), with the same limits.
+  it('keeps a token-count parameter and still redacts a token', () => {
+    expect(redactSecrets('max_tokens: config?.llm?.max_tokens || 1024,')).toBe('max_tokens: config?.llm?.max_tokens || 1024,');
+    expect(redactSecrets('INPUT_TOKENS=abcdefghijklmnop')).toContain('REDACTED');
+    expect(redactSecrets('ACCESS_TOKENS=abcdefghijklmnop')).toContain('REDACTED');
+  });
 });

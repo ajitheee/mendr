@@ -71,8 +71,18 @@ const PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
   // NAME=value / NAME: value where the NAME says what it holds. Last, and
   // deliberately broad on the name side: a format we have never seen still gets
   // caught when its variable is honestly named.
+  //
+  // One carve-out, and only for the PLURAL: a name ending in a token COUNT —
+  // max_tokens, maxOutputTokens, max_completion_tokens, budget_tokens,
+  // total_tokens — is a request parameter or a usage figure, not a credential.
+  // It turned `max_tokens: config?.….max_tokens || 1024` into
+  // `max_tokens=***REDACTED***` in an audit snippet (2026-10-09). A singular
+  // TOKEN always counts, and so does any plural not preceded by a count word, so
+  // INPUT_TOKEN, INPUT_TOKENS, ACCESS_TOKENS and NEW_TOKENS are still redacted.
+  // The lookbehind is a fixed set of short words, so it adds constant work per
+  // position and the pattern stays linear.
   [
-    /\b([A-Z][A-Z0-9_]{0,60}(?:TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|ACCESS_?KEY|PRIVATE_?KEY|CREDENTIALS?|AUTH|PAT)S?)\s*[:=]\s*["']?[^\s"'<>]{6,}/gi,
+    /\b([A-Z][A-Z0-9_]{0,60}(?:TOKEN(?!S)|(?<!(?:MAX|MIN|NUM|TOTAL|PROMPT|COMPLETION|OUTPUT|REASONING|CACHED|BUDGET|MAX_?NEW|MAX_?INPUT|MAX_?CONTEXT|MAX_?RESPONSE|MAX_?THINKING)_?)TOKENS|SECRET|PASSWORD|PASSWD|API_?KEY|ACCESS_?KEY|PRIVATE_?KEY|CREDENTIALS?|AUTH|PAT)S?)\s*[:=]\s*["']?[^\s"'<>]{6,}/gi,
     `$1=${MARK}`,
   ],
 ];

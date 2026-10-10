@@ -66,6 +66,47 @@ describe('secret shapes never survive', () => {
   });
 });
 
+// A TOKEN COUNT IS NOT A TOKEN. The audit's own JSON snippet of a real server (2026-10-09) read
+// `max_tokens=***REDACTED***` for the line `max_tokens: config?.…?.max_tokens || 1024,`: the
+// NAME rule matched "tokens" in a request parameter. Redacting it hid the one parameter a
+// reviewer of a model swap needs to see, and protected nothing.
+describe('request parameters that count tokens are not secrets', () => {
+  const kept = [
+    'max_tokens: config?.integrations?.llm?.max_tokens || 1024,',
+    'maxTokens: options.maxTokens ?? 4096,',
+    'max_completion_tokens=max_completion_tokens,',
+    'maxOutputTokens: settings.maxOutputTokens,',
+    'max_new_tokens=generation_config.max_new_tokens',
+    'MAX_OUTPUT_TOKENS=128000',
+    'CHATGPT_MAX_TOKENS=100000',
+    'budget_tokens: thinkingBudget,',
+    'thinking_budget_tokens=self.thinking_budget',
+    'total_tokens: usage.total_tokens',
+    'reasoning_tokens: details.reasoning_tokens',
+  ];
+  for (const line of kept) {
+    it(`leaves \`${line}\` intact`, () => {
+      expect(sanitize(line)).toBe(line);
+    });
+  }
+
+  // The exemption is for counts only. Every name below still holds a credential, including the
+  // ones a count name could be confused with.
+  const secret: Array<[string, string]> = [
+    ['an access-token list', `ACCESS_TOKENS=${CANARY}`],
+    ['a GitHub Actions input named token', `INPUT_TOKEN=${CANARY}`],
+    ['a GitHub Actions input named tokens', `INPUT_TOKENS=${CANARY}`],
+    ['rotated tokens', `NEW_TOKENS: ${CANARY}`],
+    ['a singular token beside a count word', `OUTPUT_TOKEN=${CANARY}`],
+    ['a secret whose name also mentions a limit', `MAX_TOKENS_SECRET=${CANARY}`],
+  ];
+  for (const [name, text] of secret) {
+    it(`still redacts ${name}`, () => {
+      expect(sanitize(text)).not.toContain(CANARY);
+    });
+  }
+});
+
 describe('by-value redaction — the mechanism patterns cannot replace', () => {
   it('redacts a known value in a format no pattern would recognise', () => {
     const weird = 'hunter2-correct-horse-battery-staple';
@@ -114,6 +155,8 @@ describe('the sanitizer cannot be used to stall a build', () => {
     ['a normal log with versions and paths', 'node_modules/@scope/pkg@1.2.3-beta.4/dist/index.js:42:11\n'.repeat(3_000)],
     ['Bearer prefix without a token', 'Bearer '.repeat(30_000)],
     ['scheme://user: without an at-sign', 'https://user:'.repeat(20_000)],
+    ['count-named parameters, repeated', 'max_completion_tokens: config.x, '.repeat(10_000)],
+    ['a long name of count words', `${'MAX_'.repeat(20_000)}TOKENS=1234567`],
   ];
 
   for (const [name, input] of adversarial) {
