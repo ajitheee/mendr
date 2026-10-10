@@ -22,7 +22,7 @@ exist yet and is listed so the boundary is stated before it is built.
 |---|---|
 | The default `mendr audit` makes zero outbound network calls. | The test suite runs the audit under a Node preload that makes every network primitive throw (`scripts/no-network.cjs`, `src/audit/noNetwork.test.ts`). The audit must still exit 0 with a valid report on every build. A control test proves the preload bites. |
 | You can enforce it yourself. | `mendr audit . --offline` or `MENDR_OFFLINE=1` installs the same guard inside the process. Any attempt to open a socket, resolve a name or call `fetch` fails loudly and names the operation. |
-| The CLI has no telemetry and needs no account; the default audit sends nothing anywhere. | The default audit has no endpoint to talk to. The outbound calls in the CLI source are the opt-in signed registry refresh (section 3; a GET of public files that carries nothing of yours), the optional provider usage read (section 3) — which goes to the provider you name, with a key you supply, from your machine — the `git clone` you ask for with a URL argument, and, only from the generated workflows, the POST of the report to the Mendr App (section 4). The App is the one Mendr-hosted component (Hono + Postgres on Render); it receives what your CI posts and never reaches into your repository. |
+| The CLI has no telemetry and needs no account; the default audit sends nothing anywhere. | The default audit has no endpoint to talk to. The outbound calls in the CLI source are the opt-in signed registry refresh (section 3; a GET of public files that carries nothing of yours), the optional provider usage read (section 3) — which goes to the provider you name, with a key you supply, from your machine — the `git clone` you ask for with a URL argument, and, only from the generated workflows, the POST of the report to the Mendr App (section 4). The App is the one Mendr-hosted component (Hono on Render, with its Postgres on Neon); it receives what your CI posts and never reaches into your repository. |
 | The GitHub App cannot read your code. | Its manifest requests `checks: write` and `metadata: read` only. It accepts what your CI posts — the audit document (`mendr audit --json`) and, from the migration workflow, the whitelisted migration report with its redacted diff hunk — re-redacts every string and re-caps every snippet server-side, and stores nothing beyond the inventory in section 4. The one optional addition is `actions: write`, which lets it *start* your migration workflow the moment you approve a migration — still no contents, no clone, no file reads. Tested against a GitHub-shaped fake in `app/src/app.test.ts`. |
 | Nothing edits your files unless you ask. | `fix-llm` prints a diff by default; `--write` is an explicit flag. `audit` never writes source. `--install` writes one workflow file you can read before committing. |
 | Secrets do not leak through Mendr's own output. | Everything that could be published (the GitHub issue body, the job-summary section, JSON snippets) passes through the same redaction (section 6). This is best-effort pattern matching and section 8 says what it does not cover. |
@@ -249,13 +249,13 @@ removed on request (section 10).
 
 ### Hosting and subprocessors
 
-The hosted App (`mendr-app.onrender.com`, Hono) runs as a Render web service
-with Render's managed Postgres. The marketing site is static on Vercel. GitHub
-provides OAuth sign-in, the App installation, check runs and the OIDC tokens
-that authenticate uploads. No other third party processes customer data; the
-App has no analytics SDK and no trackers. Mendr does not assert a disk-level
-encryption claim for the host beyond what Render documents; the field-level
-layer below does not depend on it.
+The hosted App (`mendr-app.onrender.com`, Hono) runs as a Render web service.
+Its Postgres database is on Neon, in AWS US East 2 (Ohio). The marketing site is
+static on Vercel. GitHub provides OAuth sign-in, the App installation, check
+runs and the OIDC tokens that authenticate uploads. No other third party
+processes customer data; the App has no analytics SDK and no trackers. Mendr
+does not assert a disk-level encryption claim for the hosts beyond what Render
+and Neon document; the field-level layer below does not depend on it.
 
 ### Encryption at rest
 
