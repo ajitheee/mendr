@@ -386,12 +386,13 @@ describe('the shipped registry', () => {
     // 2026-10-06: +1 claude-sonnet-4-5-20250929, quarantined, so auto-fix eligible is unchanged.
     // 2026-10-10: gemini-2.0-flash-live-001 and gemini-live-2.5-flash-preview retarget to
     // gemini-3.8-live, which no public catalog lists yet: -2 eligible, +2 unverified. gpt-5.2
-    // is removed, -1 eligible: OpenAI does not deprecate it.
-    expect(provenance.activeEntries).toBe(163);
+    // is removed, -1 eligible: OpenAI does not deprecate it. +3 image models retiring 2026-12-01,
+    // unverifiable: catalogs do not list image models.
+    expect(provenance.activeEntries).toBe(166);
     expect(provenance.autoFixEligible).toBe(132);
     expect(provenance.reviewOnlyCounts.quarantined).toBe(18);
     expect(provenance.reviewOnlyCounts.unverified).toBe(7);
-    expect(provenance.reviewOnlyCounts.unverifiable).toBe(6);
+    expect(provenance.reviewOnlyCounts.unverifiable).toBe(9);
     // Nothing ships in the defence-in-depth state; the validator forbids it.
     expect(provenance.reviewOnlyCounts.withheld).toBe(0);
   });

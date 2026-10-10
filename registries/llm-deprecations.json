@@ -1446,27 +1446,37 @@
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-image-1",
-    "replacement": "gpt-image-2",
+    "replacement": "gpt-image-2.5-sunburst",
     "status": "deprecated",
     "shutdownDate": "2026-10-23",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "Provider-named. Announced 2026-04-22.",
+    "note": "gpt-image-1 shuts down 2026-10-23. OpenAI names two replacements, gpt-image-2.5-sunburst or gpt-image-2.5-flare. This entry carries gpt-image-2.5-sunburst, the first one named, which OpenAI's model page calls its most capable model for image generation and editing; gpt-image-2.5-flare is the faster everyday model. Detect-only: which of the two fits stays a person's choice, and the gate does not catalog-check image models.",
     "verification": {
       "status": "unverifiable",
       "officialSourceConfirmed": true,
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
       ],
       "reasons": [
-        "\"gpt-image-1\" is a image model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-image-2\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
-        "Provider-named. Announced 2026-04-22."
+        "\"gpt-image-1\" is a image model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-image-2.5-sunburst\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
+        "OpenAI deprecation page (read 2026-10-10) states shutdown October 23, 2026 and names \"gpt-image-2.5-sunburst or gpt-image-2.5-flare\"",
+        "both replacement model pages exist and show no deprecation (read 2026-10-10); the gpt-image-1 model page carries a Deprecated badge",
+        "two replacements are named, so the choice between them stays with a human"
       ]
-    }
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T04:58:56.260Z",
+        "excerpt": "October 23, 2026 | gpt-image-1 | gpt-image-2.5-sunburst or gpt-image-2.5-flare"
+      }
+    ]
   },
   {
     "entryId": "anthropic.claude-1.retirement-2024-11-06",
@@ -5044,6 +5054,117 @@
         "contentHash": "sha256:73391ff2e85ce434e7bfb42f54fd1d0b57a62ab013c8cb906b9ad3c762f7a37a",
         "retrievedAt": "2026-10-05T03:51:08.630Z",
         "excerpt": "November 30, 2026 | claude-sonnet-4-5-20250929 | claude-sonnet-5-5"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-image-1-mini.retirement-2026-12-01",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-image-1-mini",
+    "replacement": "gpt-image-2.5-sunburst",
+    "status": "deprecated",
+    "shutdownDate": "2026-12-01",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "gpt-image-1-mini shuts down 2026-12-01 (announced 2026-06-02). OpenAI names two replacements, gpt-image-2.5-sunburst or gpt-image-2.5-flare. This entry carries gpt-image-2.5-sunburst, the first one named, which OpenAI's model page calls its most capable model for image generation and editing; gpt-image-2.5-flare is the faster everyday model. Detect-only: which of the two fits stays a person's choice, and the gate does not catalog-check image models.",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"gpt-image-1-mini\" is a image model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-image-2.5-sunburst\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
+        "OpenAI deprecation page (read 2026-10-10) states shutdown Dec 1, 2026 and names \"gpt-image-2.5-sunburst or gpt-image-2.5-flare\"",
+        "both replacement model pages exist and show no deprecation (read 2026-10-10); the gpt-image-1-mini model page carries a Deprecated badge",
+        "two replacements are named, so the choice between them stays with a human"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T04:58:56.260Z",
+        "excerpt": "Dec 1, 2026 | gpt-image-1-mini | gpt-image-2.5-sunburst or gpt-image-2.5-flare"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-image-1.5.retirement-2026-12-01",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-image-1.5",
+    "replacement": "gpt-image-2.5-sunburst",
+    "status": "deprecated",
+    "shutdownDate": "2026-12-01",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "gpt-image-1.5 shuts down 2026-12-01 (announced 2026-06-02). OpenAI names two replacements, gpt-image-2.5-sunburst or gpt-image-2.5-flare. This entry carries gpt-image-2.5-sunburst, the first one named, which OpenAI's model page calls its most capable model for image generation and editing; gpt-image-2.5-flare is the faster everyday model. Detect-only: which of the two fits stays a person's choice, and the gate does not catalog-check image models.",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"gpt-image-1.5\" is a image model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-image-2.5-sunburst\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
+        "OpenAI deprecation page (read 2026-10-10) states shutdown Dec 1, 2026 and names \"gpt-image-2.5-sunburst or gpt-image-2.5-flare\"",
+        "both replacement model pages exist and show no deprecation (read 2026-10-10); the gpt-image-1.5 model page carries a Deprecated badge",
+        "two replacements are named, so the choice between them stays with a human"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T04:58:56.260Z",
+        "excerpt": "Dec 1, 2026 | gpt-image-1.5 | gpt-image-2.5-sunburst or gpt-image-2.5-flare"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.chatgpt-image-latest.retirement-2026-12-01",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "chatgpt-image-latest",
+    "replacement": "gpt-image-2.5-sunburst",
+    "status": "deprecated",
+    "shutdownDate": "2026-12-01",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "chatgpt-image-latest shuts down 2026-12-01 (announced 2026-06-02). OpenAI names two replacements, gpt-image-2.5-sunburst or gpt-image-2.5-flare. This entry carries gpt-image-2.5-sunburst, the first one named, which OpenAI's model page calls its most capable model for image generation and editing; gpt-image-2.5-flare is the faster everyday model. Detect-only: which of the two fits stays a person's choice, and the gate does not catalog-check image models.",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"chatgpt-image-latest\" is a image model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-image-2.5-sunburst\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
+        "OpenAI deprecation page (read 2026-10-10) states shutdown Dec 1, 2026 and names \"gpt-image-2.5-sunburst or gpt-image-2.5-flare\"",
+        "both replacement model pages exist and show no deprecation (read 2026-10-10); the chatgpt-image-latest model page carries a Deprecated badge",
+        "two replacements are named, so the choice between them stays with a human"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T04:58:56.260Z",
+        "excerpt": "Dec 1, 2026 | chatgpt-image-latest | gpt-image-2.5-sunburst or gpt-image-2.5-flare"
       }
     ]
   }
