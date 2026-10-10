@@ -317,7 +317,7 @@ Two further codes, `dynamic_model_value` and `insufficient_dataflow`, exist in t
 
 - the held call's model written as shorthand `{ model }`, `this.model`, `MODEL!` or a quoted `"model"` key, or the held id under any model-like key other than `model` (`modelName`, `modelId`, `model_name`, `fallbackModel`, …);
 - a nested request reached by indexing, a property read, a callback, or a call inside the arguments (`.filter(Boolean)`, `.map(…)`);
-- a request built in a variable, or spread in from one.
+- a request built in a variable whose model is not a literal written in that object (`const req = { model: MODEL, … }`), or spread in from one. A request object whose retiring id IS written in it (`const req = { model: 'gpt-4', … }` passed to `client.chat.completions.create(req)`) is judged like an inline argument, and when that call is held, its own parameters are skipped too.
 
 A second model value inside a held call that is not itself held can still be swapped: the plain branch of `useGw ? 'openai/…' : '…'`, or a factory call such as `openai('…')` inside the request. Python has no parameter pass; a model value inside a held Python call can be swapped the same way. A call that no retiring id reaches is not held, so a sample or proxy call on a current model gets parameter rules like any other; so does a call mendr reports as Tier C, as an untraced const (`usage_unverified`), or in Tier B for an unverified replacement (`replacement_unverified`) or an `as` cast (`type_cast_masked`), even though that Tier B finding itself says no patch was generated for the model id.
 

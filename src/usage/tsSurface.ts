@@ -1,5 +1,5 @@
-import { Node, SyntaxKind } from 'ts-morph';
-import type { CallExpression, Expression, Identifier, NewExpression, SourceFile } from 'ts-morph';
+import { Node, SyntaxKind, VariableDeclarationKind } from 'ts-morph';
+import type { CallExpression, Expression, Identifier, NewExpression, SourceFile, VariableDeclaration } from 'ts-morph';
 import { CATALOG_SIBLING_KEYS, isDefaultContainerName, isModelLikeName } from './sharedRules.js';
 
 // The TypeScript spelling of the Python guards G1–G5 (src/python/sinks.ts).
@@ -107,6 +107,15 @@ export const TS_DEFAULT_CONTAINER_REASON =
   'model value inside a default-configuration object; a real default whose consumer is not traced, review before changing';
 export const TS_LOOKUP_DEFAULT_REASON =
   'fallback value of a model lookup; a real default whose consumer is not traced, review before changing';
+/**
+ * `const req = { model: 'gpt-4', messages }` … `client.chat.completions.create(req)`, where the
+ * variable is ALSO used some other way: spread into another object, read by something that is
+ * not a provider request, changed after it was built, declared with `let`, or exported. The
+ * object reaches a provider request, so the id is live; what that request finally carries is not
+ * all visible in the object literal, so the swap is not an unattended one.
+ */
+export const TS_REQUEST_VARIABLE_REASON =
+  'request object built in a variable and passed to a provider request, but the variable is also used, spread, changed or exported elsewhere, so the request it sends is not all visible here — review';
 
 // --- AST helpers ----------------------------------------------------------------
 
@@ -663,6 +672,152 @@ export function enclosingNewOfObject(obj: Node): Node | undefined {
   const parent = top.getParent();
   if (parent && Node.isNewExpression(parent) && parent.getArguments().includes(top as Expression)) return parent;
   return undefined;
+}
+
+/** Where a request object built in a variable goes. See {@link requestObjectFlow}. */
+export interface RequestObjectFlow {
+  /** The provider requests (an endpoint {@link endpointFamily} recognises) the object is passed to. */
+  calls: CallExpression[];
+  /**
+   * True when the object literal is the WHOLE request: a non-exported `const`, initialised with
+   * the literal itself, whose every use is a direct argument of one of `calls`. Only then does the
+   * literal show everything the request carries, which the swap and its parameter checks rely on.
+   */
+  exclusive: boolean;
+}
+
+/** Is `id` the NAME a declaration introduces, or a property name, rather than a read of a binding? */
+function isNameNotReference(id: Node): boolean {
+  const parent = id.getParent();
+  if (!parent) return false;
+  if (Node.isPropertyAccessExpression(parent)) return parent.getNameNode() === id;
+  if (
+    Node.isVariableDeclaration(parent) ||
+    Node.isParameterDeclaration(parent) ||
+    Node.isFunctionDeclaration(parent) ||
+    Node.isClassDeclaration(parent) ||
+    Node.isBindingElement(parent) ||
+    Node.isPropertyAssignment(parent) ||
+    Node.isPropertyDeclaration(parent) ||
+    Node.isPropertySignature(parent) ||
+    Node.isMethodDeclaration(parent) ||
+    Node.isImportSpecifier(parent)
+  ) {
+    return (parent as Node & { getNameNode(): Node | undefined }).getNameNode() === id;
+  }
+  return false;
+}
+
+/**
+ * `const arr = { messages, model: 'gpt-3.5-turbo' }` … `chatGPT.chat.completions.create(arr)`.
+ *
+ * {@link enclosingCallOfObject} only sees an object written INSIDE the call's parentheses, so a
+ * request built in a variable first and passed by name had no call at all and was filed as a
+ * catalog value: Tier C, "no action", and `fix-llm` reported nothing to do. Measured on
+ * miroslavpejic85/mirotalksfu (2026-10-09), whose Video AI handler sends gpt-3.5-turbo this way.
+ *
+ * Deliberately narrow, because a model id in a standalone object is catalog data far more often
+ * than it is a request: the object has to be the initializer of a variable whose value, by name,
+ * reaches a call whose callee is a provider ENDPOINT (`.chat.completions.create`,
+ * `.messages.create`, `generateContent`…) — directly, through a fallback, or spread into an
+ * object that is that call's argument. Passing it to any other call (`console.log(arr)`,
+ * `res.json(arr)`, `save(arr)`) is not evidence of a request and finds nothing here, so those
+ * objects stay where they were. Undefined when no provider request is reached.
+ *
+ * Syntactic, like the rest of this file: a reference counts only when {@link declarationsOf}
+ * resolves it to this one declaration, so a shadowing binding of the same name is neither
+ * evidence of a flow nor mistaken for one.
+ */
+export function requestObjectFlow(obj: Node): RequestObjectFlow | undefined {
+  if (!Node.isObjectLiteralExpression(obj)) return undefined;
+  // The object must BE the variable's value. Parentheses and type wrappers keep it whole; a
+  // fallback (`opts ?? { … }`) or a ternary branch makes it one of two possible values.
+  let top: Node = obj;
+  let wholeValue = true;
+  for (let p = top.getParent(); p; p = top.getParent()) {
+    if (
+      Node.isParenthesizedExpression(p) ||
+      Node.isAsExpression(p) ||
+      Node.isSatisfiesExpression(p) ||
+      Node.isNonNullExpression(p)
+    ) {
+      top = p;
+      continue;
+    }
+    const op = Node.isBinaryExpression(p) ? p.getOperatorToken().getKind() : undefined;
+    if (
+      (op === SyntaxKind.BarBarToken || op === SyntaxKind.QuestionQuestionToken) ||
+      (Node.isConditionalExpression(p) && (p.getWhenTrue() === top || p.getWhenFalse() === top))
+    ) {
+      top = p;
+      wholeValue = false;
+      continue;
+    }
+    break;
+  }
+  const decl = top.getParent();
+  if (!decl || !Node.isVariableDeclaration(decl) || decl.getInitializer() !== top) return undefined;
+  const nameNode = decl.getNameNode();
+  if (!Node.isIdentifier(nameNode)) return undefined;
+  const name = nameNode.getText();
+
+  const list = decl.getParent();
+  const isConst =
+    Node.isVariableDeclarationList(list) && list.getDeclarationKind() === VariableDeclarationKind.Const;
+  const statement = list?.getParent();
+  const exported = !!statement && Node.isVariableStatement(statement) && statement.isExported();
+
+  const calls: CallExpression[] = [];
+  let exclusive = isConst && !exported && wholeValue;
+  const scope = enclosingFunction(decl) ?? decl.getSourceFile();
+  for (const id of scope.getDescendantsOfKind(SyntaxKind.Identifier)) {
+    if (id === nameNode || id.getText() !== name || isNameNotReference(id)) continue;
+    const decls = declarationsOf(id, name);
+    if (!decls.includes(decl as VariableDeclaration)) continue; // another binding of the same name
+    if (decls.length !== 1) {
+      // Possibly ours, possibly a shadow: never evidence of a flow, and never a clean single use.
+      exclusive = false;
+      continue;
+    }
+    // Climb the wrappers that pass the value through unchanged, then look at what receives it.
+    let use: Node = id;
+    let direct = true;
+    for (let p = use.getParent(); p; p = use.getParent()) {
+      if (Node.isParenthesizedExpression(p) || Node.isAsExpression(p) || Node.isSatisfiesExpression(p) || Node.isNonNullExpression(p)) {
+        use = p;
+        continue;
+      }
+      const uop = Node.isBinaryExpression(p) ? p.getOperatorToken().getKind() : undefined;
+      if (
+        (uop === SyntaxKind.BarBarToken || uop === SyntaxKind.QuestionQuestionToken) ||
+        (Node.isConditionalExpression(p) && (p.getWhenTrue() === use || p.getWhenFalse() === use))
+      ) {
+        use = p;
+        direct = false;
+        continue;
+      }
+      break;
+    }
+    const receiver = use.getParent();
+    let call: CallExpression | undefined;
+    if (receiver && Node.isCallExpression(receiver) && receiver.getArguments().includes(use as Expression)) {
+      call = receiver;
+    } else if (receiver && Node.isSpreadAssignment(receiver)) {
+      // `create({ ...arr, stream: true })`: the request is the object around the spread, whose
+      // other keys the literal does not show.
+      const outer = receiver.getParent();
+      call = outer ? enclosingCallOfObject(outer) : undefined;
+      direct = false;
+    }
+    if (call && endpointFamily(call) !== null) {
+      calls.push(call);
+      if (!direct) exclusive = false;
+    } else {
+      // Read by something that is not a provider request, written to, aliased, returned…
+      exclusive = false;
+    }
+  }
+  return calls.length > 0 ? { calls, exclusive } : undefined;
 }
 
 /** Does an object literal carry catalog-shaped siblings (label, pricing, description…)? */

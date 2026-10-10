@@ -11,12 +11,14 @@ import {
   isCliOptionCall,
   isInDefaultContainer,
   judgeDeclarationSinks,
+  requestObjectFlow,
   TS_CLI_DEFAULT_REASON,
   TS_DEFAULT_CONTAINER_REASON,
   TS_EXAMPLE_REASON,
   TS_EXAMPLE_CALL_REASON,
   TS_MODEL_FACTORIES,
   TS_PREFIXED_REASON,
+  TS_REQUEST_VARIABLE_REASON,
   TS_WRAPPER_CTOR_REASON,
   type TsSinkMap,
 } from './tsSurface.js';
@@ -543,6 +545,26 @@ function classifyByEnclosure(node: Node, parent: Node | undefined, sinks?: TsSin
       // `JSON.stringify` of a mocked response, or an internal wrapper is REAL but
       // never an unattended swap.
       if (isModelLikeName(keyName) && call) return classifyCallSurface(call);
+      // The same request, built in a variable first and passed by name:
+      // `const arr = { model: "…", messages }; client.chat.completions.create(arr)`. Only a
+      // provider ENDPOINT counts as the receiver (see requestObjectFlow), so an object handed to
+      // `console.log` or an app function is still data. Every endpoint it reaches is judged by
+      // the same surface rule as an inline argument, and the strictest verdict wins; a swap is
+      // offered only when the literal is the whole request (a private `const`, used only as a
+      // direct argument of those requests), since that is the only case where its siblings are
+      // every parameter the request sends.
+      if (isModelLikeName(keyName) && obj && !call) {
+        const flow = requestObjectFlow(obj);
+        if (flow) {
+          for (const c of flow.calls) {
+            const verdict = classifyCallSurface(c);
+            if (verdict.position !== 'model_arg') return verdict;
+          }
+          return flow.exclusive
+            ? { position: 'model_arg' }
+            : { position: 'surface_capped', reason: TS_REQUEST_VARIABLE_REASON };
+        }
+      }
       // The same shape behind a wrapper CLASS: `new OpenAiChat({ model: "gpt-4" })`. Consulted
       // only when there is no enclosing CALL, so nothing above can change. Catalog siblings
       // still win — `new ModelCard({ model, label, pricing })` is a card, not a selection.
