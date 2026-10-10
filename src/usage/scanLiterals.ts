@@ -911,6 +911,29 @@ export function toBlockedModelArgMatches(matches: LiteralMatch[]): BlockedModelL
 }
 
 /**
+ * Project a pre-computed literal scan down to the calls it HELD at review (position
+ * `surface_capped`), one match per call site. The scan emits one match per matching registry
+ * record, so a site can carry several; a site that another projection already reports (a
+ * `model_arg` match is a swap or a blocked replacement, an `azure_deployment` match is a
+ * deployment alias) is left to that projection, so every occurrence lands in exactly one tier.
+ */
+export function toHeldCallMatches(matches: LiteralMatch[]): LiteralMatch[] {
+  const siteOf = (m: LiteralMatch) => `${m.location.file}:${m.location.line}:${m.location.column}`;
+  const reported = new Set(
+    matches.filter((m) => m.position === 'model_arg' || m.position === 'azure_deployment').map(siteOf),
+  );
+  const held: LiteralMatch[] = [];
+  for (const m of matches) {
+    if (m.position !== 'surface_capped') continue;
+    const site = siteOf(m);
+    if (reported.has(site)) continue;
+    reported.add(site);
+    held.push(m);
+  }
+  return held;
+}
+
+/**
  * Project a pre-computed literal scan down to its AZURE-DEPLOYMENT matches:
  * deprecated-looking values under a deployment key. Reported like blocked
  * matches (with {@link AZURE_DEPLOYMENT_REASON}) and NEVER swapped — the value

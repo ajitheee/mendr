@@ -44,12 +44,28 @@ export const TIER_B_REASON_TEXT: Record<TierBReason, string> = {
   // marks the provisioning conclusion as the inference it is.
   platform_blocked:
     'sits under a deployment key rather than in a model argument; on Azure and similar platforms that key names a provisioned deployment, so changing it is likely a provisioning change rather than a code change.',
+  // WHAT WAS ACTUALLY CHECKED: the scanner capped the occurrence at review by a SURFACE rule
+  // (tsSurface.ts, scanPy.ts): where or how the value is used, not the parameters around it.
+  // Each rule writes its own sentence, which the human report prints beneath this one. The JSON
+  // shape carries only this sentence (`detail` stays out of it), so it has to stand alone, and it
+  // has to be true of every rule that lands here. The 2026-10-07 review found three ways an
+  // earlier wording was not:
+  //   - not every occurrence is in a call: a gateway-prefixed id in an untraced const or a
+  //     default-config object is held too, so the sentence says "used", not "sits in a call";
+  //   - on an Azure client the value names a DEPLOYMENT, so the change can be a provisioning
+  //     one, the advice platform_blocked gives for a `deployment` key;
+  //   - a gateway prefix IS a question about the id string (the successor may need another
+  //     prefix), so the sentence makes no claim that the hold is "not about the id".
+  // The list is "such as": there are more rules.
+  surface_capped:
+    'is held for review because of where or how it is used, such as in a sample tree, as a gateway-prefixed id, behind a wrapper class, through a proxy or partner client or one mendr cannot resolve, or in a request made at import time; an unattended swap is not safe there. On an Azure client the value names a deployment, so the change may be a provisioning one.',
   dynamic_model_value:
     'the model value is assembled at runtime, so no single literal here can carry the migration.',
   insufficient_dataflow:
     'the value could not be traced to a definite use, so the migration cannot be shown to be safe.',
-  // WHAT WAS ACTUALLY CHECKED: the literal IS a live model argument and the
-  // replacement IS verified -- this is not a doubt about either. What is missing is
+  // WHAT WAS ACTUALLY CHECKED: the literal IS a live model argument -- this is not a doubt
+  // about the position. The cap is applied before the verification gate, so the replacement
+  // may be verified or not; the replacement verdict row says which. What is missing is
   // the REQUEST around the id: the replacement belongs to a model family the registry
   // records parameter rules for, this call passes a model-dependent parameter, and no
   // rule covers that parameter for that model. mendr has NOT tested the parameter
@@ -57,8 +73,9 @@ export const TIER_B_REASON_TEXT: Record<TierBReason, string> = {
   // survives the swap. Silence in the registry is not compatibility.
   coupled_param_unverified:
     'sits in a live model argument, but the replacement model belongs to a family whose accepted request parameters differ, and this call passes a parameter no migration rule covers; swapping the id alone could leave a request the provider rejects.',
-  // WHAT WAS ACTUALLY CHECKED: the literal IS a live model argument, the replacement IS
-  // verified, and a rule DOES cover the parameter, but the rule starts applying only on the
+  // WHAT WAS ACTUALLY CHECKED: the literal IS a live model argument and a rule DOES cover the
+  // parameter (the replacement may be verified or not, as for coupled_param_unverified above;
+  // the replacement verdict row says which), but the rule starts applying only on the
   // replacement, so it changes what the call asks for (a token limit that now also counts
   // reasoning tokens; a temperature that is dropped). The request will be accepted; whether
   // the value still does what it did is the question, and only a person can answer it.
@@ -86,6 +103,7 @@ export const TIER_B_REASON_ORDER: readonly TierBReason[] = [
   'replacement_unverified',
   'coupled_param_unverified',
   'param_behaviour_change',
+  'surface_capped',
   'platform_blocked',
   'usage_unverified',
   'type_cast_masked',
@@ -499,9 +517,13 @@ export const TIER_B_USAGE_VERDICT_TEXT: Record<TierBReason, string> = {
   // reports the key, which is the fact, and leaves the provisioning inference
   // to the `reason:` row below it, which already hedges it.
   platform_blocked: 'unverified -- sits under a deployment key, not in a model argument',
+  // The surface rules cap calls whose usage ranges from a real example request to a client
+  // mendr cannot resolve, so the row claims no more than the weakest of them.
+  surface_capped: 'unverified -- held for where or how it is used',
   // Like `replacement_unverified`, the USAGE here is fine and saying otherwise would
   // send the reviewer looking for the wrong thing: the literal is a confirmed live
-  // model argument and the mapping is verified. What is unproven is the REQUEST
+  // model argument (the mapping's own status is the replacement verdict row's to say).
+  // What is unproven is the REQUEST
   // around it, so this row confirms the usage and lets the `reason:` row carry the
   // parameter.
   coupled_param_unverified: 'confirmed live model argument -- the request parameters are what is unverified',

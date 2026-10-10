@@ -89,6 +89,21 @@ describe('classifyOccurrenceTier (the ONE tier classifier, shared with fix-llm)'
       reason: 'platform_blocked',
     });
   });
+  it('a call held for its surface is Tier B (surface_capped), never a deployment key', () => {
+    // An example tree, a proxy client, a wrapper class: none of them is a deployment key, so
+    // the reason that says "sits under a deployment key" would be false (it used to be given).
+    expect(
+      classifyOccurrenceTier({
+        position: 'surface_capped',
+        deprecation: verified,
+        reason: 'This call sits in an examples/ tree; a sample is held at review, never patched.',
+      }),
+    ).toEqual({ tier: 'B', reason: 'surface_capped' });
+    expect(classifyOccurrenceTier({ position: 'surface_capped', deprecation: verified })).toEqual({
+      tier: 'B',
+      reason: 'surface_capped',
+    });
+  });
   it('a data literal behind an as-cast is Tier B (type_cast_masked)', () => {
     expect(
       classifyOccurrenceTier({ position: 'data', deprecation: unverified, reason: TYPE_CAST_REASON }),

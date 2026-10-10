@@ -58,7 +58,11 @@ The fix pass still writes the edit when a person approves. Only the automatic pa
 - **The "B" column is `audit`'s.** `fix-llm` did not list these calls at all: it reported "Nothing to
   fix" and passed `--fail-on tierB`, for every TypeScript call the scanner caps at review. That
   includes this probe's `gpt-3.5-turbo` row and every Anthropic call that passes `max_tokens`. It
-  shipped that way in `v0.5.8-alpha`, and was fixed on branch `fix/fix-llm-reports-capped-calls`.
+  shipped that way in `v0.5.8-alpha`, and was fixed in
+  [PR #47](https://github.com/ajitheee/mendr/pull/47) (`138181f`). A follow-up stopped the
+  parameter pass from editing the request objects it can tie to a held call (the README's
+  "Held calls: what is and is not protected" lists the shapes not covered yet), and gave calls held for their surface
+  their own reason code, `surface_capped`, in place of `platform_blocked`.
 - **No command writes the edit, approved or not.** `migrate --only gpt-3.5-turbo` on that call
   reports "No verified Tier-A migration was found. Nothing to apply and nothing to verify."
   Review means a person makes the change by hand.
@@ -104,3 +108,5 @@ review on main's build, so no edit would ship. LibreChat has no Tier A location 
   LibreChat that is 5 of 7 review findings (the title call, an edit-message mutation, three image
   calls), and none has a deployment key. Across the 12 repositories, `platform_blocked` is the reason
   on 23 of the 55 review findings. Only LibreChat's 5 were read.
+  *Fixed 2026-10-07: those calls now carry `surface_capped`, and `platform_blocked` means a
+  value under a deployment-named key or identifier.*

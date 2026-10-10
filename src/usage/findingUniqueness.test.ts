@@ -17,8 +17,10 @@ import {
   findModelIdLiterals,
   toAzureDeploymentMatches,
   toBlockedModelArgMatches,
+  toHeldCallMatches,
   toModelIdDataMatches,
   TYPE_CAST_REASON,
+  type LiteralMatch,
 } from './scanLiterals.js';
 
 // A REGRESSION LOCK, not a bug fix. A reviewer suspected mendr double-counts —
@@ -54,6 +56,7 @@ function makeRepo(): string {
   writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'unique-fixture' }, null, 2));
   mkdirSync(join(dir, 'src'));
   mkdirSync(join(dir, 'sim'));
+  mkdirSync(join(dir, 'examples'));
 
   // Live calls: one verified (Tier A), one not (Tier B).
   writeFileSync(
@@ -80,6 +83,31 @@ function makeRepo(): string {
       'const client = new OpenAI();',
       'export async function c() {',
       "  return client.chat.completions.create({ model: ('gpt-4-0613' as LLMID), messages: [] });",
+      '}',
+      '',
+    ].join('\n'),
+  );
+  // Calls the scanner HOLDS at review (position `surface_capped`): a real call in an example
+  // tree, and a gateway-prefixed id. Same id as the live calls, so a stream that reported the
+  // held call twice, or reported it again as a live call, would show up below.
+  writeFileSync(
+    join(dir, 'examples', 'demo.ts'),
+    [
+      'import OpenAI from "openai";',
+      'const client = new OpenAI();',
+      'export async function demo() {',
+      "  return client.chat.completions.create({ model: 'gpt-4-0613', messages: [] });",
+      '}',
+      '',
+    ].join('\n'),
+  );
+  writeFileSync(
+    join(dir, 'src', 'gateway.ts'),
+    [
+      'import OpenAI from "openai";',
+      'const client = new OpenAI();',
+      'export async function viaGateway() {',
+      "  return client.chat.completions.create({ model: 'openai/gpt-4-0613', messages: [] });",
       '}',
       '',
     ].join('\n'),
@@ -209,6 +237,7 @@ async function allFindings(repo: string): Promise<
   );
   push('ts:blocked', toBlockedModelArgMatches(literals));
   push('ts:azure', toAzureDeploymentMatches(literals));
+  push('ts:held', toHeldCallMatches(literals));
   push('ts:data', toModelIdDataMatches(literals));
   push('py:tierA', py.swapMatches);
   push('py:blocked', py.blockedMatches);
@@ -238,6 +267,18 @@ describe('finding uniqueness', () => {
     expect(seen.size).toBe(rows.length);
   });
 
+  it('reports each held call once, and never one a live stream already reports', async () => {
+    const rows = await allFindings(makeRepo());
+    const held = rows.filter((r) => r.cls === 'ts:held');
+    // The fixture's two held calls, and nothing else: the live gpt-4-0613 call in src/live.ts
+    // reaches Tier A once and is not repeated here.
+    expect(held.map((r) => [r.file.replace(/^.*?(examples|src)\//, '$1/'), r.line, r.modelId]).sort()).toEqual([
+      ['examples/demo.ts', 4, 'gpt-4-0613'],
+      ['src/gateway.ts', 4, 'openai/gpt-4-0613'],
+    ]);
+    expect(held.every((r) => r.tier === 'B')).toBe(true);
+  });
+
   it('keeps two ids on the SAME line distinct (the key is not file+line alone)', async () => {
     const rows = await allFindings(makeRepo());
     const sameLine = rows.filter((r) => r.file.endsWith('src/prices.ts') && r.line === 2);
@@ -252,6 +293,46 @@ describe('finding uniqueness', () => {
     );
     expect(repeated.length).toBe(2);
     expect(repeated[0].column).not.toBe(repeated[1].column);
+  });
+});
+
+// --- THE HELD-CALL PROJECTION, ON ITS OWN ----------------------------------
+//
+// findModelIdLiterals emits one match per matching registry RECORD, so a value with two records
+// surfaces twice at one site, and the two can land in different positions. The real registry has
+// no such value today, so the fixture above cannot reach these shapes; they are built by hand.
+describe('toHeldCallMatches', () => {
+  const at = (
+    position: LiteralMatch['position'],
+    line: number,
+    id = 'gpt-4-0613',
+  ): LiteralMatch =>
+    ({
+      node: {} as LiteralMatch['node'],
+      value: id,
+      location: { file: '/repo/src/a.ts', line, column: 10 },
+      deprecation: { id: `openai.${id}.record-${position}` } as LiteralMatch['deprecation'],
+      position,
+    }) as LiteralMatch;
+
+  it('keeps one finding per held site when two records match it', () => {
+    const held = toHeldCallMatches([at('surface_capped', 4), at('surface_capped', 4)]);
+    expect(held).toHaveLength(1);
+  });
+
+  it('drops a held record at a site a live or deployment record already reports', () => {
+    expect(toHeldCallMatches([at('model_arg', 4), at('surface_capped', 4)])).toEqual([]);
+    expect(toHeldCallMatches([at('surface_capped', 4), at('azure_deployment', 4)])).toEqual([]);
+  });
+
+  it('keeps held sites on other lines, and ignores data and unverified-usage records', () => {
+    const held = toHeldCallMatches([
+      at('model_arg', 4),
+      at('surface_capped', 7),
+      at('data', 9),
+      at('usage_unverified', 11),
+    ]);
+    expect(held.map((m) => m.location.line)).toEqual([7]);
   });
 });
 
