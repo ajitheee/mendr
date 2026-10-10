@@ -594,6 +594,97 @@ export async function run(messages: any) {
     expect(text).toContain('{ model: M as string, max_completion_tokens: 5 }');
   });
 
+  // REGRESSION (review of 402c1e4, 2026-10-07): a reassigned `let` is either model at run time, and
+  // resolving it to its initializer removed `temperature` from a request that may go to Sonnet.
+  // Written `{ model: model }` that was already so on 0df2dce; resolving the shorthand made
+  // `{ model }` do it too.
+  it('SKIPS a let or var that is reassigned, in every way a variable can be written', () => {
+    const writes: Array<[string, string]> = [
+      ['an if', "if (cheap) model = 'claude-sonnet-4-6';"],
+      ['a compound assignment', "model ??= 'claude-sonnet-4-6';"],
+      ['an increment', 'if (cheap) model++;'],
+      ['an array destructuring assignment', "[model] = ['claude-sonnet-4-6'];"],
+      ['an object destructuring assignment', "({ model } = { model: 'claude-sonnet-4-6' });"],
+      ['a renamed destructuring assignment', "({ m: model } = { m: 'claude-sonnet-4-6' });"],
+      ['a for-of head', "for (model of ['claude-sonnet-4-6']) break;"],
+      ['a nested function', "const pick = () => { model = 'claude-sonnet-4-6'; }; pick();"],
+    ];
+    // One project, one file per variant: a type checker per project is what makes these slow.
+    const project = new Project({ useInMemoryFileSystem: true });
+    const files = new Map<string, string>();
+    let n = 0;
+    for (const kind of ['let', 'var']) {
+      for (const [label, write] of writes) {
+        for (const value of ['model', 'model: model']) {
+          const file = `src/let${n++}.ts`;
+          files.set(file, `${kind} / ${label} / ${value}`);
+          project.createSourceFile(
+            file,
+            [
+              'export async function run(anthropic: any, cheap: boolean) {',
+              `  ${kind} model = 'claude-opus-5';`,
+              `  ${write}`,
+              `  return anthropic.messages.create({ ${value}, temperature: 0.2, max_tokens: 100 });`,
+              '}',
+              '',
+            ].join('\n'),
+          );
+        }
+      }
+    }
+    const sites = findParamSites(project, REGISTRY).map((s) => files.get(s.location.file.replace(/^\//, '')));
+    expect(sites).toEqual([]);
+    // Control, in the same project: without the write, the same request is a site.
+    project.createSourceFile(
+      'src/control.ts',
+      "export async function run(anthropic: any) {\n  let model = 'claude-opus-5';\n  return anthropic.messages.create({ model, temperature: 0.2, max_tokens: 100 });\n}\n",
+    );
+    expect(findParamSites(project, REGISTRY).map((s) => s.location.file)).toEqual(['/src/control.ts']);
+  }, 30_000);
+
+  it('resolves a let that nothing reassigns, and is not fooled by a write to another binding of the name', () => {
+    const source = [
+      'export async function run(anthropic: any) {',
+      "  let model = 'claude-opus-5';",
+      '  return anthropic.messages.create({ model, temperature: 0.2, max_tokens: 100 });',
+      '}',
+      // A different `model` (a parameter) written elsewhere in the file.
+      "export function other(model: string) { model = 'x'; return model; }",
+      // `model++` on yet another binding, and a read in a comparison: neither writes the let.
+      'export function counter() { let model = 0; model++; return model; }',
+      "export const same = (m: string) => m === 'model';",
+      '',
+    ].join('\n');
+    const project = inMemoryProject('src/let.ts', source);
+    expect(applyParamFixes(project, REGISTRY)).toEqual([
+      { kind: 'param_removal', param: 'temperature', model: 'claude-opus-5' },
+    ]);
+    expect(project.getSourceFileOrThrow('src/let.ts').getFullText()).toContain(
+      'create({ model, max_tokens: 100 })',
+    );
+  });
+
+  // `["max_tokens"]: 5` is `max_tokens` to the provider; the scan now reads it so, and the param
+  // pass follows the swap the same way, keeping the computed form.
+  it('finds a computed string key, and renames it keeping the brackets and quotes', () => {
+    const project = inMemoryProject(
+      'src/computed.ts',
+      [
+        'export const a = (c: any) => c.chat.completions.create({ model: "o1-mini", ["max_tokens"]: 1 });',
+        "export const b = (c: any) => c.chat.completions.create({ ['model']: 'o1-mini', [`max_tokens`]: 2 });",
+        'const k = "max_tokens";',
+        'export const d = (c: any) => c.chat.completions.create({ model: "o1-mini", [k]: 3 });',
+        '',
+      ].join('\n'),
+    );
+    expect(applyParamFixes(project, REGISTRY)).toHaveLength(2);
+    const text = project.getSourceFileOrThrow('src/computed.ts').getFullText();
+    expect(text).toContain('{ model: "o1-mini", ["max_completion_tokens"]: 1 }');
+    expect(text).toContain("{ ['model']: 'o1-mini', [`max_completion_tokens`]: 2 }");
+    // A computed key whose name is not written there is not read.
+    expect(text).toContain('{ model: "o1-mini", [k]: 3 }');
+  });
+
   it('SKIPS a site whose model cannot be resolved to a concrete string', () => {
     // Model comes from an env var: unresolvable -> never guessed, never edited.
     const source = `

@@ -224,9 +224,24 @@ describe('an id read through a const, a shorthand or a cast is held exactly as i
           '}',
         ].join('\n'),
     ],
+    [
+      'a constructor assignment `this.model = …` read as `this.model`',
+      (p) =>
+        [
+          ...HEAD,
+          'export class Titles {',
+          '  private model: string;',
+          "  constructor() { this.model = 'gpt-3.5-turbo'; }",
+          '  async title() {',
+          `    return openai.chat.completions.create({ model: this.model, ${p}, messages: [] });`,
+          '  }',
+          '}',
+        ].join('\n'),
+    ],
     ['an `as string` cast', (p) => call("model: 'gpt-3.5-turbo' as string", p)],
     ['parentheses', (p) => call("model: ('gpt-3.5-turbo')", p)],
     ['quoted keys', (p) => call('"model": "gpt-3.5-turbo"', p.replace(/(\w+):/g, '"$1":'))],
+    ['computed string keys `["max_tokens"]`', (p) => call("model: 'gpt-3.5-turbo'", p.replace(/(\w+):/g, '["$1"]:'))],
   ];
 
   for (const [name, shape] of shapes) {
@@ -316,6 +331,97 @@ describe('an id read through a const, a shorthand or a cast is held exactly as i
     );
     expect(viaConst?.tier).toBe(inline?.tier);
     expect(viaConsumer?.tier).toBe(inline?.tier);
+  });
+});
+
+// REGRESSION (review of 402c1e4, 2026-10-07): the sink map files a consumer by NAME, and the
+// parameter check read the keys of every consumer filed under the declaration's name. A call whose
+// `model` is a different binding — a parameter, a local, another member — held the declaration for
+// ITS `max_tokens`, and the report said the declaration "changes what this call asks for" about a
+// call that never reads it. Each control below was Tier A on 0df2dce and Tier B on 402c1e4.
+describe('a same-named binding that is not the declaration does not hold it', () => {
+  const HEAD = ["import OpenAI from 'openai';", 'const openai = new OpenAI();'];
+  const create = (args: string) => `openai.chat.completions.create({ ${args}, messages: [] })`;
+  const fn = (name: string, params: string, body: string[]) => [`export async function ${name}(${params}) {`, ...body.map((l) => `  ${l}`), '}'];
+  const twin = () => verdict([...HEAD, ...fn('t', '', [`return ${create("model: 'gpt-3.5-turbo', max_tokens: 5")};`])].join('\n'), 'gpt-3.5-turbo');
+  const FREE = fn('usesConst', '', [`return ${create('model')};`]);
+
+  const controls: Array<[string, string[]]> = [
+    ['a parameter of the same name', ["const model = 'gpt-3.5-turbo';", ...FREE, ...fn('usesParam', 'model: string', [`return ${create('model, max_tokens: 5')};`])]],
+    [
+      'a local const of the same name in another function',
+      [
+        "const MODEL = 'gpt-3.5-turbo';",
+        ...fn('usesConst', '', [`return ${create('model: MODEL')};`]),
+        ...fn('usesLocal', '', ["const MODEL = 'gpt-4.1';", `return ${create('model: MODEL, max_tokens: 5')};`]),
+      ],
+    ],
+    ['a local shorthand of the same name', ["const model = 'gpt-3.5-turbo';", ...FREE, ...fn('b', '', ["const model = 'gpt-4.1';", `return ${create('model, max_tokens: 5')};`])]],
+    ['a destructured parameter', ["const model = 'gpt-3.5-turbo';", ...FREE, ...fn('ask', '{ model }: { model: string }', [`return ${create('model, max_tokens: 5')};`])]],
+    ['a local destructured from something else', ["const model = 'gpt-3.5-turbo';", ...FREE, ...fn('ask', 'opts: { model: string }', ['const { model } = opts;', `return ${create('model: model, max_tokens: 5')};`])]],
+    [
+      'a nested arrow with its own parameter, called with another model',
+      fn('a', '', [
+        "const model = 'gpt-3.5-turbo';",
+        `await ${create('model')};`,
+        `const inner = async (model: string) => ${create('model, max_tokens: 5')};`,
+        "return inner('gpt-4.1');",
+      ]),
+    ],
+    [
+      'a parameter property `this.model` of another class',
+      ["const model = 'gpt-3.5-turbo';", ...FREE, 'export class Other {', '  constructor(private model: string) {}', `  async ask() { return ${create('model: this.model, max_tokens: 5')}; }`, '}'],
+    ],
+    [
+      'a method parameter beside a class property',
+      ['export class Bot {', "  model = 'gpt-3.5-turbo';", `  async ask() { return ${create('model: this.model')}; }`, `  async other(model: string) { return ${create('model, max_tokens: 5')}; }`, '}'],
+    ],
+    [
+      'a parameter of the same name beside an assignment `model = …`',
+      ['let model: string;', "model = 'gpt-3.5-turbo';", ...FREE, ...fn('usesParam', 'model: string', [`return ${create('model, max_tokens: 5')};`])],
+    ],
+    [
+      'a method local beside a class property',
+      ['export class Bot {', "  private readonly model = 'gpt-3.5-turbo';", `  async ask() { return ${create('model: this.model')}; }`, "  async summarize() { const model = 'gpt-4.1'; return " + create('model, max_tokens: 200') + '; }', '}'],
+    ],
+  ];
+  for (const [name, body] of controls) {
+    it(`${name}: stays Tier A`, () => {
+      expect(twin()?.tier).toBe('B');
+      expect(verdict([...HEAD, ...body].join('\n'), 'gpt-3.5-turbo')).toMatchObject({ tier: 'A', position: 'model_arg' });
+    });
+  }
+
+  // A binding that is FED the declaration still reads it, and still holds it like the inline twin.
+  const keeps: Array<[string, string[]]> = [
+    ['a parameter defaulting to `this.model`', ['export class Bot {', "  model = 'gpt-3.5-turbo';", `  async chat(model = this.model) { return ${create('model, max_tokens: 5')}; }`, '}']],
+    ['a local destructured from `this`', ['export class Bot {', "  model = 'gpt-3.5-turbo';", '  async ask() {', '    const { model } = this;', `    return ${create('model, max_tokens: 5')};`, '  }', '}']],
+    ['a parameter passed the const at a call in the file', ["const model = 'gpt-3.5-turbo';", ...fn('ask', 'model: string', [`return ${create('model, max_tokens: 5')};`]), 'export const go = () => ask(model);']],
+    [
+      'a constructor parameter property passed the const',
+      ["const model = 'gpt-3.5-turbo';", 'export class Bot {', '  constructor(private model: string) {}', `  async ask() { return ${create('model: this.model, max_tokens: 5')}; }`, '}', 'export const bot = new Bot(model);'],
+    ],
+    ['a class property initialised from the const', ["const model = 'gpt-3.5-turbo';", 'export class Bot {', '  model = model;', `  async ask() { return ${create('model: this.model, max_tokens: 5')}; }`, '}']],
+    ['a `this.model` assigned the const', ["const model = 'gpt-3.5-turbo';", 'export class Bot {', '  model: string;', '  constructor() { this.model = model; }', `  async ask() { return ${create('model: this.model, max_tokens: 5')}; }`, '}']],
+    ['a local initialised from `this.model`', ['export class Bot {', "  model = 'gpt-3.5-turbo';", '  async ask() {', '    const model = this.model ?? "x";', `    return ${create('model, max_tokens: 5')};`, '  }', '}']],
+    ['a closure over the const', fn('a', '', ["const model = 'gpt-3.5-turbo';", `const run = async () => ${create('model, max_tokens: 5')};`, 'return run();'])],
+    ['an unresolved name in a class method', ['export class Bot {', "  model = 'gpt-3.5-turbo';", `  async ask() { return ${create('model, max_tokens: 5')}; }`, '}']],
+  ];
+  for (const [name, body] of keeps) {
+    it(`${name}: is held with the inline twin's sentence`, () => {
+      expect(verdict([...HEAD, ...body].join('\n'), 'gpt-3.5-turbo')).toEqual(twin());
+    });
+  }
+
+  it('a consumer that cannot be ruled out keeps the hold even beside one that is ruled out', () => {
+    // b's `model` is its own parameter (ruled out); c reads the const (kept). Any kept consumer holds.
+    const src = [
+      ...HEAD,
+      "const model = 'gpt-3.5-turbo';",
+      ...fn('b', 'model: string', [`return ${create('model, max_tokens: 5')};`]),
+      ...fn('c', '', [`return ${create('model, max_tokens: 5')};`]),
+    ].join('\n');
+    expect(verdict(src, 'gpt-3.5-turbo')).toEqual(twin());
   });
 });
 

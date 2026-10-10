@@ -148,8 +148,9 @@ export const other = (messages: any) => client.chat.completions.create({ model: 
   // REGRESSION (2026-10-07): a swap through a `{ model }` shorthand, an `as string` cast or quoted
   // keys was "swapped alone": pass 1 rewrote the id and pass 2 could not see the request, so
   // `max_tokens` stayed on gpt-5.6-sol while the inline twin had it renamed.
-  it('follows a swap through a shorthand, a cast or quoted keys with its parameter fix, as inline', () => {
-    const source = `
+  // One `it` per mode: each builds its own project and type checker, which made a single
+  // two-iteration test the slowest here and a timeout under load (review of 402c1e4).
+  const SWAP_FOLLOW_SOURCE = `
 import OpenAI from "openai";
 const client = new OpenAI();
 export async function run(messages: any) {
@@ -157,21 +158,24 @@ export async function run(messages: any) {
   const a = await client.chat.completions.create({ model, max_tokens: 1, messages });
   const b = await client.chat.completions.create({ model: "o1" as string, max_tokens: 2, messages });
   const c = await client.chat.completions.create({ "model": "o1", "max_tokens": 3, messages });
-  return { a, b, c };
+  const d = await client.chat.completions.create({ model: "o1", ["max_tokens"]: 4, messages });
+  return { a, b, c, d };
 }
 `.trimStart();
-    for (const paramsOnSwappedCallsOnly of [false, true]) {
-      const project = inMemoryProject('src/r.ts', source);
+  for (const paramsOnSwappedCallsOnly of [false, true]) {
+    it(`follows a swap through a shorthand, a cast or quoted keys with its parameter fix, as inline (paramsOnSwappedCallsOnly: ${paramsOnSwappedCallsOnly})`, () => {
+      const project = inMemoryProject('src/r.ts', SWAP_FOLLOW_SOURCE);
       const result = applyLlmFixesToProject(project, REASONING_REGISTRY, undefined, { paramsOnSwappedCallsOnly });
-      expect(result.modelIdSites, String(paramsOnSwappedCallsOnly)).toBe(3);
-      expect(result.paramsRenamed, String(paramsOnSwappedCallsOnly)).toBe(3);
+      expect(result.modelIdSites).toBe(4);
+      expect(result.paramsRenamed).toBe(4);
       const text = project.getSourceFileOrThrow('src/r.ts').getFullText();
       expect(text).toContain('const model = "gpt-5.6-sol";');
       expect(text).toContain('{ model, max_completion_tokens: 1, messages }');
       expect(text).toContain('{ model: "gpt-5.6-sol" as string, max_completion_tokens: 2, messages }');
       expect(text).toContain('{ "model": "gpt-5.6-sol", "max_completion_tokens": 3, messages }');
-    }
-  });
+      expect(text).toContain('{ model: "gpt-5.6-sol", ["max_completion_tokens"]: 4, messages }');
+    }, 30_000);
+  }
 
   it('is a no-op with an empty diff when nothing matches', () => {
     const project = inMemoryProject(

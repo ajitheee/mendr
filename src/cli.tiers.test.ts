@@ -822,6 +822,114 @@ const BYPASS_SHAPES: Record<string, string> = {
     '}',
     '',
   ].join('\n'),
+  // A class field read through a parameter default: `chat`'s `model` IS the field.
+  'src/paramDefault.ts': [
+    ...CLIENT,
+    'export class Bot {',
+    "  model = 'gpt-4-0613';",
+    '  async ask() {',
+    create('model: this.model'),
+    '  }',
+    '  async chat(model = this.model) {',
+    create('model, max_tokens: 5'),
+    '  }',
+    '}',
+    '',
+  ].join('\n'),
+  // A computed string key is the same parameter to the provider.
+  'src/computed.ts': [
+    ...CLIENT,
+    'export async function viaComputed() {',
+    create(`model: 'gpt-4-0613', ["max_tokens"]: 3`),
+    '}',
+    'export async function inlineTwin() {',
+    create("model: 'gpt-4-0613', max_tokens: 3"),
+    '}',
+    '',
+  ].join('\n'),
+};
+/**
+ * Controls that stay Tier A because the call passing `max_tokens` reads a DIFFERENT binding of the
+ * same name: a parameter, a local, a destructured parameter, a nested arrow's parameter, a method's
+ * own parameter or local beside a class field, another class's member. Each was Tier A on 0df2dce
+ * and held on 402c1e4, whose parameter check read the keys of every call filed under the name.
+ */
+const SHADOW_CONTROLS: Record<string, string> = {
+  'src/shadowParam.ts': [
+    ...CLIENT,
+    "const model = 'gpt-4-0613';",
+    'export async function usesConst() {',
+    create('model'),
+    '}',
+    'export async function usesParam(model: string) {',
+    create('model, max_tokens: 5'),
+    '}',
+    '',
+  ].join('\n'),
+  'src/shadowLocal.ts': [
+    ...CLIENT,
+    "const GPT4_MODEL = 'gpt-4-0613';",
+    'export async function usesConst() {',
+    create('model: GPT4_MODEL'),
+    '}',
+    'export async function usesLocal() {',
+    "  const GPT4_MODEL = 'gpt-4.1';",
+    create('model: GPT4_MODEL, max_tokens: 5'),
+    '}',
+    '',
+  ].join('\n'),
+  'src/shadowDestructured.ts': [
+    ...CLIENT,
+    "const model = 'gpt-4-0613';",
+    'export async function usesConst() {',
+    create('model'),
+    '}',
+    'export async function ask({ model }: { model: string }) {',
+    create('model, max_tokens: 5'),
+    '}',
+    '',
+  ].join('\n'),
+  'src/shadowNested.ts': [
+    ...CLIENT,
+    'export async function a() {',
+    "  const model = 'gpt-4-0613';",
+    '  await client.chat.completions.create({ model, messages: [] });',
+    '  const inner = async (model: string) => client.chat.completions.create({ model, max_tokens: 5, messages: [] });',
+    "  return inner('gpt-4.1');",
+    '}',
+    '',
+  ].join('\n'),
+  'src/shadowClass.ts': [
+    ...CLIENT,
+    'export class Bot {',
+    "  model = 'gpt-4-0613';",
+    '  async ask() {',
+    create('model: this.model'),
+    '  }',
+    '  async other(model: string) {',
+    create('model, max_tokens: 5'),
+    '  }',
+    '  async summarize() {',
+    "    const model = 'gpt-4.1';",
+    create('model, max_tokens: 200'),
+    '  }',
+    '}',
+    '',
+  ].join('\n'),
+  'src/shadowOtherClass.ts': [
+    ...CLIENT,
+    "const model = 'gpt-4-0613';",
+    'export async function usesConst() {',
+    create('model'),
+    '}',
+    'export class Other {',
+    '  constructor(private model: string) {}',
+    '  async ask() {',
+    create('model: this.model, max_tokens: 5'),
+    '  }',
+    '}',
+    '',
+  ].join('\n'),
 };
 /** Controls that stay Tier A: no consumer passes a model-dependent parameter; quoted keys on o3. */
 const BYPASS_CONTROLS: Record<string, string> = {
@@ -854,7 +962,7 @@ function makeBypassRepo(): string {
   created.push(dir);
   writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'bypass-fixture' }, null, 2));
   mkdirSync(join(dir, 'src'));
-  for (const [file, text] of Object.entries({ ...BYPASS_SHAPES, ...BYPASS_CONTROLS })) {
+  for (const [file, text] of Object.entries({ ...BYPASS_SHAPES, ...BYPASS_CONTROLS, ...SHADOW_CONTROLS })) {
     writeFileSync(join(dir, file), text);
   }
   return dir;
@@ -879,6 +987,8 @@ describe('a model id read through a const, a shorthand, a cast or quoted keys', 
     'src/cast.ts': [4, 7],
     'src/quoted.ts': [4, 7, 10],
     'src/mixed.ts': [3],
+    'src/paramDefault.ts': [4],
+    'src/computed.ts': [4, 7],
   };
 
   it('is Tier B with its inline twin\'s reason, and fix-llm, watch and audit agree', async () => {
@@ -889,9 +999,10 @@ describe('a model id read through a const, a shorthand, a cast or quoted keys', 
     for (const [file, lines] of Object.entries(EXPECTED_HELD)) {
       expect(heldAt(file), file).toEqual(lines.map((l) => [l, HELD]));
     }
-    expect(report.tierB).toHaveLength(10);
-    // The controls stay automatic: the const nobody passes a parameter beside, and the quoted o3
-    // calls (swapped and renamed, like their twin).
+    expect(report.tierB).toHaveLength(13);
+    // The controls stay automatic: the const nobody passes a parameter beside, the quoted o3
+    // calls (swapped and renamed, like their twin), and every declaration whose only call with
+    // `max_tokens` reads another binding of the same name.
     expect(report.tierA.map((a) => [a.file, a.from, a.to]).sort()).toEqual(
       [
         ['src/free.ts', 'gpt-4-0613', 'gpt-5.6-sol'],
@@ -899,6 +1010,7 @@ describe('a model id read through a const, a shorthand, a cast or quoted keys', 
         ['src/quotedO3.ts', 'o3-mini', 'gpt-5.6-sol'],
         ['src/quotedO3.ts', 'max_tokens', 'max_completion_tokens'],
         ['src/quotedO3.ts', 'max_tokens', 'max_completion_tokens'],
+        ...Object.keys(SHADOW_CONTROLS).map((file) => [file, 'gpt-4-0613', 'gpt-5.6-sol']),
       ].sort(),
     );
 
@@ -930,6 +1042,10 @@ describe('a model id read through a const, a shorthand, a cast or quoted keys', 
     expect(audited.map((s) => `${s.file}:${s.line} ${s.tier}`).sort()).toEqual(
       report.tierB.map((f) => `${f.file}:${f.line} B`).sort(),
     );
+    // ...and agree that each shadow control's declaration is Tier A.
+    const shadowA = Object.keys(SHADOW_CONTROLS).map((file) => `${file} A`).sort();
+    expect(watch.models.flatMap((m) => m.locations).filter((l) => l.file in SHADOW_CONTROLS).map((l) => `${l.file} ${l.tier}`).sort()).toEqual(shadowA);
+    expect(audit.investigations.flatMap((i) => i.locations.selectors).filter((s) => s.file in SHADOW_CONTROLS).map((s) => `${s.file} ${s.tier}`).sort()).toEqual(shadowA);
   }, 240_000);
 
   it('under --write, leaves every held shape untouched and still applies the controls', async () => {
@@ -948,7 +1064,11 @@ describe('a model id read through a const, a shorthand, a cast or quoted keys', 
     const quoted = readFileSync(join(repo, 'src', 'quotedO3.ts'), 'utf8');
     expect(quoted).toContain(`create({ model: 'gpt-5.6-sol', "max_completion_tokens": 2, messages: [] })`);
     expect(quoted).toContain(`create({ "model": "gpt-5.6-sol", "max_completion_tokens": 2, messages: [] })`);
-    expect(stdout).toContain('files modified: 2');
+    // A shadow control's declaration is swapped, and the other binding's call is left as written.
+    for (const [file, text] of Object.entries(SHADOW_CONTROLS)) {
+      expect(readFileSync(join(repo, file), 'utf8'), file).toBe(text.replace("'gpt-4-0613'", "'gpt-5.6-sol'"));
+    }
+    expect(stdout).toContain(`files modified: ${2 + Object.keys(SHADOW_CONTROLS).length}`);
   }, 180_000);
 });
 

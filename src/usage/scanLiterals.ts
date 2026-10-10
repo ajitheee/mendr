@@ -434,7 +434,10 @@ export function isEnclosingObjectACallArgument(prop: Node): boolean {
  *   - A declaration, `const MODEL = '…'` (also a class property or `x.model = '…'`): the keys of
  *     each request of each in-scope consumer the sink rule judged it by (collectTsSinks,
  *     inScopeSinks). It used to be none at all, so `create({ model: MODEL, max_tokens })` and
- *     `create({ model, max_tokens })` were swapped while the inline twin was held.
+ *     `create({ model, max_tokens })` were swapped while the inline twin was held. A consumer
+ *     whose `model` provably reads another binding of the same name (a parameter, a local, a
+ *     different class's member) is not this declaration's request and adds no keys; the sink
+ *     rule's own verdict still counts it (judgeDeclarationSinks is unchanged).
  *   - Anything else (a factory argument, a `||` fallback, a ternary branch): none, the honest
  *     answer when no request's siblings are this value's own. Unchanged.
  */
@@ -458,7 +461,9 @@ function requestKeySets(literal: Node, sinks: TsSinkMap | undefined): string[][]
         ? assignedName(parent.getLeft())
         : undefined;
   if (declared === undefined) return [];
-  return inScopeSinks(parent, declared, sinks).flatMap((call) => consumerRequestKeys(call, declared));
+  // Only the consumers whose model can be this declaration: the sink map files calls by NAME, and
+  // a same-named parameter or local in another call is not this value (consumerReadsDeclaration).
+  return inScopeSinks(parent, declared, sinks).flatMap((call) => consumerRequestKeys(call, declared, parent));
 }
 
 /** The name an assignment target binds, as the sink rule traces it: `model` or `this.model`. */

@@ -1,13 +1,15 @@
 import { relative } from 'node:path';
 import { gitUnifiedPatch } from '../report/diff.js';
-import { Node, SyntaxKind } from 'ts-morph';
+import { Node, SyntaxKind, VariableDeclarationKind } from 'ts-morph';
 import type {
+  Identifier,
   NoSubstitutionTemplateLiteral,
   ObjectLiteralElementLike,
   ObjectLiteralExpression,
   Project,
   PropertyAssignment,
   StringLiteral,
+  VariableDeclaration,
 } from 'ts-morph';
 import type { LlmModelIdDeprecation, LlmParamDeprecation, LlmRegistry, SourceLocation } from '../types.js';
 import { loadProject } from '../usage/scanRepo.js';
@@ -19,7 +21,7 @@ import {
   enclosingCallOfObject,
   enclosingNewOfObject,
   hasCatalogSiblings,
-  propertyKeyName,
+  requestKeyName,
   requestParamKeys,
   TS_EXAMPLE_CALL_REASON,
   TS_PREFIXED_REASON,
@@ -45,9 +47,10 @@ import {
 //   1. A candidate object literal must carry BOTH a `model` property AND the
 //      target `param` property. Any other object is invisible.
 //   2. The model value must resolve to a CONCRETE compile-time string — either a
-//      string/template literal inline, or a `const`/`let` bound to one (best
-//      effort). If we cannot see the model verbatim, we SKIP the site rather
-//      than guess. We never touch a call whose model we cannot prove.
+//      string/template literal inline, or a `const` (or a `let`/`var` that is
+//      never reassigned) bound to one. If we cannot see the model verbatim, we
+//      SKIP the site rather than guess. We never touch a call whose model we
+//      cannot prove.
 //   3. Only sites whose resolved model matches `on_models` are edited; a
 //      matching object on a non-listed model is left exactly as-is.
 //   4. All edits are in-memory on the passed Project; NOTHING is ever saved.
@@ -56,7 +59,15 @@ import {
 //   - Model resolution is one hop: an inline literal or a same-file const/let
 //     with a literal initializer. A model read from an env var, built by string
 //     concatenation/template interpolation, imported from another module, or
-//     reassigned is treated as unresolvable and SKIPPED.
+//     reassigned is treated as unresolvable and SKIPPED. (The "reassigned" half
+//     was not true until 2026-10-07: `let model = 'claude-opus-4-8'; if (cheap)
+//     model = 'claude-sonnet-4-6'` resolved to Opus and lost `temperature` on
+//     the Sonnet path too. See neverReassigned.)
+//   - It edits any object literal with a `model` key and a rule's parameter,
+//     not only a request it can see reach a call: a standalone request body
+//     (`const body = { model, max_tokens }` posted with fetch) is one, and so
+//     is a catalog row, whose readers the rename breaks. Narrowing that is a
+//     separate, release-noted change.
 //   - A `param`/`model` supplied via a spread (`{ ...opts, temperature }`) is
 //     not seen unless the key is a direct own property of the object literal.
 
@@ -113,9 +124,10 @@ function swapTransparentLiteral(expr: Node | undefined): ModelLiteral | undefine
  * and `'max_tokens'` are one key to the provider and to the scan (requestParamKeys).
  * `ObjectLiteralExpression.getProperty(name)` compares the key AS WRITTEN, so a quoted key was
  * invisible here: the model was swapped and the `"max_tokens"` beside it was never renamed.
+ * A computed string key (`["max_tokens"]`) is the same key too (requestKeyName).
  */
 function propertyNamed(obj: ObjectLiteralExpression, name: string): ObjectLiteralElementLike | undefined {
-  return obj.getProperties().find((p) => !Node.isSpreadAssignment(p) && propertyKeyName(p.getNameNode()) === name);
+  return obj.getProperties().find((p) => !Node.isSpreadAssignment(p) && requestKeyName(p.getNameNode()) === name);
 }
 
 /** The literal a `model` property's own value is written as, or undefined when it is not one. */
@@ -138,6 +150,12 @@ function ownModelLiteral(modelProp: Node | undefined): ModelLiteral | undefined 
  *
  * resolveModel reads its answer from here, so the param pass and withoutHeldCalls cannot disagree
  * about which literal a request's model is.
+ *
+ * Only a binding with ONE value resolves: a `const`, or a `let`/`var` nothing reassigns
+ * (neverReassigned). `let model = 'claude-opus-4-8'; if (cheap) model = 'claude-sonnet-4-6'` is
+ * either model at run time, and resolving it to its initializer removed `temperature` from a
+ * request that may go to Sonnet. Through `{ model: model }` that was so before the shorthand
+ * resolved; resolving the shorthand made `{ model }` do it too.
  */
 function modelLiteralNode(modelProp: Node | undefined): ModelLiteral | undefined {
   if (!modelProp) return undefined;
@@ -151,7 +169,66 @@ function modelLiteralNode(modelProp: Node | undefined): ModelLiteral | undefined
         ? modelProp.getValueSymbol()
         : undefined;
   const decl = symbol?.getValueDeclaration();
-  return decl && Node.isVariableDeclaration(decl) ? swapTransparentLiteral(decl.getInitializer()) : undefined;
+  if (!decl || !Node.isVariableDeclaration(decl) || !neverReassigned(decl)) return undefined;
+  return swapTransparentLiteral(decl.getInitializer());
+}
+
+/**
+ * Does this variable hold its initializer for good? A `const` does. A `let` or `var` does when no
+ * write in its file targets it: an assignment (`=`, `+=`, `??=`, …), `++`/`--`, a destructuring
+ * assignment, or a `for (x of …)` / `for (x in …)` head. An exported `let` cannot be written by
+ * an importer, so its own file is the whole story.
+ */
+function neverReassigned(decl: VariableDeclaration): boolean {
+  const list = decl.getParent();
+  if (Node.isVariableDeclarationList(list) && list.getDeclarationKind() === VariableDeclarationKind.Const) return true;
+  const nameNode = decl.getNameNode();
+  if (!Node.isIdentifier(nameNode)) return false;
+  const own = nameNode.getSymbol()?.compilerSymbol;
+  if (!own) return false;
+  const name = nameNode.getText();
+  for (const id of decl.getSourceFile().getDescendantsOfKind(SyntaxKind.Identifier)) {
+    if (id === nameNode || id.getText() !== name || !isWriteTarget(id)) continue;
+    // `({ model } = next)`: the shorthand's own symbol is the property; the variable is its value symbol.
+    const parent = id.getParent();
+    const symbol =
+      parent && Node.isShorthandPropertyAssignment(parent) ? parent.getValueSymbol() : id.getSymbol();
+    if (symbol?.compilerSymbol === own) return false;
+  }
+  return true;
+}
+
+/** Is this identifier written to: an assignment target, a `++`/`--` operand, or a `for…of/in` head? */
+function isWriteTarget(id: Identifier): boolean {
+  // Climb through what can wrap an assignment target: parentheses and destructuring patterns
+  // (`[a, model] = …`, `({ model } = …)`, `({ x: model } = …)`, `[...model] = …`).
+  let target: Node = id;
+  let parent = target.getParent();
+  while (
+    parent &&
+    (Node.isParenthesizedExpression(parent) ||
+      Node.isArrayLiteralExpression(parent) ||
+      Node.isObjectLiteralExpression(parent) ||
+      Node.isShorthandPropertyAssignment(parent) ||
+      (Node.isPropertyAssignment(parent) && parent.getInitializer() === target) ||
+      Node.isSpreadElement(parent) ||
+      Node.isSpreadAssignment(parent))
+  ) {
+    target = parent;
+    parent = target.getParent();
+  }
+  if (!parent) return false;
+  if (Node.isBinaryExpression(parent)) {
+    const op = parent.getOperatorToken().getKind();
+    return parent.getLeft() === target && op >= SyntaxKind.FirstAssignment && op <= SyntaxKind.LastAssignment;
+  }
+  if (target !== id) return false;
+  if (Node.isPrefixUnaryExpression(parent) || Node.isPostfixUnaryExpression(parent)) {
+    const op = parent.getOperatorToken();
+    return op === SyntaxKind.PlusPlusToken || op === SyntaxKind.MinusMinusToken;
+  }
+  if (Node.isForOfStatement(parent) || Node.isForInStatement(parent)) return parent.getInitializer() === id;
+  return false;
 }
 
 /** A `model` property's value as a concrete compile-time string, or undefined if it cannot be proven. */
@@ -429,12 +506,16 @@ export function onSwappedCalls(sites: ParamMatch[], swapped: ReadonlySet<Node>):
   });
 }
 
-/** Rename a property key to `replacement`, preserving a quoted-key's quote style. */
+/**
+ * Rename a property key to `replacement`, preserving how it was written: a quoted key keeps its
+ * quote, and a computed `["max_tokens"]` stays computed (`["max_completion_tokens"]`).
+ */
 function renameKey(paramProp: PropertyAssignment, replacement: string): void {
   const nameNode = paramProp.getNameNode();
-  if (Node.isStringLiteral(nameNode)) {
-    const quote = nameNode.getText()[0];
-    nameNode.replaceWithText(`${quote}${replacement}${quote}`);
+  const written = Node.isComputedPropertyName(nameNode) ? nameNode.getExpression() : nameNode;
+  if (Node.isStringLiteral(written) || Node.isNoSubstitutionTemplateLiteral(written)) {
+    const quote = written.getText()[0];
+    written.replaceWithText(`${quote}${replacement}${quote}`);
   } else {
     nameNode.replaceWithText(replacement);
   }
