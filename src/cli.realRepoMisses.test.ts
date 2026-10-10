@@ -230,6 +230,16 @@ describe('the audit JSON snippet (miss 5: a token limit printed as a redacted se
     expect(snippet).not.toContain('max_tokens=***REDACTED***');
     expect(snippet).toContain('REDACTED');
   }, 180_000);
+
+  // The carve-out's first cut read any name ENDING in a count word as a count: "admin" ends in
+  // "min", so ADMIN_TOKENS beside a model id in a checked-in .env went into the report verbatim.
+  it('still redacts ADMIN_TOKENS on the line after a model id in a .env', async () => {
+    const dir = repo({ '.env': 'OPENAI_MODEL=gpt-3.5-turbo\nADMIN_TOKENS=adm1nS3cretValue99\n' });
+    const { stdout } = await run('audit', [dir, '--offline', '--json']);
+    expect(stdout).toContain('gpt-3.5-turbo');
+    expect(stdout).not.toContain('adm1nS3cretValue99');
+    expect(stdout).toContain('ADMIN_TOKENS=***REDACTED***');
+  }, 180_000);
 });
 
 describe('a request object built in a variable (miss 1: a live call reported as catalog data)', () => {

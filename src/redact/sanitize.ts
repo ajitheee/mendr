@@ -79,10 +79,23 @@ const PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
   // `max_tokens=***REDACTED***` in an audit snippet (2026-10-09). A singular
   // TOKEN always counts, and so does any plural not preceded by a count word, so
   // INPUT_TOKEN, INPUT_TOKENS, ACCESS_TOKENS and NEW_TOKENS are still redacted.
+  //
+  // The count word must be a WHOLE word: it starts the name or follows `_`
+  // (`(?:\b|_)` in the lookbehind). Without that, any word that merely ENDS in
+  // one leaked: ADMIN_TOKENS, SYSADMIN_TOKENS and adminTokens all end in "min"
+  // and went out verbatim. A camelCase name can only be split at its START —
+  // max, then Output, in maxOutputTokens — because the pattern is
+  // case-insensitive and cannot see where a hump is: adminTokens and adMinTokens
+  // read the same to it. So a count word after any other camelCase word
+  // (llmMaxTokens) is redacted, as it was before the carve-out. That is the
+  // safe direction to be wrong in.
+  //
   // The lookbehind is a fixed set of short words, so it adds constant work per
-  // position and the pattern stays linear.
+  // position and the pattern stays linear. It also exempts by NOT MATCHING, so
+  // the rest of the line is still scanned: `max_tokens=1024&x_api_key=…` keeps
+  // the count and still redacts the key.
   [
-    /\b([A-Z][A-Z0-9_]{0,60}(?:TOKEN(?!S)|(?<!(?:MAX|MIN|NUM|TOTAL|PROMPT|COMPLETION|OUTPUT|REASONING|CACHED|BUDGET|MAX_?NEW|MAX_?INPUT|MAX_?CONTEXT|MAX_?RESPONSE|MAX_?THINKING)_?)TOKENS|SECRET|PASSWORD|PASSWD|API_?KEY|ACCESS_?KEY|PRIVATE_?KEY|CREDENTIALS?|AUTH|PAT)S?)\s*[:=]\s*["']?[^\s"'<>]{6,}/gi,
+    /\b([A-Z][A-Z0-9_]{0,60}(?:TOKEN(?!S)|(?<!(?:\b|_)(?:(?:MAX|MIN|NUM|TOTAL)_?)?(?:MAX|MIN|NUM|TOTAL|PROMPT|COMPLETION|OUTPUT|REASONING|CACHED|BUDGET)_?|(?:\b|_)MAX_?(?:NEW|INPUT|CONTEXT|RESPONSE|THINKING)_?)TOKENS|SECRET|PASSWORD|PASSWD|API_?KEY|ACCESS_?KEY|PRIVATE_?KEY|CREDENTIALS?|AUTH|PAT)S?)\s*[:=]\s*["']?[^\s"'<>]{6,}/gi,
     `$1=${MARK}`,
   ],
 ];

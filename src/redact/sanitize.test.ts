@@ -83,6 +83,9 @@ describe('request parameters that count tokens are not secrets', () => {
     'thinking_budget_tokens=self.thinking_budget',
     'total_tokens: usage.total_tokens',
     'reasoning_tokens: details.reasoning_tokens',
+    'generationConfig.maxOutputTokens: cfg.maxOutputTokens',
+    'maxCompletionTokens: opts.maxCompletionTokens',
+    'max_thinking_tokens=cfg.max_thinking',
   ];
   for (const line of kept) {
     it(`leaves \`${line}\` intact`, () => {
@@ -99,12 +102,31 @@ describe('request parameters that count tokens are not secrets', () => {
     ['rotated tokens', `NEW_TOKENS: ${CANARY}`],
     ['a singular token beside a count word', `OUTPUT_TOKEN=${CANARY}`],
     ['a secret whose name also mentions a limit', `MAX_TOKENS_SECRET=${CANARY}`],
+    // A word that only ENDS in a count word is not one. The first cut of the carve-out read the
+    // "min" at the end of admin as a count and printed all three of these verbatim.
+    ['admin tokens', `ADMIN_TOKENS=${CANARY}`],
+    ['sysadmin tokens, quoted', `SYSADMIN_TOKENS: "${CANARY}"`],
+    ['camelCase admin tokens', `adminTokens: "${CANARY}"`],
+    ['a word ending in max', `PAYMAX_TOKENS=${CANARY}`],
+    ['a word ending in total', `SUBTOTAL_TOKENS=${CANARY}`],
+    // The price of a case-insensitive pattern: it cannot see a camelCase hump, so a count word
+    // after another camelCase word reads like adminTokens and is redacted, as before the carve-out.
+    ['a count word after another camelCase word', `llmMaxTokens: ${CANARY}`],
   ];
   for (const [name, text] of secret) {
     it(`still redacts ${name}`, () => {
       expect(sanitize(text)).not.toContain(CANARY);
     });
   }
+
+  // The real path the finding came from: a checked-in .env, one line of which the audit quotes as
+  // context around a model id. The exemption works by not matching, so a count on one line and a
+  // key later on the same line are judged separately.
+  it('redacts an admin token beside a model id, and a key after a kept count', () => {
+    const env = `OPENAI_MODEL=gpt-3.5-turbo\nADMIN_TOKENS=${CANARY}\n`;
+    expect(sanitize(env)).toBe('OPENAI_MODEL=gpt-3.5-turbo\nADMIN_TOKENS=***REDACTED***\n');
+    expect(sanitize(`max_tokens=1024&x_api_key=${CANARY}`)).toBe('max_tokens=1024&x_api_key=***REDACTED***');
+  });
 });
 
 describe('by-value redaction — the mechanism patterns cannot replace', () => {
@@ -157,6 +179,8 @@ describe('the sanitizer cannot be used to stall a build', () => {
     ['scheme://user: without an at-sign', 'https://user:'.repeat(20_000)],
     ['count-named parameters, repeated', 'max_completion_tokens: config.x, '.repeat(10_000)],
     ['a long name of count words', `${'MAX_'.repeat(20_000)}TOKENS=1234567`],
+    ['a long name of words ending in a count word', `${'ADMIN_'.repeat(20_000)}TOKENS=1234567`],
+    ['a long camelCase name of count words', `${'maxOutput'.repeat(15_000)}Tokens=1234567`],
   ];
 
   for (const [name, input] of adversarial) {
