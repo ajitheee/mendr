@@ -110,6 +110,86 @@ const PROXY_TS = [
   '',
 ].join('\n');
 
+/** A Python agent: a client attribute set to None, built in another method, held by a host in the file. */
+const AGENT_PY = [
+  'from openai import AsyncOpenAI',
+  'from langchain_openai import ChatOpenAI',
+  '',
+  'class Agent:',
+  '    def __init__(self):',
+  '        self.llm_client = None',
+  '        self.memory_url = "http://127.0.0.1:8010"',
+  '',
+  '    def _initialize_llm(self, key):',
+  '        self.llm_client = AsyncOpenAI(api_key=key)',
+  '        self.chat = ChatOpenAI(model_name="o4-mini", temperature=1)',
+  '',
+  '    async def analyze(self, prompt):',
+  '        return await self.llm_client.chat.completions.create(',
+  '            model="o4-mini",',
+  '            messages=[{"role": "user", "content": prompt}],',
+  '        )',
+  '',
+].join('\n');
+
+/** A TypeScript runtime whose default model lives in a default-configuration object. */
+const RUNTIME_TS = [
+  'const RUNTIME_CONFIG_DEFAULTS = {',
+  '  model: "o4-mini",',
+  '  timeout: 120,',
+  '};',
+  'export class RuntimeConfig {',
+  '  readonly model!: string;',
+  '  constructor(opts: { model?: string } = {}) {',
+  '    Object.assign(this, { ...RUNTIME_CONFIG_DEFAULTS, ...opts });',
+  '  }',
+  '}',
+  '',
+].join('\n');
+
+describe('a held Python call (miss 2: printed as "no supported SDK call was found")', () => {
+  it('is listed under surface_capped with the guard\'s reason, the code audit gives it', async () => {
+    const dir = repo({ 'agents/agent.py': AGENT_PY });
+    const fix = await fixLlmTierB(dir);
+    const rows = fix.tierB.map((f) => [f.file, f.line, f.reason]);
+    expect(rows).toContainEqual(['agents/agent.py', 15, 'surface_capped']);
+    expect(rows).toContainEqual(['agents/agent.py', 11, 'surface_capped']);
+    expect(fix.tierB.filter((f) => f.reason === 'usage_unverified')).toEqual([]);
+
+    const human = await run('fix-llm', [dir, '--skip-gates']);
+    expect(human.stdout).not.toContain('no supported SDK call or parameter sink was found');
+    // The reader sees which host capped a client built with no base URL.
+    expect(human.stdout).toContain('127.0.0.1');
+
+    const audit = await auditLocations(dir);
+    for (const line of [11, 15]) {
+      expect(audit.find((l) => l.file === 'agents/agent.py' && l.line === line)).toMatchObject({
+        tier: 'B',
+        reason: 'surface_capped',
+      });
+    }
+  }, 180_000);
+});
+
+describe('an untraced TypeScript default (miss 3: audit said review, fix-llm said nothing)', () => {
+  it('is listed in fix-llm Tier B under the reason audit gives it, with the scanner\'s sentence', async () => {
+    const dir = repo({ 'ts/src/runtime.ts': RUNTIME_TS });
+    const fix = await fixLlmTierB(dir);
+    expect(fix.tierB.map((f) => [f.file, f.line, f.modelId, f.reason])).toEqual([
+      ['ts/src/runtime.ts', 2, 'o4-mini', 'usage_unverified'],
+    ]);
+    const human = await run('fix-llm', [dir, '--skip-gates', '--verbose']);
+    expect(human.stdout).toContain('ts/src/runtime.ts:2');
+    expect(human.stdout).toContain('default-configuration object');
+
+    const audit = await auditLocations(dir);
+    expect(audit.find((l) => l.file === 'ts/src/runtime.ts' && l.line === 2)).toMatchObject({
+      tier: 'B',
+      reason: 'usage_unverified',
+    });
+  }, 180_000);
+});
+
 describe('a request object built in a variable (miss 1: a live call reported as catalog data)', () => {
   it('is listed in fix-llm Tier B, and audit puts the same line in the same tier', async () => {
     const dir = repo({ 'src/server.js': SERVER_JS, 'src/proxy.ts': PROXY_TS });

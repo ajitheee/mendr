@@ -1364,10 +1364,16 @@ export function toPyAzureDeploymentMatches(matches: PyLiteralMatch[]): AzureDepl
  * Project a Python scan down to its USAGE-UNVERIFIED candidates: model-like
  * assignments the sink rule could not tie to any in-file sink. Reported for
  * manual review only — never auto-applied, never included in --write.
+ *
+ * Only `usage_unverified`. This used to take `surface_capped` matches too, and fix-llm printed
+ * every one of them under `usage_unverified` — "no supported SDK call or parameter sink was found
+ * in this file" — beside a call that IS a supported SDK call, held for its client or its wrapper
+ * (Open-Finance-Lab/AgenticTrading, 2026-10-09). audit had them as `surface_capped` all along.
+ * A held call now has its own projection, toHeldCallMatches, shared with TypeScript.
  */
 export function toPyUsageUnverifiedMatches(matches: PyLiteralMatch[]): UsageUnverifiedLocate[] {
   return matches
-    .filter((m) => m.position === 'usage_unverified' || m.position === 'surface_capped')
+    .filter((m) => m.position === 'usage_unverified')
     .map((m) => ({
       value: m.value,
       replacement: m.deprecation.replacement,

@@ -939,20 +939,49 @@ export function toBlockedModelArgMatches(matches: LiteralMatch[]): BlockedModelL
  * `model_arg` match is a swap or a blocked replacement, an `azure_deployment` match is a
  * deployment alias) is left to that projection, so every occurrence lands in exactly one tier.
  */
-export function toHeldCallMatches(matches: LiteralMatch[]): LiteralMatch[] {
-  const siteOf = (m: LiteralMatch) => `${m.location.file}:${m.location.line}:${m.location.column}`;
+export function toHeldCallMatches<M extends HeldSiteMatch>(matches: readonly M[]): M[] {
+  return oneMatchPerSite(matches, 'surface_capped');
+}
+
+/**
+ * Project a pre-computed literal scan down to its UNTRACED selectors (position `usage_unverified`):
+ * a model-named declaration no provider request in the file is seen to use, a default-configuration
+ * object, a CLI `--model` default. One match per site, as {@link toHeldCallMatches}.
+ *
+ * `audit` has always listed these in Tier B. `fix-llm` had no stream for the TypeScript ones, so a
+ * `CODEX_DEFAULTS = { model: "o4-mini" }` that audit called "review required" was simply absent
+ * from fix-llm's report, even under --verbose (greyhaven-ai/autocontext, 2026-10-09).
+ */
+export function toUntracedMatches<M extends HeldSiteMatch>(matches: readonly M[]): M[] {
+  return oneMatchPerSite(matches, 'usage_unverified');
+}
+
+/** The fields {@link oneMatchPerSite} reads: a TypeScript or a Python match. */
+export interface HeldSiteMatch {
+  position: LiteralPosition;
+  location: SourceLocation;
+}
+
+/**
+ * The matches at `position`, one per call site. A scan emits one match per matching registry
+ * record, so a site can carry several; a site a live stream already reports (a `model_arg` match
+ * is a swap or a blocked replacement, an `azure_deployment` match is a deployment alias) is left
+ * to that stream, so every occurrence lands in exactly one tier.
+ */
+function oneMatchPerSite<M extends HeldSiteMatch>(matches: readonly M[], position: LiteralPosition): M[] {
+  const siteOf = (m: HeldSiteMatch) => `${m.location.file}:${m.location.line}:${m.location.column}`;
   const reported = new Set(
     matches.filter((m) => m.position === 'model_arg' || m.position === 'azure_deployment').map(siteOf),
   );
-  const held: LiteralMatch[] = [];
+  const out: M[] = [];
   for (const m of matches) {
-    if (m.position !== 'surface_capped') continue;
+    if (m.position !== position) continue;
     const site = siteOf(m);
     if (reported.has(site)) continue;
     reported.add(site);
-    held.push(m);
+    out.push(m);
   }
-  return held;
+  return out;
 }
 
 /**
