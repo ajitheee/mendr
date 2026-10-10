@@ -655,7 +655,7 @@ describe('a call the scanner caps at review', () => {
         'import OpenAI from "openai";',
         'const client = new OpenAI();',
         'export async function viaGateway() {',
-        "  return client.chat.completions.create({ model: 'openai/gpt-4-0314', messages: [] });",
+        "  return client.chat.completions.create({ model: 'openai/gpt-3.5-turbo-16k', messages: [] });",
         '}',
         '',
       ].join('\n'),
@@ -664,7 +664,7 @@ describe('a call the scanner caps at review', () => {
     const report = JSON.parse(stdout) as JsonReport & { tierB: { replacementVerdict: string }[] };
     const held = report.tierB.filter((f) => f.file === 'src/prefixedQuarantined.ts');
     expect(held.map((f) => [f.entryId, f.replacementVerdict, f.reason])).toEqual([
-      ['openai.gpt-4-0314.retirement-undated', 'quarantined', 'surface_capped'],
+      ['openai.gpt-3.5-turbo-16k.retirement-2024-09-13', 'quarantined', 'surface_capped'],
     ]);
     // The human report prints the record's own quarantine reason, which a lookup by the
     // prefixed literal could never find.
