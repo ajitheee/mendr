@@ -28,6 +28,7 @@ import {
 } from './types.js';
 import { open as openField, sealForStore, type DataKeyring } from './encryption.js';
 import { sanitizeEntry } from './auditLog.js';
+import { redactSecrets } from '../redact.js';
 
 type Row = Record<string, unknown>;
 
@@ -550,15 +551,71 @@ export class PgStore implements Store {
   }
 }
 
-export async function createPgStore(connectionString: string, keyring: DataKeyring | null = null): Promise<PgStore> {
+/**
+ * How long the App waits on the database before saying so: for a new connection, and for the
+ * answer to any one query. Without it, pg waits forever: an unreachable DATABASE_URL left boot
+ * pending, the server never listened, and Render's health check timed out with nothing in the
+ * log. A database that goes silent on a connection the pool already holds hangs a query the same
+ * way, and a connect timeout alone never fires for that.
+ */
+export const DB_TIMEOUT_MS = 10_000;
+
+/** pg's reason for a failure, minus anything from the connection string (it carries the password). */
+function reasonOf(err: unknown, connectionString: string): string {
+  const message = err instanceof Error ? err.message : String(err);
+  return redactSecrets(connectionString ? message.split(connectionString).join('DATABASE_URL') : message).slice(0, 200);
+}
+
+export function createPool(connectionString: string, timeoutMs = DB_TIMEOUT_MS, log: (message: string) => void = console.error): pg.Pool {
   // Enable TLS only when the connection string asks for it (an external managed
   // Postgres — sslmode=require, or a *.render.com host). A same-region Render
   // internal URL needs no TLS, so this is a no-op there; forcing TLS on it would
   // fail, which is why it is conditional. rejectUnauthorized:false accepts the
   // provider's managed certificate chain.
   const needsSsl = /sslmode=require/i.test(connectionString) || /\.render\.com|\.rds\.amazonaws\.com|\.neon\.tech|\.supabase\.co/i.test(connectionString);
-  const pool = new pg.Pool({ connectionString, max: 5, ...(needsSsl ? { ssl: { rejectUnauthorized: false } } : {}) });
+  // query_timeout is enforced here, in the client: the query fails with "Query read timeout" and
+  // the pool throws that connection away instead of lending it to the next request. Not
+  // statement_timeout: that is enforced by a server that may no longer be answering, and it is
+  // sent as a startup parameter, which a connection pooler in front of the database can refuse.
+  const pool = new pg.Pool({
+    connectionString,
+    max: 5,
+    connectionTimeoutMillis: timeoutMs,
+    query_timeout: timeoutMs,
+    ...(needsSsl ? { ssl: { rejectUnauthorized: false } } : {}),
+  });
+  // An idle client whose connection drops (a restart, a free database suspending itself) makes
+  // the pool emit 'error', and an unhandled 'error' event kills the process. The pool has
+  // already discarded that client; the next query opens a fresh one.
+  pool.on('error', (err) =>
+    log(`The database closed an idle connection (${reasonOf(err, connectionString)}). Mendr reconnects on the next request; if this repeats, check the database at DATABASE_URL.`),
+  );
+  return pool;
+}
+
+export async function createPgStore(connectionString: string, keyring: DataKeyring | null = null, timeoutMs = DB_TIMEOUT_MS): Promise<PgStore> {
+  const pool = createPool(connectionString, timeoutMs);
   const store = new PgStore(pool, keyring);
-  await store.ensureSchema();
+  // Bounded as a whole, not only the connect: schema.sql can also wait on a lock.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Error('timeout');
+  try {
+    await Promise.race([
+      store.ensureSchema(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(timedOut), timeoutMs);
+      }),
+    ]);
+  } catch (err) {
+    void pool.end().catch(() => undefined);
+    const reason = reasonOf(err, connectionString);
+    throw new Error(
+      err === timedOut || /timeout/i.test(reason)
+        ? `Cannot reach the database at DATABASE_URL within ${timeoutMs / 1000} s. Check the connection string in the Render dashboard.`
+        : `Cannot set up the database at DATABASE_URL (${reason}). Check the connection string in the Render dashboard.`,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
   return store;
 }

@@ -17,13 +17,31 @@ never hand-craft a manifest or paste a private key into code.
 
 ---
 
-## 1. Deploy the service (Render — simplest Docker + Postgres)
+## 1. Deploy the service (Render + an external Postgres)
 
 1. Push the repo (it contains [`render.yaml`](../render.yaml)).
-2. In Render → **New → Blueprint** → pick this repo. Render reads `render.yaml`,
-   provisions a free Postgres, builds the web service from `app/Dockerfile`,
-   generates `SESSION_SECRET`, and links `DATABASE_URL`.
-3. When the first deploy is up, copy the service URL (e.g.
+2. Create the database **outside Render**: a Postgres that does not expire, for
+   example a project on Neon's free plan. Copy its connection string (Neon's
+   includes `sslmode=require`). The blueprint provisions no database on
+   purpose: Render's free Postgres expires 30 days after creation, then is
+   deleted 14 days later.
+   - **The provider you pick processes customer data for Mendr.** Add it to
+     the Third parties table in [`site/privacy.html`](../site/privacy.html) and
+     to "Hosting and subprocessors" in [`TRUST.md`](../TRUST.md), and publish
+     both, *before* `DATABASE_URL` points at it: the privacy page promises that
+     a provider is added there first.
+   - **Neon's free plan has a monthly compute allowance** (100 CU-hours per
+     project when this was written: about 400 hours at the smallest size) and
+     suspends the database until the next month once it is spent. Its compute
+     sleeps after 5 idle minutes, so it runs only while the App uses it, which
+     is why Render's health check is `/livez`, a path that never touches the
+     database. Traffic around the clock (CI uploads or webhooks every few
+     minutes) can still spend the allowance; Neon's console shows what is left.
+3. In Render → **New → Blueprint** → pick this repo. Render reads `render.yaml`,
+   builds the web service on its native Node runtime in `app/`, and generates
+   `SESSION_SECRET`. When it asks for `DATABASE_URL`, paste the connection
+   string from step 2.
+4. When the first deploy is up, copy the service URL (e.g.
    `https://mendr-app.onrender.com`) and set two env vars in the dashboard:
    - `APP_URL` = that URL (no trailing slash).
    - `MENDR_DATA_KEY` = a 32-byte key. Generate one:
@@ -32,7 +50,57 @@ never hand-craft a manifest or paste a private key into code.
      ```
    Redeploy so both take effect.
 
-`/healthz` should return `{"ok":true,...,"store":"postgres"}`.
+`/healthz` should return `{"ok":true,"db":"ok",...,"store":"postgres"}`. If the
+database cannot be reached at boot, the service does not start: within 10 s the
+log ends with one sentence naming the problem (for example `Cannot reach the
+database at DATABASE_URL within 10 s. Check the connection string in the Render
+dashboard.`) and the process exits, so Render fails that deploy and keeps the
+previous one serving. After boot, each new connection and each query waits at
+most 10 s, so if the database goes away, requests fail within 10 s instead of
+hanging, and `/healthz` answers `503 {"ok":false,"db":"unavailable",...}`.
+Render itself probes `/livez`, which reports only that the process is up: it
+never touches the database (see step 2), and restarting the App cannot bring a
+lost database back.
+
+> **Moving an existing deployment off Render's Postgres: copy the data first.**
+> The App learns about an installation and its repositories only from GitHub's
+> installation webhooks, which GitHub does not send again. Pointed at an empty
+> database, the App refuses every existing install's CI upload (`403 the Mendr
+> GitHub App is not installed on <repo>`) until that account uninstalls and
+> reinstalls it, and every approval, acknowledgement and audit-log entry is
+> gone. So, in this order:
+>
+> 1. **Make `mendr-db` reachable.** An expired free database cannot be reached
+>    until it is upgraded to a paid instance type, and Render deletes it 14
+>    days after it expires. Upgrade it within that window; the smallest paid
+>    type is enough, and step 4 deletes it.
+> 2. **Copy it**, with `pg_dump` 16 or newer (`mendr-db` is Postgres 16) and the
+>    database's *External* connection string from its dashboard page:
+>    ```bash
+>    pg_dump --no-owner --no-privileges --format=custom --file=mendr.dump "<mendr-db external URL>"
+>    pg_restore --no-owner --no-privileges --dbname="<new DATABASE_URL>" mendr.dump
+>    ```
+>    `mendr.dump` holds customer data: delete it once step 3 checks out.
+> 3. **Point the App at the copy, straight away.** Render only prompts for
+>    `DATABASE_URL` when a Blueprint is first created and keeps an existing
+>    value on later syncs, so edit it in the service's **Environment** tab and
+>    save (that redeploys). Leave `MENDR_DATA_KEY` as it is: sealed reports open
+>    only with the key that sealed them. Anything the App wrote to `mendr-db`
+>    between the dump and the redeploy is not in the copy (a CI upload comes
+>    back with that repository's next scan; an install made then must be
+>    redone). Then check that `/healthz` says `"db":"ok"` and a `"decrypt"`
+>    other than `"failed"`, that the overview lists your installed
+>    repositories, and that the service's **Health Check Path** setting reads
+>    `/livez`.
+> 4. **Delete `mendr-db`** in the dashboard. Removing it from `render.yaml`
+>    does not: Render never deletes a resource because it left the Blueprint.
+>
+> If Render has already deleted `mendr-db`, there is nothing to copy. The
+> approvals, acknowledgements and audit log are lost, and every account that
+> installed the App must uninstall and reinstall it (GitHub → Settings →
+> Applications → Installed GitHub Apps) before its CI uploads are accepted
+> again. Tell them before switching `DATABASE_URL`, so that a refused upload is
+> not how they find out.
 
 > **Other hosts.** Any container platform works — the image is a standard
 > Dockerfile. **Fly.io:** `fly launch --dockerfile app/Dockerfile` (build context
@@ -111,4 +179,6 @@ environment variable, so a deployment can never hand out a stale pin. Optional:
 
 The App warns loudly at boot if `DATABASE_URL` (falls back to in-memory) or
 `MENDR_DATA_KEY` (plaintext storage) is missing — neither is acceptable for a
-production deployment holding private-repo findings.
+production deployment holding private-repo findings. A `DATABASE_URL` that is
+set but unreachable stops the boot within 10 s with one sentence; it never
+leaves the process waiting with nothing in the log.

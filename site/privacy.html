@@ -72,10 +72,11 @@
 
   <h2>Third parties</h2>
   <p>Mendr's hosted App talks only to the GitHub API (to write the check, confirm your access, and — only if you granted <code>actions: write</code> — start your migration workflow). Sign-in is GitHub OAuth; only your GitHub login is kept. There is no analytics SDK, advertising, or third-party tracking on the App. Fonts on this marketing site load from Google Fonts, which sees the requesting browser's IP address.</p>
-  <p>Three providers process data on Mendr's behalf, and no others:</p>
+  <p>Four providers process data on Mendr's behalf, and no others:</p>
   <table>
     <tr><th>Provider</th><th>What</th></tr>
-    <tr><td>Render</td><td>Hosts the App and its Postgres database — everything in the table above</td></tr>
+    <tr><td>Render</td><td>Hosts the App, which receives and serves everything in the table above</td></tr>
+    <tr><td>Neon</td><td>Hosts the App's Postgres database in AWS US East 2 (Ohio), where everything in the table above is stored</td></tr>
     <tr><td>Vercel</td><td>Hosts this static site</td></tr>
     <tr><td>GitHub</td><td>Sign-in (OAuth), the App installation, check runs, and the OIDC tokens that authenticate uploads</td></tr>
   </table>
@@ -84,7 +85,7 @@
   <h2>Your rights</h2>
   <p>You can see everything the App holds about a repository on that repository's page, delete it yourself with the routes above, and sign out to end your session. For anything you cannot do yourself — a copy of your data, a correction, deleting your username or audit-log entries, or a question about this page — contact Mendr privately through GitHub's <a href="https://github.com/ajitheee/mendr/security/advisories/new">private vulnerability reporting</a> for the repository (the one private channel today); expect a reply within three business days. If you are in the UK or EU you have rights of access, correction, erasure, restriction and objection, and can complain to your data-protection authority; California residents have similar rights. Mendr does not sell personal data.</p>
 
-  <p class="updated">Last updated 12 September 2026. This page describes the system as built. If a claim here is ever shown to be wrong, it is corrected here and in TRUST.md in the same release. Questions or concerns: open a private report per the <a href="/security.html">security page</a>.</p>
+  <p class="updated">Last updated 10 October 2026. This page describes the system as built. If a claim here is ever shown to be wrong, it is corrected here and in TRUST.md in the same release. Questions or concerns: open a private report per the <a href="/security.html">security page</a>.</p>
 </main>
 </body>
 </html>

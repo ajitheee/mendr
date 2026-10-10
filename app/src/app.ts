@@ -11,7 +11,7 @@ import { countDecisions, sanitizeReport, validateReport } from './ingest/validat
 import { prNumber, validateMigrationReport } from './ingest/migrationReport.js';
 import { migrationWorkflowFile } from './ingest/migration.js';
 import { redactSecrets } from './redact.js';
-import { APPROVAL_STAGES, approvalVersion, type Approval, type ApprovalMode, type ApprovalOutcome, type ApprovalStage, type Repo, type Store } from './store/types.js';
+import { APPROVAL_STAGES, approvalVersion, type Approval, type ApprovalMode, type ApprovalOutcome, type ApprovalStage, type EncryptionStatus, type Repo, type Store } from './store/types.js';
 import { credentialsPage, errorPage, homePage, installedPage, runPage, runsPage, setupPage, workflowRunsUrl } from './ui/pages.js';
 import { MENDR_MIGRATE_WORKFLOW_PATH, migrateActionsUrl, setupMigrateWorkflowUrl, setupWorkflowUrl } from './ui/workflowTemplate.js';
 
@@ -236,13 +236,32 @@ export function createApp(deps: AppDeps): Hono {
 
   // --- status ---------------------------------------------------------------
 
+  // Render's health check (render.yaml healthCheckPath): this process is up and serving, and
+  // nothing else. It never touches the database. Render probes every few seconds, and /healthz
+  // runs three queries, so probing /healthz would keep a scale-to-zero database (Neon's free plan
+  // suspends after 5 idle minutes and caps compute hours a month) awake for as long as the
+  // instance runs, until the allowance is spent and the database is suspended: the outage this
+  // exists to avoid. Boot already proved the database (no database, no listening port), and a
+  // restart cannot bring a lost database back, so the database check stays on /healthz.
+  app.get('/livez', (c) => c.json({ ok: true }));
+
   // Health, plus proof of encryption at rest from the outside: is a data key
   // configured, how many stored reports are sealed vs plaintext, and does the
   // newest sealed one open with the current key. Counts and a verdict — never data.
   app.get('/healthz', async (c) => {
-    const enc = await store.encryptionStatus();
+    const deployment = { commit: config.deployCommit, instance: config.deployInstance, id: deploymentId(config) };
+    let enc: EncryptionStatus;
+    try {
+      enc = await store.encryptionStatus();
+    } catch (err) {
+      // The database went away after boot. Say so in JSON, not onError's page about approvals.
+      log('healthz: database unavailable', { error: err instanceof Error ? redactSecrets(err.message).slice(0, 200) : 'unknown' });
+      const error = 'Cannot reach the database at DATABASE_URL. Check the connection string in the Render dashboard.';
+      return c.json({ ok: false, db: 'unavailable', error, store: store.kind, deployment }, 503);
+    }
     return c.json({
       ok: true,
+      db: 'ok',
       configured: isConfigured(config),
       store: store.kind,
       encryption: { enabled: !!config.dataKey, ...enc },
@@ -251,7 +270,7 @@ export function createApp(deps: AppDeps): Hono {
       // against whatever is still serving, which is precisely the "proven on the build it was
       // last tested on" failure the item exists to close. Neither value is a secret — a commit
       // sha and an instance id identify a deployment, not a credential.
-      deployment: { commit: config.deployCommit, instance: config.deployInstance, id: deploymentId(config) },
+      deployment,
     });
   });
 

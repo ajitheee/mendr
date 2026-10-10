@@ -1,4 +1,6 @@
 import { createHmac } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT, type JWTPayload } from 'jose';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { buildManifest, createApp } from './app.js';
@@ -678,6 +680,44 @@ describe('approvals: decided in Mendr, carried out by the customer\'s own CI', (
     const body = (await (await h.app.request('/healthz')).json()) as { ok: boolean; encryption: Record<string, unknown> };
     expect(body.ok).toBe(true);
     expect(body.encryption).toEqual({ enabled: false, sealedRuns: 0, plaintextRuns: 0, sealedMigrations: 0, plaintextMigrations: 0, decrypt: 'none' });
+  });
+
+  it('/healthz says 503 and why when the database goes away after boot, never the connection string', async () => {
+    const h = harness();
+    h.store.encryptionStatus = async () => {
+      throw new Error('connect ECONNREFUSED postgres://mendr:hunter2-not-for-logs@db:5432/mendr');
+    };
+    const res = await h.app.request('/healthz');
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body).toMatchObject({ ok: false, db: 'unavailable', error: 'Cannot reach the database at DATABASE_URL. Check the connection string in the Render dashboard.' });
+    expect(body.deployment.id).toBeTruthy();
+    expect(h.logs).toContain('healthz: database unavailable');
+    expect(JSON.stringify(body) + JSON.stringify(h.logEvents)).not.toContain('hunter2-not-for-logs');
+  });
+
+  it("/livez, Render's health check, answers without the database, so the probe never keeps a scale-to-zero database awake", async () => {
+    const h = harness();
+    const touched: string[] = [];
+    for (const name of Object.getOwnPropertyNames(MemoryStore.prototype)) {
+      if (name === 'constructor') continue;
+      (h.store as unknown as Record<string, unknown>)[name] = () => {
+        touched.push(name);
+        throw new Error('the database is gone');
+      };
+    }
+    const res = await h.app.request('/livez');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(touched).toEqual([]);
+    // The database check is still there, on /healthz, for people and monitors.
+    expect((await h.app.request('/healthz')).status).toBe(503);
+    expect(touched).toEqual(['encryptionStatus']);
+  });
+
+  it("render.yaml points Render's health check at /livez, not at the path that queries the database", () => {
+    const blueprint = readFileSync(fileURLToPath(new URL('../../render.yaml', import.meta.url)), 'utf8');
+    expect(blueprint).toMatch(/^\s*healthCheckPath: \/livez\s*$/m);
   });
 
   it('a run that could not verify closes the approval as failed and offers the decision again', async () => {
