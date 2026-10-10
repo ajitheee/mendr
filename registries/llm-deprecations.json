@@ -1,102 +1,142 @@
 [
   {
-    "entryId": "google.gemini-2.0-flash.retirement-undated",
+    "entryId": "google.gemini-2.0-flash.retirement-2026-06-01",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-2.0-flash",
     "replacement": "gemini-3.6-flash",
-    "note": "gemini-2.0-flash retired (confirmed by a production outage). Retargeted 2026-08-21 off the rolling alias gemini-flash-latest — an alias resolves to whatever Google points it at, and it was recorded as resolving to gemini-3-flash-preview, which this registry itself deprecates. Now targets gemini-3.6-flash, this registry's own successor for that preview, live in models.dev/OpenRouter and not itself deprecated. HELD AT TIER B: no catalog verdict exists for this exact source id, so mendr will not auto-apply it.",
-    "sourceUrl": "https://ai.google.dev/gemini-api/docs/changelog",
     "status": "retired",
+    "shutdownDate": "2026-06-01",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "note": "gemini-2.0-flash shut down 2026-06-01; Google's deprecation table names gemini-3.6-flash, and its changelog for June 1, 2026 lists gemini-2.0-flash among the Gemini 2.0 models that \"are now shut down\".",
     "verification": {
-      "status": "quarantined",
+      "status": "verified",
       "officialSourceConfirmed": true,
       "replacementConfirmed": true,
-      "autoApplyAllowed": false,
-      "quarantineReason": "stamped \"verified\" while its own recorded research says \"do not auto-apply\", \"status unknown\" -- held for review until that contradiction is resolved (see verification.reasons)",
-      "checkedAt": "2026-09-15",
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
       ],
       "reasons": [
         "replacement \"gemini-3.6-flash\" is live in a public catalog",
-        "retirement confirmed by a real production breakage (ChefCode, Google 404s), fixed by this exact swap",
-        "No research verdict for this exact id — only sibling 2.0 ids (-exp, -lite, -lite-001, -thinking-exp, pro-exp) were classified. Status unknown for gemini-2.0-flash itself: the retirement is attested by one production outage, not by a catalog check — do not auto-apply until a source-side verdict exists.",
-        "Target retargeted 2026-08-21 from the rolling alias gemini-flash-latest to gemini-3.6-flash: the alias was recorded as resolving to gemini-3-flash-preview, and this registry maps that preview to gemini-3.6-flash, so the mapping now names the stable end of the chain rather than a moving pointer."
+        "Google deprecation page (read 2026-10-10) states shutdown June 1, 2026 and recommended replacement gemini-3.6-flash",
+        "Google changelog, June 1, 2026: \"The following Gemini 2.0 models are now shut down\" lists gemini-2.0-flash; it suggests gemini-3.5-flash, which Google has since replaced with gemini-3.6-flash (changelog, October 8, 2026)",
+        "gemini-3.6-flash is listed on the deprecations page with no shutdown date announced"
       ]
-    }
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:d8b5a2b597a3462a09f0c94808b1c71a9be2eaf46f7c190f68e6d3c9349b2c06",
+        "retrievedAt": "2026-10-10T04:58:57.129Z",
+        "excerpt": "gemini-2.0-flash | February 5, 2025 | June 1, 2026 | gemini-3.6-flash"
+      },
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/changelog",
+        "contentHash": "sha256:e37b3f3021de3032356eba4eb917ec67cb21c1913ee88cc348dd65a548bd33df",
+        "retrievedAt": "2026-10-10T04:58:57.403Z",
+        "excerpt": "June 1, 2026 The following Gemini 2.0 models are now shut down: gemini-2.0-flash gemini-2.0-flash-001 gemini-2.0-flash-lite gemini-2.0-flash-lite-001 Use gemini-3.5-flash or gemini-3.1-flash-lite instead."
+      }
+    ]
   },
   {
-    "entryId": "google.gemini-2.0-flash-001.retirement-undated",
+    "entryId": "google.gemini-2.0-flash-001.retirement-2026-06-01",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-2.0-flash-001",
     "replacement": "gemini-3.6-flash",
-    "note": "gemini-2.0-flash-001 retired (confirmed by a production outage). Retargeted 2026-08-21 off the rolling alias gemini-flash-latest onto gemini-3.6-flash, for the same reasons as gemini-2.0-flash. HELD AT TIER B: no catalog verdict exists for this exact source id, so mendr will not auto-apply it.",
-    "sourceUrl": "https://ai.google.dev/gemini-api/docs/changelog",
     "status": "retired",
+    "shutdownDate": "2026-06-01",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "note": "gemini-2.0-flash-001 shut down 2026-06-01; Google's deprecation table names gemini-3.6-flash, and its changelog for June 1, 2026 lists gemini-2.0-flash-001 among the Gemini 2.0 models that \"are now shut down\".",
     "verification": {
-      "status": "quarantined",
+      "status": "verified",
       "officialSourceConfirmed": true,
       "replacementConfirmed": true,
-      "autoApplyAllowed": false,
-      "quarantineReason": "stamped \"verified\" while its own recorded research says \"do not auto-apply\", \"status unknown\" -- held for review until that contradiction is resolved (see verification.reasons)",
-      "checkedAt": "2026-09-15",
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
       ],
       "reasons": [
         "replacement \"gemini-3.6-flash\" is live in a public catalog",
-        "retirement confirmed by a real production breakage (ChefCode, Google 404s), fixed by this exact swap",
-        "Same as gemini-2.0-flash: no research verdict for this exact id, status unknown — do not auto-apply until a source-side verdict exists.",
-        "Target retargeted 2026-08-21 from the rolling alias gemini-flash-latest to gemini-3.6-flash (the alias was recorded as resolving to gemini-3-flash-preview, which this registry deprecates in favour of gemini-3.6-flash)."
+        "Google deprecation page (read 2026-10-10) states shutdown June 1, 2026 and recommended replacement gemini-3.6-flash",
+        "Google changelog, June 1, 2026: \"The following Gemini 2.0 models are now shut down\" lists gemini-2.0-flash-001; it suggests gemini-3.5-flash, which Google has since replaced with gemini-3.6-flash (changelog, October 8, 2026)",
+        "gemini-3.6-flash is listed on the deprecations page with no shutdown date announced"
       ]
-    }
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:d8b5a2b597a3462a09f0c94808b1c71a9be2eaf46f7c190f68e6d3c9349b2c06",
+        "retrievedAt": "2026-10-10T04:58:57.129Z",
+        "excerpt": "gemini-2.0-flash-001 | February 5, 2025 | June 1, 2026 | gemini-3.6-flash"
+      },
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/changelog",
+        "contentHash": "sha256:e37b3f3021de3032356eba4eb917ec67cb21c1913ee88cc348dd65a548bd33df",
+        "retrievedAt": "2026-10-10T04:58:57.403Z",
+        "excerpt": "June 1, 2026 The following Gemini 2.0 models are now shut down: gemini-2.0-flash gemini-2.0-flash-001 gemini-2.0-flash-lite gemini-2.0-flash-lite-001 Use gemini-3.5-flash or gemini-3.1-flash-lite instead."
+      }
+    ]
   },
   {
-    "entryId": "openai.gpt-3.5-turbo-0301.retirement-undated",
+    "entryId": "openai.gpt-3.5-turbo-0301.retirement-2024-09-13",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-3.5-turbo-0301",
     "replacement": "gpt-5.6-terra",
-    "note": "dated gpt-3.5-turbo-0301 snapshot retired; use the rolling alias",
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
     "status": "retired",
+    "shutdownDate": "2024-09-13",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "gpt-3.5-turbo-0301 shut down 2024-09-13. OpenAI named gpt-3.5-turbo, which itself shuts down 2026-10-23 with gpt-5.6-terra as its replacement, so this entry carries gpt-5.6-terra.",
     "verification": {
-      "status": "quarantined",
+      "status": "verified",
       "officialSourceConfirmed": true,
       "replacementConfirmed": true,
-      "autoApplyAllowed": false,
-      "quarantineReason": "stamped \"verified\" while its own recorded research says \"unverified\", \"status unknown\" -- held for review until that contradiction is resolved (see verification.reasons)",
-      "checkedAt": "2026-09-15",
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
       ],
       "reasons": [
         "replacement \"gpt-5.6-terra\" is live in a public catalog",
-        "Not researched this pass (status unknown; historically shut down 2024-09-13 but unverified here). Target gpt-3.5-turbo is confirmed deprecated (shutdown 2026-10-23) — on re-verification retarget to gpt-5.6-terra."
+        "OpenAI deprecation page (read 2026-10-10) states shutdown 2024-09-13, replacement gpt-3.5-turbo; the same page retires gpt-3.5-turbo on October 23, 2026 with gpt-5.6-terra"
       ]
-    }
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T04:58:56.260Z",
+        "excerpt": "2024-09-13 | gpt-3.5-turbo-0301 | $15.00 / 1M input tokens + $20.00 / 1M output tokens | gpt-3.5-turbo"
+      }
+    ]
   },
   {
-    "entryId": "openai.gpt-3.5-turbo-0613.retirement-undated",
+    "entryId": "openai.gpt-3.5-turbo-0613.retirement-2024-09-13",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-3.5-turbo-0613",
     "replacement": "gpt-5.6-terra",
-    "note": "gpt-3.5-turbo-0613 shut down 2024-09-13; use the rolling alias",
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
     "status": "retired",
+    "shutdownDate": "2024-09-13",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "gpt-3.5-turbo-0613 shut down 2024-09-13. OpenAI named gpt-3.5-turbo, which itself shuts down 2026-10-23 with gpt-5.6-terra as its replacement, so this entry carries gpt-5.6-terra.",
     "verification": {
       "status": "unverified",
       "officialSourceConfirmed": true,
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -104,9 +144,18 @@
       "reasons": [
         "replacement \"gpt-5.6-terra\" is live in a public catalog",
         "the provider officially recommends \"gpt-3.5-turbo\", but the registry uses \"gpt-5.6-terra\" (live, but not the currently-recommended target — stale)",
-        "Not researched this pass (status unknown). Target gpt-3.5-turbo is confirmed deprecated (2026-10-23) — retarget to gpt-5.6-terra on re-verification."
+        "OpenAI deprecation page (read 2026-10-10) states shutdown 2024-09-13, replacement gpt-3.5-turbo; the same page retires gpt-3.5-turbo on October 23, 2026 with gpt-5.6-terra",
+        "review-only: the catalog check compares against the provider's one-hop replacement (gpt-3.5-turbo), and the registry carries the end of the chain instead"
       ]
-    }
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T04:58:56.260Z",
+        "excerpt": "2024-09-13 | gpt-3.5-turbo-0613 | $1.50 / 1M input tokens + $2.00 / 1M output tokens | gpt-3.5-turbo"
+      }
+    ]
   },
   {
     "entryId": "openai.gpt-3.5-turbo-16k-0613.retirement-2024-09-13",
@@ -114,52 +163,69 @@
     "kind": "model_id",
     "deprecated": "gpt-3.5-turbo-16k-0613",
     "replacement": "gpt-5.6-terra",
-    "note": "gpt-3.5-turbo-16k-0613 shut down 2024-09-13; 16k folded into base model",
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
     "status": "retired",
     "shutdownDate": "2024-09-13",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "gpt-3.5-turbo-16k-0613 shut down 2024-09-13. OpenAI named gpt-3.5-turbo, which itself shuts down 2026-10-23 with gpt-5.6-terra as its replacement, so this entry carries gpt-5.6-terra.",
     "verification": {
-      "status": "quarantined",
+      "status": "verified",
       "officialSourceConfirmed": true,
       "replacementConfirmed": true,
-      "autoApplyAllowed": false,
-      "quarantineReason": "stamped \"verified\" while its own recorded research says \"itself deprecated\" -- held for review until that contradiction is resolved (see verification.reasons)",
-      "checkedAt": "2026-09-15",
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
       ],
       "reasons": [
         "replacement \"gpt-5.6-terra\" is live in a public catalog",
-        "Source confirmed retired 2024-09-13 (via gpt-3.5-turbo-16k research note). Target gpt-3.5-turbo is itself deprecated (shutdown 2026-10-23); retarget to its provider-named replacement gpt-5.6-terra."
+        "OpenAI deprecation page (read 2026-10-10) states shutdown 2024-09-13, replacement gpt-3.5-turbo; the same page retires gpt-3.5-turbo on October 23, 2026 with gpt-5.6-terra"
       ]
-    }
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T04:58:56.260Z",
+        "excerpt": "2024-09-13 | gpt-3.5-turbo-16k-0613 | $3.00 / 1M input tokens + $4.00 / 1M output tokens | gpt-3.5-turbo"
+      }
+    ]
   },
   {
-    "entryId": "openai.gpt-4-0314.retirement-undated",
+    "entryId": "openai.gpt-4-0314.retirement-2026-03-26",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4-0314",
     "replacement": "gpt-5.6-sol",
-    "note": "dated gpt-4-0314 snapshot retired; use the rolling alias",
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
     "status": "retired",
+    "shutdownDate": "2026-03-26",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "gpt-4-0314 shut down 2026-03-26. OpenAI names \"gpt-5 or gpt-4.1\"; gpt-5's dated snapshot gpt-5-2025-08-07 retires 2026-12-11 with gpt-5.6-sol as its replacement, and this entry carries gpt-5.6-sol. An older row on the same page gives gpt-4-0314 a shutdown of \"at earliest 2024-06-13\"; the 2026-03-26 row is the one that took effect.",
     "verification": {
-      "status": "quarantined",
+      "status": "verified",
       "officialSourceConfirmed": true,
       "replacementConfirmed": true,
-      "autoApplyAllowed": false,
-      "quarantineReason": "stamped \"verified\" while its own recorded research says \"unverified\" -- held for review until that contradiction is resolved (see verification.reasons)",
-      "checkedAt": "2026-09-15",
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
       ],
       "reasons": [
         "replacement \"gpt-5.6-sol\" is live in a public catalog",
-        "Not researched this pass (only the gpt-4-32k -0314 snapshot was confirmed; base gpt-4-0314 unverified). Target gpt-4 is confirmed deprecated (2026-10-23) — retarget to gpt-5.6-sol on re-verification."
+        "OpenAI deprecation page (read 2026-10-10) states shutdown 2026-03-26 with \"gpt-5 or gpt-4.1\"; the same page retires gpt-5-2025-08-07 on Dec 11, 2026 with gpt-5.6-sol"
       ]
-    }
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T04:58:56.260Z",
+        "excerpt": "2026‑03‑26 | gpt-4-0314 | gpt-5 or gpt-4.1*"
+      }
+    ]
   },
   {
     "entryId": "openai.gpt-4-0613.retirement-2026-10-23",
@@ -271,30 +337,39 @@
     }
   },
   {
-    "entryId": "openai.gpt-4-1106-vision-preview.retirement-undated",
+    "entryId": "openai.gpt-4-1106-vision-preview.retirement-2024-12-06",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "gpt-4-1106-vision-preview",
     "replacement": "gpt-4o",
-    "note": "vision-preview snapshot deprecated; vision folded into gpt-4o",
+    "status": "retired",
+    "shutdownDate": "2024-12-06",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "status": "deprecated",
+    "note": "gpt-4-1106-vision-preview shut down 2024-12-06; OpenAI names gpt-4o.",
     "verification": {
-      "status": "quarantined",
+      "status": "verified",
       "officialSourceConfirmed": true,
       "replacementConfirmed": true,
-      "autoApplyAllowed": false,
-      "quarantineReason": "stamped \"verified\" while its own recorded research says \"status unknown\" -- held for review until that contradiction is resolved (see verification.reasons)",
-      "checkedAt": "2026-09-15",
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
       ],
       "reasons": [
         "replacement \"gpt-4o\" is live in a public catalog",
-        "Not individually researched (status unknown). Almost certainly retired in the same wave as gpt-4-vision-preview and the target gpt-4o is current, so low risk — but downgrade until verified."
+        "OpenAI deprecation page (read 2026-10-10) states shutdown 2024-12-06, replacement gpt-4o"
       ]
-    }
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T04:58:56.260Z",
+        "excerpt": "2024-12-06 | gpt-4-1106-vision-preview | $10.00 / 1M input tokens + $30 / 1M output tokens | gpt-4o"
+      }
+    ]
   },
   {
     "entryId": "openai.gpt-4.5-preview.retirement-2025-07-14",
@@ -398,108 +473,146 @@
     ]
   },
   {
-    "entryId": "openai.text-davinci-003.retirement-undated",
+    "entryId": "openai.text-davinci-003.retirement-2024-01-04",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "text-davinci-003",
     "replacement": "gpt-5.6-terra",
-    "note": "legacy Completions model retired 2024-01-04; use gpt-3.5-turbo-instruct",
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
     "status": "retired",
+    "shutdownDate": "2024-01-04",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "text-davinci-003, a legacy Completions model, shut down 2024-01-04. OpenAI named gpt-3.5-turbo-instruct, which itself shut down 2026-09-28 with gpt-5.6-terra as its replacement, so this entry carries gpt-5.6-terra.",
     "verification": {
-      "status": "quarantined",
+      "status": "verified",
       "officialSourceConfirmed": true,
       "replacementConfirmed": true,
-      "autoApplyAllowed": false,
-      "quarantineReason": "stamped \"verified\" while its own recorded research says \"unverified\" -- held for review until that contradiction is resolved (see verification.reasons)",
-      "checkedAt": "2026-09-15",
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
       ],
       "reasons": [
         "replacement \"gpt-5.6-terra\" is live in a public catalog",
-        "Same as text-davinci-002: source unverified this pass; target gpt-3.5-turbo-instruct confirmed deprecated (2026-09-28) — retarget to gpt-5.6-terra on re-verification."
+        "OpenAI deprecation page (read 2026-10-10) states shutdown 2024-01-04, replacement gpt-3.5-turbo-instruct; the same page retires gpt-3.5-turbo-instruct on 2026-09-28 with gpt-5.6-terra"
       ]
-    }
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T04:58:56.260Z",
+        "excerpt": "2024-01-04 | text-davinci-003 | $20.00 / 1M tokens | gpt-3.5-turbo-instruct"
+      }
+    ]
   },
   {
-    "entryId": "openai.text-davinci-002.retirement-undated",
+    "entryId": "openai.text-davinci-002.retirement-2024-01-04",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "text-davinci-002",
     "replacement": "gpt-5.6-terra",
-    "note": "legacy Completions model retired 2024-01-04; use gpt-3.5-turbo-instruct",
-    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
     "status": "retired",
+    "shutdownDate": "2024-01-04",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "text-davinci-002, a legacy Completions model, shut down 2024-01-04. OpenAI named gpt-3.5-turbo-instruct, which itself shut down 2026-09-28 with gpt-5.6-terra as its replacement, so this entry carries gpt-5.6-terra.",
     "verification": {
-      "status": "quarantined",
+      "status": "verified",
       "officialSourceConfirmed": true,
       "replacementConfirmed": true,
-      "autoApplyAllowed": false,
-      "quarantineReason": "stamped \"verified\" while its own recorded research says \"unverified\" -- held for review until that contradiction is resolved (see verification.reasons)",
-      "checkedAt": "2026-09-15",
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
       ],
       "reasons": [
         "replacement \"gpt-5.6-terra\" is live in a public catalog",
-        "Not researched this pass (historically retired Jan 2024, unverified here). Target gpt-3.5-turbo-instruct is confirmed deprecated (shutdown 2026-09-28, provider replacement gpt-5.6-terra) — retarget on re-verification."
+        "OpenAI deprecation page (read 2026-10-10) states shutdown 2024-01-04, replacement gpt-3.5-turbo-instruct; the same page retires gpt-3.5-turbo-instruct on 2026-09-28 with gpt-5.6-terra"
       ]
-    }
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T04:58:56.260Z",
+        "excerpt": "2024-01-04 | text-davinci-002 | $20.00 / 1M tokens | gpt-3.5-turbo-instruct"
+      }
+    ]
   },
   {
-    "entryId": "openai.text-moderation-latest.retirement-undated",
+    "entryId": "openai.text-moderation-latest.retirement-2025-10-27",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "text-moderation-latest",
     "replacement": "omni-moderation-latest",
-    "note": "text-moderation-* deprecated; use the multimodal omni-moderation-latest",
+    "status": "retired",
+    "shutdownDate": "2025-10-27",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "status": "deprecated",
+    "note": "text-moderation-latest shut down 2025-10-27. OpenAI names omni-moderation; its model page lists the alias omni-moderation-latest, which this entry carries.",
     "verification": {
       "status": "unverifiable",
       "officialSourceConfirmed": true,
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
       ],
       "reasons": [
         "\"text-moderation-latest\" is a moderation model; public catalogs (models.dev, OpenRouter) do not list this class, so \"omni-moderation-latest\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
-        "Neither the source nor the target omni-moderation-latest was researched this pass — no provider verdict. Do not auto-apply until verified."
+        "OpenAI deprecation page (read 2026-10-10) states shutdown 2025-10-27, replacement omni-moderation",
+        "omni-moderation model page (read 2026-10-10) lists the alias omni-moderation-latest and the snapshot omni-moderation-2024-09-26, with no deprecation"
       ]
-    }
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T04:58:56.260Z",
+        "excerpt": "2025-10-27 | text-moderation-latest | omni-moderation"
+      }
+    ]
   },
   {
-    "entryId": "openai.text-moderation-stable.retirement-undated",
+    "entryId": "openai.text-moderation-stable.retirement-2025-10-27",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "text-moderation-stable",
     "replacement": "omni-moderation-latest",
-    "note": "text-moderation-* deprecated; use the multimodal omni-moderation-latest",
+    "status": "retired",
+    "shutdownDate": "2025-10-27",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "status": "deprecated",
+    "note": "text-moderation-stable shut down 2025-10-27. OpenAI names omni-moderation; its model page lists the alias omni-moderation-latest, which this entry carries.",
     "verification": {
       "status": "unverifiable",
       "officialSourceConfirmed": true,
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
       ],
       "reasons": [
         "\"text-moderation-stable\" is a moderation model; public catalogs (models.dev, OpenRouter) do not list this class, so \"omni-moderation-latest\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
-        "Neither source nor target researched this pass — no provider verdict. Do not auto-apply until verified."
+        "OpenAI deprecation page (read 2026-10-10) states shutdown 2025-10-27, replacement omni-moderation",
+        "omni-moderation model page (read 2026-10-10) lists the alias omni-moderation-latest and the snapshot omni-moderation-2024-09-26, with no deprecation"
       ]
-    }
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T04:58:56.260Z",
+        "excerpt": "2025-10-27 | text-moderation-stable | omni-moderation"
+      }
+    ]
   },
   {
     "provider": "openai",
@@ -1007,23 +1120,32 @@
     "status": "retired",
     "shutdownDate": "2026-03-26",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "Provider named a family ('gpt-5 or gpt-4.1 variants'), not a single id; gpt-4.1 selected as the only CURRENT provider-named option (gpt-5 is itself deprecated, shutdown 2026-12-11).",
+    "note": "gpt-4-0125-preview shut down 2026-03-26. OpenAI names \"gpt-5 or gpt-4.1\"; this entry carries gpt-4.1, whose model page shows no deprecation, while gpt-5's dated snapshot retires 2026-12-11.",
     "verification": {
-      "status": "quarantined",
+      "status": "verified",
       "officialSourceConfirmed": true,
       "replacementConfirmed": true,
-      "autoApplyAllowed": false,
-      "quarantineReason": "stamped \"verified\" while its own recorded research says \"itself deprecated\" -- held for review until that contradiction is resolved (see verification.reasons)",
-      "checkedAt": "2026-09-15",
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
       ],
       "reasons": [
         "replacement \"gpt-4.1\" is live in a public catalog",
-        "Provider named a family ('gpt-5 or gpt-4.1 variants'), not a single id; gpt-4.1 selected as the only CURRENT provider-named option (gpt-5 is itself deprecated, shutdown 2026-12-11)."
+        "OpenAI deprecation page (read 2026-10-10) states shutdown 2026-03-26 with \"gpt-5 or gpt-4.1\", for gpt-4-0125-preview \"including gpt-4-turbo-preview and gpt-4-turbo-preview-completions, which point to this snapshot\"",
+        "gpt-4.1 model page (read 2026-10-10) shows no deprecation"
       ]
-    }
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T04:58:56.260Z",
+        "excerpt": "2026‑03‑26 | gpt-4-0125-preview (including gpt-4-turbo-preview and gpt-4-turbo-preview-completions , which point to this snapshot) | gpt-5 or gpt-4.1*"
+      }
+    ]
   },
   {
     "entryId": "openai.gpt-4-1106-preview.retirement-2026-10-23",
@@ -1060,24 +1182,33 @@
     "replacement": "gpt-4.1",
     "status": "retired",
     "shutdownDate": "2026-03-26",
-    "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-4-turbo-preview",
-    "note": "Alias of gpt-4-0125-preview, which is shut down (alias page banner is stale). Provider named 'gpt-5 or gpt-4.1 variants'; gpt-4.1 selected as the current provider-named option.",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "gpt-4-turbo-preview pointed to gpt-4-0125-preview, which shut down 2026-03-26; OpenAI's deprecation table names the alias in that row. OpenAI names \"gpt-5 or gpt-4.1\"; this entry carries gpt-4.1, whose model page shows no deprecation.",
     "verification": {
-      "status": "quarantined",
+      "status": "verified",
       "officialSourceConfirmed": true,
       "replacementConfirmed": true,
-      "autoApplyAllowed": false,
-      "quarantineReason": "stamped \"verified\" while its own recorded research says \"stale\" -- held for review until that contradiction is resolved (see verification.reasons)",
-      "checkedAt": "2026-09-15",
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
       ],
       "reasons": [
         "replacement \"gpt-4.1\" is live in a public catalog",
-        "Alias of gpt-4-0125-preview, which is shut down (alias page banner is stale). Provider named 'gpt-5 or gpt-4.1 variants'; gpt-4.1 selected as the current provider-named option."
+        "OpenAI deprecation page (read 2026-10-10) states shutdown 2026-03-26 for gpt-4-0125-preview \"including gpt-4-turbo-preview and gpt-4-turbo-preview-completions, which point to this snapshot\", with \"gpt-5 or gpt-4.1\"",
+        "gpt-4-turbo model page (read 2026-10-10) lists gpt-4-turbo-preview pointing to gpt-4-0125-preview, marked Deprecated"
       ]
-    }
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T04:58:56.260Z",
+        "excerpt": "2026‑03‑26 | gpt-4-0125-preview (including gpt-4-turbo-preview and gpt-4-turbo-preview-completions , which point to this snapshot) | gpt-5 or gpt-4.1*"
+      }
+    ]
   },
   {
     "entryId": "openai.gpt-4-turbo.retirement-2026-10-23",
@@ -2548,54 +2679,84 @@
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-2.0-flash-lite",
-    "replacement": "gemini-3.1-flash-lite",
+    "replacement": "gemini-3.5-flash-lite",
     "status": "retired",
     "shutdownDate": "2026-06-01",
     "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-    "note": "Provider-named. Caution: gemini-3.1-flash-lite is itself deprecated (shutdown 2027-05-07, successor gemini-3.5-flash-lite).",
+    "note": "gemini-2.0-flash-lite shut down 2026-06-01. Google names gemini-3.1-flash-lite, which the same table retires on 2027-05-07 with gemini-3.5-flash-lite as its replacement; this entry follows that chain to gemini-3.5-flash-lite, as the gemini-3.1-flash-lite entry does.",
     "verification": {
-      "status": "quarantined",
+      "status": "verified",
       "officialSourceConfirmed": true,
-      "replacementConfirmed": false,
-      "autoApplyAllowed": false,
-      "quarantineReason": "stamped \"verified\" while its own recorded research says \"itself deprecated\" -- held for review until that contradiction is resolved (see verification.reasons)",
-      "checkedAt": "2026-09-15",
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
       ],
       "reasons": [
-        "replacement \"gemini-3.1-flash-lite\" is ITSELF deprecated in this registry (deprecated, shutdown 2027-05-07); a migration must not point at a retiring id",
-        "Provider-named. Caution: gemini-3.1-flash-lite is itself deprecated (shutdown 2027-05-07, successor gemini-3.5-flash-lite)."
+        "replacement \"gemini-3.5-flash-lite\" is live in a public catalog",
+        "Google deprecation page (read 2026-10-10) states shutdown June 1, 2026 and recommended replacement gemini-3.1-flash-lite; it retires gemini-3.1-flash-lite on May 7, 2027 with gemini-3.5-flash-lite",
+        "gemini-3.5-flash-lite is listed on the deprecations page with no shutdown date announced"
       ]
-    }
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:d8b5a2b597a3462a09f0c94808b1c71a9be2eaf46f7c190f68e6d3c9349b2c06",
+        "retrievedAt": "2026-10-10T04:58:57.129Z",
+        "excerpt": "gemini-2.0-flash-lite | February 25, 2025 | June 1, 2026 | gemini-3.1-flash-lite"
+      },
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:d8b5a2b597a3462a09f0c94808b1c71a9be2eaf46f7c190f68e6d3c9349b2c06",
+        "retrievedAt": "2026-10-10T04:58:57.129Z",
+        "excerpt": "gemini-3.1-flash-lite | May 7, 2026 | May 7, 2027 | gemini-3.5-flash-lite"
+      }
+    ]
   },
   {
     "entryId": "google.gemini-2.0-flash-lite-001.retirement-2026-06-01",
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-2.0-flash-lite-001",
-    "replacement": "gemini-3.1-flash-lite",
+    "replacement": "gemini-3.5-flash-lite",
     "status": "retired",
     "shutdownDate": "2026-06-01",
     "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-    "note": "Provider-named; same caution as gemini-2.0-flash-lite.",
+    "note": "gemini-2.0-flash-lite-001 shut down 2026-06-01. Google names gemini-3.1-flash-lite, which the same table retires on 2027-05-07 with gemini-3.5-flash-lite as its replacement; this entry follows that chain to gemini-3.5-flash-lite, as the gemini-3.1-flash-lite entry does.",
     "verification": {
-      "status": "unverified",
+      "status": "verified",
       "officialSourceConfirmed": true,
-      "replacementConfirmed": false,
-      "autoApplyAllowed": false,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": true,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
       ],
       "reasons": [
-        "replacement \"gemini-3.1-flash-lite\" is ITSELF deprecated in this registry (deprecated, shutdown 2027-05-07); a migration must not point at a retiring id",
-        "Provider-named; same caution as gemini-2.0-flash-lite."
+        "replacement \"gemini-3.5-flash-lite\" is live in a public catalog",
+        "Google deprecation page (read 2026-10-10) states shutdown June 1, 2026 and recommended replacement gemini-3.1-flash-lite; it retires gemini-3.1-flash-lite on May 7, 2027 with gemini-3.5-flash-lite",
+        "gemini-3.5-flash-lite is listed on the deprecations page with no shutdown date announced"
       ]
-    }
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:d8b5a2b597a3462a09f0c94808b1c71a9be2eaf46f7c190f68e6d3c9349b2c06",
+        "retrievedAt": "2026-10-10T04:58:57.129Z",
+        "excerpt": "gemini-2.0-flash-lite-001 | February 25, 2025 | June 1, 2026 | gemini-3.1-flash-lite"
+      },
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:d8b5a2b597a3462a09f0c94808b1c71a9be2eaf46f7c190f68e6d3c9349b2c06",
+        "retrievedAt": "2026-10-10T04:58:57.129Z",
+        "excerpt": "gemini-3.1-flash-lite | May 7, 2026 | May 7, 2027 | gemini-3.5-flash-lite"
+      }
+    ]
   },
   {
     "entryId": "google.gemini-2.0-flash-thinking-exp.retirement-2025-12-02",

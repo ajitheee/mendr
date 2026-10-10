@@ -80,8 +80,10 @@ describe('mendr validate-registry', () => {
     expect(stdout).toContain('summary: 1 violation(s) across 166 model_id records');
   }, 60_000);
 
+  // gpt-3.5-turbo-16k is the one record still quarantined over a caveat in its own research
+  // ("itself deprecated"); gemini-2.0-flash was the example until Google's page settled it.
   it('fails when a record is switched on under a non-verified status', async () => {
-    const path = corruptedRegistry('gemini-2.0-flash', (record) => {
+    const path = corruptedRegistry('gpt-3.5-turbo-16k', (record) => {
       (record.verification as Record<string, unknown>).autoApplyAllowed = true;
     });
     const { exitCode, stdout } = await validate(['--registry', path]);
@@ -94,7 +96,7 @@ describe('mendr validate-registry', () => {
   }, 60_000);
 
   it('fails a quarantine that no longer says what has to be resolved', async () => {
-    const path = corruptedRegistry('gemini-2.0-flash', (record) => {
+    const path = corruptedRegistry('gpt-3.5-turbo-16k', (record) => {
       (record.verification as Record<string, unknown>).quarantineReason = null;
     });
     const { exitCode, stdout } = await validate(['--registry', path]);

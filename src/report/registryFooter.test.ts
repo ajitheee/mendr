@@ -179,9 +179,10 @@ describe('the SHIPPED registry footer', () => {
     // +1 claude-sonnet-4-5-20250929, quarantined (Sonnet 5.5 rejects settings an id swap keeps).
     // 2026-10-10: the two retired Live API ids move to gemini-3.8-live, which no public catalog
     // lists yet, so they leave auto-fix for unverified; gpt-5.2 is removed (OpenAI does not
-    // deprecate it); three image models retiring 2026-12-01 are added, unverifiable by class.
+    // deprecate it); three image models retiring 2026-12-01 are added, unverifiable by class;
+    // the providers' pages settle 11 quarantines and one unverified hold.
     expect(lines[0]).toBe('registry: 166 records');
-    expect(lines[1]).toBe('auto-fix eligible: 132');
-    expect(lines[2]).toBe('review-only: 34 (quarantined 18, unverified 7, unverifiable 9)');
+    expect(lines[1]).toBe('auto-fix eligible: 144');
+    expect(lines[2]).toBe('review-only: 22 (quarantined 7, unverified 6, unverifiable 9)');
   });
 });
