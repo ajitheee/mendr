@@ -3,7 +3,9 @@ import { Hono, type Context } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { deploymentId, isConfigured, type AppConfig } from './config.js';
 import { openSession, sealSession, SESSION_COOKIE, SESSION_MAX_AGE_SECONDS, type Session } from './auth/session.js';
+import { withDeadline } from './deadline.js';
 import { GitHubApiError, type GitHubApi } from './github/api.js';
+import { createInstallRecovery } from './github/installRecovery.js';
 import type { ActionsTokenVerifier } from './github/oidc.js';
 import { applyWebhook, verifyWebhookSignature } from './github/webhook.js';
 import { buildCheckRun } from './ingest/checkRun.js';
@@ -28,6 +30,11 @@ export interface AppDeps {
    * timeout does not cost the suite eight real seconds.
    */
   interactiveTimeoutMs?: number;
+  /**
+   * Deadline for asking GitHub about a repository the database does not know, on the CI path.
+   * Defaults to UPLOAD_LOOKUP_BUDGET_MS (src/github/installRecovery.ts); overridden in tests.
+   */
+  installLookupTimeoutMs?: number;
 }
 
 const SETUP_STATE_COOKIE = 'mendr_setup_state';
@@ -93,32 +100,22 @@ function isSha(v: unknown): v is string {
  */
 const INTERACTIVE_GITHUB_MS = 8_000;
 
-/**
- * Resolve `p`, or reject once `ms` has passed.
- *
- * The underlying request is NOT cancelled — this is a deadline on the ANSWER, not on the work.
- * That is deliberate and safe here: the only caller is a read (`getRepoAsUser`), so an
- * abandoned attempt changes nothing. Never wrap a write in this.
- */
-async function withDeadline<T>(p: Promise<T>, ms: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      p,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`no answer within ${ms}ms`)), ms);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
 export function createApp(deps: AppDeps): Hono {
   const { config, store, github } = deps;
   const now = deps.now ?? (() => new Date());
   const log = deps.log ?? ((message, extra) => console.log(extra ? `${message} ${JSON.stringify(extra)}` : message));
   const interactiveMs = deps.interactiveTimeoutMs ?? INTERACTIVE_GITHUB_MS;
+  // A repository the database does not know is asked about on GitHub before it is refused
+  // (src/github/installRecovery.ts). Without the App's id and key there is no JWT to ask with.
+  const recovery = createInstallRecovery({
+    store,
+    github,
+    enabled: !!(config.githubAppId && config.githubPrivateKey),
+    now,
+    log,
+    interactiveMs,
+    uploadBudgetMs: deps.installLookupTimeoutMs,
+  });
 
   /**
    * Record an approval attempt that did NOT become an approval — containment items 1–3 for P1-A.
@@ -276,15 +273,25 @@ export function createApp(deps: AppDeps): Hono {
 
   app.get('/', async (c) => {
     const sess = await session(c);
-    const rows: import('./ui/pages.js').RepoRow[] = [];
+    let rows: import('./ui/pages.js').RepoRow[] = [];
     if (sess) {
-      const [latest, completed] = await Promise.all([store.latestRunPerRepo(), store.latestCompletedRunPerRepo()]);
-      for (const repo of (await store.listRepos()).slice(0, 100)) {
-        const gh = await github.getRepoAsUser(sess.token, repo.fullName);
-        if (gh && gh.id === repo.id) {
-          rows.push({ repo, latest: latest.get(repo.id) ?? null, latestCompleted: completed.get(repo.id) ?? null, defaultBranch: gh.defaultBranch });
+      const listRows = async (): Promise<import('./ui/pages.js').RepoRow[]> => {
+        const out: import('./ui/pages.js').RepoRow[] = [];
+        const [latest, completed] = await Promise.all([store.latestRunPerRepo(), store.latestCompletedRunPerRepo()]);
+        for (const repo of (await store.listRepos()).slice(0, 100)) {
+          const gh = await github.getRepoAsUser(sess.token, repo.fullName);
+          if (gh && gh.id === repo.id) {
+            out.push({ repo, latest: latest.get(repo.id) ?? null, latestCompleted: completed.get(repo.id) ?? null, defaultBranch: gh.defaultBranch });
+          }
         }
-      }
+        return out;
+      };
+      rows = await listRows();
+      // Nothing to show: the database may have lost this user's installations (a move to a new
+      // database). Ask GitHub, with the user's own token, which installations of this App they
+      // can access, add what the store lacks, and list again. Throttled per user and bounded by
+      // the interactive deadline; a user who sees anything costs no extra call.
+      if (!rows.length && (await recovery.forUser({ userId: sess.userId, login: sess.login, token: sess.token })) > 0) rows = await listRows();
     }
     return c.html(homePage({ config, configured: isConfigured(config), login: sess?.login ?? null, rows, now: now() }));
   });
@@ -350,7 +357,8 @@ export function createApp(deps: AppDeps): Hono {
       return c.json({ error: `invalid GitHub Actions token: ${(e as Error).message}` }, 401);
     }
 
-    const repo = await store.getRepo(claims.repositoryId);
+    // Unknown to the store: ask GitHub before refusing (the database may have lost the install).
+    const repo = (await store.getRepo(claims.repositoryId)) ?? (await recovery.forUpload(claims));
     if (!repo || repo.removedAt) {
       const installUrl = config.githubAppSlug ? `${config.githubWebUrl}/apps/${config.githubAppSlug}/installations/new` : null;
       return c.json({ error: `the Mendr GitHub App is not installed on ${claims.repository}`, install: installUrl }, 403);
@@ -436,7 +444,7 @@ export function createApp(deps: AppDeps): Hono {
     } catch (e) {
       return c.json({ error: `invalid GitHub Actions token: ${(e as Error).message}` }, 401);
     }
-    const repo = await store.getRepo(claims.repositoryId);
+    const repo = (await store.getRepo(claims.repositoryId)) ?? (await recovery.forUpload(claims));
     if (!repo || repo.removedAt) {
       const installUrl = config.githubAppSlug ? `${config.githubWebUrl}/apps/${config.githubAppSlug}/installations/new` : null;
       return c.json({ error: `the Mendr GitHub App is not installed on ${claims.repository}`, install: installUrl }, 403);
@@ -521,7 +529,7 @@ export function createApp(deps: AppDeps): Hono {
     } catch (e) {
       return c.json({ error: `invalid GitHub Actions token: ${(e as Error).message}` }, 401);
     }
-    const repo = await store.getRepo(claims.repositoryId);
+    const repo = (await store.getRepo(claims.repositoryId)) ?? (await recovery.forUpload(claims));
     if (!repo || repo.removedAt) return c.json({ error: `the Mendr GitHub App is not installed on ${claims.repository}` }, 403);
     const inst = await store.getInstallation(repo.installationId);
     if (!inst || inst.deletedAt || inst.suspended) return c.json({ error: 'the installation covering this repository is not active' }, 403);

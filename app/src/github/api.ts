@@ -27,6 +27,22 @@ export interface UserRepo {
   defaultBranch: string;
 }
 
+/** An installation of this App, as GitHub reports it. */
+export interface AppInstallation {
+  id: number;
+  accountLogin: string;
+  accountType: 'User' | 'Organization';
+  /** GitHub's `suspended_at` is set. */
+  suspended: boolean;
+}
+
+/** A repository inside an installation, as GitHub reports it. */
+export interface InstallationRepo {
+  id: number;
+  fullName: string;
+  private: boolean;
+}
+
 /**
  * Every GitHub call the App makes, behind one interface so tests can inject a
  * fake. Note what is NOT here: no contents, no clone, no file reads.
@@ -48,6 +64,24 @@ export interface GitHubApi {
    * scheduled check instead, whenever GitHub runs it. Still no contents, no clone, no file reads.
    */
   dispatchWorkflow(installationId: number, repoFullName: string, repoId: number, workflowFile: string, ref: string, inputs: Record<string, string>): Promise<void>;
+  /**
+   * Install recovery, step 1: which installation of this App covers this repository
+   * (`GET /repos/{owner}/{repo}/installation`, authenticated with the App's own JWT; it needs
+   * no installation permission). Null when GitHub answers 404: the App is not installed there,
+   * or the installation's repository selection leaves that repository out.
+   */
+  getRepoInstallation(repoFullName: string): Promise<AppInstallation | null>;
+  /**
+   * Install recovery, step 2: the repository as an installation token limited to `repoId` and
+   * `metadata: read` sees it (`GET /repos/{owner}/{repo}`). Null when GitHub will not mint that
+   * token, because the installation does not cover that repository id, or when the token cannot
+   * see the repository. The caller compares the id GitHub returns with the one it asked for.
+   */
+  getRepoAsInstallation(installationId: number, repoFullName: string, repoId: number): Promise<InstallationRepo | null>;
+  /** Installations of this App the signed-in user can access (`GET /user/installations`, the user's own token; first 100). */
+  listUserInstallations(token: string): Promise<AppInstallation[]>;
+  /** Repositories in that installation the signed-in user can access (`GET /user/installations/{id}/repositories`; at most 300). */
+  listUserInstallationRepos(token: string, installationId: number): Promise<InstallationRepo[]>;
 }
 
 type ApiConfig = Pick<AppConfig, 'githubApiUrl' | 'githubWebUrl' | 'githubAppId' | 'githubPrivateKey' | 'githubClientId' | 'githubClientSecret'>;
@@ -86,6 +120,43 @@ export function retryAfterFromHeaders(headers: Headers, now: number = Date.now()
 }
 
 export const GITHUB_RETRY_ATTEMPTS = 3;
+
+/**
+ * A final "no" about access rather than a failure: 404, 422 (GitHub will not mint a token for a
+ * repository the installation does not cover), or a 403 that is not a rate limit.
+ */
+function isRefusal(e: unknown): boolean {
+  if (!(e instanceof GitHubApiError)) return false;
+  return e.status === 404 || e.status === 422 || (e.status === 403 && !/rate limit/i.test(e.message));
+}
+
+function installationFrom(v: unknown): AppInstallation | null {
+  const r = v as { id?: unknown; account?: { login?: unknown; type?: unknown } | null; suspended_at?: unknown } | null;
+  if (!r || typeof r !== 'object' || typeof r.id !== 'number') return null;
+  return {
+    id: r.id,
+    accountLogin: typeof r.account?.login === 'string' ? r.account.login : '?',
+    accountType: r.account?.type === 'Organization' ? 'Organization' : 'User',
+    suspended: r.suspended_at !== null && r.suspended_at !== undefined,
+  };
+}
+
+function repoFrom(v: unknown): InstallationRepo | null {
+  const r = v as { id?: unknown; full_name?: unknown; private?: unknown } | null;
+  if (!r || typeof r !== 'object' || typeof r.id !== 'number' || typeof r.full_name !== 'string') return null;
+  return { id: r.id, fullName: r.full_name, private: r.private !== false };
+}
+
+/** `owner/name` as a URL path, each segment encoded. */
+function repoPath(fullName: string): string {
+  return fullName
+    .split('/')
+    .map((s) => encodeURIComponent(s))
+    .join('/');
+}
+
+/** Pages of 100 read from `GET /user/installations/{id}/repositories` before stopping. */
+const USER_REPO_PAGES = 3;
 
 export function createGitHubApi(cfg: ApiConfig): GitHubApi {
   const tokens = new Map<string, { token: string; expiresAt: number }>();
@@ -215,6 +286,65 @@ export function createGitHubApi(cfg: ApiConfig): GitHubApi {
         { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ref, inputs }) },
         `Bearer ${token}`,
       );
+    },
+
+    // Install recovery (src/github/installRecovery.ts). Both calls use what the App already
+    // holds: its JWT, and an installation token with `metadata: read`, which every App has.
+    async getRepoInstallation(repoFullName) {
+      if (!cfg.githubAppId || !cfg.githubPrivateKey) throw new GitHubApiError(503, 'the App is not configured (GITHUB_APP_ID / GITHUB_PRIVATE_KEY)');
+      const jwt = await appJwt(cfg.githubAppId, cfg.githubPrivateKey);
+      try {
+        const { json } = await call(`${cfg.githubApiUrl}/repos/${repoPath(repoFullName)}/installation`, { method: 'GET' }, `Bearer ${jwt}`);
+        const inst = installationFrom(json);
+        if (!inst) throw new GitHubApiError(502, 'repository installation response had no installation id');
+        return inst;
+      } catch (e) {
+        if (e instanceof GitHubApiError && e.status === 404) return null;
+        throw e;
+      }
+    },
+
+    async getRepoAsInstallation(installationId, repoFullName, repoId) {
+      let token: string;
+      try {
+        // Limited to the one repository id the OIDC token named: GitHub refuses to mint it when
+        // the installation does not cover that id.
+        token = await installationToken(installationId, repoId, { metadata: 'read' });
+      } catch (e) {
+        if (isRefusal(e)) return null;
+        throw e;
+      }
+      try {
+        const { json } = await call(`${cfg.githubApiUrl}/repos/${repoPath(repoFullName)}`, { method: 'GET' }, `Bearer ${token}`);
+        const repo = repoFrom(json);
+        if (!repo) throw new GitHubApiError(502, 'repository response had no id or name');
+        return repo;
+      } catch (e) {
+        if (isRefusal(e)) return null;
+        throw e;
+      }
+    },
+
+    async listUserInstallations(token) {
+      const { json } = await call(`${cfg.githubApiUrl}/user/installations?per_page=100`, { method: 'GET' }, `Bearer ${token}`);
+      const list = (json as { installations?: unknown } | null)?.installations;
+      if (!Array.isArray(list)) throw new GitHubApiError(502, 'user installations response had no installations list');
+      return list.map(installationFrom).filter((i): i is AppInstallation => i !== null);
+    },
+
+    async listUserInstallationRepos(token, installationId) {
+      const out: InstallationRepo[] = [];
+      for (let page = 1; page <= USER_REPO_PAGES; page++) {
+        const { json } = await call(`${cfg.githubApiUrl}/user/installations/${installationId}/repositories?per_page=100&page=${page}`, { method: 'GET' }, `Bearer ${token}`);
+        const list = (json as { repositories?: unknown } | null)?.repositories;
+        if (!Array.isArray(list)) throw new GitHubApiError(502, 'user installation repositories response had no repositories list');
+        for (const r of list) {
+          const repo = repoFrom(r);
+          if (repo) out.push(repo);
+        }
+        if (list.length < 100) break;
+      }
+      return out;
     },
   };
 }
