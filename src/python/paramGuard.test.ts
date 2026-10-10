@@ -225,6 +225,15 @@ describe('a model bound to a name the scanner traces into the call', () => {
     expect(v?.sentence).toContain('the call on line 9 of this file');
   }, 60_000);
 
+  it('a parameter default passed on as model=model', async () => {
+    const v = await py(
+      `${OPENAI}\ndef ask(p, model="gpt-3.5-turbo"):\n    return client.chat.completions.create(model=model, messages=p, max_tokens=20)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'B', reason: 'param_behaviour_change' });
+    expect(v?.sentence).toContain('the call on line 5 of this file');
+  }, 60_000);
+
   it('a constant whose call passes no model-dependent parameter stays Tier A', async () => {
     const v = await py(
       `${OPENAI}MODEL = "gpt-3.5-turbo"\n\ndef title(p):\n    return client.chat.completions.create(model=MODEL, messages=p, stream=True)\n`,
