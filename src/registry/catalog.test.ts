@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   buildModelCatalog,
@@ -5,6 +8,7 @@ import {
   CATALOG_OPENROUTER_URL,
   MODEL_CATALOG_SCHEMA,
   serializeCatalog,
+  type ModelCatalog,
 } from './catalog.js';
 
 // PLANE 1, the half that was missing: a catalog of what EXISTS, not only what is dying.
@@ -278,5 +282,59 @@ describe('the file it writes', () => {
     expect(Object.keys(c.openrouterOnly!).sort()).toEqual(['anthropic', 'google', 'openai']);
     expect(c.openrouterOnly!.anthropic).toEqual([]);
     expect(c.openrouterOnly!.openai).toEqual(['o4-mini-high']);
+  });
+});
+
+// The SHIPPED file, re-checked on every test run. It was reclassified by hand on
+// 2026-10-09 (each spelling below checked against the provider's own page that day), and
+// a later hand edit or a refresh that regresses the split should fail here, not in a
+// user's migration.
+describe('the shipped catalog', () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const shipped = JSON.parse(
+    readFileSync(join(here, '..', '..', 'registries', 'model-catalog.json'), 'utf8'),
+  ) as ModelCatalog;
+  const direct = Object.values(shipped.providers).flat();
+
+  it('counts only provider ids', () => {
+    expect(shipped.count).toBe(direct.length);
+  });
+
+  it('never lists one spelling as both a provider id and an OpenRouter-only one', () => {
+    for (const [p, ids] of Object.entries(shipped.openrouterOnly ?? {})) {
+      const mine = new Set(shipped.providers[p]);
+      expect(ids.filter((id) => mine.has(id))).toEqual([]);
+    }
+  });
+
+  // Anthropic: "model IDs use a dateless format: claude-{name}-{major}[-{minor}]", and the
+  // dated form before it is hyphenated too. On Anthropic's pages (2026-10-09) the only
+  // dotted ids are the long-retired claude-1.x, claude-2.x and claude-instant-1.x.
+  it('holds no dotted Claude id as an Anthropic provider id', () => {
+    expect(shipped.providers.anthropic!.filter((id) => id.includes('.'))).toEqual([]);
+  });
+
+  // Each one's model page on developers.openai.com returned 404 on 2026-10-09; OpenAI does
+  // pro as `reasoning.mode: pro`. The dotted Claude spellings are on no Anthropic page.
+  it('keeps the spellings the 2026-10-09 review found only on OpenRouter out of `providers`', () => {
+    const openrouterOnly = [
+      ['anthropic', 'claude-sonnet-5.5'],
+      ['anthropic', 'claude-sonnet-4.5'],
+      ['anthropic', 'claude-opus-5.5'],
+      ['anthropic', 'claude-fable-5.1'],
+      ['openai', 'gpt-6.1-sol-pro'],
+      ['openai', 'gpt-6-sol-pro'],
+      ['openai', 'gpt-6-astra-pro'],
+      ['openai', 'gpt-6-luna-pro'],
+    ] as const;
+    for (const [p, id] of openrouterOnly) {
+      expect(shipped.providers[p]).not.toContain(id);
+      expect(shipped.openrouterOnly?.[p]).toContain(id);
+    }
+  });
+
+  it('carries the provider ids PR #40 found and the providers confirm', () => {
+    expect(shipped.providers.anthropic).toContain('claude-sonnet-5-5');
+    expect(shipped.providers.openai).toContain('gpt-6.1-sol');
   });
 });
