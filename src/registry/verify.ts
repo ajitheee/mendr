@@ -11,8 +11,9 @@
 //                contradicted by the provider's official recommendation.
 //   unverified   replacement is live but STALE (a newer official target
 //                exists), CHAINED (the replacement is itself deprecated), one
-//                of SEVERAL the provider names, or simply not found live for
-//                an in-class model. Live-but-wrong ->
+//                of SEVERAL the provider names, a FAMILY CHANGE (a fine-tune
+//                retired to a base model, Veo retired to Gemini), or simply
+//                not found live for an in-class model. Live-but-wrong ->
 //                block; blocking is always safer than a bad auto-swap.
 //   unverifiable replacement is OUT-OF-CLASS (moderation/image/audio/tts) —
 //                public catalogs don't list these classes, so a miss is NOT
@@ -109,6 +110,39 @@ export function namedReplacements(recommendation: string): string[] {
     .filter((id) => id.length > 0);
 }
 
+/** A fine-tune as OpenAI's table spells its row (`ft-gpt-4`) or as the API reports it (`ft:gpt-4:org::id`). */
+const FINE_TUNE_ID = /^ft[-:]/;
+/** Google's Veo video models. */
+const VEO_ID = /^veo-/;
+
+/**
+ * A replacement that changes WHAT the caller runs, not which version of it. The catalogs can
+ * say the replacement is live. They cannot say the swap keeps the call working, and for these
+ * it does not:
+ *   - a fine-tune is retired to a BASE model, so swapping the id drops the customer's training;
+ *   - a Veo model is retired to Gemini Omni, a different family behind a different request
+ *     (`models/<veo id>:predictLongRunning` against the Interactions API).
+ * Until 2026-10-10 the only guard was a hand-written quarantine on each row that existed that
+ * day. Discovery and check-dates admit `ft-` and `veo-` rows now, and the next one promoted
+ * would have classified verified and been written auto-appliable.
+ */
+function familyChange(deprecated: string, replacement: string): string | null {
+  const dep = deprecated.trim().toLowerCase();
+  if (FINE_TUNE_ID.test(dep)) {
+    return (
+      `"${deprecated}" is a fine-tuned model; replacing its id with "${replacement}" drops ` +
+      `the customer's training, so the swap is never automatic`
+    );
+  }
+  if (VEO_ID.test(dep) && !VEO_ID.test(replacement.trim().toLowerCase())) {
+    return (
+      `"${deprecated}" is a Veo video model and "${replacement}" is not; the replacement is a ` +
+      `different model family behind a different request, so the swap is never automatic`
+    );
+  }
+  return null;
+}
+
 export function classifyEntry(
   entry: LlmModelIdDeprecation,
   oracles: VerificationOracles,
@@ -116,6 +150,14 @@ export function classifyEntry(
   const { deprecated, replacement } = entry;
   const { liveIds, officialRecommendations, knownDeprecated } = oracles;
   const reasons: string[] = [];
+
+  // (0) FAMILY CHANGE -> unverified, whatever the catalogs say. Checked first: no catalog
+  // answer makes dropping a fine-tune's training, or changing the request shape, a safe edit.
+  const changesFamily = familyChange(deprecated, replacement);
+  if (changesFamily) {
+    reasons.push(changesFamily);
+    return { status: 'unverified', reasons };
+  }
 
   // (1) OUT-OF-CLASS -> unverifiable. If either the retired id or its
   // replacement is a moderation/image/audio/tts model, public catalogs simply
@@ -300,6 +342,8 @@ const MACHINE_REASON_PATTERNS: readonly RegExp[] = [
   /^the provider officially recommends "[^"]+"/,
   /^matches the provider's officially-recommended replacement "[^"]+"/,
   /^the provider names more than one replacement \("[^"]+"\)/,
+  /^"[^"]+" is a fine-tuned model; replacing its id with "[^"]+" drops the customer's training/,
+  /^"[^"]+" is a Veo video model and "[^"]+" is not; the replacement is a different model family/,
 ];
 
 /** Was this reason written by the classifier (rather than by a person)? */

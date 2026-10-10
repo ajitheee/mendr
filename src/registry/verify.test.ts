@@ -9,6 +9,7 @@ import {
   knownDeprecatedFrom,
   mergeReasons,
   namedReplacements,
+  verificationSwitches,
   type VerificationOracles,
 } from './verify.js';
 
@@ -301,15 +302,61 @@ describe('classifyEntry — UNVERIFIED (the provider names more than one replace
   });
 });
 
-describe("mergeReasons — the new verdict is the machine's own", () => {
-  it('recognises the choice sentence, so a re-stamp regenerates it', () => {
+// --- a replacement that changes the model family ----------------------------
+//
+// Discovery and check-dates admit OpenAI `ft-` rows and Google `veo-` rows. The fine-tune ->
+// base model swap drops the customer's training; Veo -> Gemini Omni is a different family
+// behind a different request. Both were guarded only by quarantines written on the nine rows
+// that existed on 2026-10-10, and `candidates promote` would have written the next one verified.
+describe('classifyEntry — UNVERIFIED (family change), whatever the catalogs say', () => {
+  const oracles: VerificationOracles = {
+    liveIds: liveSet('gpt-5.6-sol', 'gemini-omni-1.1-flash', 'veo-3.2-generate'),
+    officialRecommendations: officialMap({}),
+  };
+
+  it('never verifies a fine-tune retired to a base model', () => {
+    for (const deprecated of ['ft-gpt-4o-2024-08-06', 'ft-babbage-002', 'ft:gpt-4o-2024-08-06:acme::x1']) {
+      const r = classifyEntry(entry(deprecated, 'gpt-5.6-sol'), oracles);
+      expect(r.status, deprecated).toBe('unverified');
+      expect(r.reasons.join(' ')).toContain("drops the customer's training");
+    }
+  });
+
+  it('never verifies a Veo model retired to a non-Veo model', () => {
+    const r = classifyEntry(entry('veo-3.0-generate-001', 'gemini-omni-1.1-flash'), oracles);
+    expect(r.status).toBe('unverified');
+    expect(r.reasons.join(' ')).toContain('different model family behind a different request');
+  });
+
+  it('leaves a Veo -> Veo swap to the ordinary catalog check', () => {
+    expect(classifyEntry(entry('veo-3.0-generate-001', 'veo-3.2-generate'), oracles).status).toBe(
+      'verified',
+    );
+  });
+
+  it('keeps auto-apply off through verificationSwitches, as candidates promote derives it', () => {
+    const e: LlmModelIdDeprecation = {
+      ...entry('ft-gpt-4o-2024-08-06', 'gpt-5.6-sol'),
+      sourceUrl: 'https://developers.openai.com/api/docs/deprecations',
+      status: 'deprecated',
+      shutdownDate: '2026-10-23',
+    };
+    const { status } = classifyEntry(e, oracles);
+    expect(verificationSwitches(e, status).autoApplyAllowed).toBe(false);
+  });
+});
+
+describe("mergeReasons — the new verdicts are the machine's own", () => {
+  it('recognises the choice and family-change sentences, so a re-stamp regenerates them', () => {
     const oracles: VerificationOracles = {
-      liveIds: liveSet('gpt-5.6-sol'),
+      liveIds: liveSet('gpt-5.6-sol', 'gemini-omni-1.1-flash'),
       officialRecommendations: officialMap({ 'gpt-4-0314': 'gpt-5 or gpt-4.1' }),
     };
     const cases = [
       entry('gpt-4-0314', 'gpt-5.6-sol'),
       entry('gpt-4-0314', 'ghost-9'),
+      entry('ft-gpt-4', 'gpt-5.6-sol'),
+      entry('veo-3.1-generate-preview', 'gemini-omni-1.1-flash'),
     ];
     for (const e of cases) {
       for (const reason of classifyEntry(e, oracles).reasons) {
