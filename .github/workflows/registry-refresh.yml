@@ -7,11 +7,18 @@
 # plane a human has to crank is a chore, not intelligence.
 #
 # WHAT MERGING THIS CHANGES, stated rather than implied. Unlike registry-discover,
-# this is NOT inert. The catalog is what `mendr candidates verify` classifies a
-# replacement against, so a refreshed catalog can change whether a future
-# `promote` accepts or refuses a candidate. What it does NOT do is alter the
-# active deprecation registry — llm-deprecations.json is the only file the fix
-# engine reads, and the asserts below fail the job if this run touches it.
+# this is NOT inert. The catalog is what `mendr resolve` checks the end of a
+# replacement chain against, and it ships in the signed feed for anyone reading
+# it. (`candidates verify` and `promote` do not read this file; they fetch the
+# same two sources live through oracles.ts, under the same rule below.) What it
+# does NOT do is alter the active deprecation registry — llm-deprecations.json
+# is the only file the fix engine reads, and the asserts below fail the job if
+# this run touches it.
+#
+# The catalog's `providers` holds only ids the direct-provider source (models.dev)
+# lists. Spellings only OpenRouter lists go to `openrouterOnly` (see
+# src/registry/catalog.ts): they are reported in the PR body, never counted as
+# new model ids, and never open a PR on their own.
 name: registry-refresh
 
 on:
@@ -81,51 +88,14 @@ jobs:
       # `fetchedAt` changes on every run even when nothing else does, so a plain
       # `git diff --quiet` would open a PR every Monday saying nothing happened.
       # Compare the CONTENT that matters instead, and report real movement.
+      #
+      # The comparison is summarizeRefresh() in src/registry/refreshSummary.ts,
+      # unit-tested there. It used to be inline here, where it keyed SDK versions
+      # by package name alone, so PyPI `openai` overwrote npm `openai` and PR #40
+      # reported 5 SDK bumps for a diff that made 6. Keys are ecosystem + name now.
       - name: What actually moved
         id: moved
-        run: |
-          node -e '
-            const fs = require("fs");
-            const { execSync } = require("child_process");
-            const read = (p) => JSON.parse(fs.readFileSync(p, "utf8"));
-            const was = (p) => JSON.parse(execSync(`git show HEAD:${p}`, { encoding: "utf8" }));
-
-            const cNow = read("registries/model-catalog.json");
-            const cWas = was("registries/model-catalog.json");
-            const sNow = read("registries/sdk-releases.json");
-            const sWas = was("registries/sdk-releases.json");
-
-            // Model ids, flattened across providers, so the count is ids and not objects.
-            const ids = (c) => new Set(Object.entries(c.providers).flatMap(([p, list]) =>
-              (Array.isArray(list) ? list : Object.keys(list)).map((m) => `${p}/${typeof m === "string" ? m : m.id}`)));
-            const a = ids(cWas), b = ids(cNow);
-            const added = [...b].filter((x) => !a.has(x));
-            const removed = [...a].filter((x) => !b.has(x));
-
-            // An SDK moving a MAJOR is the signal; a patch bump is noise.
-            const latest = (s) => Object.fromEntries(s.packages.map((p) => [p.name, p.latest]));
-            const lw = latest(sWas), ln = latest(sNow);
-            const bumped = Object.keys(ln).filter((n) => lw[n] && lw[n] !== ln[n]);
-
-            const parts = [];
-            if (added.length) parts.push(`+${added.length} model id${added.length === 1 ? "" : "s"}`);
-            if (removed.length) parts.push(`-${removed.length} model id${removed.length === 1 ? "" : "s"}`);
-            if (bumped.length) parts.push(`${bumped.length} SDK bump${bumped.length === 1 ? "" : "s"}`);
-            const summary = parts.length ? parts.join(", ") : "timestamps only";
-
-            const out = process.env.GITHUB_OUTPUT;
-            fs.appendFileSync(out, `summary=${summary}\n`);
-            fs.appendFileSync(out, `substantive=${parts.length ? "yes" : "no"}\n`);
-            fs.appendFileSync(out, `catalog_count=${cNow.count}\n`);
-            fs.appendFileSync(out, `sdk_count=${sNow.count}\n`);
-
-            const body = [
-              added.length ? `**New model ids (${added.length})**\n\n${added.slice(0, 40).map((x) => `- \`${x}\``).join("\n")}${added.length > 40 ? `\n- … and ${added.length - 40} more` : ""}` : "",
-              removed.length ? `**No longer listed (${removed.length})** — a provider stopped publishing these. That is NOT a retirement announcement; only the deprecation registry can say that.\n\n${removed.slice(0, 40).map((x) => `- \`${x}\``).join("\n")}${removed.length > 40 ? `\n- … and ${removed.length - 40} more` : ""}` : "",
-              bumped.length ? `**SDK latest versions moved (${bumped.length})**\n\n${bumped.map((n) => `- \`${n}\` ${lw[n]} → ${ln[n]}`).join("\n")}` : "",
-            ].filter(Boolean).join("\n\n");
-            fs.writeFileSync("refresh-body.md", body || "_Only `fetchedAt` changed; no ids and no SDK versions moved._\n");
-          '
+        run: node scripts/refresh-summary.mjs
 
       # Nothing substantive means nothing to review. Revert rather than open a PR
       # whose entire diff is two timestamps — that is the Dependabot-churn failure

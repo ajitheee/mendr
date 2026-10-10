@@ -9,10 +9,18 @@
 // normalized `liveIds` set, and supplies the curated `officialRecommendations`
 // table. Keeping fetch here means classifyEntry stays pure and testable.
 //
-//   models.dev  (PRIMARY)   https://models.dev/api.json
-//       dash-style ids, per-provider, INCLUDING dated snapshots.
-//   OpenRouter  (corroborating) https://openrouter.ai/api/v1/models
-//       namespaced + dotted ids, with `~` aliases and `:variant` suffixes.
+//   models.dev  (PRIMARY, the ONLY liveness source)   https://models.dev/api.json
+//       per-provider, keyed by the id the provider's own API takes, INCLUDING dated
+//       snapshots. Its ids form `liveIds`, the set a replacement must be in to verify.
+//   OpenRouter  (cautionary only)   https://openrouter.ai/api/v1/models
+//       namespaced + dotted ids, with `~` aliases and `:variant` suffixes. These are
+//       OpenRouter's routing names, not the providers' ids: it lists dotted Claude
+//       spellings outside Anthropic's documented id format, pro "ids" OpenAI does as a
+//       request setting, and ids a provider has already shut down. They form `routedIds`, which
+//       can make a verdict MORE cautious (claimCheck.ts refuses a `retired` claim for an
+//       id it lists) and can never make a replacement live. Until 2026-10-09 they were
+//       folded into `liveIds`, so an OpenRouter-only spelling such as `gpt-6.1-sol-pro`
+//       counted as a live replacement and could classify `verified`.
 
 import type { VerificationOracles } from './verify.js';
 import { canonicalizeId, familyOf } from './normalize.js';
@@ -130,26 +138,31 @@ export interface FetchOptions {
   fetchImpl?: typeof fetch;
 }
 
-/** The normalized live-id set plus which oracles responded and diagnostic notes. */
+/** The normalized id sets plus which oracles responded and diagnostic notes. */
 export interface LiveIdsResult {
+  /** Direct-provider ids (models.dev): the only set that can make a replacement live. */
   liveIds: Set<string>;
+  /** Every id OpenRouter lists. Cautionary only; see the header. */
+  routedIds: Set<string>;
   sources: string[];
   notes: string[];
 }
 
 /**
- * Fetch both public catalogs and fold every first-party model id into one
- * normalized `liveIds` set. A single failing oracle is tolerated (noted, not
- * thrown) as long as the other responds — corroboration, not a hard dependency.
+ * Fetch both public catalogs into two normalized sets: `liveIds` from models.dev,
+ * `routedIds` from OpenRouter. A failing oracle is noted, not thrown. When models.dev
+ * fails, `liveIds` is empty and every replacement reads as not live — the run blocks
+ * auto-apply rather than letting OpenRouter's spellings stand in for the providers' ids.
  */
 export async function fetchLiveIds(opts: FetchOptions = {}): Promise<LiveIdsResult> {
   const fetchImpl = opts.fetchImpl ?? fetch;
   const liveIds = new Set<string>();
+  const routedIds = new Set<string>();
   const sources: string[] = [];
   const notes: string[] = [];
   const providerSet: ReadonlySet<string> = new Set<string>(ORACLE_PROVIDERS);
 
-  // --- OpenRouter (corroborating) ---
+  // --- OpenRouter (cautionary only: never makes a replacement live) ---
   try {
     const payload = (await fetchJson(OPENROUTER_URL, fetchImpl)) as { data?: unknown[] } | unknown[];
     const arr = (Array.isArray(payload) ? payload : payload.data ?? []) as { id: string }[];
@@ -159,16 +172,16 @@ export async function fetchLiveIds(opts: FetchOptions = {}): Promise<LiveIdsResu
       const slash = stripped.indexOf('/');
       if (slash < 0) continue;
       if (!providerSet.has(stripped.slice(0, slash))) continue; // ignore third-party hosts
-      addLiveId(liveIds, stripped.slice(slash + 1));
+      addLiveId(routedIds, stripped.slice(slash + 1));
       firstParty++;
     }
     sources.push('openrouter');
-    notes.push(`openrouter: ${arr.length} models (${firstParty} first-party)`);
+    notes.push(`openrouter: ${arr.length} models (${firstParty} first-party; cautionary only, never makes a replacement live)`);
   } catch (err) {
     notes.push(`openrouter FAILED: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  // --- models.dev (PRIMARY) ---
+  // --- models.dev (PRIMARY: the only source that can make a replacement live) ---
   try {
     const md = (await fetchJson(MODELS_DEV_URL, fetchImpl)) as Record<
       string,
@@ -186,15 +199,19 @@ export async function fetchLiveIds(opts: FetchOptions = {}): Promise<LiveIdsResu
     sources.push('models.dev');
     notes.push(`models.dev: ${count} first-party models`);
   } catch (err) {
-    notes.push(`models.dev FAILED: ${err instanceof Error ? err.message : String(err)}`);
+    notes.push(
+      `models.dev FAILED: ${err instanceof Error ? err.message : String(err)} ` +
+        '-- no direct-provider source this run, so no replacement can verify',
+    );
   }
 
-  return { liveIds, sources, notes };
+  return { liveIds, routedIds, sources, notes };
 }
 
 /** The complete oracle bundle: live ids + curated recommendations + diagnostics. */
 export interface Oracles extends VerificationOracles {
   liveIds: Set<string>;
+  routedIds: Set<string>;
   officialRecommendations: Map<string, string>;
   sources: string[];
   notes: string[];
@@ -202,6 +219,6 @@ export interface Oracles extends VerificationOracles {
 
 /** Fetch the live catalogs and pair them with the curated recommendation table. */
 export async function fetchOracles(opts: FetchOptions = {}): Promise<Oracles> {
-  const { liveIds, sources, notes } = await fetchLiveIds(opts);
-  return { liveIds, officialRecommendations: officialRecommendations(), sources, notes };
+  const { liveIds, routedIds, sources, notes } = await fetchLiveIds(opts);
+  return { liveIds, routedIds, officialRecommendations: officialRecommendations(), sources, notes };
 }

@@ -429,3 +429,44 @@ describe('promoteCandidates — the deprecation claim (source-side gate)', () =>
     expect(reasons.join(' ')).toMatch(/did NOT independently confirm the provider retired it/);
   });
 });
+
+// OpenRouter's listings, split out of `liveIds` on 2026-10-09. They can no longer make a
+// replacement live -- and they must still make the source-side gate refuse, or splitting
+// them out would have loosened one check while tightening another.
+describe('promoteCandidates — OpenRouter can only make the gate more cautious', () => {
+  const empty: LlmRegistry = [];
+  const WITH_ROUTED: VerificationOracles = {
+    ...ORACLES,
+    routedIds: liveSet('gpt-6.1-sol-pro', 'gpt-4-legacy-routed'),
+  };
+
+  it('REFUSES a replacement only OpenRouter lists (gpt-6.1-sol-pro: OpenAI page 404)', () => {
+    const c = candidate({ replacement: 'gpt-6.1-sol-pro' });
+    const result = promoteCandidates([c], empty, {
+      ids: [c.candidateId],
+      oracles: WITH_ROUTED,
+      snapshotDir: SNAPSHOT_DIR,
+    });
+    expect(result.promoted).toEqual([]);
+    expect(result.refused[0].reason).toMatch(/classifies as unverified.*only OpenRouter lists it/);
+  });
+
+  it('still REFUSES a `retired` claim for an id OpenRouter lists, as before the split', () => {
+    const ref: EvidenceRef = { ...EVIDENCE[0], excerpt: 'gpt-4-legacy-routed has been retired' };
+    const c = candidate({
+      provider: 'openai',
+      deprecated: 'gpt-4-legacy-routed',
+      replacement: 'gpt-4o',
+      status: 'retired',
+      evidence: [ref],
+      candidateId: 'openai:gpt-4-legacy-routed',
+    });
+    const result = promoteCandidates([c], empty, {
+      ids: [c.candidateId],
+      oracles: WITH_ROUTED,
+      snapshotDir: snapshotDirWith(ref),
+    });
+    expect(result.promoted).toEqual([]);
+    expect(result.refused[0].reason).toMatch(/claims calls to "gpt-4-legacy-routed" fail today/);
+  });
+});

@@ -39,8 +39,13 @@ export interface GraphNode {
 export interface ContractGraph {
   /** canonical id -> node, for every id the registry mentions on either side of an edge. */
   nodes: Map<string, GraphNode>;
-  /** Canonical + family forms of every catalog id, for membership tests. */
+  /** Canonical + family forms of every direct-provider catalog id (`providers`), for membership tests. */
   liveIds: ReadonlySet<string>;
+  /**
+   * Canonical + family forms of the spellings only OpenRouter lists (`openrouterOnly`).
+   * Never makes a destination live; it only lets an unlisted result say why.
+   */
+  routedIds: ReadonlySet<string>;
   /** True when no catalog was supplied — every `inCatalog` is then unknowable, not false. */
   catalogMissing: boolean;
 }
@@ -117,10 +122,17 @@ function indexRegistry(registry: LlmRegistry): Map<string, GraphNode> {
 export function buildContractGraph(registry: LlmRegistry, catalog?: ModelCatalog | null): ContractGraph {
   const nodes = indexRegistry(registry);
 
+  // ONLY `providers` can make a destination live. `openrouterOnly` holds spellings no
+  // direct-provider source lists (`claude-sonnet-4.5`, `gpt-6-sol-pro`): right for a call
+  // routed through OpenRouter, never evidence the provider's own API accepts the id.
   const liveIds = new Set<string>();
+  const routedIds = new Set<string>();
   if (catalog) {
     for (const ids of Object.values(catalog.providers)) {
       for (const id of ids) addLiveId(liveIds, id);
+    }
+    for (const ids of Object.values(catalog.openrouterOnly ?? {})) {
+      for (const id of ids) addLiveId(routedIds, id);
     }
   }
 
@@ -142,7 +154,7 @@ export function buildContractGraph(registry: LlmRegistry, catalog?: ModelCatalog
     });
   }
 
-  return { nodes, liveIds, catalogMissing: !catalog };
+  return { nodes, liveIds, routedIds, catalogMissing: !catalog };
 }
 
 /**
@@ -248,7 +260,9 @@ export function resolveSuccessor(graph: ContractGraph, id: string): Resolution {
     path,
     terminal,
     outcome: 'unlisted_successor',
-    reason: `no public catalog lists "${terminal}"`,
+    reason: isLiveId(terminal, graph.routedIds)
+      ? `no direct-provider catalog lists "${terminal}"; only OpenRouter does, and an OpenRouter spelling is not evidence the provider's own API accepts it`
+      : `no public catalog lists "${terminal}"`,
   };
 }
 

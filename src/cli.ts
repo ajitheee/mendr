@@ -2224,7 +2224,8 @@ program
     console.log('MENDR registry verification — public-oracle audit');
     console.log('='.repeat(74));
     console.log(`oracles: ${oracles.notes.join(' | ')}`);
-    console.log(`live catalog ids (canonical + family forms): ${oracles.liveIds.size}`);
+    console.log(`live catalog ids (models.dev, canonical + family forms): ${oracles.liveIds.size}`);
+    console.log(`OpenRouter listings (cautionary only, never make a replacement live): ${oracles.routedIds.size}`);
     console.log('');
 
     const counts: Record<VerificationStatus, number> = {
@@ -2535,7 +2536,11 @@ program
     }
     console.log('');
     for (const [provider, ids] of Object.entries(catalog.providers)) {
-      console.log(`  ${provider.padEnd(10)} ${String(ids.length).padStart(4)} ids`);
+      const routed = catalog.openrouterOnly?.[provider]?.length ?? 0;
+      console.log(
+        `  ${provider.padEnd(10)} ${String(ids.length).padStart(4)} ids` +
+          (routed ? `  (+${routed} spellings only OpenRouter lists, kept apart: never treated as the provider's ids)` : ''),
+      );
     }
     console.log(`
   ${catalog.count} total`);
