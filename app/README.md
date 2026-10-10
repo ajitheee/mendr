@@ -16,14 +16,50 @@ fake (`src/app.test.ts`); the first real installation is a human step below.
 
 | Direction | What | Proof |
 |---|---|---|
-| In, from GitHub | `installation` and `installation_repositories` webhooks, HMAC-signed. They define who may send evidence. | `src/github/webhook.ts` |
+| In, from GitHub | `installation` and `installation_repositories` webhooks, HMAC-signed. They define who may send evidence. GitHub sends each one once, so when the database has lost one (a move to a new database), the App asks GitHub instead: see *Install recovery* below. | `src/github/webhook.ts`, `src/github/installRecovery.ts` |
 | In, from your CI | `POST /api/ingest` with the `mendr audit --json` document. Authenticated by the **GitHub Actions OIDC token** of the run: no shared secret, nothing to store in your repository. The token names the repository id, commit, ref and run. | `src/github/oidc.ts` |
 | Stored | Installations, repository ids and names, and the sanitized evidence per run: findings, paths, line numbers, classifications, redacted snippets of at most seven lines, line hashes. Every string is re-redacted server-side and snippets are re-capped; the client is not trusted to have done it. | `src/ingest/validate.ts`, `schema.sql` |
-| Out, to GitHub | One check run per run attempt, scoped by an installation token limited to that repository and `checks: write`. Conclusion: `action_required` when a PATCH ELIGIBLE finding exists, `neutral` for review-only or inconclusive audits, `success` when nothing needs a human. Annotations at the exact file and line. | `src/ingest/checkRun.ts` |
+| Out, to GitHub | One check run per run attempt, scoped by an installation token limited to that repository and `checks: write`. Conclusion: `action_required` when a PATCH ELIGIBLE finding exists, `neutral` for review-only or inconclusive audits, `success` when nothing needs a human. Annotations at the exact file and line. For a repository the database does not know, the install-recovery lookups below, with the App's JWT and `metadata: read`. | `src/ingest/checkRun.ts`, `src/github/api.ts` |
 | Read back | Sign in with GitHub. You see a repository only if the App is installed on it **and** GitHub says you can access it. Your GitHub token lives only in an encrypted cookie; the database holds no user tokens. | `src/app.ts`, `src/auth/session.ts` |
 
 Not in this service: repository contents, clones, pull requests, issues,
 telemetry. The full statement is in [TRUST.md](../TRUST.md).
+
+### Install recovery
+
+A lost database no longer means reinstalling. When `POST /api/ingest`,
+`POST /api/migrations` or the migration workflow's approvals check arrives with
+a verified OIDC token for a repository the database does not know, the App asks
+GitHub before refusing it (`src/github/installRecovery.ts`):
+
+1. `GET /repos/{owner}/{repo}/installation` with the App's JWT, for the
+   repository the OIDC token names. A 404 is read as "not installed".
+2. An installation token limited to the token's `repository_id` and
+   `metadata: read`. GitHub will not mint it if the installation does not cover
+   that id, so a repository outside the installation's selection is refused
+   here even if step 1 answered.
+3. `GET /repos/{owner}/{repo}` with that token: GitHub's id must equal the
+   token's `repository_id`.
+
+When all three agree, the installation and that repository are stored, the audit
+log records `installation_recovered`, and the upload is handled as usual. Every
+other answer is the same 403 as before, remembered for that repository id for 5
+minutes (1 minute if GitHub or the database did not answer), so refused uploads
+do not reach GitHub on every request. A suspended installation is not stored, an
+installation the database holds as uninstalled is never brought back, and one it
+already knows is not rewritten. The lookup needs the App's id and private key;
+without them (local development) the upload is refused as before.
+
+A signed-in user whose overview would be empty also gets the installations of the
+App they can access on GitHub (`GET /user/installations` and each one's
+repositories, with their own token): the repositories the database lacks are
+added. This runs at most once every 10 minutes per user and waits at most 8
+seconds for GitHub. Neither path adds a permission: the App still asks for
+`checks: write` and `metadata: read`, with `actions: write` optional.
+
+What recovery cannot bring back: stored runs, migration reports, approvals,
+acknowledgements and audit-log entries. A repository's run history starts again
+with its next scan.
 
 ## Endpoints
 
