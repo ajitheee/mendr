@@ -1,11 +1,12 @@
 import { gitUnifiedPatch } from '../report/diff.js';
 import type { LlmModelIdDeprecation, LlmRegistry } from '../types.js';
 import { isVerified } from '../usage/llmRegistry.js';
-import type {
-  AzureDeploymentLocate,
-  BlockedModelLocate,
-  ModelIdDataLocate,
-  UsageUnverifiedLocate,
+import {
+  toHeldCallMatches,
+  type AzureDeploymentLocate,
+  type BlockedModelLocate,
+  type ModelIdDataLocate,
+  type UsageUnverifiedLocate,
 } from '../usage/scanLiterals.js';
 import {
   countSyntaxErrors,
@@ -67,6 +68,13 @@ export interface PyModelIdFixResult {
    * usage-unverified candidates for manual review, never auto-applied.
    */
   usageUnverifiedMatches: UsageUnverifiedLocate[];
+  /**
+   * Calls a guard HELD at review (position `surface_capped`): a wrapper factory, a client mendr
+   * cannot resolve, a proxy surface, an unrecognised callee, a request made at import. One match
+   * per site, with the record it matched and the guard's own reason, for the same Tier B stream
+   * the TypeScript held calls use. Never auto-applied.
+   */
+  heldMatches: PyLiteralMatch[];
   /**
    * The syntax gate verdict: `passed` iff NO patched file parses with more
    * ERROR/MISSING nodes than its unpatched baseline. `failures` carries one
@@ -155,6 +163,7 @@ export async function applyPyModelIdFixesToSources(
   const blockedMatches = toPyBlockedModelArgMatches(matches);
   const azureMatches = toPyAzureDeploymentMatches(matches);
   const usageUnverifiedMatches = toPyUsageUnverifiedMatches(matches);
+  const heldMatches = toHeldCallMatches(matches);
 
   // THE ENGINE GATE: `isVerified` is the load-bearing clause — an entry the
   // registry has not stamped `verification.status === 'verified'` is NEVER
@@ -226,6 +235,7 @@ export async function applyPyModelIdFixesToSources(
     blockedMatches,
     azureMatches,
     usageUnverifiedMatches,
+    heldMatches,
     syntaxGate: { passed: failures.length === 0, failures },
     patchedFiles,
     swapDeprecations: [...uniqueSwaps.values()],

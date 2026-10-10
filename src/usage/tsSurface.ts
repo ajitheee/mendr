@@ -1,4 +1,4 @@
-import { Node, SyntaxKind } from 'ts-morph';
+import { Node, SyntaxKind, VariableDeclarationKind } from 'ts-morph';
 import type { CallExpression, Expression, Identifier, NewExpression, SourceFile } from 'ts-morph';
 import { CATALOG_SIBLING_KEYS, isDefaultContainerName, isModelLikeName } from './sharedRules.js';
 
@@ -107,6 +107,15 @@ export const TS_DEFAULT_CONTAINER_REASON =
   'model value inside a default-configuration object; a real default whose consumer is not traced, review before changing';
 export const TS_LOOKUP_DEFAULT_REASON =
   'fallback value of a model lookup; a real default whose consumer is not traced, review before changing';
+/**
+ * `const req = { model: 'gpt-4', messages }` … `client.chat.completions.create(req)`, where the
+ * variable is ALSO used some other way: spread into another object, read by something that is
+ * not a provider request, changed after it was built, declared with `let`, or exported. The
+ * object reaches a provider request, so the id is live; what that request finally carries is not
+ * all visible in the object literal, so the swap is not an unattended one.
+ */
+export const TS_REQUEST_VARIABLE_REASON =
+  'request object built in a variable and passed to a provider request, but the variable is also used, spread, changed or exported elsewhere, so the request it sends is not all visible here — review';
 
 // --- AST helpers ----------------------------------------------------------------
 
@@ -663,6 +672,238 @@ export function enclosingNewOfObject(obj: Node): Node | undefined {
   const parent = top.getParent();
   if (parent && Node.isNewExpression(parent) && parent.getArguments().includes(top as Expression)) return parent;
   return undefined;
+}
+
+/** Where a request object built in a variable goes. See {@link requestObjectFlow}. */
+export interface RequestObjectFlow {
+  /** The provider requests (an endpoint {@link endpointFamily} recognises) the object is passed to. */
+  calls: CallExpression[];
+  /**
+   * True when the object literal is the WHOLE request: a non-exported `const`, initialised with
+   * the literal itself, whose every use is a direct argument of one of `calls`. Only then does the
+   * literal show everything the request carries, which the swap and its parameter checks rely on.
+   */
+  exclusive: boolean;
+}
+
+/**
+ * Every identifier in a file, by name, built once per parse of the file. {@link requestObjectFlow}
+ * runs for each matched literal in a standalone object, and walking the whole file each time was
+ * quadratic: 800 module-level model objects in one 4,800-line file took 327 s. Keyed on the
+ * compiler node, which ts-morph replaces whenever the file is edited, so an index is never read
+ * across an edit (its wrappers would be forgotten nodes by then).
+ */
+const IDENTIFIER_INDEX = new WeakMap<SourceFile, { compiler: unknown; byName: Map<string, Identifier[]> }>();
+
+function identifiersNamed(sf: SourceFile, name: string): Identifier[] {
+  let entry = IDENTIFIER_INDEX.get(sf);
+  if (!entry || entry.compiler !== sf.compilerNode) {
+    const byName = new Map<string, Identifier[]>();
+    for (const id of sf.getDescendantsOfKind(SyntaxKind.Identifier)) {
+      const text = id.getText();
+      const list = byName.get(text);
+      if (list) list.push(id);
+      else byName.set(text, [id]);
+    }
+    entry = { compiler: sf.compilerNode, byName };
+    IDENTIFIER_INDEX.set(sf, entry);
+  }
+  return entry.byName.get(name) ?? [];
+}
+
+/** The nearest node that opens a block scope for a `let` / `const` / class / function declared in it. */
+function blockScopeOf(node: Node): Node {
+  for (let n = node.getParent(); n; n = n.getParent()) {
+    if (
+      Node.isBlock(n) ||
+      Node.isSourceFile(n) ||
+      Node.isModuleBlock(n) ||
+      Node.isCaseBlock(n) ||
+      Node.isCatchClause(n) ||
+      Node.isForStatement(n) ||
+      Node.isForOfStatement(n) ||
+      Node.isForInStatement(n)
+    ) {
+      return n;
+    }
+  }
+  return node.getSourceFile();
+}
+
+/** The scope a variable declaration binds its name in: the function for `var`, the block otherwise. */
+function variableScopeOf(decl: Node): Node {
+  const list = decl.getParent();
+  const isVar = Node.isVariableDeclarationList(list) && list.getDeclarationKind() === VariableDeclarationKind.Var;
+  return isVar ? (enclosingFunction(decl) ?? decl.getSourceFile()) : blockScopeOf(decl);
+}
+
+/**
+ * When `id` is the name a BINDING introduces (a variable, parameter, function, class, import,
+ * destructured name), the node whose extent that binding covers; otherwise undefined. Positional
+ * and per-name, so it costs nothing per reference: an earlier version resolved every reference by
+ * walking every statement of its enclosing scopes, and that took 373 s on a 4,800-line file.
+ */
+function bindingScopeOfName(id: Node): Node | undefined {
+  const parent = id.getParent();
+  if (!parent) return undefined;
+  const named = (p: Node): boolean => (p as Node & { getNameNode?(): Node | undefined }).getNameNode?.() === id;
+  if (Node.isVariableDeclaration(parent) && named(parent)) return variableScopeOf(parent);
+  if (Node.isParameterDeclaration(parent) && named(parent)) return parent.getParent();
+  if (Node.isBindingElement(parent) && named(parent)) {
+    for (let n: Node | undefined = parent.getParent(); n; n = n.getParent()) {
+      if (Node.isVariableDeclaration(n)) return variableScopeOf(n);
+      if (Node.isParameterDeclaration(n)) return n.getParent();
+    }
+    return undefined;
+  }
+  if ((Node.isFunctionExpression(parent) || Node.isClassExpression(parent)) && named(parent)) return parent;
+  if ((Node.isFunctionDeclaration(parent) || Node.isClassDeclaration(parent) || Node.isEnumDeclaration(parent)) && named(parent)) {
+    return blockScopeOf(parent);
+  }
+  if (Node.isImportSpecifier(parent) || Node.isImportClause(parent) || Node.isNamespaceImport(parent) || Node.isImportEqualsDeclaration(parent)) {
+    return id.getSourceFile();
+  }
+  return undefined;
+}
+
+const within = (node: Node, scope: Node): boolean => node.getPos() >= scope.getPos() && node.getEnd() <= scope.getEnd();
+
+/** Is `id` the NAME a declaration introduces, or a property name, rather than a read of a binding? */
+function isNameNotReference(id: Node): boolean {
+  const parent = id.getParent();
+  if (!parent) return false;
+  if (Node.isPropertyAccessExpression(parent)) return parent.getNameNode() === id;
+  if (
+    Node.isVariableDeclaration(parent) ||
+    Node.isParameterDeclaration(parent) ||
+    Node.isFunctionDeclaration(parent) ||
+    Node.isClassDeclaration(parent) ||
+    Node.isBindingElement(parent) ||
+    Node.isPropertyAssignment(parent) ||
+    Node.isPropertyDeclaration(parent) ||
+    Node.isPropertySignature(parent) ||
+    Node.isMethodDeclaration(parent) ||
+    Node.isImportSpecifier(parent)
+  ) {
+    return (parent as Node & { getNameNode(): Node | undefined }).getNameNode() === id;
+  }
+  return false;
+}
+
+/**
+ * `const arr = { messages, model: 'gpt-3.5-turbo' }` … `chatGPT.chat.completions.create(arr)`.
+ *
+ * {@link enclosingCallOfObject} only sees an object written INSIDE the call's parentheses, so a
+ * request built in a variable first and passed by name had no call at all and was filed as a
+ * catalog value: Tier C, "no action", and `fix-llm` reported nothing to do. Measured on
+ * miroslavpejic85/mirotalksfu (2026-10-09), whose Video AI handler sends gpt-3.5-turbo this way.
+ *
+ * Deliberately narrow, because a model id in a standalone object is catalog data far more often
+ * than it is a request: the object has to be the initializer of a variable whose value, by name,
+ * reaches a call whose callee is a provider ENDPOINT (`.chat.completions.create`,
+ * `.messages.create`, `generateContent`…) — directly, through a fallback, or spread into an
+ * object that is that call's argument. Passing it to any other call (`console.log(arr)`,
+ * `res.json(arr)`, `save(arr)`) is not evidence of a request and finds nothing here, so those
+ * objects stay where they were. Undefined when no provider request is reached.
+ *
+ * Syntactic, like the rest of this file, and positional: a reference counts only when it lies in
+ * this binding's scope and outside every nested scope where another binding of the same name
+ * shadows it, so a shadowing binding is neither evidence of a flow nor mistaken for one.
+ */
+export function requestObjectFlow(obj: Node): RequestObjectFlow | undefined {
+  if (!Node.isObjectLiteralExpression(obj)) return undefined;
+  // The object must BE the variable's value. Parentheses and type wrappers keep it whole; a
+  // fallback (`opts ?? { … }`) or a ternary branch makes it one of two possible values.
+  let top: Node = obj;
+  let wholeValue = true;
+  for (let p = top.getParent(); p; p = top.getParent()) {
+    if (
+      Node.isParenthesizedExpression(p) ||
+      Node.isAsExpression(p) ||
+      Node.isSatisfiesExpression(p) ||
+      Node.isNonNullExpression(p)
+    ) {
+      top = p;
+      continue;
+    }
+    const op = Node.isBinaryExpression(p) ? p.getOperatorToken().getKind() : undefined;
+    if (
+      (op === SyntaxKind.BarBarToken || op === SyntaxKind.QuestionQuestionToken) ||
+      (Node.isConditionalExpression(p) && (p.getWhenTrue() === top || p.getWhenFalse() === top))
+    ) {
+      top = p;
+      wholeValue = false;
+      continue;
+    }
+    break;
+  }
+  const decl = top.getParent();
+  if (!decl || !Node.isVariableDeclaration(decl) || decl.getInitializer() !== top) return undefined;
+  const nameNode = decl.getNameNode();
+  if (!Node.isIdentifier(nameNode)) return undefined;
+  const name = nameNode.getText();
+
+  const list = decl.getParent();
+  const isConst =
+    Node.isVariableDeclarationList(list) && list.getDeclarationKind() === VariableDeclarationKind.Const;
+  const statement = list?.getParent();
+  const exported = !!statement && Node.isVariableStatement(statement) && statement.isExported();
+
+  const calls: CallExpression[] = [];
+  let exclusive = isConst && !exported && wholeValue;
+  // Which same-named identifiers are reads of THIS binding: those inside its scope and outside
+  // every nested scope where another binding of the name shadows it. A second binding in the very
+  // same scope (`var x` twice) is ambiguity: still evidence of a flow, never a clean single use.
+  const scope = variableScopeOf(decl);
+  const named = identifiersNamed(decl.getSourceFile(), name).filter((id) => id !== nameNode && within(id, scope));
+  const shadows: Node[] = [];
+  for (const id of named) {
+    const bound = bindingScopeOfName(id);
+    if (!bound) continue;
+    if (bound === scope) exclusive = false;
+    else shadows.push(bound);
+  }
+  for (const id of named) {
+    if (isNameNotReference(id) || bindingScopeOfName(id) || shadows.some((s) => within(id, s))) continue;
+    // Climb the wrappers that pass the value through unchanged, then look at what receives it.
+    let use: Node = id;
+    let direct = true;
+    for (let p = use.getParent(); p; p = use.getParent()) {
+      if (Node.isParenthesizedExpression(p) || Node.isAsExpression(p) || Node.isSatisfiesExpression(p) || Node.isNonNullExpression(p)) {
+        use = p;
+        continue;
+      }
+      const uop = Node.isBinaryExpression(p) ? p.getOperatorToken().getKind() : undefined;
+      if (
+        (uop === SyntaxKind.BarBarToken || uop === SyntaxKind.QuestionQuestionToken) ||
+        (Node.isConditionalExpression(p) && (p.getWhenTrue() === use || p.getWhenFalse() === use))
+      ) {
+        use = p;
+        direct = false;
+        continue;
+      }
+      break;
+    }
+    const receiver = use.getParent();
+    let call: CallExpression | undefined;
+    if (receiver && Node.isCallExpression(receiver) && receiver.getArguments().includes(use as Expression)) {
+      call = receiver;
+    } else if (receiver && Node.isSpreadAssignment(receiver)) {
+      // `create({ ...arr, stream: true })`: the request is the object around the spread, whose
+      // other keys the literal does not show.
+      const outer = receiver.getParent();
+      call = outer ? enclosingCallOfObject(outer) : undefined;
+      direct = false;
+    }
+    if (call && endpointFamily(call) !== null) {
+      calls.push(call);
+      if (!direct) exclusive = false;
+    } else {
+      // Read by something that is not a provider request, written to, aliased, returned…
+      exclusive = false;
+    }
+  }
+  return calls.length > 0 ? { calls, exclusive } : undefined;
 }
 
 /** Does an object literal carry catalog-shaped siblings (label, pricing, description…)? */

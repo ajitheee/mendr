@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 // resolve, or the pointer is broken.
 //
 // Hermetic: reads the shipped registry, makes no network call, writes nothing.
+// The record used is gpt-3.5-turbo-16k, the one still quarantined over its own research;
+// gemini-2.0-flash played the part until Google's page dated it on 2026-10-10.
 
 const MENDR_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -23,23 +25,23 @@ async function evidence(id: string): Promise<{ exitCode: number; stdout: string;
 
 describe('mendr evidence', () => {
   it('resolves an entryId -- the id findings actually print', async () => {
-    const { exitCode, stdout } = await evidence('google.gemini-2.0-flash.retirement-undated');
+    const { exitCode, stdout } = await evidence('openai.gpt-3.5-turbo-16k.retirement-2024-09-13');
     expect(exitCode).toBe(0);
-    expect(stdout).toContain('google: gemini-2.0-flash -> gemini-3.6-flash');
-    expect(stdout).toContain('registry entry: google.gemini-2.0-flash.retirement-undated');
+    expect(stdout).toContain('openai: gpt-3.5-turbo-16k -> gpt-5.6-terra');
+    expect(stdout).toContain('registry entry: openai.gpt-3.5-turbo-16k.retirement-2024-09-13');
   }, 60_000);
 
   it('still resolves the bare model id', async () => {
-    const { exitCode, stdout } = await evidence('gemini-2.0-flash');
+    const { exitCode, stdout } = await evidence('gpt-3.5-turbo-16k');
     expect(exitCode).toBe(0);
-    expect(stdout).toContain('google: gemini-2.0-flash -> gemini-3.6-flash');
+    expect(stdout).toContain('openai: gpt-3.5-turbo-16k -> gpt-5.6-terra');
     // Even when asked by model id, it prints the record's stable id, so the
     // reader learns the name to use next time.
-    expect(stdout).toContain('registry entry: google.gemini-2.0-flash.retirement-undated');
+    expect(stdout).toContain('registry entry: openai.gpt-3.5-turbo-16k.retirement-2024-09-13');
   }, 60_000);
 
   it('shows the four fields the gate reads, and says the prose is not one of them', async () => {
-    const { stdout } = await evidence('google.gemini-2.0-flash.retirement-undated');
+    const { stdout } = await evidence('openai.gpt-3.5-turbo-16k.retirement-2024-09-13');
     expect(stdout).toContain('verification : quarantined');
     expect(stdout).toContain('official source confirmed : yes');
     expect(stdout).toContain('replacement confirmed     : yes');

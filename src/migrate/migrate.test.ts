@@ -81,6 +81,52 @@ describe('runMigration — plan without touching the working tree', () => {
   });
 });
 
+// ADDED 2026-10-07 (review of PR #50). `--only` is what the approval-gated Action runs: the
+// person approved these models and nothing else. restrictRegistry keeps every parameter rule on
+// the grounds that a rule only applies where a swap happens, and nothing enforced that, so the
+// parameter pass edited calls on models nobody approved, held calls included (the restricted
+// scan cannot see a call as held when its model is not in the restricted registry).
+// Each case runs a full migration plan, about 2s alone; the timeout leaves room for a loaded machine.
+describe('runMigration --only edits nothing outside the approved swaps', { timeout: 30_000 }, () => {
+  const ONLY_REG: LlmRegistry = [
+    ...REG,
+    { provider: 'openai', kind: 'model_id', deprecated: 'o3-mini', replacement: 'gpt-5.6-sol', status: 'deprecated', shutdownDate: '2026-10-23', verification: autoApplyVerification() },
+    { provider: 'openai', kind: 'param_rename', param: 'max_tokens', replacement: 'max_completion_tokens', on_models: ['o1', 'o3', 'gpt-5.6'] },
+  ];
+  const call = (model: string, maxTokens: number) =>
+    `import OpenAI from "openai";\nconst client = new OpenAI();\nexport async function ask(){\n  return client.chat.completions.create({ model: "${model}", max_tokens: ${maxTokens}, messages: [] });\n}\n`;
+  const files = {
+    'client.ts': CALL,
+    'src/reason.ts': call('o3-mini', 1),
+    'src/legacy.ts': call('o1', 2),
+    'examples/demo.ts': call('o3-mini', 3),
+    'package.json': '{"name":"t"}',
+  };
+
+  it('approving gpt-4 touches the gpt-4 call and no request parameter anywhere', async () => {
+    const r = await runMigration(repo(files), ONLY_REG, { skipVerify: true, only: ['gpt-4'] });
+    expect(r.migrations.map((m) => m.from)).toEqual(['gpt-4']);
+    expect(r.diff).toContain('model: "gpt-5.6-sol", messages: []');
+    expect(r.diff).not.toContain('max_completion_tokens');
+    expect(r.paramTransforms).toEqual([]);
+  });
+
+  it('approving o3-mini moves its live call and that call\'s parameter, and nothing held or unapproved', async () => {
+    const r = await runMigration(repo(files), ONLY_REG, { skipVerify: true, only: ['o3-mini'] });
+    expect(r.diff).toContain('+  return client.chat.completions.create({ model: "gpt-5.6-sol", max_completion_tokens: 1, messages: [] });');
+    // o1 was not approved; the examples/ call is held for review: both stay as written.
+    expect(r.diff).not.toContain('max_completion_tokens: 2');
+    expect(r.diff).not.toContain('max_completion_tokens: 3');
+    expect(r.diff).not.toContain('examples/demo.ts');
+  });
+
+  it('without --only, the held example call still keeps its request', async () => {
+    const r = await runMigration(repo(files), ONLY_REG, { skipVerify: true });
+    expect(r.diff).toContain('max_completion_tokens: 1');
+    expect(r.diff).not.toContain('max_completion_tokens: 3');
+  });
+});
+
 describe('runMigration — sandbox verification with real build/test scripts', () => {
   // The passing test script PRINTS A PARSEABLE SUMMARY ("1 passed") on purpose,
   // and that is now load-bearing: a command that merely exits 0 proves nothing

@@ -35,8 +35,9 @@ import { canonicalizeId } from './normalize.js';
 /** What the claim check is evaluated against. Both inputs are required. */
 export interface ClaimCheckInput {
   /**
-   * Canonical + family forms of every live catalog id (oracles.ts#fetchOracles).
-   * Used ONLY for the `retired` contradiction in rule (b).
+   * Canonical + family forms of every id ANY public catalog lists (oracles.ts#fetchOracles):
+   * direct-provider ids and OpenRouter's alike, since a listing that can only make this
+   * gate refuse may come from either. Used ONLY for the `retired` contradiction in rule (b).
    */
   liveIds: ReadonlySet<string>;
   /**

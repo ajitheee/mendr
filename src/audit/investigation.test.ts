@@ -6,7 +6,13 @@ import { foldConfigExposure, scanConfigText } from '../config/scanConfig.js';
 import type { ConfigMatch } from '../config/scanConfig.js';
 import type { ExposedModel } from '../watch/exposure.js';
 import { buildInvestigations, type AuditCoverage } from './investigation.js';
-import { NO_RUNTIME_EVIDENCE, runtimeEvidenceFromUsage, type RuntimeEvidence } from '../runtime/evidence.js';
+import {
+  NO_RUNTIME_EVIDENCE,
+  foldObservations,
+  runtimeEvidenceFromUsage,
+  toObservation,
+  type RuntimeEvidence,
+} from '../runtime/evidence.js';
 import { renderAuditReport, type AuditMeta } from '../report/auditReport.js';
 
 const REGISTRY: LlmRegistry = [
@@ -156,6 +162,64 @@ describe('buildInvestigations — usage without any located selector => REVIEW (
   });
 });
 
+// The same fine-tune traffic must give the same answer whichever way it arrives. A --runtime
+// file folded ft:babbage-002:... into babbage-002 before the registry was consulted, so the
+// key-free path reported a fine-tune OpenAI runs to 2026-10-23 as retired 2026-09-28, with the
+// base model's auto-appliable swap, while a usage fixture gave its own row's date and a hold.
+describe('buildInvestigations — a fine-tune joins its own row on every runtime path', () => {
+  const held = withheldVerification('quarantined', { quarantineReason: 'a fine-tune cannot be swapped' });
+  const FT_REGISTRY: LlmRegistry = [
+    { provider: 'openai', kind: 'model_id', deprecated: 'babbage-002', replacement: 'gpt-5.6-terra', status: 'retired', shutdownDate: '2026-09-28', verification: autoApplyVerification() },
+    { provider: 'openai', kind: 'model_id', deprecated: 'ft-babbage-002', replacement: 'gpt-5.6-terra', status: 'deprecated', shutdownDate: '2026-10-23', verification: held },
+  ];
+  const TODAY = new Date('2026-10-10T00:00:00Z');
+  const fromFile: RuntimeEvidence = {
+    connected: true,
+    source: 'usage_export',
+    observations: foldObservations(
+      [toObservation({ provider: 'openai', model: 'ft:babbage-002:acme::9abc', requests: 120 })].filter(
+        (o) => o !== null,
+      ),
+    ),
+    notes: [],
+  };
+  const fromApi = runtimeEvidenceFromUsage(
+    auditUsage(
+      [{ provider: 'openai', model: 'ft:babbage-002:acme::9abc', requests: 120, inputTokens: 1, outputTokens: 1, costUsd: 3 }],
+      FT_REGISTRY,
+      TODAY,
+    ),
+  );
+
+  it("dates a runtime-file fine-tune by its own row, held, not by the base model's", () => {
+    const [inv] = buildInvestigations(fromFile, [], TODAY, [], FT_REGISTRY);
+    expect(inv.model).toBe('ft-babbage-002');
+    expect(inv.retirementEvidence.shutdownDate).toBe('2026-10-23');
+    expect(inv.retirementEvidence.replacementVerdict).toBe('quarantined');
+    expect(inv.productionUsage.requests).toBe(120);
+  });
+
+  it('gives the runtime file and the provider usage API the same investigation', () => {
+    const pick = (inv: ReturnType<typeof buildInvestigations>[number]) => ({
+      model: inv.model,
+      entryId: inv.entryId,
+      retirement: inv.retirementEvidence,
+      requests: inv.productionUsage.requests,
+      decision: inv.decision,
+    });
+    const [file] = buildInvestigations(fromFile, [], TODAY, [], FT_REGISTRY);
+    const [api] = buildInvestigations(fromApi, [], TODAY, [], FT_REGISTRY);
+    expect(pick(file)).toEqual(pick(api));
+  });
+
+  it('still joins a fine-tune to its base model when no row covers its fine-tunes', () => {
+    const baseOnly = FT_REGISTRY.filter((e) => e.kind === 'model_id' && !e.deprecated.startsWith('ft-'));
+    const [inv] = buildInvestigations(fromFile, [], TODAY, [], baseOnly);
+    expect(inv.model).toBe('babbage-002');
+    expect(inv.retirementEvidence.shutdownDate).toBe('2026-09-28');
+  });
+});
+
 describe('buildInvestigations — catalog reference only, no usage => MONITOR', () => {
   const usage = auditUsage([], REGISTRY, NOW);
   const config = foldConfigExposure(scanConfigText('legacy/models.yaml', 'supported:\n  - text-davinci-003\n', REGISTRY));
@@ -226,6 +290,48 @@ describe('buildInvestigations — a deprecated id in a test/data fixture is NOT 
     const out = renderAuditReport(buildInvestigations(NO_RUNTIME_EVIDENCE, config, NOW), meta).join('\n');
     expect(out).toContain('test/data fixture (not a selector)');
     expect(out).not.toContain('runtime selector candidate');
+  });
+});
+
+describe('buildInvestigations — a deploy template (.env.template) is a template, not test data', () => {
+  // Real-repo finding (2026-10-09): a deploy `.env.template`, which the README says to copy to
+  // `.env`, was reported as "test/data fixture". The fixture below is written for this suite.
+  const line = 'LLM_MODEL=gpt-3.5-turbo                 # Model to use\n';
+  const template = foldConfigExposure(scanConfigText('.env.template', line, REGISTRY));
+  const [inv] = buildInvestigations(NO_RUNTIME_EVIDENCE, template, NOW);
+  const meta: AuditMeta = { from: null, to: null, coverage: fullCoverage() };
+
+  it('gets its own role, stays informational, and is never a selector', () => {
+    expect(inv.locations.selectors).toHaveLength(0);
+    expect(inv.locations.catalog.map((l) => [l.role, l.tier, l.disposition])).toEqual([
+      ['config_template', 'C', 'informational'],
+    ]);
+    expect(inv.decision).toBe('monitor');
+  });
+
+  it('is labelled as a template a new install copies, never as test data', () => {
+    const out = renderAuditReport(buildInvestigations(NO_RUNTIME_EVIDENCE, template, NOW), meta).join('\n');
+    expect(out).toContain('.env.template:1');
+    expect(out).toContain('config template a new install copies');
+    expect(out).not.toContain('test/data fixture');
+  });
+
+  it('still keeps a template-only run out of "no exposure": it counts as a fixture-only reference', () => {
+    const out = renderAuditReport(buildInvestigations(NO_RUNTIME_EVIDENCE, template, NOW), meta).join('\n');
+    expect(out).toContain('Conclusion: FIXTURE-ONLY REFERENCES');
+    expect(out).not.toContain('Conclusion: NO EXPOSURE');
+  });
+
+  it('a template inside a test directory is still a test fixture', () => {
+    const inTests = foldConfigExposure(scanConfigText('tests/.env.example', line, REGISTRY));
+    expect(buildInvestigations(NO_RUNTIME_EVIDENCE, inTests, NOW)[0].locations.catalog[0].role).toBe('test_fixture');
+  });
+
+  it('the active .env beside it is still a runtime selector candidate', () => {
+    const active = foldConfigExposure(scanConfigText('.env', line, REGISTRY));
+    expect(buildInvestigations(NO_RUNTIME_EVIDENCE, active, NOW)[0].locations.selectors[0].role).toBe(
+      'runtime_selector_candidate',
+    );
   });
 });
 

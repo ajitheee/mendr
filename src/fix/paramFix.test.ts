@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { Project } from 'ts-morph';
 import type { LlmRegistry } from '../types.js';
-import { findParamSites, applyParamFixes, applyParamFixesToProject } from './paramFix.js';
+import { autoApplyVerification } from '../usage/llmRegistry.js';
+import { findModelIdLiterals } from '../usage/scanLiterals.js';
+import { findParamSites, applyParamFixes, applyParamFixesToProject, withoutHeldCalls } from './paramFix.js';
 
 // Hermetic tests for the MODEL-COUPLED param codemod. The Project is built
 // in-memory from source strings and the registry is an inline literal, so there
@@ -125,6 +127,325 @@ export async function run() {
   });
 });
 
+describe('withoutHeldCalls: a call held at review is never edited, and only a held call is skipped', () => {
+  // The REAL scanner decides what is held, so these tests exercise the same verdicts fix-llm
+  // and migrate act on. o3-mini is a retiring id here; the rename rule covers o3 and the
+  // replacement alike, so a direct call on it is an ordinary swap (not held for its params).
+  const HELD_REGISTRY: LlmRegistry = [
+    {
+      provider: 'openai',
+      kind: 'model_id',
+      deprecated: 'o3-mini',
+      replacement: 'gpt-5.6-sol',
+      verification: autoApplyVerification(),
+    },
+    {
+      provider: 'openai',
+      kind: 'param_rename',
+      param: 'max_tokens',
+      replacement: 'max_completion_tokens',
+      on_models: ['o1', 'o3', 'gpt-5.6'],
+    },
+  ];
+  const HEADER = [
+    'import OpenAI from "openai";',
+    'const client = new OpenAI();',
+    'const proxy = new OpenAI({ baseURL: "https://llm-proxy.internal/v1" });',
+  ].join('\n');
+
+  /** The param sites the guard keeps, as `model:max_tokens value`, for one in-memory project. */
+  function keptSites(project: Project, registry: LlmRegistry = HELD_REGISTRY): string[] {
+    const held = findModelIdLiterals(project, registry).filter((m) => m.position === 'surface_capped');
+    return withoutHeldCalls(findParamSites(project, registry), held).map(
+      (s) => `${s.model}:${s.paramProp.getInitializer()?.getText()}`,
+    );
+  }
+
+  // REGRESSION (review of PR #50, round two): a parameter in an object NESTED inside a held
+  // call's request (a fallback list, an override block) was still renamed. The nested literal is
+  // data to the scan, so only the request it sits in can say the call is held.
+  it('skips the nested request objects of a held call, and keeps them in an ordinary call', () => {
+    const nested = (receiver: string) => `${HEADER}
+export async function run() {
+  return ${receiver}.chat.completions.create({
+    model: "o3-mini",
+    max_tokens: 50,
+    messages: [],
+    fallbacks: [{ model: "o3-mini", max_tokens: 51 }],
+    override: { model: "o3-mini", max_tokens: 52 },
+  });
+}
+`;
+    expect(keptSites(inMemoryProject('src/held.ts', nested('proxy')))).toEqual([]);
+    expect(keptSites(inMemoryProject('src/plain.ts', nested('client'))).sort()).toEqual([
+      'o3-mini:50',
+      'o3-mini:51',
+      'o3-mini:52',
+    ]);
+  });
+
+  // REGRESSION (review of PR #50, round three): a nested request behind a ternary branch, a
+  // logical operand or a type assertion was still renamed inside a held call.
+  it('holds a nested request selected by a ternary, ||, ??, && or <T>, and keeps them in an ordinary call', () => {
+    const selected = (receiver: string) => `${HEADER}
+export async function run(allow: boolean, extra?: object) {
+  return ${receiver}.chat.completions.create({
+    model: "o3-mini",
+    messages: [],
+    a: allow ? [{ model: "o3-mini", max_tokens: 11 }] : undefined,
+    b: extra || { model: "o3-mini", max_tokens: 12 },
+    c: extra ?? { model: "o3-mini", max_tokens: 13 },
+    d: allow && { model: "o3-mini", max_tokens: 14 },
+    e: <object>{ model: "o3-mini", max_tokens: 15 },
+    f: { ...{ g: [{ model: "o3-mini", max_tokens: 16 }] } },
+  });
+}
+`;
+    expect(keptSites(inMemoryProject('src/held.ts', selected('proxy')))).toEqual([]);
+    expect(keptSites(inMemoryProject('src/plain.ts', selected('client'))).sort()).toEqual([
+      'o3-mini:11',
+      'o3-mini:12',
+      'o3-mini:13',
+      'o3-mini:14',
+      'o3-mini:15',
+      'o3-mini:16',
+    ]);
+  });
+
+  it('does not climb out of a ternary\'s condition or an operator that does not select a value', () => {
+    const project = inMemoryProject(
+      'src/cond.ts',
+      `${HEADER}
+export async function run(other: object) {
+  return proxy.chat.completions.create({
+    model: "o3-mini",
+    messages: [],
+    pick: { model: "o1-mini", max_tokens: 9 } ? 1 : 2,
+    same: { model: "o1-mini", max_tokens: 8 } === other,
+  });
+}
+`,
+    );
+    expect(keptSites(project).sort()).toEqual(['o1-mini:8', 'o1-mini:9']);
+  });
+
+  it('holds the nested requests of a call whose own model is an expression the scan sees through', () => {
+    // The scan holds `opts.model || "o3-mini"`, `"o3-mini" as const` and a ternary of literals
+    // at a proxy call; the guard has to find those literals too, not only a bare one.
+    const project = inMemoryProject(
+      'src/expr.ts',
+      `${HEADER}
+export async function run(opts: { model?: string }, fast: boolean) {
+  await proxy.chat.completions.create({ model: opts.model || "o3-mini", messages: [], fallbacks: [{ model: "o3-mini", max_tokens: 21 }] });
+  await proxy.chat.completions.create({ model: "o3-mini" as const, messages: [], fallbacks: [{ model: "o3-mini", max_tokens: 22 }] });
+  await proxy.chat.completions.create({ model: fast ? "o3-mini" : "o4-mini", messages: [], fallbacks: [{ model: "o3-mini", max_tokens: 23 }] });
+  return client.chat.completions.create({ model: opts.model || "o3-mini", messages: [], fallbacks: [{ model: "o3-mini", max_tokens: 24 }] });
+}
+`,
+    );
+    expect(keptSites(project)).toEqual(['o3-mini:24']);
+  });
+
+  it('holds every real request fed a gateway-prefixed const, and nothing fed a plain one', () => {
+    const fed = (model: string) => `${HEADER}
+const MODEL = "${model}";
+export async function run() {
+  return client.chat.completions.create({ model: MODEL, messages: [], fallbacks: [{ model: "o3-mini", max_tokens: 5 }] });
+}
+`;
+    expect(keptSites(inMemoryProject('src/gw.ts', fed('openai/o3-mini')))).toEqual([]);
+    expect(keptSites(inMemoryProject('src/plain.ts', fed('o3-mini')))).toEqual(['o3-mini:5']);
+  });
+
+  it('keeps a standalone object fed a held const outside an example tree', () => {
+    const registry: LlmRegistry = [
+      ...HELD_REGISTRY,
+      { provider: 'openai', kind: 'param_removal', param: 'temperature', on_models: ['o3'] },
+    ];
+    const project = inMemoryProject(
+      'src/standalone.ts',
+      `${HEADER}
+const MODEL = "o3-mini";
+export const settings = { model: MODEL, temperature: 0 };
+export async function run() {
+  return proxy.chat.completions.create({ model: MODEL, messages: [] });
+}
+`,
+    );
+    expect(keptSites(project, registry)).toEqual(['o3-mini:0']);
+  });
+
+  it('stops climbing at the request: a call inside a held call\'s callback is its own call', () => {
+    const project = inMemoryProject(
+      'src/retry.ts',
+      `${HEADER}
+export async function run() {
+  return proxy.chat.completions.create({
+    model: "o3-mini",
+    messages: [],
+    onRetry: () => client.chat.completions.create({ model: "o1-mini", max_tokens: 2 }),
+  });
+}
+`,
+    );
+    expect(keptSites(project)).toEqual(['o1-mini:2']);
+  });
+
+  it('holds a wrapper class fed a held const, and not a catalog row fed the same const', () => {
+    // max_tokens is itself a catalog sibling key, so this branch needs a rule on another
+    // parameter to be reachable at all: temperature, removed on o3 here.
+    const registry: LlmRegistry = [
+      ...HELD_REGISTRY,
+      { provider: 'openai', kind: 'param_removal', param: 'temperature', on_models: ['o3'] },
+    ];
+    const project = inMemoryProject(
+      'src/wrap.ts',
+      `${HEADER}
+declare class Wrapper { constructor(o: object); }
+const MODEL = "o3-mini";
+export async function run() {
+  await proxy.chat.completions.create({ model: MODEL, messages: [] });
+  const w = new Wrapper({ model: MODEL, temperature: 0 });
+  const card = new Wrapper({ model: MODEL, temperature: 1, label: "o3 mini" });
+  return { w, card };
+}
+`,
+    );
+    expect(keptSites(project, registry)).toEqual(['o3-mini:1']);
+  });
+
+  it('skips a held call and keeps an ordinary one in the same file', () => {
+    const project = inMemoryProject(
+      'src/calls.ts',
+      `${HEADER}
+export async function run() {
+  const held = await proxy.chat.completions.create({ model: "o3-mini", max_tokens: 1 });
+  const plain = await client.chat.completions.create({ model: "o1-mini", max_tokens: 2 });
+  return { held, plain };
+}
+`,
+    );
+    expect(keptSites(project)).toEqual(['o1-mini:2']);
+  });
+
+  // REGRESSION (review of PR #50, 2026-10-07): the first version keyed on the model LITERAL, and
+  // the scan holds a shared declaration when ANY consumer is held, so the direct call lost a
+  // parameter fix nobody held. Base made that edit; it must stand.
+  it('keeps the ordinary consumer of a const that a held consumer shares', () => {
+    const project = inMemoryProject(
+      'src/shared.ts',
+      `${HEADER}
+const MODEL = "o3-mini";
+export async function run() {
+  const viaProxy = await proxy.chat.completions.create({ model: MODEL, max_tokens: 1 });
+  const direct = await client.chat.completions.create({ model: MODEL, max_tokens: 2 });
+  return { viaProxy, direct };
+}
+`,
+    );
+    const held = findModelIdLiterals(project, HELD_REGISTRY).filter((m) => m.position === 'surface_capped');
+    // The precondition the bug needed: the scan held the shared declaration itself.
+    expect(held.map((m) => m.location.line)).toEqual([4]);
+    expect(keptSites(project)).toEqual(['o3-mini:2']);
+  });
+
+  it('keeps an ordinary call on the same line as a held call with the same model', () => {
+    const project = inMemoryProject(
+      'src/line.ts',
+      `${HEADER}
+export async function run() {
+  return [await proxy.chat.completions.create({ model: "o3-mini", max_tokens: 1 }), await client.chat.completions.create({ model: "o3-mini", max_tokens: 2 })];
+}
+`,
+    );
+    expect(keptSites(project)).toEqual(['o3-mini:2']);
+  });
+
+  it('skips every consumer of a const in an example tree', () => {
+    const project = inMemoryProject(
+      'examples/demo.ts',
+      `${HEADER}
+const MODEL = "o3-mini";
+export async function demo() {
+  const a = await client.chat.completions.create({ model: MODEL, max_tokens: 1 });
+  const b = await client.chat.completions.create({ model: "o3-mini", max_tokens: 2 });
+  return { a, b };
+}
+`,
+    );
+    expect(keptSites(project)).toEqual([]);
+  });
+
+  it('in an example tree, keeps a standalone config object fed a held const, as the scan does', () => {
+    // An inline `{ model: "o3-mini", max_tokens }` that is not a request is example DATA to the
+    // scan, never held; the same object fed through a held const must be judged the same way.
+    const project = inMemoryProject(
+      'examples/cfg.ts',
+      `${HEADER}
+const MODEL = "o3-mini";
+export const cfg = { model: MODEL, max_tokens: 43 };
+export async function demo() {
+  return client.chat.completions.create({ model: MODEL, max_tokens: 1 });
+}
+`,
+    );
+    expect(keptSites(project)).toEqual(['o3-mini:43']);
+  });
+
+  it('skips a direct call the scan held for its parameters, though its surface is ordinary', () => {
+    // A first-party client inside a function: classifyCallSurface alone says "model_arg". The
+    // scan held it anyway, for a parameter no rule covers on the replacement, so the call's OWN
+    // held literal has to decide; re-judging the surface would let its max_tokens be renamed.
+    const project = inMemoryProject(
+      'src/coupled.ts',
+      `${HEADER}
+export async function run() {
+  return client.chat.completions.create({ model: "o3-mini", max_tokens: 1, temperature: 0 });
+}
+`,
+    );
+    const held = findModelIdLiterals(project, HELD_REGISTRY).filter((m) => m.position === 'surface_capped');
+    expect(held).toHaveLength(1);
+    expect(keptSites(project)).toEqual([]);
+  });
+
+  it('keeps a consumer in another file of a global held in an example tree', () => {
+    // Two classic scripts (no import/export) share one global scope, so `MODEL` in src/ resolves
+    // to the declaration in examples/. The scan judged that declaration by the calls in ITS file.
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      'examples/models.ts',
+      [
+        'declare const OpenAI: any;',
+        'var demoClient = new OpenAI();',
+        'var MODEL = "o3-mini";',
+        'function demo() { return demoClient.chat.completions.create({ model: MODEL, max_tokens: 1 }); }',
+        '',
+      ].join('\n'),
+    );
+    project.createSourceFile(
+      'src/run.ts',
+      'function run(client: any) { return client.chat.completions.create({ model: MODEL, max_tokens: 2 }); }\n',
+    );
+    const held = findModelIdLiterals(project, HELD_REGISTRY).filter((m) => m.position === 'surface_capped');
+    expect(held.map((m) => m.location.file.replace(/^.*\/(examples|src)\//, '$1/'))).toEqual(['examples/models.ts']);
+    expect(keptSites(project)).toEqual(['o3-mini:2']);
+  });
+
+  it('keeps every site when nothing was held', () => {
+    const project = inMemoryProject(
+      'src/plain.ts',
+      `${HEADER}
+export async function run() {
+  return client.chat.completions.create({ model: "o3-mini", max_tokens: 2 });
+}
+`,
+    );
+    expect(withoutHeldCalls(findParamSites(project, HELD_REGISTRY), [])).toHaveLength(1);
+    expect(keptSites(project)).toEqual(['o3-mini:2']);
+  });
+});
+
 describe('model resolution', () => {
   it('resolves the model through a same-file const (best effort)', () => {
     const source = `
@@ -163,6 +484,20 @@ export async function run(messages: any) {
     const text = project.getSourceFileOrThrow('src/env-model.ts').getFullText();
     // Untouched: an unprovable model is left exactly as the developer wrote it.
     expect(text).toContain('temperature: 0');
+  });
+
+  it('SKIPS a file annotated mendr: ignore-file or mendr: model-catalog', () => {
+    // ADDED 2026-10-07: the model-id scan never edits these files, and the param pass did.
+    for (const annotation of ['ignore-file', 'model-catalog']) {
+      const source = `// mendr: ${annotation}\nexport const MODELS = [{ model: "o1-mini", max_tokens: 4096, label: "o1 mini" }];\n`;
+      const project = inMemoryProject('src/catalog.ts', source);
+      expect(findParamSites(project, REGISTRY), annotation).toHaveLength(0);
+      expect(applyParamFixes(project, REGISTRY), annotation).toHaveLength(0);
+      expect(project.getSourceFileOrThrow('src/catalog.ts').getFullText()).toBe(source);
+    }
+    // Control: the same row without the annotation is a param site.
+    const plain = inMemoryProject('src/catalog.ts', 'export const MODELS = [{ model: "o1-mini", max_tokens: 4096 }];\n');
+    expect(findParamSites(plain, REGISTRY)).toHaveLength(1);
   });
 
   it('SKIPS an object literal that has the param but no model property', () => {

@@ -448,7 +448,15 @@ clipping, so a truncated key cannot survive as a partial secret. Patterns:
 - JSON Web Tokens (three base64url segments starting with `ey`)
 - Any `NAME=value` or `NAME: value` where the name ends in `TOKEN`, `SECRET`,
   `PASSWORD`, `API_KEY`, `APIKEY`, `ACCESS_KEY`, `ACCESSKEY` or `CREDENTIAL(S)`,
-  case-insensitive, value 6+ chars
+  case-insensitive, value 6+ chars. One exception: a plural `TOKENS` right after
+  a count word (`max_tokens`, `maxOutputTokens`, `max_completion_tokens`,
+  `budget_tokens`, `total_tokens`) names a token count, not a credential, and is
+  left as written. The count word must be a whole word, starting the name or
+  following `_`. A singular `TOKEN`, a plural after any other word
+  (`INPUT_TOKENS`, `ACCESS_TOKENS`), and a plural after a word that only ends in
+  a count word (`ADMIN_TOKENS`, `adminTokens`) are still redacted. Because the
+  match ignores case it cannot split a camelCase name in the middle, so a count
+  word after another camelCase word (`llmMaxTokens`) is redacted too.
 
 Tested in `src/audit/issueReport.test.ts` and, for JSON snippets, in
 `src/audit/auditStdout.test.ts`. What it does not catch is in section 8.

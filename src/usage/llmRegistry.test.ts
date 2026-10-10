@@ -305,20 +305,25 @@ describe('hasSelfContradictingReasons (the CI lint)', () => {
   });
 });
 
-// THE SHIPPED REGISTRY, not a fixture. The twelve records the audit named must
-// be held back for real, in the file that actually ships -- and held back by
-// their STATUS, so the hold survives someone tidying the prose.
+// THE SHIPPED REGISTRY, not a fixture. The records the audit named must be held
+// back for real, in the file that actually ships -- and held back by their
+// STATUS, so the hold survives someone tidying the prose.
 describe('the shipped registry', () => {
-  it('quarantines the twelve records whose research contradicts a verified stamp, the restricted-access one, the four pro-mode ones, and Sonnet 4.5', () => {
+  it('quarantines the record whose research still contradicts a verified stamp, the restricted-access one, the four pro-mode ones, and Sonnet 4.5', () => {
     const entries = modelIdEntries(loadLlmRegistry(resolveRegistryPath()));
     const quarantined = entries.filter((e) => e.verification?.status === 'quarantined');
-    // 12 held because their own research undercuts a verified stamp, plus gpt-5.4-cyber:
-    // its replacement needs separate provisioning, and only a quarantine survives a
-    // re-stamp that later finds gpt-5.6-cyber in a catalog. Plus, from 2026-10-04,
-    // the four whose provider replacement is "gpt-5.6-sol (reasoning.mode: pro)":
+    // 12 were held because their own research undercut a verified stamp. On 2026-10-10 the
+    // providers' pages settled 11 of them (a stated date, a confirmed replacement) and their
+    // quarantine was lifted; gpt-3.5-turbo-16k stays held, because OpenAI's page never names
+    // the alias. Plus gpt-5.4-cyber: its replacement needs separate provisioning, and only a
+    // quarantine survives a re-stamp that later finds gpt-5.6-cyber in a catalog. Plus, from
+    // 2026-10-04, the four whose provider replacement is "gpt-5.6-sol (reasoning.mode: pro)":
     // an id swap would silently drop pro mode. Plus, from 2026-10-06,
-    // claude-sonnet-4-5-20250929 (see the next test).
-    expect(quarantined).toHaveLength(18);
+    // claude-sonnet-4-5-20250929 (see the next test). Plus, from 2026-10-10, the three Veo
+    // previews: Google's replacement is Gemini Omni Flash, another model family called through
+    // another API, so an id swap is not the migration. Plus OpenAI's six fine-tune rows
+    // (ft-babbage-002 ...): the replacement is a base model, and a swap drops the training.
+    expect(quarantined).toHaveLength(16);
     for (const entry of quarantined) {
       expect(isVerified(entry), entry.deprecated).toBe(false);
       // Every quarantine says what has to be resolved. A hold nobody can act
@@ -358,15 +363,20 @@ describe('the shipped registry', () => {
     }
   });
 
-  it('holds back gemini-2.0-flash, and points it at a stable id rather than an alias', () => {
+  it("dates gemini-2.0-flash from Google's own table, and points it at a stable id rather than an alias", () => {
+    // Held back until 2026-10-10 because its only witness was one production outage. Google's
+    // deprecation table now states June 1, 2026 and gemini-3.6-flash for both ids, and its
+    // changelog says they "are now shut down", so the hold rests on nothing and was lifted.
     const entries = modelIdEntries(loadLlmRegistry(resolveRegistryPath()));
     for (const id of ['gemini-2.0-flash', 'gemini-2.0-flash-001']) {
       const entry = entries.find((e) => e.deprecated === id)!;
       expect(entry, id).toBeTruthy();
+      expect(entry.shutdownDate, id).toBe('2026-06-01');
+      expect(entry.sourceUrl, id).toBe('https://ai.google.dev/gemini-api/docs/deprecations');
       // A rolling alias is never a migration target: it resolves to whatever
       // the provider points it at, including a deprecated preview.
+      expect(entry.replacement, id).toBe('gemini-3.6-flash');
       expect(entry.replacement, id).not.toMatch(/-latest$/);
-      expect(isVerified(entry), id).toBe(false);
     }
   });
 
@@ -384,11 +394,27 @@ describe('the shipped registry', () => {
     // 2026-10-04: -4 gpt-5 aliases (no provider date), +10 ids OpenAI retires
     // 2026-10-23 (2 of them pro-mode), and 2 shipping pro-mode records quarantined.
     // 2026-10-06: +1 claude-sonnet-4-5-20250929, quarantined, so auto-fix eligible is unchanged.
-    expect(provenance.activeEntries).toBe(164);
+    // 2026-10-10: gemini-2.0-flash-live-001 and gemini-live-2.5-flash-preview retarget to
+    // gemini-3.8-live, which no public catalog lists yet: -2 eligible, +2 unverified. gpt-5.2
+    // is removed, -1 eligible: OpenAI does not deprecate it. +3 image models retiring 2026-12-01,
+    // unverifiable: catalogs do not list image models. The providers' pages settle 11
+    // quarantines and gemini-2.0-flash-lite-001's hold: +12 eligible, -11 quarantined,
+    // -1 unverified. +8 Google ids, all detect-only: 3 Veo previews retiring 2026-10-22
+    // (quarantined), gemini-3.1-flash-live-preview (unverified: no catalog lists gemini-3.8-live)
+    // and 4 audio/TTS models retiring 2026-11-17 (unverifiable by class). +6 OpenAI fine-tune
+    // rows retiring 2026-10-23, quarantined. +13 discovered candidates the promote gate cannot
+    // check, added review-only: 6 OpenAI realtime ids whose replacement no catalog lists and
+    // gemini-2.5-flash-lite-preview-09-2025, whose replacement Google itself retires (+7
+    // unverified), and 6 OpenAI audio ids (+6 unverifiable by class). Eligible is unchanged.
+    // Then 9 of the settled records go back to review-only, unverified by the gate's own curated
+    // rows (-9 eligible, +9 unverified): gpt-4-0314, gpt-4-0125-preview and gpt-4-turbo-preview,
+    // whose OpenAI row names two targets, and gpt-3.5-turbo-0301, -16k-0613, text-davinci-003,
+    // -002, gemini-2.0-flash-lite and -001, which carry the end of a chain, not the named target.
+    expect(provenance.activeEntries).toBe(193);
     expect(provenance.autoFixEligible).toBe(135);
-    expect(provenance.reviewOnlyCounts.quarantined).toBe(18);
-    expect(provenance.reviewOnlyCounts.unverified).toBe(5);
-    expect(provenance.reviewOnlyCounts.unverifiable).toBe(6);
+    expect(provenance.reviewOnlyCounts.quarantined).toBe(16);
+    expect(provenance.reviewOnlyCounts.unverified).toBe(23);
+    expect(provenance.reviewOnlyCounts.unverifiable).toBe(19);
     // Nothing ships in the defence-in-depth state; the validator forbids it.
     expect(provenance.reviewOnlyCounts.withheld).toBe(0);
   });

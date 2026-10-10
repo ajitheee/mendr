@@ -33,6 +33,7 @@ import type { RuntimeEvidence, RuntimeSource } from '../runtime/evidence.js';
 import type { LlmRegistry } from '../types.js';
 import type { Tier } from '../report/tiers.js';
 import { displayEntryId } from '../registry/entryId.js';
+import { registryModelId } from '../recon/usageAudit.js';
 import { effectiveVerificationState, modelIdEntries } from '../usage/llmRegistry.js';
 import { daysUntil } from '../watch/exposure.js';
 
@@ -45,6 +46,8 @@ export type LocationRole =
   | 'catalog_definition'
   | 'catalog_reference'
   | 'test_fixture'
+  /** A config file named as a template / example to copy (`.env.template`): informational, not test data. */
+  | 'config_template'
   | 'code_call_site'
   | 'code_candidate'
   | 'code_reference';
@@ -405,7 +408,10 @@ export function countFixtureReferences(investigations: readonly ModelInvestigati
   for (const inv of investigations) {
     if (isExposure(inv)) continue;
     const all = [...inv.locations.selectors, ...inv.locations.catalog];
-    if (all.some((l) => l.role === 'test_fixture')) n++;
+    // A configuration template counts here exactly as it did when it was labelled a fixture: what
+    // it breaks is a developer setting the project up, which is what FIXTURE_ONLY_NOTE says. Not
+    // counting it would turn a template-only run into "no exposure", a clean it has not earned.
+    if (all.some((l) => l.role === 'test_fixture' || l.role === 'config_template')) n++;
   }
   return n;
 }
@@ -489,7 +495,9 @@ function toConfigLocation(m: ConfigMatch, readers?: Map<string, EnvReader[]>): L
         ? 'catalog_definition'
         : m.purpose === 'data_fixture'
           ? 'test_fixture'
-          : 'catalog_reference';
+          : m.purpose === 'config_template'
+            ? 'config_template'
+            : 'catalog_reference';
   const loc: LocationRef = {
     file: m.file, line: m.line, column: m.column, key: m.key, value: m.value,
     role, surface: 'config', tier: m.tier, providerSurface: m.providerSurface, patchEligible: false,
@@ -778,14 +786,21 @@ export function buildInvestigations(
   // RUNTIME EVIDENCE (optional) — attach to models we already located, and seed
   // observed-but-UNLOCATED deprecated models too: traffic on a retiring model whose
   // selector we cannot find is the most urgent finding there is, not a silent drop.
+  // Which registry row an observation joins is decided HERE, from the id as observed, because
+  // only here is the registry in hand. A fine-tune joins the provider's own `ft-<base>` row
+  // when one covers it (OpenAI's run to 2026-10-23, past their base models' 2026-09-28), and
+  // its base model otherwise. Every runtime source takes this path, so a --runtime file and a
+  // provider usage API give the same answer for the same traffic.
+  const entries = modelIdEntries(registry);
   for (const obs of runtime.observations) {
+    const model = registryModelId(obs.observed || obs.model, obs.provider, entries);
     let match = [...map.values()].find(
-      (inv) => inv.model === obs.model && (inv.provider === obs.provider || obs.provider === 'unknown'),
+      (inv) => inv.model === model && (inv.provider === obs.provider || obs.provider === 'unknown'),
     );
     if (!match) {
-      const entry = registryEntryFor(obs.model, obs.provider, registry);
+      const entry = registryEntryFor(model, obs.provider, registry);
       if (!entry) continue; // observed but not deprecated — not an exposure
-      match = seed(entry.entryId, entry.entryId, entry.provider, obs.model);
+      match = seed(entry.entryId, entry.entryId, entry.provider, model);
       fillRetirement(match, entry);
     }
     const u = match.productionUsage;

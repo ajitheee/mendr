@@ -88,6 +88,7 @@ const roleLabel = (r: LocationRef['role']): string =>
   r === 'runtime_selector_candidate' ? 'config runtime selector candidate'
     : r === 'catalog_definition' ? 'config catalog definition'
       : r === 'test_fixture' ? 'test/data fixture (not a selector)'
+        : r === 'config_template' ? 'config template a new install copies (not this checkout\'s active config)'
         : r === 'code_call_site' ? 'verified provider SDK call site (model argument)'
           : r === 'code_candidate' ? 'code default or call not traced to a provider request (review)'
             : r === 'code_reference' ? 'code data reference'
@@ -558,6 +559,9 @@ export function plainSummary(investigations: readonly ModelInvestigation[], cove
       return ['a possible configuration selector', 'possible configuration selectors'];
     }
     if (inv.locations.catalog.some((c) => c.role === 'test_fixture')) return ['test data', 'test data'];
+    if (inv.locations.catalog.some((c) => c.role === 'config_template')) {
+      return ['a configuration template default', 'configuration template defaults'];
+    }
     return ['informational only', 'informational only'];
   };
   const buckets = new Map<string, { plural: string; count: number }>();

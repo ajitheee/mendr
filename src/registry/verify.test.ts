@@ -1,11 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import type { LlmModelIdDeprecation } from '../types.js';
 import { canonicalizeId, familyOf } from './normalize.js';
+import { loadLlmRegistry, resolveRegistryPath } from '../usage/llmRegistry.js';
+import { officialRecommendations } from './oracles.js';
 import {
   classifyEntry,
   isMachineReason,
   knownDeprecatedFrom,
   mergeReasons,
+  namedReplacements,
+  verificationSwitches,
   type VerificationOracles,
 } from './verify.js';
 
@@ -121,6 +125,51 @@ describe('classifyEntry — UNVERIFIED (replacement not live)', () => {
     const r = classifyEntry(entry('gpt-4-0613', 'gpt-4-imaginary'), oracles);
     expect(r.status).toBe('unverified');
     expect(r.reasons.join(' ')).toMatch(/not found live/);
+  });
+});
+
+// OpenRouter lists spellings no provider documents. On 2026-10-09 OpenAI's model page
+// for gpt-6.1-sol-pro returned 404 (pro is `reasoning.mode: pro`), yet OpenRouter listed
+// it, and until then every OpenRouter id counted as live. A replacement to it classified
+// `verified`, the verdict auto-apply is built on.
+describe('classifyEntry — an id only OpenRouter lists is never live', () => {
+  const oracles: VerificationOracles = {
+    liveIds: liveSet('gpt-6.1-sol', 'claude-sonnet-5-5'),
+    routedIds: liveSet('gpt-6.1-sol-pro', 'gpt-6-sol-pro', 'claude-sonnet-5.5'),
+    officialRecommendations: officialMap({}),
+  };
+
+  it('a replacement only OpenRouter lists is unverified, and the reason says why', () => {
+    const r = classifyEntry(entry('gpt-5-pro', 'gpt-6.1-sol-pro'), oracles);
+    expect(r.status).toBe('unverified');
+    expect(r.reasons.join(' ')).toMatch(/only OpenRouter lists it/);
+  });
+
+  it('the same spelling the provider publishes still verifies', () => {
+    expect(classifyEntry(entry('gpt-5-pro', 'gpt-6.1-sol'), oracles).status).toBe('verified');
+  });
+
+  // Matching is canonical: `claude-sonnet-5.5` names the dashed id Anthropic publishes,
+  // so it is live through liveIds, not through OpenRouter's listing of the dotted form.
+  it('a dotted spelling of a published id verifies on the published id, not on OpenRouter', () => {
+    const r = classifyEntry(entry('claude-sonnet-4-5-20250929', 'claude-sonnet-5.5'), {
+      ...oracles,
+      routedIds: new Set<string>(),
+    });
+    expect(r.status).toBe('verified');
+  });
+
+  it('routedIds can never turn an unverified verdict into a verified one', () => {
+    const without = classifyEntry(entry('gpt-5-pro', 'gpt-6-sol-pro'), { ...oracles, routedIds: undefined });
+    const withIt = classifyEntry(entry('gpt-5-pro', 'gpt-6-sol-pro'), oracles);
+    expect(without.status).toBe('unverified');
+    expect(withIt.status).toBe('unverified');
+  });
+
+  it('its reason is recognised as the machine\'s own, so a re-stamp replaces it', () => {
+    for (const reason of classifyEntry(entry('gpt-5-pro', 'gpt-6.1-sol-pro'), oracles).reasons) {
+      expect(isMachineReason(reason), reason).toBe(true);
+    }
   });
 });
 
@@ -244,5 +293,166 @@ describe("classifyEntry — chained on the registry's own evidence", () => {
     ]);
     expect(m.has(canonicalizeId('temperature'))).toBe(false);
     expect(m.get(canonicalizeId('x-model'))).toContain('retired');
+  });
+});
+
+// --- one of several named replacements --------------------------------------
+//
+// OpenAI's 2026-03-26 rows name "gpt-5 or gpt-4.1*", footnoted "*For tasks that are especially
+// latency sensitive and don't require reasoning". On 2026-10-10 gpt-4-0314 was switched on
+// with gpt-5.6-sol (gpt-5's chain) and gpt-4-0125-preview with gpt-4.1: one row resolved two
+// ways, both auto-appliable, because the curated table had no row and so nothing contradicted
+// either. Which target fits depends on the call, which no catalog can see.
+describe('namedReplacements', () => {
+  it('reads one id, an "or" pair, and a comma list with a final "or"', () => {
+    expect(namedReplacements('claude-opus-4-8')).toEqual(['claude-opus-4-8']);
+    expect(namedReplacements('gpt-5 or gpt-4.1*')).toEqual(['gpt-5', 'gpt-4.1']);
+    expect(namedReplacements('gpt-image-2, gpt-image-1, or gpt-image-1-mini')).toEqual([
+      'gpt-image-2',
+      'gpt-image-1',
+      'gpt-image-1-mini',
+    ]);
+  });
+});
+
+describe('classifyEntry — UNVERIFIED (the provider names more than one replacement)', () => {
+  const oracles: VerificationOracles = {
+    liveIds: liveSet('gpt-5', 'gpt-4.1', 'gpt-5.6-sol'),
+    officialRecommendations: officialMap({
+      'gpt-4-0314': 'gpt-5 or gpt-4.1',
+      'gpt-4-0125-preview': 'gpt-5 or gpt-4.1',
+    }),
+  };
+
+  it('holds whichever named target the registry carries, and the end of either chain', () => {
+    for (const [deprecated, replacement] of [
+      ['gpt-4-0125-preview', 'gpt-4.1'],
+      ['gpt-4-0125-preview', 'gpt-5'],
+      ['gpt-4-0314', 'gpt-5.6-sol'],
+    ]) {
+      const r = classifyEntry(entry(deprecated, replacement), oracles);
+      expect(r.status, `${deprecated} -> ${replacement}`).toBe('unverified');
+      expect(r.reasons.join(' ')).toContain(
+        'the provider names more than one replacement ("gpt-5 or gpt-4.1")',
+      );
+      // It is a choice, not a stale target: the reason must not call it one.
+      expect(r.reasons.join(' ')).not.toMatch(/stale/);
+    }
+  });
+
+  it('still says so when the carried target is not live', () => {
+    const r = classifyEntry(entry('gpt-4-0314', 'gpt-9-ghost'), oracles);
+    expect(r.status).toBe('unverified');
+    expect(r.reasons.join(' ')).toContain('more than one replacement');
+  });
+});
+
+// --- a replacement that changes the model family ----------------------------
+//
+// Discovery and check-dates admit OpenAI `ft-` rows and Google `veo-` rows. The fine-tune ->
+// base model swap drops the customer's training; Veo -> Gemini Omni is a different family
+// behind a different request. Both were guarded only by quarantines written on the nine rows
+// that existed on 2026-10-10, and `candidates promote` would have written the next one verified.
+describe('classifyEntry — UNVERIFIED (family change), whatever the catalogs say', () => {
+  const oracles: VerificationOracles = {
+    liveIds: liveSet('gpt-5.6-sol', 'gemini-omni-1.1-flash', 'veo-3.2-generate'),
+    officialRecommendations: officialMap({}),
+  };
+
+  it('never verifies a fine-tune retired to a base model', () => {
+    for (const deprecated of ['ft-gpt-4o-2024-08-06', 'ft-babbage-002', 'ft:gpt-4o-2024-08-06:acme::x1']) {
+      const r = classifyEntry(entry(deprecated, 'gpt-5.6-sol'), oracles);
+      expect(r.status, deprecated).toBe('unverified');
+      expect(r.reasons.join(' ')).toContain("drops the customer's training");
+    }
+  });
+
+  it('never verifies a Veo model retired to a non-Veo model', () => {
+    const r = classifyEntry(entry('veo-3.0-generate-001', 'gemini-omni-1.1-flash'), oracles);
+    expect(r.status).toBe('unverified');
+    expect(r.reasons.join(' ')).toContain('different model family behind a different request');
+  });
+
+  it('leaves a Veo -> Veo swap to the ordinary catalog check', () => {
+    expect(classifyEntry(entry('veo-3.0-generate-001', 'veo-3.2-generate'), oracles).status).toBe(
+      'verified',
+    );
+  });
+
+  it('keeps auto-apply off through verificationSwitches, as candidates promote derives it', () => {
+    const e: LlmModelIdDeprecation = {
+      ...entry('ft-gpt-4o-2024-08-06', 'gpt-5.6-sol'),
+      sourceUrl: 'https://developers.openai.com/api/docs/deprecations',
+      status: 'deprecated',
+      shutdownDate: '2026-10-23',
+    };
+    const { status } = classifyEntry(e, oracles);
+    expect(verificationSwitches(e, status).autoApplyAllowed).toBe(false);
+  });
+});
+
+describe("mergeReasons — the new verdicts are the machine's own", () => {
+  it('recognises the choice and family-change sentences, so a re-stamp regenerates them', () => {
+    const oracles: VerificationOracles = {
+      liveIds: liveSet('gpt-5.6-sol', 'gemini-omni-1.1-flash'),
+      officialRecommendations: officialMap({ 'gpt-4-0314': 'gpt-5 or gpt-4.1' }),
+    };
+    const cases = [
+      entry('gpt-4-0314', 'gpt-5.6-sol'),
+      entry('gpt-4-0314', 'ghost-9'),
+      entry('ft-gpt-4', 'gpt-5.6-sol'),
+      entry('veo-3.1-generate-preview', 'gemini-omni-1.1-flash'),
+    ];
+    for (const e of cases) {
+      for (const reason of classifyEntry(e, oracles).reasons) {
+        expect(isMachineReason(reason), reason).toBe(true);
+      }
+    }
+  });
+});
+
+// --- the gate, not a hand edit, decides the shipped stamps -------------------
+//
+// The weekly registry-verify job fails when a record shipped `verified` no longer classifies
+// verified, and it can only catch what the classifier knows. This is that check offline, with
+// every replacement assumed live, the most generous answer the catalogs could give. On
+// 2026-10-10 nine records were stamped verified by hand against provider rows the curated
+// table did not carry; with the rows in the table, this test refuses that edit.
+describe('the shipped registry, against the curated table', () => {
+  const shipped = loadLlmRegistry(resolveRegistryPath()).filter(
+    (e): e is LlmModelIdDeprecation => e.kind === 'model_id',
+  );
+  const generous: VerificationOracles = {
+    liveIds: liveSet(...shipped.map((e) => e.replacement)),
+    officialRecommendations: officialRecommendations(),
+    knownDeprecated: knownDeprecatedFrom(shipped),
+  };
+
+  it('stamps nothing verified that the classifier would hold, even with every replacement live', () => {
+    const contradicted = shipped
+      .filter((e) => e.verification?.status === 'verified')
+      .filter((e) => classifyEntry(e, generous).status !== 'verified')
+      .map((e) => `${e.deprecated} -> ${e.replacement}: ${classifyEntry(e, generous).reasons.join('; ')}`);
+    expect(contradicted).toEqual([]);
+  });
+
+  it('holds every record whose provider row names two targets or a dated one', () => {
+    for (const id of [
+      'gpt-4-0314',
+      'gpt-4-0125-preview',
+      'gpt-4-turbo-preview',
+      'gpt-3.5-turbo-0301',
+      'gpt-3.5-turbo-0613',
+      'gpt-3.5-turbo-16k-0613',
+      'text-davinci-003',
+      'text-davinci-002',
+      'gemini-2.0-flash-lite',
+      'gemini-2.0-flash-lite-001',
+    ]) {
+      const record = shipped.find((e) => e.deprecated === id);
+      expect(record, id).toBeTruthy();
+      expect(record!.verification?.autoApplyAllowed, id).toBe(false);
+      expect(classifyEntry(record!, generous).status, id).toBe('unverified');
+    }
   });
 });

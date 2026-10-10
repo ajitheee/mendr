@@ -76,7 +76,7 @@ default branch, and cannot bypass Mendr's deterministic safety gate.
     { "file": "agent_app/simulator.py", "line": 166, "column": 13,
       "tier": "B", "reason": "usage_unverified", "usageVerdict": "unverified" },
     { "file": "agent_app/simulator.py", "line": 12, "column": 5,
-      "tier": "C", "reason": null, "usageVerdict": "n/a" }
+      "tier": "C", "usageVerdict": "n/a" }
   ]
 }
 ```
@@ -100,7 +100,13 @@ model-level action from `highestTier`.**
 - `tier`: `"A"` (auto-fixable) · `"B"` (review) · `"C"` (data). Same tiers as
   `fix-llm`.
 - `reason` (Tier B only): `usage_unverified` · `replacement_unverified` ·
-  `platform_blocked` · `type_cast_masked`. `null` for A and C.
+  `coupled_param_unverified` · `param_behaviour_change` · `surface_capped` ·
+  `platform_blocked` · `type_cast_masked`. Absent for A and C. The codes mean what
+  the README's Tier B table says. Before `v0.5.9-alpha`, a call held for its
+  surface (a sample tree, a gateway-prefixed id, a wrapper class, a proxy client)
+  was reported as `platform_blocked`; it is now `surface_capped`, and
+  `platform_blocked` means a value under a deployment-named key or identifier
+  (`deployment`, `deploymentName`, `deployment_name`).
 - `usageVerdict`: `"confirmed"` (a live model argument) · `"unverified"` (not tied
   to a live call) · `"n/a"` (a data position).
 
@@ -116,3 +122,8 @@ from source on every run and never trusts a committed `exposure.json` as input.
 
 The schema tag (`mendr-exposure/v2`) changes only on a breaking shape change.
 Fields may be added within a version; consumers should ignore unknown fields.
+Tier B `reason` codes may also be added within a version; a consumer should
+treat a code it does not know as Tier B review. `v0.5.9-alpha` added
+`surface_capped`, so a committed `.mendr/exposure.json` changes once on the
+first run after the upgrade, for every held call that used to read
+`platform_blocked`.

@@ -64,7 +64,7 @@ function corruptedRegistry(
 describe('mendr validate-registry', () => {
   it('passes on the shipped registry, and says how many records it checked', async () => {
     const { exitCode, stdout } = await validate();
-    expect(stdout).toContain('registry OK: 0 violations across 164 model_id records.');
+    expect(stdout).toContain('registry OK: 0 violations across 193 model_id records.');
     expect(exitCode).toBe(0);
   }, 60_000);
 
@@ -77,11 +77,13 @@ describe('mendr validate-registry', () => {
     expect(stdout).toContain('registry INVALID: 1 violation(s)');
     expect(stdout).toContain('openai.gpt-4.retirement-2026-10-23');
     expect(stdout).toContain('[verified_without_replacement_confirmation]');
-    expect(stdout).toContain('summary: 1 violation(s) across 164 model_id records');
+    expect(stdout).toContain('summary: 1 violation(s) across 193 model_id records');
   }, 60_000);
 
+  // gpt-3.5-turbo-16k is the one record still quarantined over a caveat in its own research
+  // ("itself deprecated"); gemini-2.0-flash was the example until Google's page settled it.
   it('fails when a record is switched on under a non-verified status', async () => {
-    const path = corruptedRegistry('gemini-2.0-flash', (record) => {
+    const path = corruptedRegistry('gpt-3.5-turbo-16k', (record) => {
       (record.verification as Record<string, unknown>).autoApplyAllowed = true;
     });
     const { exitCode, stdout } = await validate(['--registry', path]);
@@ -94,7 +96,7 @@ describe('mendr validate-registry', () => {
   }, 60_000);
 
   it('fails a quarantine that no longer says what has to be resolved', async () => {
-    const path = corruptedRegistry('gemini-2.0-flash', (record) => {
+    const path = corruptedRegistry('gpt-3.5-turbo-16k', (record) => {
       (record.verification as Record<string, unknown>).quarantineReason = null;
     });
     const { exitCode, stdout } = await validate(['--registry', path]);

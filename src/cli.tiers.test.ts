@@ -33,7 +33,7 @@ afterEach(() => {
 /**
  * A repo carrying one finding of every class mendr can produce:
  *   - `gpt-4-0613` in a live model arg  -> Tier A (registry-verified swap)
- *   - `gpt-4-0314` in a live model arg  -> Tier B replacement_unverified
+ *   - `gpt-3.5-turbo-16k` in a live model arg  -> Tier B replacement_unverified
  *   - a value under an azure `deployment` key -> Tier B platform_blocked
  *   - a live model arg behind an `as` cast    -> Tier B type_cast_masked
  *   - a python assignment with no sink        -> Tier B usage_unverified
@@ -54,7 +54,7 @@ function makeRepo(): string {
       "  return client.chat.completions.create({ model: 'gpt-4-0613', messages: [] });",
       '}',
       'export async function unverifiedCall() {',
-      "  return client.chat.completions.create({ model: 'gpt-4-0314', messages: [] });",
+      "  return client.chat.completions.create({ model: 'gpt-3.5-turbo-16k', messages: [] });",
       '}',
       '',
     ].join('\n'),
@@ -96,16 +96,18 @@ function makeRepo(): string {
   );
   writeFileSync(
     join(dir, 'sim', 'simulator.py'),
-    ['def emit_event():', '    model = "gpt-4-0314"', '    print(model)', ''].join('\n'),
+    ['def emit_event():', '    model = "gpt-3.5-turbo-16k"', '    print(model)', ''].join('\n'),
   );
   return dir;
 }
 
 /**
- * A repo whose ONLY finding is `gemini-2.0-flash` in a live model argument —
- * the entry that shipped stamped `verified` over reasons saying "do not
- * auto-apply", and was auto-applied. Nothing else, so Tier A can be asserted
- * to be empty.
+ * A repo whose ONLY finding is `gpt-3.5-turbo-16k` in a live model argument —
+ * the one record still quarantined because its own research contradicts the
+ * `verified` stamp it shipped with (gemini-2.0-flash, the entry that was
+ * auto-applied over reasons saying "do not auto-apply", played this part until
+ * Google's page settled it on 2026-10-10). Nothing else, so Tier A can be
+ * asserted to be empty.
  */
 function makeContradictionRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'mendr-contradiction-'));
@@ -113,12 +115,12 @@ function makeContradictionRepo(): string {
   writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'contradiction' }, null, 2));
   mkdirSync(join(dir, 'src'));
   writeFileSync(
-    join(dir, 'src', 'gemini.ts'),
+    join(dir, 'src', 'chat.ts'),
     [
       'import OpenAI from "openai";',
       'const client = new OpenAI();',
       'export async function ask() {',
-      "  return client.chat.completions.create({ model: 'gemini-2.0-flash', messages: [] });",
+      "  return client.chat.completions.create({ model: 'gpt-3.5-turbo-16k', messages: [] });",
       '}',
       '',
     ].join('\n'),
@@ -172,7 +174,7 @@ describe('fix-llm three-tier report', () => {
       'usage_unverified',
     ]);
     expect(byReason.get('replacement_unverified')!.file).toBe('src/live.ts');
-    expect(byReason.get('replacement_unverified')!.modelId).toBe('gpt-4-0314');
+    expect(byReason.get('replacement_unverified')!.modelId).toBe('gpt-3.5-turbo-16k');
     expect(byReason.get('platform_blocked')!.file).toBe('src/azure.ts');
     expect(byReason.get('type_cast_masked')!.file).toBe('src/cast.ts');
     expect(byReason.get('usage_unverified')!.file).toBe('sim/simulator.py');
@@ -219,7 +221,7 @@ describe('fix-llm three-tier report', () => {
     // And no line is REMOVED that carries the unverified id — the patch never
     // touches the position the gate refused to trust.
     const removed = report.diff.split('\n').filter((l) => l.startsWith('-') && !l.startsWith('---'));
-    expect(removed.some((l) => l.includes('gpt-4-0314'))).toBe(false);
+    expect(removed.some((l) => l.includes('gpt-3.5-turbo-16k'))).toBe(false);
   }, 120_000);
 
   it('keeps the deprecated JSON keys, DERIVED from the tier data (no drift)', async () => {
@@ -320,11 +322,11 @@ describe('fix-llm three-tier report', () => {
     const repo = makeRepo();
     const { stdout } = await runFixLlm([repo, '--skip-gates']);
     expect(stdout).toContain('sim/simulator.py:2:13');
-    expect(stdout).toContain('  found:                 "gpt-4-0314"');
-    // gpt-4-0314 is QUARANTINED in the shipped registry, so the engine holds it
+    expect(stdout).toContain('  found:                 "gpt-3.5-turbo-16k"');
+    // gpt-3.5-turbo-16k is QUARANTINED in the shipped registry, so the engine holds it
     // back: the id is a CANDIDATE replacement -- the label changes, not just a
     // row below it -- and the verdict row prints the record's own stated cause.
-    expect(stdout).toContain('  candidate replacement: "gpt-5.6-sol"');
+    expect(stdout).toContain('  candidate replacement: "gpt-5.6-terra"');
     // The stamp DATE moves every time the registry is re-verified, which has nothing to do
     // with what this test checks: that a quarantined replacement prints the record's own
     // stated cause. Match the shape of the date, not the day.
@@ -342,10 +344,10 @@ describe('fix-llm three-tier report', () => {
     // THE ID AND THE COMMAND THAT TAKES IT. Findings told the reader to run
     // `mendr evidence <id>` for months without ever printing an id.
     expect(stdout).toContain(
-      '  registry entry:        openai.gpt-4-0314.retirement-undated',
+      '  registry entry:        openai.gpt-3.5-turbo-16k.retirement-2024-09-13',
     );
     expect(stdout).toContain(
-      '  evidence:              mendr evidence openai.gpt-4-0314.retirement-undated',
+      '  evidence:              mendr evidence openai.gpt-3.5-turbo-16k.retirement-2024-09-13',
     );
     // NO SEPARATE `action:` ROW: `classification:` above carries the same
     // promise, in the same words, once.
@@ -396,7 +398,7 @@ describe('fix-llm three-tier report', () => {
       // on. `modelId` is not an identity; `entryId` is.
       expect(f.entryId, f.modelId).toMatch(/^[a-z]+\..+\.retirement-/);
     }
-    // gpt-4-0613's record is verified and switched on; gpt-4-0314's is
+    // gpt-4-0613's record is verified and switched on; gpt-3.5-turbo-16k's is
     // quarantined. The field tracks the REGISTRY, not the tier.
     const byReason = new Map(report.tierB.map((f) => [f.reason, f]));
     expect(byReason.get('platform_blocked')!.registryVerdict).toBe('verified');
@@ -405,24 +407,25 @@ describe('fix-llm three-tier report', () => {
     expect(byReason.get('usage_unverified')!.registryVerdict).toBe('quarantined');
   }, 120_000);
 
-  // THE FAIL-SAFE, END TO END. `gemini-2.0-flash` shipped stamped `verified`
+  // THE FAIL-SAFE, END TO END. `gemini-2.0-flash` once shipped stamped `verified`
   // over reasons that read "status unknown ... do not auto-apply", and the
-  // engine duly auto-applied it. It is now QUARANTINED IN THE DATA: it must
-  // land in Tier B with no patch, and the hold must come from the record's
-  // status rather than from anything the report has to read out of prose.
+  // engine duly auto-applied it. Records like it are QUARANTINED IN THE DATA
+  // until their cause is resolved; gpt-3.5-turbo-16k still is. It must land in
+  // Tier B with no patch, and the hold must come from the record's status
+  // rather than from anything the report has to read out of prose.
   it('never auto-applies a quarantined record', async () => {
     const repo = makeContradictionRepo();
     const { stdout } = await runFixLlm([repo, '--skip-gates', '--json']);
     const report = JSON.parse(stdout) as JsonReport & { diff: string };
 
     expect(report.summary.tierA).toBe(0);
-    const finding = report.tierB.find((f) => f.modelId === 'gemini-2.0-flash');
-    expect(finding, 'gemini-2.0-flash must be reported as Tier B').toBeTruthy();
+    const finding = report.tierB.find((f) => f.modelId === 'gpt-3.5-turbo-16k');
+    expect(finding, 'gpt-3.5-turbo-16k must be reported as Tier B').toBeTruthy();
     expect(finding!.reason).toBe('replacement_unverified');
     expect(finding!.registryVerdict).toBe('quarantined');
-    expect(finding!.entryId).toBe('google.gemini-2.0-flash.retirement-undated');
+    expect(finding!.entryId).toBe('openai.gpt-3.5-turbo-16k.retirement-2024-09-13');
     // ...and no diff exists for it anywhere in the report.
-    expect(report.diff).not.toContain('gemini');
+    expect(report.diff).not.toContain('gpt-3.5-turbo-16k');
   }, 120_000);
 
   it('says WHY the held finding is held, and names the record to go read', async () => {
@@ -437,8 +440,8 @@ describe('fix-llm three-tier report', () => {
         '(verification.status = "quarantined"), so it is never auto-applied.',
     );
     expect(flat).toContain(
-      'registry entry: google.gemini-2.0-flash.retirement-undated evidence: ' +
-        'mendr evidence google.gemini-2.0-flash.retirement-undated',
+      'registry entry: openai.gpt-3.5-turbo-16k.retirement-2024-09-13 evidence: ' +
+        'mendr evidence openai.gpt-3.5-turbo-16k.retirement-2024-09-13',
     );
     expect(flat).toContain('classification: tier B -- review required, no patch generated.');
   }, 120_000);
@@ -457,7 +460,7 @@ describe('fix-llm three-tier report', () => {
   // helper below fails loudly rather than passing vacuously over a repo that
   // no longer contains the state under test.
   const NON_VERIFIED: { state: string; modelId: string; entryId: string }[] = [
-    { state: 'unverified', modelId: 'o1-preview', entryId: 'openai.o1-preview.retirement-undated' },
+    { state: 'unverified', modelId: 'o1-preview', entryId: 'openai.o1-preview.retirement-2025-07-28' },
     {
       state: 'unverifiable',
       modelId: 'dall-e-3',
@@ -547,6 +550,11 @@ describe('a Tier A candidate that fails its gates', () => {
  *   - `claude-opus-4-1-20250805` + `max_tokens`: a model-dependent param no Anthropic rule
  *     covers (coupled_param_unverified);
  *   - a real SDK call under `examples/`: a sample is capped at review, never patched.
+ * The follow-up review of that fix (2026-10-07) added two shapes:
+ *   - `openai/gpt-4-0613`: a gateway-prefixed id is not a registry key, so a finding built by
+ *     looking its value up lost its record and called a verified mapping unverified;
+ *   - `o3-mini` + `max_tokens` under `examples/`: the model id was held, but the parameter pass
+ *     still renamed `max_tokens`, so one call was "no patch generated" and in the diff.
  */
 function makeCappedRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'mendr-capped-'));
@@ -587,8 +595,30 @@ function makeCappedRepo(): string {
       '',
     ].join('\n'),
   );
+  writeFileSync(
+    join(dir, 'src', 'prefixed.ts'),
+    [
+      'import OpenAI from "openai";',
+      'const client = new OpenAI();',
+      'export async function viaGateway() {',
+      "  return client.chat.completions.create({ model: 'openai/gpt-4-0613', messages: [] });",
+      '}',
+      '',
+    ].join('\n'),
+  );
+  writeFileSync(join(dir, 'examples', 'o3.ts'), CAPPED_O3_EXAMPLE);
   return dir;
 }
+
+/** A held call whose request the parameter pass has a rule for (max_tokens on an o-series model). */
+const CAPPED_O3_EXAMPLE = [
+  'import OpenAI from "openai";',
+  'const client = new OpenAI();',
+  'export async function reason() {',
+  "  return client.chat.completions.create({ model: 'o3-mini', max_tokens: 50, messages: [] });",
+  '}',
+  '',
+].join('\n');
 
 describe('a call the scanner caps at review', () => {
   it('is listed in Tier B with the reason audit gives it, and never patched', async () => {
@@ -603,9 +633,59 @@ describe('a call the scanner caps at review', () => {
     expect(at('src/opus.ts').map((f) => [f.modelId, f.line, f.reason])).toEqual([
       ['claude-opus-4-1-20250805', 4, 'coupled_param_unverified'],
     ]);
-    expect(at('examples/agent.ts').map((f) => [f.modelId, f.line])).toEqual([['gpt-4-0613', 4]]);
-    expect(report.tierB).toHaveLength(3);
+    // A held call is not a deployment key: its own reason code, and none of the legacy
+    // `azure` array's "deployment alias" sentence.
+    expect(at('examples/agent.ts').map((f) => [f.modelId, f.line, f.reason])).toEqual([
+      ['gpt-4-0613', 4, 'surface_capped'],
+    ]);
+    expect(at('examples/o3.ts').map((f) => [f.modelId, f.line, f.reason])).toEqual([
+      ['o3-mini', 4, 'surface_capped'],
+    ]);
+    expect(report.azure).toEqual([]);
+    expect(report.tierB).toHaveLength(5);
+    // The held o3-mini call's max_tokens is NOT renamed: the parameter pass skips a held call.
     expect(report.tierA).toEqual([]);
+  }, 120_000);
+
+  it('takes a held finding\'s quarantine verdict and reason from its record, prefixed ids included', async () => {
+    const repo = makeCappedRepo();
+    writeFileSync(
+      join(repo, 'src', 'prefixedQuarantined.ts'),
+      [
+        'import OpenAI from "openai";',
+        'const client = new OpenAI();',
+        'export async function viaGateway() {',
+        "  return client.chat.completions.create({ model: 'openai/gpt-3.5-turbo-16k', messages: [] });",
+        '}',
+        '',
+      ].join('\n'),
+    );
+    const { stdout } = await runFixLlm([repo, '--skip-gates', '--json']);
+    const report = JSON.parse(stdout) as JsonReport & { tierB: { replacementVerdict: string }[] };
+    const held = report.tierB.filter((f) => f.file === 'src/prefixedQuarantined.ts');
+    expect(held.map((f) => [f.entryId, f.replacementVerdict, f.reason])).toEqual([
+      ['openai.gpt-3.5-turbo-16k.retirement-2024-09-13', 'quarantined', 'surface_capped'],
+    ]);
+    // The human report prints the record's own quarantine reason, which a lookup by the
+    // prefixed literal could never find.
+    const human = await runFixLlm([repo, '--skip-gates']);
+    const block = human.stdout.slice(human.stdout.indexOf('src/prefixedQuarantined.ts:4'));
+    expect(block).toMatch(/replacement verdict: +quarantined \(registry stamp \d{4}-\d{2}-\d{2}\) -- stamped/);
+    expect(block.replace(/\s+/g, ' ')).toContain('held for review until that contradiction is resolved');
+  }, 120_000);
+
+  it('builds a held finding from the record the scan matched, prefixed ids included', async () => {
+    const repo = makeCappedRepo();
+    const { stdout } = await runFixLlm([repo, '--skip-gates', '--json']);
+    const report = JSON.parse(stdout) as JsonReport & {
+      tierB: { replacementVerdict: string; verdictCheckedAt: string | null }[];
+    };
+    const prefixed = report.tierB.filter((f) => f.file === 'src/prefixed.ts');
+    // 'openai/gpt-4-0613' is not a registry key; the record it matched is.
+    expect(prefixed.map((f) => [f.modelId, f.entryId, f.replacement, f.replacementVerdict, f.reason])).toEqual([
+      ['openai/gpt-4-0613', 'openai.gpt-4-0613.retirement-2026-10-23', 'gpt-5.6-sol', 'verified', 'surface_capped'],
+    ]);
+    expect(prefixed[0].verdictCheckedAt).toMatch(/^\d{4}-\d{2}-\d{2}/);
   }, 120_000);
 
   it('does not report the repo as clean, and says why each call is held', async () => {
@@ -613,7 +693,9 @@ describe('a call the scanner caps at review', () => {
     const { stdout } = await runFixLlm([repo, '--skip-gates']);
     expect(stdout).not.toContain('Nothing to fix');
     expect(stdout).toContain('Found: 0 tier A');
-    expect(stdout).toContain('3 tier B');
+    expect(stdout).toContain('5 tier B');
+    // The held calls are never described as sitting under a deployment key.
+    expect(stdout).not.toContain('sits under a deployment key');
     // The scanner's own sentence for each cap reaches the reader, not just a code.
     expect(stdout).toMatch(/max_completion_tokens/);
     expect(stdout).toMatch(/max_tokens/);
@@ -624,7 +706,54 @@ describe('a call the scanner caps at review', () => {
     const { exitCode } = await runFixLlm([repo, '--skip-gates', '--fail-on', 'tierB']);
     expect(exitCode).toBe(1);
   }, 120_000);
+
+  it('under --write, leaves every held call untouched and still fixes the calls around it', async () => {
+    const repo = makeCappedRepo();
+    // A live call, so the write path (applyLlmFixesToProject) actually runs: with no Tier A
+    // candidate it never starts, and a test of it would pass for the wrong reason.
+    writeFileSync(
+      join(repo, 'src', 'live.ts'),
+      [
+        'import OpenAI from "openai";',
+        'const client = new OpenAI();',
+        'export async function live() {',
+        "  return client.chat.completions.create({ model: 'gpt-4-0613', messages: [] });",
+        '}',
+        '',
+      ].join('\n'),
+    );
+    // One const, two consumers: the proxy call is held (so the scan holds the declaration),
+    // the direct call is not, and its max_tokens fix must stand.
+    writeFileSync(join(repo, 'src', 'shared.ts'), SHARED_CONST_SOURCE);
+    // Gates off so an edit, had one been made, reaches the disk in this dependency-less
+    // fixture: the test then fails on the file, not on a gate.
+    writeFileSync(
+      join(repo, 'mendr.config.json'),
+      JSON.stringify({ gates: { typecheck: { required: false }, tests: { required: false } } }),
+    );
+    const { stdout } = await runFixLlm([repo, '--write']);
+    expect(readFileSync(join(repo, 'src', 'live.ts'), 'utf8')).toContain("model: 'gpt-5.6-sol'");
+    expect(readFileSync(join(repo, 'examples', 'o3.ts'), 'utf8')).toBe(CAPPED_O3_EXAMPLE);
+    const shared = readFileSync(join(repo, 'src', 'shared.ts'), 'utf8');
+    expect(shared).toContain('proxy.chat.completions.create({ model: MODEL, max_tokens: 1, messages: [] })');
+    expect(shared).toContain('client.chat.completions.create({ model: MODEL, max_completion_tokens: 2, messages: [] })');
+    expect(stdout).toContain('files modified: 2');
+  }, 180_000);
 });
+
+/** A const shared by a held call (a proxy client) and an ordinary one. */
+const SHARED_CONST_SOURCE = [
+  'import OpenAI from "openai";',
+  'const client = new OpenAI();',
+  'const proxy = new OpenAI({ baseURL: "https://llm-proxy.internal/v1" });',
+  'const MODEL = "o3-mini";',
+  'export async function run() {',
+  '  const viaProxy = await proxy.chat.completions.create({ model: MODEL, max_tokens: 1, messages: [] });',
+  '  const direct = await client.chat.completions.create({ model: MODEL, max_tokens: 2, messages: [] });',
+  '  return { viaProxy, direct };',
+  '}',
+  '',
+].join('\n');
 
 describe('fix-llm --fail-on', () => {
   it('gates on tierB', async () => {
