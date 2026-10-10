@@ -61,8 +61,35 @@ const CURATED_OFFICIAL: Record<OracleProvider, Record<string, string>> = {
     'text-moderation-007': 'omni-moderation',
     // Itself deprecated (shutdown 2026-09-28) — a mapping INTO it is chained.
     'gpt-3.5-turbo-instruct': 'gpt-5.6-terra',
+    // Added 2026-10-10 from the deprecations page (snapshot 8d440e5f7cd4), so that the gate,
+    // and not a hand edit, decides these records. Without a row the classifier sees nothing to
+    // contradict, and 83bba86 stamped all seven verified and auto-appliable.
+    //
+    // "2026-03-26 | gpt-4-0314 | gpt-5 or gpt-4.1*", and the same for gpt-4-0125-preview
+    // "(including gpt-4-turbo-preview ..., which point to this snapshot)". The footnote reads
+    // "*For tasks that are especially latency sensitive and don't require reasoning". That is
+    // two targets, and the classifier will not pick one (verify.ts, namedReplacements).
+    'gpt-4-0314': 'gpt-5 or gpt-4.1',
+    'gpt-4-0125-preview': 'gpt-5 or gpt-4.1',
+    'gpt-4-turbo-preview': 'gpt-5 or gpt-4.1',
+    // One hop, as the page names it. The registry carries the end of each chain instead
+    // (gpt-3.5-turbo retires 2026-10-23 and gpt-3.5-turbo-instruct retired 2026-09-28, both to
+    // gpt-5.6-terra), so these classify unverified, as gpt-3.5-turbo-0613 above always has.
+    // Whether following a chain may auto-apply is the owner's decision. If it may, teach the
+    // classifier to follow these rows; do not delete them.
+    'gpt-3.5-turbo-0301': 'gpt-3.5-turbo',
+    'gpt-3.5-turbo-16k-0613': 'gpt-3.5-turbo',
+    'text-davinci-003': 'gpt-3.5-turbo-instruct',
+    'text-davinci-002': 'gpt-3.5-turbo-instruct',
   },
-  google: {},
+  google: {
+    // Same reason, from Google's deprecations page (snapshot d8b5a2b597a3): "gemini-2.0-flash-lite
+    // | February 25, 2025 | June 1, 2026 | gemini-3.1-flash-lite", and the same for -001. The
+    // registry carries gemini-3.5-flash-lite, where Google retires gemini-3.1-flash-lite on
+    // 2027-05-07.
+    'gemini-2.0-flash-lite': 'gemini-3.1-flash-lite',
+    'gemini-2.0-flash-lite-001': 'gemini-3.1-flash-lite',
+  },
 };
 
 /**

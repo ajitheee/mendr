@@ -10,8 +10,9 @@
 //   verified     replacement is live in >=1 public catalog AND is NOT
 //                contradicted by the provider's official recommendation.
 //   unverified   replacement is live but STALE (a newer official target
-//                exists), CHAINED (the replacement is itself deprecated), or
-//                simply not found live for an in-class model. Live-but-wrong ->
+//                exists), CHAINED (the replacement is itself deprecated), one
+//                of SEVERAL the provider names, or simply not found live for
+//                an in-class model. Live-but-wrong ->
 //                block; blocking is always safer than a bad auto-swap.
 //   unverifiable replacement is OUT-OF-CLASS (moderation/image/audio/tts) —
 //                public catalogs don't list these classes, so a miss is NOT
@@ -96,6 +97,18 @@ export function knownDeprecatedFrom(
   return out;
 }
 
+/**
+ * The ids one provider recommendation names. Most rows name one. Some name a choice:
+ * OpenAI's 2026-03-26 rows say "gpt-5 or gpt-4.1*", its dall-e rows "gpt-image-2,
+ * gpt-image-1, or gpt-image-1-mini". A trailing footnote marker is dropped.
+ */
+export function namedReplacements(recommendation: string): string[] {
+  return recommendation
+    .split(/\s*,\s*(?:or\s+)?|\s+or\s+/)
+    .map((id) => id.replace(/\*+$/, '').trim())
+    .filter((id) => id.length > 0);
+}
+
 export function classifyEntry(
   entry: LlmModelIdDeprecation,
   oracles: VerificationOracles,
@@ -156,16 +169,32 @@ export function classifyEntry(
   // (4) OFFICIAL-RECOMMENDATION contradiction (stale / superseded). Identity
   // check, not family: we want the registry to carry the EXACT recommended id.
   const official = officialRecommendations.get(canonicalizeId(deprecated));
-  const staleVsOfficial = official !== undefined && canonicalizeId(official) !== canonReplacement;
+  // (4a) A recommendation that names MORE THAN ONE replacement is a choice the provider left
+  // to the caller. OpenAI's "gpt-5 or gpt-4.1*" footnotes gpt-4.1 as the one "for tasks that
+  // are especially latency sensitive and don't require reasoning". Which applies depends on
+  // the call, which no catalog can see, so whichever the registry carries stays review-only.
+  const choice =
+    official !== undefined && namedReplacements(official).length > 1
+      ? `the provider names more than one replacement ("${official}"); which one fits a call ` +
+        `is a person's decision, so the swap is never automatic`
+      : null;
+  const staleVsOfficial =
+    choice === null && official !== undefined && canonicalizeId(official) !== canonReplacement;
 
   if (!live) {
     reasons.push(
       `replacement "${replacement}" was not found live in any public catalog (models.dev / OpenRouter)`,
     );
+    if (choice) reasons.push(choice);
     if (staleVsOfficial) reasons.push(`the provider officially recommends "${official}"`);
     return { status: 'unverified', reasons };
   }
   reasons.push(`replacement "${replacement}" is live in a public catalog`);
+
+  if (choice) {
+    reasons.push(choice);
+    return { status: 'unverified', reasons };
+  }
 
   if (staleVsOfficial) {
     reasons.push(
@@ -270,6 +299,7 @@ const MACHINE_REASON_PATTERNS: readonly RegExp[] = [
   /^replacement "[^"]+" is live in a public catalog$/,
   /^the provider officially recommends "[^"]+"/,
   /^matches the provider's officially-recommended replacement "[^"]+"/,
+  /^the provider names more than one replacement \("[^"]+"\)/,
 ];
 
 /** Was this reason written by the classifier (rather than by a person)? */

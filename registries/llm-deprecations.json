@@ -94,12 +94,12 @@
     "status": "retired",
     "shutdownDate": "2024-09-13",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "gpt-3.5-turbo-0301 shut down 2024-09-13. OpenAI named gpt-3.5-turbo, which itself shuts down 2026-10-23 with gpt-5.6-terra as its replacement, so this entry carries gpt-5.6-terra.",
+    "note": "gpt-3.5-turbo-0301 shut down 2024-09-13. OpenAI named gpt-3.5-turbo, which itself shuts down 2026-10-23 with gpt-5.6-terra as its replacement, so this entry carries gpt-5.6-terra. It is review-only, as gpt-3.5-turbo-0613 is: gpt-5.6-terra is not the target OpenAI names for this id, and whether a record may auto-apply the end of a chain is the owner's decision.",
     "verification": {
-      "status": "verified",
+      "status": "unverified",
       "officialSourceConfirmed": true,
-      "replacementConfirmed": true,
-      "autoApplyAllowed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
       "quarantineReason": null,
       "checkedAt": "2026-10-10",
       "sources": [
@@ -108,7 +108,9 @@
       ],
       "reasons": [
         "replacement \"gpt-5.6-terra\" is live in a public catalog",
-        "OpenAI deprecation page (read 2026-10-10) states shutdown 2024-09-13, replacement gpt-3.5-turbo; the same page retires gpt-3.5-turbo on October 23, 2026 with gpt-5.6-terra"
+        "the provider officially recommends \"gpt-3.5-turbo\", but the registry uses \"gpt-5.6-terra\" (live, but not the currently-recommended target — stale)",
+        "OpenAI deprecation page (read 2026-10-10) states shutdown 2024-09-13, replacement gpt-3.5-turbo; the same page retires gpt-3.5-turbo on October 23, 2026 with gpt-5.6-terra",
+        "review-only: the catalog check compares against the provider's one-hop replacement (gpt-3.5-turbo), and the registry carries the end of the chain instead"
       ]
     },
     "evidence": [
@@ -166,12 +168,12 @@
     "status": "retired",
     "shutdownDate": "2024-09-13",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "gpt-3.5-turbo-16k-0613 shut down 2024-09-13. OpenAI named gpt-3.5-turbo, which itself shuts down 2026-10-23 with gpt-5.6-terra as its replacement, so this entry carries gpt-5.6-terra.",
+    "note": "gpt-3.5-turbo-16k-0613 shut down 2024-09-13. OpenAI named gpt-3.5-turbo, which itself shuts down 2026-10-23 with gpt-5.6-terra as its replacement, so this entry carries gpt-5.6-terra. It is review-only, as gpt-3.5-turbo-0613 is: gpt-5.6-terra is not the target OpenAI names for this id, and whether a record may auto-apply the end of a chain is the owner's decision.",
     "verification": {
-      "status": "verified",
+      "status": "unverified",
       "officialSourceConfirmed": true,
-      "replacementConfirmed": true,
-      "autoApplyAllowed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
       "quarantineReason": null,
       "checkedAt": "2026-10-10",
       "sources": [
@@ -180,7 +182,9 @@
       ],
       "reasons": [
         "replacement \"gpt-5.6-terra\" is live in a public catalog",
-        "OpenAI deprecation page (read 2026-10-10) states shutdown 2024-09-13, replacement gpt-3.5-turbo; the same page retires gpt-3.5-turbo on October 23, 2026 with gpt-5.6-terra"
+        "the provider officially recommends \"gpt-3.5-turbo\", but the registry uses \"gpt-5.6-terra\" (live, but not the currently-recommended target — stale)",
+        "OpenAI deprecation page (read 2026-10-10) states shutdown 2024-09-13, replacement gpt-3.5-turbo; the same page retires gpt-3.5-turbo on October 23, 2026 with gpt-5.6-terra",
+        "review-only: the catalog check compares against the provider's one-hop replacement (gpt-3.5-turbo), and the registry carries the end of the chain instead"
       ]
     },
     "evidence": [
@@ -201,12 +205,12 @@
     "status": "retired",
     "shutdownDate": "2026-03-26",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "gpt-4-0314 shut down 2026-03-26. OpenAI names \"gpt-5 or gpt-4.1\"; gpt-5's dated snapshot gpt-5-2025-08-07 retires 2026-12-11 with gpt-5.6-sol as its replacement, and this entry carries gpt-5.6-sol. An older row on the same page gives gpt-4-0314 a shutdown of \"at earliest 2024-06-13\"; the 2026-03-26 row is the one that took effect.",
+    "note": "gpt-4-0314 shut down 2026-03-26. OpenAI names two replacements, \"gpt-5 or gpt-4.1*\", and footnotes gpt-4.1: \"*For tasks that are especially latency sensitive and don’t require reasoning\". Which one a call needs is a person's decision, so this entry is review-only. It carries gpt-5.6-sol, the end of gpt-5's chain: gpt-5's dated snapshot gpt-5-2025-08-07 retires 2026-12-11 with gpt-5.6-sol as its replacement. An older row on the same page gives gpt-4-0314 a shutdown of \"at earliest 2024-06-13\"; the 2026-03-26 row is the one that took effect.",
     "verification": {
-      "status": "verified",
+      "status": "unverified",
       "officialSourceConfirmed": true,
-      "replacementConfirmed": true,
-      "autoApplyAllowed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
       "quarantineReason": null,
       "checkedAt": "2026-10-10",
       "sources": [
@@ -215,7 +219,9 @@
       ],
       "reasons": [
         "replacement \"gpt-5.6-sol\" is live in a public catalog",
-        "OpenAI deprecation page (read 2026-10-10) states shutdown 2026-03-26 with \"gpt-5 or gpt-4.1\"; the same page retires gpt-5-2025-08-07 on Dec 11, 2026 with gpt-5.6-sol"
+        "the provider names more than one replacement (\"gpt-5 or gpt-4.1\"); which one fits a call is a person's decision, so the swap is never automatic",
+        "OpenAI deprecation page (read 2026-10-10) states shutdown 2026-03-26 with \"gpt-5 or gpt-4.1\"; the same page retires gpt-5-2025-08-07 on Dec 11, 2026 with gpt-5.6-sol",
+        "held review-only on 2026-10-10: OpenAI's row names two targets, and its footnote limits gpt-4.1 to latency-sensitive tasks that need no reasoning. 83bba86 had switched the row's three records on, resolving it to gpt-5.6-sol for gpt-4-0314 and to gpt-4.1 for gpt-4-0125-preview and gpt-4-turbo-preview"
       ]
     },
     "evidence": [
@@ -481,12 +487,12 @@
     "status": "retired",
     "shutdownDate": "2024-01-04",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "text-davinci-003, a legacy Completions model, shut down 2024-01-04. OpenAI named gpt-3.5-turbo-instruct, which itself shut down 2026-09-28 with gpt-5.6-terra as its replacement, so this entry carries gpt-5.6-terra.",
+    "note": "text-davinci-003, a legacy Completions model, shut down 2024-01-04. OpenAI named gpt-3.5-turbo-instruct, which itself shut down 2026-09-28 with gpt-5.6-terra as its replacement, so this entry carries gpt-5.6-terra. It is review-only: gpt-5.6-terra is not the target OpenAI names for this id, and whether a record may auto-apply the end of a chain is the owner's decision.",
     "verification": {
-      "status": "verified",
+      "status": "unverified",
       "officialSourceConfirmed": true,
-      "replacementConfirmed": true,
-      "autoApplyAllowed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
       "quarantineReason": null,
       "checkedAt": "2026-10-10",
       "sources": [
@@ -495,7 +501,9 @@
       ],
       "reasons": [
         "replacement \"gpt-5.6-terra\" is live in a public catalog",
-        "OpenAI deprecation page (read 2026-10-10) states shutdown 2024-01-04, replacement gpt-3.5-turbo-instruct; the same page retires gpt-3.5-turbo-instruct on 2026-09-28 with gpt-5.6-terra"
+        "the provider officially recommends \"gpt-3.5-turbo-instruct\", but the registry uses \"gpt-5.6-terra\" (live, but not the currently-recommended target — stale)",
+        "OpenAI deprecation page (read 2026-10-10) states shutdown 2024-01-04, replacement gpt-3.5-turbo-instruct; the same page retires gpt-3.5-turbo-instruct on 2026-09-28 with gpt-5.6-terra",
+        "review-only: the catalog check compares against the provider's one-hop replacement (gpt-3.5-turbo-instruct), and the registry carries the end of the chain instead"
       ]
     },
     "evidence": [
@@ -516,12 +524,12 @@
     "status": "retired",
     "shutdownDate": "2024-01-04",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "text-davinci-002, a legacy Completions model, shut down 2024-01-04. OpenAI named gpt-3.5-turbo-instruct, which itself shut down 2026-09-28 with gpt-5.6-terra as its replacement, so this entry carries gpt-5.6-terra.",
+    "note": "text-davinci-002, a legacy Completions model, shut down 2024-01-04. OpenAI named gpt-3.5-turbo-instruct, which itself shut down 2026-09-28 with gpt-5.6-terra as its replacement, so this entry carries gpt-5.6-terra. It is review-only: gpt-5.6-terra is not the target OpenAI names for this id, and whether a record may auto-apply the end of a chain is the owner's decision.",
     "verification": {
-      "status": "verified",
+      "status": "unverified",
       "officialSourceConfirmed": true,
-      "replacementConfirmed": true,
-      "autoApplyAllowed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
       "quarantineReason": null,
       "checkedAt": "2026-10-10",
       "sources": [
@@ -530,7 +538,9 @@
       ],
       "reasons": [
         "replacement \"gpt-5.6-terra\" is live in a public catalog",
-        "OpenAI deprecation page (read 2026-10-10) states shutdown 2024-01-04, replacement gpt-3.5-turbo-instruct; the same page retires gpt-3.5-turbo-instruct on 2026-09-28 with gpt-5.6-terra"
+        "the provider officially recommends \"gpt-3.5-turbo-instruct\", but the registry uses \"gpt-5.6-terra\" (live, but not the currently-recommended target — stale)",
+        "OpenAI deprecation page (read 2026-10-10) states shutdown 2024-01-04, replacement gpt-3.5-turbo-instruct; the same page retires gpt-3.5-turbo-instruct on 2026-09-28 with gpt-5.6-terra",
+        "review-only: the catalog check compares against the provider's one-hop replacement (gpt-3.5-turbo-instruct), and the registry carries the end of the chain instead"
       ]
     },
     "evidence": [
@@ -1120,12 +1130,12 @@
     "status": "retired",
     "shutdownDate": "2026-03-26",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "gpt-4-0125-preview shut down 2026-03-26. OpenAI names \"gpt-5 or gpt-4.1\"; this entry carries gpt-4.1, whose model page shows no deprecation, while gpt-5's dated snapshot retires 2026-12-11.",
+    "note": "gpt-4-0125-preview shut down 2026-03-26. OpenAI names two replacements, \"gpt-5 or gpt-4.1*\", and footnotes gpt-4.1: \"*For tasks that are especially latency sensitive and don’t require reasoning\". Which one a call needs is a person's decision, so this entry is review-only. It carries gpt-4.1, whose model page shows no deprecation; gpt-5's dated snapshot retires 2026-12-11.",
     "verification": {
-      "status": "verified",
+      "status": "unverified",
       "officialSourceConfirmed": true,
-      "replacementConfirmed": true,
-      "autoApplyAllowed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
       "quarantineReason": null,
       "checkedAt": "2026-10-10",
       "sources": [
@@ -1134,8 +1144,10 @@
       ],
       "reasons": [
         "replacement \"gpt-4.1\" is live in a public catalog",
+        "the provider names more than one replacement (\"gpt-5 or gpt-4.1\"); which one fits a call is a person's decision, so the swap is never automatic",
         "OpenAI deprecation page (read 2026-10-10) states shutdown 2026-03-26 with \"gpt-5 or gpt-4.1\", for gpt-4-0125-preview \"including gpt-4-turbo-preview and gpt-4-turbo-preview-completions, which point to this snapshot\"",
-        "gpt-4.1 model page (read 2026-10-10) shows no deprecation"
+        "gpt-4.1 model page (read 2026-10-10) shows no deprecation",
+        "held review-only on 2026-10-10: OpenAI's row names two targets, and its footnote limits gpt-4.1 to latency-sensitive tasks that need no reasoning. 83bba86 had switched the row's three records on, resolving it to gpt-5.6-sol for gpt-4-0314 and to gpt-4.1 for gpt-4-0125-preview and gpt-4-turbo-preview"
       ]
     },
     "evidence": [
@@ -1183,12 +1195,12 @@
     "status": "retired",
     "shutdownDate": "2026-03-26",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "gpt-4-turbo-preview pointed to gpt-4-0125-preview, which shut down 2026-03-26; OpenAI's deprecation table names the alias in that row. OpenAI names \"gpt-5 or gpt-4.1\"; this entry carries gpt-4.1, whose model page shows no deprecation.",
+    "note": "gpt-4-turbo-preview pointed to gpt-4-0125-preview, which shut down 2026-03-26; OpenAI's deprecation table names the alias in that row. OpenAI names two replacements, \"gpt-5 or gpt-4.1*\", and footnotes gpt-4.1: \"*For tasks that are especially latency sensitive and don’t require reasoning\". Which one a call needs is a person's decision, so this entry is review-only. It carries gpt-4.1, whose model page shows no deprecation.",
     "verification": {
-      "status": "verified",
+      "status": "unverified",
       "officialSourceConfirmed": true,
-      "replacementConfirmed": true,
-      "autoApplyAllowed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
       "quarantineReason": null,
       "checkedAt": "2026-10-10",
       "sources": [
@@ -1197,8 +1209,10 @@
       ],
       "reasons": [
         "replacement \"gpt-4.1\" is live in a public catalog",
+        "the provider names more than one replacement (\"gpt-5 or gpt-4.1\"); which one fits a call is a person's decision, so the swap is never automatic",
         "OpenAI deprecation page (read 2026-10-10) states shutdown 2026-03-26 for gpt-4-0125-preview \"including gpt-4-turbo-preview and gpt-4-turbo-preview-completions, which point to this snapshot\", with \"gpt-5 or gpt-4.1\"",
-        "gpt-4-turbo model page (read 2026-10-10) lists gpt-4-turbo-preview pointing to gpt-4-0125-preview, marked Deprecated"
+        "gpt-4-turbo model page (read 2026-10-10) lists gpt-4-turbo-preview pointing to gpt-4-0125-preview, marked Deprecated",
+        "held review-only on 2026-10-10: OpenAI's row names two targets, and its footnote limits gpt-4.1 to latency-sensitive tasks that need no reasoning. 83bba86 had switched the row's three records on, resolving it to gpt-5.6-sol for gpt-4-0314 and to gpt-4.1 for gpt-4-0125-preview and gpt-4-turbo-preview"
       ]
     },
     "evidence": [
@@ -2683,12 +2697,12 @@
     "status": "retired",
     "shutdownDate": "2026-06-01",
     "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-    "note": "gemini-2.0-flash-lite shut down 2026-06-01. Google names gemini-3.1-flash-lite, which the same table retires on 2027-05-07 with gemini-3.5-flash-lite as its replacement; this entry follows that chain to gemini-3.5-flash-lite, as the gemini-3.1-flash-lite entry does.",
+    "note": "gemini-2.0-flash-lite shut down 2026-06-01. Google names gemini-3.1-flash-lite, which the same table retires on 2027-05-07 with gemini-3.5-flash-lite as its replacement; this entry carries gemini-3.5-flash-lite, as the gemini-3.1-flash-lite entry does. It is review-only: gemini-3.5-flash-lite is not the target Google names for this id, and whether a record may auto-apply the end of a chain is the owner's decision.",
     "verification": {
-      "status": "verified",
+      "status": "unverified",
       "officialSourceConfirmed": true,
-      "replacementConfirmed": true,
-      "autoApplyAllowed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
       "quarantineReason": null,
       "checkedAt": "2026-10-10",
       "sources": [
@@ -2697,8 +2711,10 @@
       ],
       "reasons": [
         "replacement \"gemini-3.5-flash-lite\" is live in a public catalog",
+        "the provider officially recommends \"gemini-3.1-flash-lite\", but the registry uses \"gemini-3.5-flash-lite\" (live, but not the currently-recommended target — stale)",
         "Google deprecation page (read 2026-10-10) states shutdown June 1, 2026 and recommended replacement gemini-3.1-flash-lite; it retires gemini-3.1-flash-lite on May 7, 2027 with gemini-3.5-flash-lite",
-        "gemini-3.5-flash-lite is listed on the deprecations page with no shutdown date announced"
+        "gemini-3.5-flash-lite is listed on the deprecations page with no shutdown date announced",
+        "review-only: the catalog check compares against the provider's one-hop replacement (gemini-3.1-flash-lite), and the registry carries the end of the chain instead"
       ]
     },
     "evidence": [
@@ -2725,12 +2741,12 @@
     "status": "retired",
     "shutdownDate": "2026-06-01",
     "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-    "note": "gemini-2.0-flash-lite-001 shut down 2026-06-01. Google names gemini-3.1-flash-lite, which the same table retires on 2027-05-07 with gemini-3.5-flash-lite as its replacement; this entry follows that chain to gemini-3.5-flash-lite, as the gemini-3.1-flash-lite entry does.",
+    "note": "gemini-2.0-flash-lite-001 shut down 2026-06-01. Google names gemini-3.1-flash-lite, which the same table retires on 2027-05-07 with gemini-3.5-flash-lite as its replacement; this entry carries gemini-3.5-flash-lite, as the gemini-3.1-flash-lite entry does. It is review-only: gemini-3.5-flash-lite is not the target Google names for this id, and whether a record may auto-apply the end of a chain is the owner's decision.",
     "verification": {
-      "status": "verified",
+      "status": "unverified",
       "officialSourceConfirmed": true,
-      "replacementConfirmed": true,
-      "autoApplyAllowed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
       "quarantineReason": null,
       "checkedAt": "2026-10-10",
       "sources": [
@@ -2739,8 +2755,10 @@
       ],
       "reasons": [
         "replacement \"gemini-3.5-flash-lite\" is live in a public catalog",
+        "the provider officially recommends \"gemini-3.1-flash-lite\", but the registry uses \"gemini-3.5-flash-lite\" (live, but not the currently-recommended target — stale)",
         "Google deprecation page (read 2026-10-10) states shutdown June 1, 2026 and recommended replacement gemini-3.1-flash-lite; it retires gemini-3.1-flash-lite on May 7, 2027 with gemini-3.5-flash-lite",
-        "gemini-3.5-flash-lite is listed on the deprecations page with no shutdown date announced"
+        "gemini-3.5-flash-lite is listed on the deprecations page with no shutdown date announced",
+        "review-only: the catalog check compares against the provider's one-hop replacement (gemini-3.1-flash-lite), and the registry carries the end of the chain instead"
       ]
     },
     "evidence": [

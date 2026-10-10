@@ -1,11 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import type { LlmModelIdDeprecation } from '../types.js';
 import { canonicalizeId, familyOf } from './normalize.js';
+import { loadLlmRegistry, resolveRegistryPath } from '../usage/llmRegistry.js';
+import { officialRecommendations } from './oracles.js';
 import {
   classifyEntry,
   isMachineReason,
   knownDeprecatedFrom,
   mergeReasons,
+  namedReplacements,
   type VerificationOracles,
 } from './verify.js';
 
@@ -244,5 +247,120 @@ describe("classifyEntry — chained on the registry's own evidence", () => {
     ]);
     expect(m.has(canonicalizeId('temperature'))).toBe(false);
     expect(m.get(canonicalizeId('x-model'))).toContain('retired');
+  });
+});
+
+// --- one of several named replacements --------------------------------------
+//
+// OpenAI's 2026-03-26 rows name "gpt-5 or gpt-4.1*", footnoted "*For tasks that are especially
+// latency sensitive and don't require reasoning". On 2026-10-10 gpt-4-0314 was switched on
+// with gpt-5.6-sol (gpt-5's chain) and gpt-4-0125-preview with gpt-4.1: one row resolved two
+// ways, both auto-appliable, because the curated table had no row and so nothing contradicted
+// either. Which target fits depends on the call, which no catalog can see.
+describe('namedReplacements', () => {
+  it('reads one id, an "or" pair, and a comma list with a final "or"', () => {
+    expect(namedReplacements('claude-opus-4-8')).toEqual(['claude-opus-4-8']);
+    expect(namedReplacements('gpt-5 or gpt-4.1*')).toEqual(['gpt-5', 'gpt-4.1']);
+    expect(namedReplacements('gpt-image-2, gpt-image-1, or gpt-image-1-mini')).toEqual([
+      'gpt-image-2',
+      'gpt-image-1',
+      'gpt-image-1-mini',
+    ]);
+  });
+});
+
+describe('classifyEntry — UNVERIFIED (the provider names more than one replacement)', () => {
+  const oracles: VerificationOracles = {
+    liveIds: liveSet('gpt-5', 'gpt-4.1', 'gpt-5.6-sol'),
+    officialRecommendations: officialMap({
+      'gpt-4-0314': 'gpt-5 or gpt-4.1',
+      'gpt-4-0125-preview': 'gpt-5 or gpt-4.1',
+    }),
+  };
+
+  it('holds whichever named target the registry carries, and the end of either chain', () => {
+    for (const [deprecated, replacement] of [
+      ['gpt-4-0125-preview', 'gpt-4.1'],
+      ['gpt-4-0125-preview', 'gpt-5'],
+      ['gpt-4-0314', 'gpt-5.6-sol'],
+    ]) {
+      const r = classifyEntry(entry(deprecated, replacement), oracles);
+      expect(r.status, `${deprecated} -> ${replacement}`).toBe('unverified');
+      expect(r.reasons.join(' ')).toContain(
+        'the provider names more than one replacement ("gpt-5 or gpt-4.1")',
+      );
+      // It is a choice, not a stale target: the reason must not call it one.
+      expect(r.reasons.join(' ')).not.toMatch(/stale/);
+    }
+  });
+
+  it('still says so when the carried target is not live', () => {
+    const r = classifyEntry(entry('gpt-4-0314', 'gpt-9-ghost'), oracles);
+    expect(r.status).toBe('unverified');
+    expect(r.reasons.join(' ')).toContain('more than one replacement');
+  });
+});
+
+describe("mergeReasons — the new verdict is the machine's own", () => {
+  it('recognises the choice sentence, so a re-stamp regenerates it', () => {
+    const oracles: VerificationOracles = {
+      liveIds: liveSet('gpt-5.6-sol'),
+      officialRecommendations: officialMap({ 'gpt-4-0314': 'gpt-5 or gpt-4.1' }),
+    };
+    const cases = [
+      entry('gpt-4-0314', 'gpt-5.6-sol'),
+      entry('gpt-4-0314', 'ghost-9'),
+    ];
+    for (const e of cases) {
+      for (const reason of classifyEntry(e, oracles).reasons) {
+        expect(isMachineReason(reason), reason).toBe(true);
+      }
+    }
+  });
+});
+
+// --- the gate, not a hand edit, decides the shipped stamps -------------------
+//
+// The weekly registry-verify job fails when a record shipped `verified` no longer classifies
+// verified, and it can only catch what the classifier knows. This is that check offline, with
+// every replacement assumed live, the most generous answer the catalogs could give. On
+// 2026-10-10 nine records were stamped verified by hand against provider rows the curated
+// table did not carry; with the rows in the table, this test refuses that edit.
+describe('the shipped registry, against the curated table', () => {
+  const shipped = loadLlmRegistry(resolveRegistryPath()).filter(
+    (e): e is LlmModelIdDeprecation => e.kind === 'model_id',
+  );
+  const generous: VerificationOracles = {
+    liveIds: liveSet(...shipped.map((e) => e.replacement)),
+    officialRecommendations: officialRecommendations(),
+    knownDeprecated: knownDeprecatedFrom(shipped),
+  };
+
+  it('stamps nothing verified that the classifier would hold, even with every replacement live', () => {
+    const contradicted = shipped
+      .filter((e) => e.verification?.status === 'verified')
+      .filter((e) => classifyEntry(e, generous).status !== 'verified')
+      .map((e) => `${e.deprecated} -> ${e.replacement}: ${classifyEntry(e, generous).reasons.join('; ')}`);
+    expect(contradicted).toEqual([]);
+  });
+
+  it('holds every record whose provider row names two targets or a dated one', () => {
+    for (const id of [
+      'gpt-4-0314',
+      'gpt-4-0125-preview',
+      'gpt-4-turbo-preview',
+      'gpt-3.5-turbo-0301',
+      'gpt-3.5-turbo-0613',
+      'gpt-3.5-turbo-16k-0613',
+      'text-davinci-003',
+      'text-davinci-002',
+      'gemini-2.0-flash-lite',
+      'gemini-2.0-flash-lite-001',
+    ]) {
+      const record = shipped.find((e) => e.deprecated === id);
+      expect(record, id).toBeTruthy();
+      expect(record!.verification?.autoApplyAllowed, id).toBe(false);
+      expect(classifyEntry(record!, generous).status, id).toBe('unverified');
+    }
   });
 });

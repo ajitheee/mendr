@@ -184,9 +184,13 @@ describe('the SHIPPED registry footer', () => {
     // retiring 2026-10-22 and 2026-11-17 are added, all detect-only; so are OpenAI's six
     // fine-tune rows, quarantined. Then 13 discovered candidates the gate cannot check, added
     // review-only: 6 OpenAI realtime ids and gemini-2.5-flash-lite-preview-09-2025 (unverified),
-    // 6 OpenAI audio ids (unverifiable by class).
+    // 6 OpenAI audio ids (unverifiable by class). Then 9 of the settled records go back to
+    // review-only, unverified by the gate's own curated rows: 3 whose OpenAI row names two
+    // targets ("gpt-5 or gpt-4.1*"), and 6 that carry the end of a chain instead of the target
+    // the provider names (gpt-3.5-turbo-0301, -16k-0613, text-davinci-003, -002,
+    // gemini-2.0-flash-lite, -001).
     expect(lines[0]).toBe('registry: 193 records');
-    expect(lines[1]).toBe('auto-fix eligible: 144');
-    expect(lines[2]).toBe('review-only: 49 (quarantined 16, unverified 14, unverifiable 19)');
+    expect(lines[1]).toBe('auto-fix eligible: 135');
+    expect(lines[2]).toBe('review-only: 58 (quarantined 16, unverified 23, unverifiable 19)');
   });
 });

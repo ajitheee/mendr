@@ -406,10 +406,14 @@ describe('the shipped registry', () => {
     // check, added review-only: 6 OpenAI realtime ids whose replacement no catalog lists and
     // gemini-2.5-flash-lite-preview-09-2025, whose replacement Google itself retires (+7
     // unverified), and 6 OpenAI audio ids (+6 unverifiable by class). Eligible is unchanged.
+    // Then 9 of the settled records go back to review-only, unverified by the gate's own curated
+    // rows (-9 eligible, +9 unverified): gpt-4-0314, gpt-4-0125-preview and gpt-4-turbo-preview,
+    // whose OpenAI row names two targets, and gpt-3.5-turbo-0301, -16k-0613, text-davinci-003,
+    // -002, gemini-2.0-flash-lite and -001, which carry the end of a chain, not the named target.
     expect(provenance.activeEntries).toBe(193);
-    expect(provenance.autoFixEligible).toBe(144);
+    expect(provenance.autoFixEligible).toBe(135);
     expect(provenance.reviewOnlyCounts.quarantined).toBe(16);
-    expect(provenance.reviewOnlyCounts.unverified).toBe(14);
+    expect(provenance.reviewOnlyCounts.unverified).toBe(23);
     expect(provenance.reviewOnlyCounts.unverifiable).toBe(19);
     // Nothing ships in the defence-in-depth state; the validator forbids it.
     expect(provenance.reviewOnlyCounts.withheld).toBe(0);
