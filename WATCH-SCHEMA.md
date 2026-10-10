@@ -54,7 +54,8 @@ default branch, and cannot bypass Mendr's deterministic safety gate.
 
 ```jsonc
 {
-  "id": "gpt-4",                       // the deprecated model id in your code
+  "id": "gpt-4",                       // the deprecated model id in your code; a fine-tune
+                                       //   (ft:gpt-4-0613:…) reads as its registry row, "ft-gpt-4"
   "provider": "openai",
   "entryId": "openai.gpt-4.retirement-2026-10-23", // stable registry id (mendr evidence <id>)
   "status": "deprecated|retired|null", // source-id lifecycle per provider docs
