@@ -572,6 +572,29 @@ export const PY_REQUEST_DICT_REASON =
  * followed, and the unpacking must be in the dict's own function (or anywhere, for a module-level
  * dict), so a same-named dict in another function is not mistaken for the one that is sent.
  */
+/**
+ * Every `**name` in a parse, by name, built once per tree. Walking the tree per matched literal
+ * was quadratic: 800 module-level model dicts in a 4,800-function file took 60 s, against 1.1 s
+ * without the rule. A tree is never re-parsed in place, so the index is never read across an edit.
+ */
+const SPLAT_INDEX = new WeakMap<Tree, Map<string, PyNode[]>>();
+
+function splatsNamed(tree: Tree, name: string): PyNode[] {
+  let byName = SPLAT_INDEX.get(tree);
+  if (!byName) {
+    byName = new Map();
+    for (const splat of tree.rootNode.descendantsOfType('dictionary_splat')) {
+      const inner = splat?.namedChildren[0];
+      if (!splat || !inner || inner.type !== 'identifier') continue;
+      const list = byName.get(inner.text);
+      if (list) list.push(splat);
+      else byName.set(inner.text, [splat]);
+    }
+    SPLAT_INDEX.set(tree, byName);
+  }
+  return byName.get(name) ?? [];
+}
+
 function isDictUnpackedIntoProviderCall(pair: PyNode): boolean {
   const dict = pair.parent;
   if (!dict || dict.type !== 'dictionary') return false;
@@ -586,12 +609,7 @@ function isDictUnpackedIntoProviderCall(pair: PyNode): boolean {
   if (!left || left.type !== 'identifier') return false;
   const name = left.text;
   const scope = enclosingFunction(parent);
-  let root: PyNode = parent;
-  while (root.parent) root = root.parent;
-  for (const splat of (scope ?? root).descendantsOfType('dictionary_splat')) {
-    if (!splat) continue;
-    const inner = splat.namedChildren[0];
-    if (!inner || inner.type !== 'identifier' || inner.text !== name) continue;
+  for (const splat of splatsNamed(pair.tree, name)) {
     // A function-local dict is only the one unpacked in that same function.
     if (scope && !enclosingFunction(splat)?.equals(scope)) continue;
     const call = splat.parent?.type === 'argument_list' ? splat.parent.parent : null;

@@ -51,6 +51,21 @@ describe('a request dict built in a variable and unpacked into a provider reques
   }, 60_000);
 });
 
+describe('following a dict stays linear in the size of the file', () => {
+  // Walking the tree once per matched literal took 60 s for 800 module-level dicts beside 4,000
+  // functions, against 1.1 s without the rule. The same file here, with a budget far from both.
+  it('classifies hundreds of module-level model dicts in one large file within budget', async () => {
+    const lines: string[] = [];
+    for (let i = 0; i < 800; i++) lines.push(`CARD_${i} = {"model": "gpt-4", "tag": "t${i}"}`);
+    for (let i = 0; i < 4000; i++) lines.push(`def f${i}(a, **kw):\n    return g(a, **kw) + CARD_${i % 800}["tag"]`);
+    const started = performance.now();
+    const matches = await findPyModelIdLiterals([{ path: 'app/cards.py', text: lines.join('\n') }], REG);
+    expect(performance.now() - started).toBeLessThan(20_000);
+    expect(matches).toHaveLength(800);
+    expect(matches.every((m) => m.position === 'data')).toBe(true);
+  }, 120_000);
+});
+
 describe('a dict that never reaches a provider request stays data', () => {
   it('a dict nothing unpacks', async () => {
     const v = await verdict(`${CLIENT}\ndef card():\n    entry = {"model": "gpt-4", "label": "GPT-4"}\n    return entry["label"]\n`);
