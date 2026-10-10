@@ -48,8 +48,9 @@ Postgres service vs the static marketing site on Vercel): `/setup` and every
 signed-in page live here, on this service's own domain; the marketing site's
 "Connect GitHub" button and its old `/app` URL both lead here.
 
-The fastest path is the [Render blueprint](../render.yaml) (Docker + managed
-Postgres, near one-click). The short version:
+The fastest path is the [Render blueprint](../render.yaml) (near one-click, with
+an external Postgres such as Neon's free plan for `DATABASE_URL`). The short
+version:
 
 1. **Run it somewhere public** with Node 22+ and Postgres. Any container host
    works; the Dockerfile builds from the repository root:

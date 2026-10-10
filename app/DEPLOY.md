@@ -17,13 +17,19 @@ never hand-craft a manifest or paste a private key into code.
 
 ---
 
-## 1. Deploy the service (Render — simplest Docker + Postgres)
+## 1. Deploy the service (Render + an external Postgres)
 
 1. Push the repo (it contains [`render.yaml`](../render.yaml)).
-2. In Render → **New → Blueprint** → pick this repo. Render reads `render.yaml`,
-   provisions a free Postgres, builds the web service from `app/Dockerfile`,
-   generates `SESSION_SECRET`, and links `DATABASE_URL`.
-3. When the first deploy is up, copy the service URL (e.g.
+2. Create the database **outside Render**: a Postgres that does not expire, for
+   example a project on Neon's free plan. Copy its connection string (Neon's
+   includes `sslmode=require`). The blueprint provisions no database on
+   purpose: Render's free Postgres expires 30 days after creation, then is
+   deleted 14 days later.
+3. In Render → **New → Blueprint** → pick this repo. Render reads `render.yaml`,
+   builds the web service on its native Node runtime in `app/`, and generates
+   `SESSION_SECRET`. When it asks for `DATABASE_URL`, paste the connection
+   string from step 2.
+4. When the first deploy is up, copy the service URL (e.g.
    `https://mendr-app.onrender.com`) and set two env vars in the dashboard:
    - `APP_URL` = that URL (no trailing slash).
    - `MENDR_DATA_KEY` = a 32-byte key. Generate one:
@@ -32,7 +38,21 @@ never hand-craft a manifest or paste a private key into code.
      ```
    Redeploy so both take effect.
 
-`/healthz` should return `{"ok":true,...,"store":"postgres"}`.
+`/healthz` should return `{"ok":true,"db":"ok",...,"store":"postgres"}`. If the
+database cannot be reached, the service does not start: within 10 s the log ends
+with one sentence naming the problem (for example `Cannot reach the database at
+DATABASE_URL within 10 s. Check the connection string in the Render dashboard.`)
+and the process exits, so Render fails that deploy and keeps the previous one
+serving. If the database goes away later, `/healthz` answers
+`503 {"ok":false,"db":"unavailable",...}`.
+
+> **Moving an existing deployment off Render's Postgres.** Render only prompts
+> for `DATABASE_URL` when a Blueprint is first created, and keeps an existing
+> value on later syncs, so edit it in the service's **Environment** tab and save
+> (that redeploys). Removing the database from `render.yaml` does not delete
+> it — Render never deletes a resource because it left the Blueprint — so
+> delete the old `mendr-db` in the dashboard (if Render has not already) once
+> the App is up on the new one.
 
 > **Other hosts.** Any container platform works — the image is a standard
 > Dockerfile. **Fly.io:** `fly launch --dockerfile app/Dockerfile` (build context
@@ -111,4 +131,6 @@ environment variable, so a deployment can never hand out a stale pin. Optional:
 
 The App warns loudly at boot if `DATABASE_URL` (falls back to in-memory) or
 `MENDR_DATA_KEY` (plaintext storage) is missing — neither is acceptable for a
-production deployment holding private-repo findings.
+production deployment holding private-repo findings. A `DATABASE_URL` that is
+set but unreachable stops the boot within 10 s with one sentence; it never
+leaves the process waiting with nothing in the log.

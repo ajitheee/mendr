@@ -680,6 +680,20 @@ describe('approvals: decided in Mendr, carried out by the customer\'s own CI', (
     expect(body.encryption).toEqual({ enabled: false, sealedRuns: 0, plaintextRuns: 0, sealedMigrations: 0, plaintextMigrations: 0, decrypt: 'none' });
   });
 
+  it('/healthz says 503 and why when the database goes away after boot, never the connection string', async () => {
+    const h = harness();
+    h.store.encryptionStatus = async () => {
+      throw new Error('connect ECONNREFUSED postgres://mendr:hunter2-not-for-logs@db:5432/mendr');
+    };
+    const res = await h.app.request('/healthz');
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body).toMatchObject({ ok: false, db: 'unavailable', error: 'Cannot reach the database at DATABASE_URL. Check the connection string in the Render dashboard.' });
+    expect(body.deployment.id).toBeTruthy();
+    expect(h.logs).toContain('healthz: database unavailable');
+    expect(JSON.stringify(body) + JSON.stringify(h.logEvents)).not.toContain('hunter2-not-for-logs');
+  });
+
   it('a run that could not verify closes the approval as failed and offers the decision again', async () => {
     const { h, cookie } = await approved();
     const token = await actionsToken({ run_id: '701', workflow_ref: MIGRATE_REF });

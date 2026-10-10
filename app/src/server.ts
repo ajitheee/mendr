@@ -8,11 +8,21 @@ import { createActionsVerifier, remoteActionsJwks } from './github/oidc.js';
 import { MemoryStore } from './store/memory.js';
 import { createPgStore } from './store/pg.js';
 import { loadKeyring } from './store/encryption.js';
+import type { Store } from './store/types.js';
 
 const config = loadConfig();
 
 const keyring = loadKeyring(config.dataKey);
-const store = config.databaseUrl ? await createPgStore(config.databaseUrl, keyring) : new MemoryStore();
+// No database, no service: say why in one line and exit non-zero within DB_TIMEOUT_MS. Render
+// then does not promote the deploy, keeps the previous one serving, and shows this line as the
+// reason; it restarts a crashed instance itself, so the App recovers once DATABASE_URL is fixed.
+let store: Store;
+try {
+  store = config.databaseUrl ? await createPgStore(config.databaseUrl, keyring) : new MemoryStore();
+} catch (err) {
+  console.error(err instanceof Error ? err.message : String(err));
+  process.exit(1);
+}
 if (!config.databaseUrl) console.warn('DATABASE_URL is not set: using the in-memory store. Runs vanish on restart. Development only.');
 if (config.databaseUrl && !keyring) console.warn('MENDR_DATA_KEY is not set: stored reports are NOT field-encrypted at rest. Set it in production.');
 // A key set after data already existed: seal what is still plaintext, so
