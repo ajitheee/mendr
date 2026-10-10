@@ -338,9 +338,9 @@ describe('the shipped registry', () => {
     // return a 400 on Sonnet 5.5 (thinking budgets, sampling parameters, assistant prefill,
     // forced tool choice, thinking type "disabled") and turns thinking on by default, so code
     // reading content[0].text breaks. No parameter rule covers Sonnet 5.5 (extending the
-    // sampling rules to it made fix-llm drop these call sites from its report), and the
-    // Python path has no parameter guard, so the quarantine is what keeps every call site in
-    // review, in audit and fix-llm alike.
+    // sampling rules to it made fix-llm drop these call sites from its report), so the parameter
+    // guard, TypeScript's and Python's alike, has no rule to hold them with. The quarantine is
+    // what keeps every call site in review, in audit and fix-llm alike.
     const entry = modelIdEntries(loadLlmRegistry(resolveRegistryPath())).find(
       (e) => e.deprecated === 'claude-sonnet-4-5-20250929',
     )!;

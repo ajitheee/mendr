@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { Language, Parser, type Node as PyNode, type Tree } from 'web-tree-sitter';
 import type { LlmModelIdDeprecation, LlmRegistry, SourceLocation } from '../types.js';
 import { effectiveVerificationState, isVerified, modelIdEntries } from '../usage/llmRegistry.js';
+import { paramHoldReason } from '../usage/coupledParams.js';
 import {
   CATALOG_SIBLING_KEYS,
   isDefaultContainerName,
@@ -925,17 +926,7 @@ export function applyPyGuards(
   // bypasses G2, G4 and G5 entirely. Every reachable sink must qualify; the
   // strictest verdict wins, and an unresolvable one caps.
   if (!call) {
-    const traced = tracedNameOf(literal);
-    // SCOPE-AWARE. Sink names are collected file-globally, so an unrelated local
-    // `model = "gpt-4"` matched a sink fed by a same-named parameter in ANOTHER
-    // function — and fix-llm rewrote that unrelated assignment. A local binding
-    // is only trusted against a sink in the same function.
-    const reachable = traced ? ctx?.sinkTargets?.get(traced) ?? [] : [];
-    // `traceableName` returns the ATTRIBUTE name for `self.model`, so detect the
-    // self-attribute case from the AST instead of the traced string.
-    const left = literal.parent?.type === 'assignment' ? literal.parent.childForFieldName('left') : null;
-    const isSelfAttr = left?.type === 'attribute';
-    const targets = reachable.filter((t) => sinkIsInScope(literal, t.call, isSelfAttr));
+    const targets = inScopeSinkTargets(literal, ctx);
     if (targets.length === 0) {
       // No in-scope consumer. A same-named sink elsewhere in the file made the
       // positional rule say model_arg, but inside a pricing / tokenizer / logging /
@@ -952,6 +943,25 @@ export function applyPyGuards(
   }
 
   return null;
+}
+
+/**
+ * The calls a model value bound to a name (`MODEL = "…"`, `self.model = "…"`, a parameter
+ * default) is traced into, limited to the ones in its scope.
+ *
+ * SCOPE-AWARE. Sink names are collected file-globally, so an unrelated local
+ * `model = "gpt-4"` matched a sink fed by a same-named parameter in ANOTHER
+ * function — and fix-llm rewrote that unrelated assignment. A local binding
+ * is only trusted against a sink in the same function.
+ */
+function inScopeSinkTargets(literal: PyNode, ctx?: PyGuardContext): PySinkTarget[] {
+  const traced = tracedNameOf(literal);
+  const reachable = traced ? ctx?.sinkTargets?.get(traced) ?? [] : [];
+  // `traceableName` returns the ATTRIBUTE name for `self.model`, so detect the
+  // self-attribute case from the AST instead of the traced string.
+  const left = literal.parent?.type === 'assignment' ? literal.parent.childForFieldName('left') : null;
+  const isSelfAttr = left?.type === 'attribute';
+  return reachable.filter((t) => sinkIsInScope(literal, t.call, isSelfAttr));
 }
 
 /**
@@ -1280,6 +1290,339 @@ export function classifyPyLiteralPosition(
   return classifyPyLiteral(literal, sinkNames).position;
 }
 
+// --- The parameter guard -----------------------------------------------------
+//
+// THE PYTHON HALF OF src/usage/coupledParams.ts. A verified replacement is not yet a safe patch:
+// the registry record says which id to put there and nothing about the request around it. Until
+// this guard, `client.chat.completions.create(model="gpt-3.5-turbo", max_tokens=20)` was a Tier A
+// swap to gpt-5.6-terra with `max_tokens` kept, and a Claude Opus 4.1 call passing `temperature`
+// was a Tier A swap to claude-opus-4-8 with `temperature` kept, although the registry's own rules
+// say each replacement rejects that request. TypeScript held both for review. Python has no
+// parameter pass either, so nothing edited the request after the swap.
+//
+// This scanner only COLLECTS the parameter names a request passes. Whether they hold the call,
+// and the sentence that says why, come from paramHoldReason, which the TypeScript scanner calls
+// too, so the two languages give one call the same reason code. The names are:
+//
+//   - the keyword arguments of the call the model is written in (`max_tokens=20`);
+//   - the keys of a dict unpacked into that call with `**name`, where `name` is bound in a scope
+//     the call can see: `name = {…}` or `name = dict(…)`, plus keys added by `name["k"] = …`,
+//     `name.update(…)` or `name.setdefault("k", …)` there or beside the call; and the keys of a
+//     `**{…}` or `**dict(…)` written in the call itself;
+//   - for a model value inside a dict passed to a call, that dict's own keys, as TypeScript reads
+//     the object literal that holds `model`;
+//   - for a model bound to a name the scanner traced into a call (`MODEL = "…"`, then
+//     `create(model=MODEL, …)`), the keyword arguments of each call in scope that it reaches.
+//
+// A dict mendr cannot see adds nothing: a function parameter (`**kwargs`), an attribute, a call
+// result. The guard never invents a parameter, the same way a spread adds none in TypeScript.
+
+/** The parameter names one request passes, and the call's line when the model reaches it through a name. */
+interface PyRequestParams {
+  names: string[];
+  /** 1-based line of the call, set only when the model value is written somewhere else. */
+  callLine?: number;
+}
+
+/** The scope a binding at `node` lives in: the nearest function, lambda or class body. Null is the module. */
+function pyScopeOf(node: PyNode): PyNode | null {
+  for (let n = node.parent; n; n = n.parent) {
+    if (n.type === 'function_definition' || n.type === 'lambda' || n.type === 'class_definition') return n;
+  }
+  return null;
+}
+
+/**
+ * The scopes a name used at `use` is looked up in, innermost first, ending with the module (null).
+ * A class body is not visible from the functions defined inside it, as Python scopes it.
+ */
+function pyLookupChain(use: PyNode): Array<PyNode | null> {
+  let scope = pyScopeOf(use);
+  const chain: Array<PyNode | null> = [scope];
+  while (scope) {
+    let next = pyScopeOf(scope);
+    while (next && next.type === 'class_definition') next = pyScopeOf(next);
+    chain.push(next);
+    scope = next;
+  }
+  return chain;
+}
+
+/** Does this function or lambda take `name` as a parameter (`params`, `params: dict`, `params=None`, `**params`)? */
+function declaresPyParameter(scope: PyNode, name: string): boolean {
+  const params = scope.childForFieldName('parameters');
+  if (!params) return false;
+  for (const p of params.namedChildren) {
+    if (!p) continue;
+    const id = p.type === 'identifier' ? p : (p.childForFieldName('name') ?? p.namedChildren.find((c) => c?.type === 'identifier'));
+    if (id?.text === name) return true;
+  }
+  return false;
+}
+
+/**
+ * Every binding of every plain name in a parse, keyed by name AND scope (see {@link pyNameKey}),
+ * built once per tree like SPLAT_INDEX, so resolving a name is one lookup per scope rather than a
+ * walk over every binding of that name in the file.
+ */
+interface PyNameIndex {
+  /** Name-in-scope keys that are bound: assignments, `for` targets, `with … as` aliases, `:=`, augmented assignments. */
+  bindings: Set<string>;
+  /** The right-hand side of each `name = …` with the name alone on the left. */
+  values: Map<string, PyNode[]>;
+  /** Keys added to the dict after it is built, and any expression whose keys are added with them. */
+  added: Map<string, Array<{ keys: string[]; from: PyNode[] }>>;
+}
+
+const NAME_INDEX = new WeakMap<Tree, PyNameIndex>();
+
+/** The index key for `name` bound in `scope` (null is the module). Node ids are unique within a tree. */
+function pyNameKey(name: string, scope: PyNode | null): string {
+  return `${scope ? scope.id : -1}:${name}`;
+}
+
+function pyNameIndex(tree: Tree): PyNameIndex {
+  const cached = NAME_INDEX.get(tree);
+  if (cached) return cached;
+  const index: PyNameIndex = { bindings: new Set(), values: new Map(), added: new Map() };
+  const push = <T>(map: Map<string, T[]>, key: string, value: T): void => {
+    const list = map.get(key);
+    if (list) list.push(value);
+    else map.set(key, [value]);
+  };
+  const bind = (name: string, at: PyNode): void => {
+    index.bindings.add(pyNameKey(name, pyScopeOf(at)));
+  };
+  // `a, b = …`, `for k, v in …`, `with … as (x, y)`: every name in the target is bound, value unknown.
+  const bindTargets = (target: PyNode, at: PyNode): void => {
+    if (target.type === 'identifier') {
+      bind(target.text, at);
+      return;
+    }
+    if (target.type === 'attribute' || target.type === 'subscript') return;
+    for (const c of target.namedChildren) if (c) bindTargets(c, at);
+  };
+  for (const a of tree.rootNode.descendantsOfType('assignment')) {
+    const left = a?.childForFieldName('left');
+    if (!a || !left) continue;
+    if (left.type === 'identifier') {
+      bind(left.text, a);
+      const right = a.childForFieldName('right');
+      if (right) push(index.values, pyNameKey(left.text, pyScopeOf(a)), right);
+    } else if (left.type === 'subscript') {
+      // `params["max_tokens"] = 20` adds a key to the dict `params` already names.
+      const obj = left.childForFieldName('value');
+      const key = left.childForFieldName('subscript');
+      const content = key ? plainStringContent(key) : undefined;
+      if (obj?.type === 'identifier' && content) {
+        push(index.added, pyNameKey(obj.text, pyScopeOf(a)), { keys: [content.value], from: [] });
+      }
+    } else {
+      bindTargets(left, a);
+    }
+  }
+  for (const a of tree.rootNode.descendantsOfType('augmented_assignment')) {
+    const left = a?.childForFieldName('left');
+    if (!a || left?.type !== 'identifier') continue;
+    bind(left.text, a);
+    // `params |= {"temperature": 0}` adds that dict's keys.
+    const right = a.childForFieldName('right');
+    if (a.childForFieldName('operator')?.text === '|=' && right) {
+      push(index.added, pyNameKey(left.text, pyScopeOf(a)), { keys: [], from: [right] });
+    }
+  }
+  for (const f of tree.rootNode.descendantsOfType('for_statement')) {
+    const left = f?.childForFieldName('left');
+    if (f && left) bindTargets(left, f);
+  }
+  for (const t of tree.rootNode.descendantsOfType('as_pattern_target')) {
+    if (t) bindTargets(t, t);
+  }
+  for (const w of tree.rootNode.descendantsOfType('named_expression')) {
+    const name = w?.childForFieldName('name');
+    if (w && name?.type === 'identifier') bind(name.text, w);
+  }
+  for (const call of tree.rootNode.descendantsOfType('call')) {
+    const fn = call?.childForFieldName('function');
+    const obj = fn?.type === 'attribute' ? fn.childForFieldName('object') : null;
+    const method = fn?.type === 'attribute' ? fn.childForFieldName('attribute')?.text : undefined;
+    const args = call?.childForFieldName('arguments');
+    if (!call || obj?.type !== 'identifier' || !args || args.type !== 'argument_list') continue;
+    if (method === 'update') {
+      // `params.update(temperature=0)`, `params.update({"top_p": 1})`, `params.update(**extra)`.
+      const keys: string[] = [];
+      const from: PyNode[] = [];
+      for (const arg of args.namedChildren) {
+        if (!arg) continue;
+        if (arg.type === 'keyword_argument') {
+          const n = arg.childForFieldName('name');
+          if (n) keys.push(n.text);
+        } else if (arg.type === 'dictionary_splat') {
+          if (arg.namedChildren[0]) from.push(arg.namedChildren[0]);
+        } else {
+          from.push(arg);
+        }
+      }
+      push(index.added, pyNameKey(obj.text, pyScopeOf(call)), { keys, from });
+    } else if (method === 'setdefault') {
+      const first = args.namedChildren[0];
+      const content = first ? plainStringContent(first) : undefined;
+      if (content) push(index.added, pyNameKey(obj.text, pyScopeOf(call)), { keys: [content.value], from: [] });
+    }
+  }
+  NAME_INDEX.set(tree, index);
+  return index;
+}
+
+/**
+ * The keys a dict-valued expression is known to carry: a dict display, a `dict(…)` call, a name
+ * bound to one of those, and `or`, conditional and `|` combinations of them. Anything else is not
+ * visible here and adds nothing. `seen` stops a self-reference (`params = {**params, …}`).
+ */
+function pyDictKeys(expr: PyNode, seen: Set<number>, depth = 0): string[] {
+  if (depth > 8 || seen.has(expr.id)) return [];
+  seen.add(expr.id);
+  const next = (n: PyNode | null | undefined): string[] => (n ? pyDictKeys(n, seen, depth + 1) : []);
+  switch (expr.type) {
+    case 'dictionary': {
+      const keys: string[] = [];
+      for (const c of expr.namedChildren) {
+        if (c?.type === 'pair') {
+          const key = c.childForFieldName('key');
+          const content = key ? plainStringContent(key) : undefined;
+          if (content) keys.push(content.value);
+        } else if (c?.type === 'dictionary_splat') {
+          keys.push(...next(c.namedChildren[0]));
+        }
+      }
+      return keys;
+    }
+    case 'call': {
+      if (dottedCallee(expr) !== 'dict') return [];
+      const args = expr.childForFieldName('arguments');
+      if (!args || args.type !== 'argument_list') return [];
+      const keys: string[] = [];
+      for (const a of args.namedChildren) {
+        if (!a) continue;
+        if (a.type === 'keyword_argument') {
+          const n = a.childForFieldName('name');
+          if (n) keys.push(n.text);
+        } else if (a.type === 'dictionary_splat') {
+          keys.push(...next(a.namedChildren[0]));
+        } else {
+          keys.push(...next(a));
+        }
+      }
+      return keys;
+    }
+    case 'identifier':
+      return pyNameKeys(expr.text, expr, seen, depth + 1);
+    case 'parenthesized_expression':
+      return next(expr.namedChildren[0]);
+    case 'boolean_operator':
+      return expr.childForFieldName('operator')?.type === 'or'
+        ? [...next(expr.childForFieldName('left')), ...next(expr.childForFieldName('right'))]
+        : [];
+    case 'binary_operator':
+      return expr.childForFieldName('operator')?.type === '|'
+        ? [...next(expr.childForFieldName('left')), ...next(expr.childForFieldName('right'))]
+        : [];
+    case 'conditional_expression': {
+      const named = expr.namedChildren;
+      return [...next(named[0]), ...next(named[named.length - 1])];
+    }
+    case 'assignment': // `a = b = {…}`
+      return next(expr.childForFieldName('right'));
+    default:
+      return [];
+  }
+}
+
+/**
+ * The keys of the dict `name` refers to where it is used. The innermost scope that binds the name
+ * decides, as in Python: its `name = …` values, plus keys added in that scope or beside the use. A
+ * function parameter of that name that is never reassigned is a value mendr cannot see.
+ */
+function pyNameKeys(name: string, use: PyNode, seen: Set<number>, depth: number): string[] {
+  const index = pyNameIndex(use.tree);
+  const useKey = pyNameKey(name, pyScopeOf(use));
+  for (const scope of pyLookupChain(use)) {
+    const key = pyNameKey(name, scope);
+    if (!index.bindings.has(key)) {
+      if (scope && scope.type !== 'class_definition' && declaresPyParameter(scope, name)) return [];
+      continue;
+    }
+    const keys: string[] = [];
+    for (const value of index.values.get(key) ?? []) keys.push(...pyDictKeys(value, seen, depth));
+    // Keys added where the dict is bound, and beside the call that unpacks it.
+    for (const addKey of key === useKey ? [key] : [key, useKey]) {
+      for (const add of index.added.get(addKey) ?? []) {
+        keys.push(...add.keys);
+        for (const f of add.from) keys.push(...pyDictKeys(f, seen, depth));
+      }
+    }
+    return keys;
+  }
+  return [];
+}
+
+/** The parameter names a call passes: its keyword arguments, and the keys of each dict unpacked into it. */
+function pyCallParamNames(call: PyNode): string[] {
+  const args = call.childForFieldName('arguments');
+  if (!args || args.type !== 'argument_list') return [];
+  const names: string[] = [];
+  const seen = new Set<number>();
+  for (const a of args.namedChildren) {
+    if (a?.type === 'keyword_argument') {
+      const n = a.childForFieldName('name');
+      if (n) names.push(n.text);
+    } else if (a?.type === 'dictionary_splat' && a.namedChildren[0]) {
+      names.push(...pyDictKeys(a.namedChildren[0], seen));
+    }
+  }
+  return [...new Set(names)];
+}
+
+/** The requests a `model_arg` literal is the model of, each with the parameter names it passes. */
+function pyRequestParams(literal: PyNode, ctx: PyGuardContext): PyRequestParams[] {
+  let node: PyNode = literal;
+  let parent = node.parent;
+  while (parent && isValueTransparent(parent, node)) {
+    node = parent;
+    parent = node.parent;
+  }
+  if (!parent) return [];
+  // Written in the call: `create(model="…", max_tokens=20)`, or a factory's positional argument.
+  if (parent.type === 'keyword_argument' && parent.parent?.type === 'argument_list' && parent.parent.parent?.type === 'call') {
+    return [{ names: pyCallParamNames(parent.parent.parent) }];
+  }
+  if (parent.type === 'argument_list' && parent.parent?.type === 'call') return [{ names: pyCallParamNames(parent.parent) }];
+  // Written in a dict passed to a call: the dict's own keys.
+  if (parent.type === 'pair' && parent.parent?.type === 'dictionary') {
+    return [{ names: [...new Set(pyDictKeys(parent.parent, new Set()))] }];
+  }
+  // Bound to a name the scanner traced into one or more calls.
+  return inScopeSinkTargets(literal, ctx).map((t) => ({
+    names: pyCallParamNames(t.call),
+    callLine: t.call.startPosition.row + 1,
+  }));
+}
+
+/** paramHoldReason over each request the model reaches; the first that holds the call decides. */
+function pyParamHoldReason(
+  requests: readonly PyRequestParams[],
+  deprecation: LlmModelIdDeprecation,
+  registry: LlmRegistry,
+): string | undefined {
+  for (const r of requests) {
+    const held = paramHoldReason(r.names, deprecation, registry);
+    if (!held) continue;
+    // The finding sits on the line the value is written on, so say where the call is.
+    return r.callLine === undefined ? held : `the call on line ${r.callLine} of this file takes this value as its model; ${held}`;
+  }
+  return undefined;
+}
+
 // --- Scan --------------------------------------------------------------------
 
 /**
@@ -1324,6 +1667,7 @@ export async function findPyModelIdLiterals(
       const sinkTargets = collectPySinkTargets(tree);
       // G4: the provider surface, resolved once per file, caps every tier below.
       const { surface, via: surfaceVia } = explainPySurface(source.path, source.text);
+      const guardCtx: PyGuardContext = { surface, surfaceVia, sinkTargets };
       // An examples/samples/demos/docs tree is informational by rule (C3).
       const example = isExamplePath(source.path);
       for (const node of tree.rootNode.descendantsOfType('string')) {
@@ -1343,7 +1687,7 @@ export async function findPyModelIdLiterals(
         // Position/purpose belong to the CST node, not the registry entry, so
         // classify once and emit one match per matching record (multimap).
         let classification: { position: LiteralPosition; purpose?: DataPurpose; reason?: string } =
-          classifyPyLiteral(node, sinkNames, { surface, surfaceVia, sinkTargets });
+          classifyPyLiteral(node, sinkNames, guardCtx);
         // Rule C3, narrowed 2026-09-28 — the PYTHON half of the same change made in
         // scanLiterals.ts. An example tree is informational BY DEFAULT, and everything the
         // parser reads as data there still is. But a sample that actually reaches a provider
@@ -1374,9 +1718,14 @@ export async function findPyModelIdLiterals(
         ) {
           classification = { position: 'data', purpose: 'generic', reason: PY_NON_SELECTOR_FUNCTION_REASON };
         }
+        // THE PARAMETER GUARD, last, on a call every other rule left swap-eligible, as in
+        // scanLiterals.ts. The request is read once per literal; whether it holds the call depends
+        // on each record's replacement, so it is judged per record.
+        const requests = classification.position === 'model_arg' ? pyRequestParams(node, guardCtx) : [];
         const line = node.startPosition.row + 1;
         const column = node.startPosition.column + 1;
         for (const deprecation of deprecations) {
+          const held = requests.length > 0 ? pyParamHoldReason(requests, deprecation, registry) : undefined;
           out.push({
             file: source.path,
             value: content.value,
@@ -1384,9 +1733,9 @@ export async function findPyModelIdLiterals(
             contentEnd: content.end,
             location: { file: source.path, line, column },
             deprecation,
-            position: classification.position,
-            purpose: classification.purpose,
-            reason: classification.reason,
+            position: held ? 'surface_capped' : classification.position,
+            purpose: held ? undefined : classification.purpose,
+            reason: held ?? classification.reason,
           });
         }
       }

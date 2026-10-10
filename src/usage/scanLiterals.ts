@@ -23,12 +23,7 @@ import {
   type TsSinkMap,
 } from './tsSurface.js';
 import { isExamplePath, isModelLikeName, splitProviderPrefix } from './sharedRules.js';
-import {
-  paramRulesStartingAt,
-  TS_COUPLED_PARAM_REASON,
-  TS_PARAM_BEHAVIOUR_REASON,
-  unresolvedCoupledParams,
-} from './coupledParams.js';
+import { paramHoldReason } from './coupledParams.js';
 import {
   effectiveVerificationState,
   isVerified,
@@ -845,37 +840,13 @@ export function findModelIdLiterals(
         // known to constrain a parameter this call passes, and NO registry rule covers that
         // parameter, the swap drops to review — absence of a rule is not evidence of
         // compatibility. Regression case: coupledParams.test.ts
-        // (recommended_replacement_requires_coupled_parameter_migration).
+        // (recommended_replacement_requires_coupled_parameter_migration). A rule that covers the
+        // parameter but applies only from the replacement on changes what the call asks for, and
+        // holds it too (paramRulesStartingAt). The Python scanner asks the same paramHoldReason.
         let coupled = classification;
         if (coupled.position === 'model_arg') {
-          const unresolved = unresolvedCoupledParams(
-            siblingParamKeys(node),
-            deprecation.provider,
-            deprecation.replacement,
-            registry,
-          );
-          if (unresolved.length > 0) {
-            coupled = {
-              position: 'surface_capped',
-              reason: TS_COUPLED_PARAM_REASON(deprecation.replacement, unresolved),
-            };
-          } else {
-            // Every parameter is covered by a rule, but a rule that applies only from the
-            // replacement on changes what the call asks for. See paramRulesStartingAt.
-            const starting = paramRulesStartingAt(
-              siblingParamKeys(node),
-              deprecation.provider,
-              deprecation.deprecated,
-              deprecation.replacement,
-              registry,
-            );
-            if (starting.length > 0) {
-              coupled = {
-                position: 'surface_capped',
-                reason: TS_PARAM_BEHAVIOUR_REASON(deprecation.deprecated, deprecation.replacement, starting),
-              };
-            }
-          }
+          const held = paramHoldReason(siblingParamKeys(node), deprecation, registry);
+          if (held) coupled = { position: 'surface_capped', reason: held };
         }
         out.push({
           node,

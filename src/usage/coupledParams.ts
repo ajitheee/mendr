@@ -1,4 +1,4 @@
-import type { LlmParamDeprecation, LlmRegistry } from '../types.js';
+import type { LlmModelIdDeprecation, LlmParamDeprecation, LlmRegistry } from '../types.js';
 
 // COUPLED PARAMETERS — why a verified model-id replacement is not yet a safe patch.
 //
@@ -26,8 +26,15 @@ import type { LlmParamDeprecation, LlmRegistry } from '../types.js';
 //      by an actual rule for that provider and that model. Any that is not is reported by
 //      name, and the finding drops to review.
 //
-// Scope, stated plainly: this is the TypeScript/JavaScript half. `src/python/scanPy.ts` has
-// the same blind spot and is not fixed here — see MEASUREMENT / the regression case.
+// Both scanners ask the question through {@link paramHoldReason}: `src/usage/scanLiterals.ts`
+// with the keys of the object literal that holds the model, `src/python/scanPy.ts` with the
+// keyword arguments of the call the model reaches (and the keys of a dict unpacked into it with
+// `**name`). The scanners only collect parameter names; the rules and the sentences live here.
+//
+// One difference follows from what each language's fix pass can do. TypeScript has a parameter
+// pass, so a rule that already applied to the model being replaced (`o3-mini` with `max_tokens`)
+// is applied after the swap and the call stays Tier A. Python has no parameter pass: that call
+// stays Tier A too, and keeps `max_tokens`, which the same rule says the old model rejected as well.
 
 /**
  * Request parameters whose acceptance depends on WHICH model serves the request, rather than
@@ -191,3 +198,33 @@ export const TS_PARAM_BEHAVIOUR_REASON = (
     'take an automatic patch'
   );
 };
+
+/**
+ * Why a swap of this call's model must be held for its request, or `undefined` when nothing about
+ * the request holds it. `paramNames` are the parameter names the request passes beside the model.
+ *
+ * The one decision both scanners make, so TypeScript and Python cannot drift apart:
+ *   1. a model-dependent parameter no rule covers for the replacement -> the coupled-parameter
+ *      reason (`coupled_param_unverified`);
+ *   2. otherwise, a rule that starts applying only at the replacement -> the behaviour-change
+ *      reason (`param_behaviour_change`);
+ *   3. otherwise nothing: the replacement's family constrains nothing this call passes, or every
+ *      rule that covers it already applied to the model being replaced.
+ */
+export function paramHoldReason(
+  paramNames: readonly string[],
+  deprecation: Pick<LlmModelIdDeprecation, 'provider' | 'deprecated' | 'replacement'>,
+  registry: LlmRegistry,
+): string | undefined {
+  const unresolved = unresolvedCoupledParams(paramNames, deprecation.provider, deprecation.replacement, registry);
+  if (unresolved.length > 0) return TS_COUPLED_PARAM_REASON(deprecation.replacement, unresolved);
+  const starting = paramRulesStartingAt(
+    paramNames,
+    deprecation.provider,
+    deprecation.deprecated,
+    deprecation.replacement,
+    registry,
+  );
+  if (starting.length > 0) return TS_PARAM_BEHAVIOUR_REASON(deprecation.deprecated, deprecation.replacement, starting);
+  return undefined;
+}
