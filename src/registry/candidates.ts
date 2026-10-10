@@ -221,6 +221,13 @@ export function promoteCandidates(
       .map((e) => canonicalizeId(e.deprecated)),
   );
 
+  // Rule 5's `retired` contradiction reads EVERY listing, OpenRouter's included. Splitting
+  // OpenRouter out of `liveIds` (it can no longer make a replacement live) must not also
+  // loosen this refusal: a listing anywhere may make the gate more cautious, never less.
+  const listedAnywhere: ReadonlySet<string> = opts.oracles.routedIds
+    ? new Set([...opts.oracles.liveIds, ...opts.oracles.routedIds])
+    : opts.oracles.liveIds;
+
   const promoted: LlmModelIdDeprecation[] = [];
   const refused: PromotionRefusal[] = [];
   const movedIds = new Set<string>();
@@ -265,7 +272,7 @@ export function promoteCandidates(
     // live, uncontradicted replacement — which says nothing whatsoever about
     // whether the id it claims to retire is dying.
     const claim = checkDeprecationClaim(candidate, {
-      liveIds: opts.oracles.liveIds,
+      liveIds: listedAnywhere,
       snapshotDir: opts.snapshotDir,
     });
     if (!claim.ok) {

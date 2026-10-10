@@ -124,6 +124,51 @@ describe('classifyEntry — UNVERIFIED (replacement not live)', () => {
   });
 });
 
+// OpenRouter lists spellings no provider documents. On 2026-10-09 OpenAI's model page
+// for gpt-6.1-sol-pro returned 404 (pro is `reasoning.mode: pro`), yet OpenRouter listed
+// it, and until then every OpenRouter id counted as live. A replacement to it classified
+// `verified`, the verdict auto-apply is built on.
+describe('classifyEntry — an id only OpenRouter lists is never live', () => {
+  const oracles: VerificationOracles = {
+    liveIds: liveSet('gpt-6.1-sol', 'claude-sonnet-5-5'),
+    routedIds: liveSet('gpt-6.1-sol-pro', 'gpt-6-sol-pro', 'claude-sonnet-5.5'),
+    officialRecommendations: officialMap({}),
+  };
+
+  it('a replacement only OpenRouter lists is unverified, and the reason says why', () => {
+    const r = classifyEntry(entry('gpt-5-pro', 'gpt-6.1-sol-pro'), oracles);
+    expect(r.status).toBe('unverified');
+    expect(r.reasons.join(' ')).toMatch(/only OpenRouter lists it/);
+  });
+
+  it('the same spelling the provider publishes still verifies', () => {
+    expect(classifyEntry(entry('gpt-5-pro', 'gpt-6.1-sol'), oracles).status).toBe('verified');
+  });
+
+  // Matching is canonical: `claude-sonnet-5.5` names the dashed id Anthropic publishes,
+  // so it is live through liveIds, not through OpenRouter's listing of the dotted form.
+  it('a dotted spelling of a published id verifies on the published id, not on OpenRouter', () => {
+    const r = classifyEntry(entry('claude-sonnet-4-5-20250929', 'claude-sonnet-5.5'), {
+      ...oracles,
+      routedIds: new Set<string>(),
+    });
+    expect(r.status).toBe('verified');
+  });
+
+  it('routedIds can never turn an unverified verdict into a verified one', () => {
+    const without = classifyEntry(entry('gpt-5-pro', 'gpt-6-sol-pro'), { ...oracles, routedIds: undefined });
+    const withIt = classifyEntry(entry('gpt-5-pro', 'gpt-6-sol-pro'), oracles);
+    expect(without.status).toBe('unverified');
+    expect(withIt.status).toBe('unverified');
+  });
+
+  it('its reason is recognised as the machine\'s own, so a re-stamp replaces it', () => {
+    for (const reason of classifyEntry(entry('gpt-5-pro', 'gpt-6.1-sol-pro'), oracles).reasons) {
+      expect(isMachineReason(reason), reason).toBe(true);
+    }
+  });
+});
+
 
 // --- re-stamping must not erase the humans ----------------------------------
 //

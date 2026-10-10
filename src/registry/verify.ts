@@ -7,7 +7,8 @@
 // hand-built fixtures.
 //
 // STATUS RULE (from the registry-verify spike):
-//   verified     replacement is live in >=1 public catalog AND is NOT
+//   verified     replacement is live in the direct-provider catalog (models.dev;
+//                an OpenRouter-only spelling never counts) AND is NOT
 //                contradicted by the provider's official recommendation.
 //   unverified   replacement is live but STALE (a newer official target
 //                exists), CHAINED (the replacement is itself deprecated), or
@@ -27,8 +28,22 @@ import {
 
 /** The oracle inputs a classification is computed against (all pre-fetched). */
 export interface VerificationOracles {
-  /** Canonical + family forms of every live catalog id (see oracles.ts). */
+  /**
+   * Canonical + family forms of every DIRECT-PROVIDER catalog id (models.dev; see
+   * oracles.ts). The only set that can make a replacement live.
+   */
   liveIds: ReadonlySet<string>;
+  /**
+   * Canonical + family forms of every id OpenRouter lists (oracles.ts#fetchLiveIds).
+   *
+   * NEVER makes a replacement live. OpenRouter's ids are its routing names: it lists dotted
+   * Claude spellings outside Anthropic's documented id format, `gpt-6-sol-pro`-style ids
+   * where OpenAI does pro as a request setting, and ids a provider has already shut down. Here it only explains a
+   * miss ("only OpenRouter lists it"); claimCheck.ts reads it to refuse a `retired` claim.
+   * It can make a verdict more cautious, never less. Optional so hand-built oracles in tests
+   * and older callers keep working; absent means "not consulted".
+   */
+  routedIds?: ReadonlySet<string>;
   /**
    * Provider deprecation table: canonical deprecated id -> officially
    * recommended replacement id. Membership of a KEY additionally marks that id
@@ -101,7 +116,7 @@ export function classifyEntry(
   oracles: VerificationOracles,
 ): ClassifyResult {
   const { deprecated, replacement } = entry;
-  const { liveIds, officialRecommendations, knownDeprecated } = oracles;
+  const { liveIds, routedIds, officialRecommendations, knownDeprecated } = oracles;
   const reasons: string[] = [];
 
   // (1) OUT-OF-CLASS -> unverifiable. If either the retired id or its
@@ -150,7 +165,9 @@ export function classifyEntry(
     return { status: 'unverified', reasons };
   }
 
-  // (3) LIVENESS in a public catalog (family-aware: bare alias <-> dated snapshot).
+  // (3) LIVENESS in a direct-provider catalog (family-aware: bare alias <-> dated
+  // snapshot). `routedIds` is deliberately not consulted here: an id only OpenRouter
+  // lists is not one the provider's own API is known to accept.
   const live = isLiveId(replacement, liveIds);
 
   // (4) OFFICIAL-RECOMMENDATION contradiction (stale / superseded). Identity
@@ -160,7 +177,11 @@ export function classifyEntry(
 
   if (!live) {
     reasons.push(
-      `replacement "${replacement}" was not found live in any public catalog (models.dev / OpenRouter)`,
+      routedIds && isLiveId(replacement, routedIds)
+        ? `replacement "${replacement}" was not found live in any public catalog of direct-provider ids ` +
+            `(models.dev); only OpenRouter lists it, and an OpenRouter spelling is not evidence that ` +
+            `the provider's own API accepts the id`
+        : `replacement "${replacement}" was not found live in any public catalog (models.dev / OpenRouter)`,
     );
     if (staleVsOfficial) reasons.push(`the provider officially recommends "${official}"`);
     return { status: 'unverified', reasons };

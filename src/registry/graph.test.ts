@@ -139,6 +139,38 @@ describe('what the catalog can and cannot say', () => {
   });
 });
 
+// A catalog's `openrouterOnly` holds spellings no direct-provider source lists. Before
+// 2026-10-09 they sat in `providers`, and a chain ending on `gpt-6-sol-pro` (OpenAI page:
+// 404) would have resolved as live.
+describe('a spelling only OpenRouter lists', () => {
+  const SPLIT: ModelCatalog = {
+    ...catalog('gpt-6-sol', 'gpt-6.1-sol'),
+    openrouterOnly: { openai: ['gpt-6-sol-pro', 'gpt-6.1-sol-pro'] },
+  };
+
+  it('never makes a destination live', () => {
+    const g = buildContractGraph([entry('gpt-5-pro', 'gpt-6-sol-pro')], SPLIT);
+    const r = resolveSuccessor(g, 'gpt-5-pro');
+    expect(r.outcome).toBe('unlisted_successor');
+    expect(g.nodes.get('gpt-6-sol-pro')!.inCatalog).toBe(false);
+  });
+
+  it('says why the destination is unlisted, rather than "no public catalog lists" it', () => {
+    const g = buildContractGraph([entry('gpt-5-pro', 'gpt-6.1-sol-pro')], SPLIT);
+    expect(resolveSuccessor(g, 'gpt-5-pro').reason).toMatch(/only OpenRouter does/);
+  });
+
+  it('leaves the provider id beside it live', () => {
+    const g = buildContractGraph([entry('gpt-5-pro', 'gpt-6.1-sol')], SPLIT);
+    expect(resolveSuccessor(g, 'gpt-5-pro').outcome).toBe('live_successor');
+  });
+
+  it('reads a catalog written before the split, which has no `openrouterOnly`, as before', () => {
+    const g = buildContractGraph([entry('gpt-5-pro', 'gpt-9-imaginary')], catalog('gpt-6-sol'));
+    expect(resolveSuccessor(g, 'gpt-5-pro').reason).toBe('no public catalog lists "gpt-9-imaginary"');
+  });
+});
+
 describe('building the graph', () => {
   // The nearest deadline is the one a reader has to act on first.
   it('keeps the SOONEST-shutting entry when one id appears twice', () => {
