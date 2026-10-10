@@ -11,12 +11,14 @@ import {
   isCliOptionCall,
   isInDefaultContainer,
   judgeDeclarationSinks,
+  requestObjectFlow,
   TS_CLI_DEFAULT_REASON,
   TS_DEFAULT_CONTAINER_REASON,
   TS_EXAMPLE_REASON,
   TS_EXAMPLE_CALL_REASON,
   TS_MODEL_FACTORIES,
   TS_PREFIXED_REASON,
+  TS_REQUEST_VARIABLE_REASON,
   TS_WRAPPER_CTOR_REASON,
   type TsSinkMap,
 } from './tsSurface.js';
@@ -543,6 +545,26 @@ function classifyByEnclosure(node: Node, parent: Node | undefined, sinks?: TsSin
       // `JSON.stringify` of a mocked response, or an internal wrapper is REAL but
       // never an unattended swap.
       if (isModelLikeName(keyName) && call) return classifyCallSurface(call);
+      // The same request, built in a variable first and passed by name:
+      // `const arr = { model: "…", messages }; client.chat.completions.create(arr)`. Only a
+      // provider ENDPOINT counts as the receiver (see requestObjectFlow), so an object handed to
+      // `console.log` or an app function is still data. Every endpoint it reaches is judged by
+      // the same surface rule as an inline argument, and the strictest verdict wins; a swap is
+      // offered only when the literal is the whole request (a private `const`, used only as a
+      // direct argument of those requests), since that is the only case where its siblings are
+      // every parameter the request sends.
+      if (isModelLikeName(keyName) && obj && !call) {
+        const flow = requestObjectFlow(obj);
+        if (flow) {
+          for (const c of flow.calls) {
+            const verdict = classifyCallSurface(c);
+            if (verdict.position !== 'model_arg') return verdict;
+          }
+          return flow.exclusive
+            ? { position: 'model_arg' }
+            : { position: 'surface_capped', reason: TS_REQUEST_VARIABLE_REASON };
+        }
+      }
       // The same shape behind a wrapper CLASS: `new OpenAiChat({ model: "gpt-4" })`. Consulted
       // only when there is no enclosing CALL, so nothing above can change. Catalog siblings
       // still win — `new ModelCard({ model, label, pricing })` is a card, not a selection.
@@ -917,20 +939,49 @@ export function toBlockedModelArgMatches(matches: LiteralMatch[]): BlockedModelL
  * `model_arg` match is a swap or a blocked replacement, an `azure_deployment` match is a
  * deployment alias) is left to that projection, so every occurrence lands in exactly one tier.
  */
-export function toHeldCallMatches(matches: LiteralMatch[]): LiteralMatch[] {
-  const siteOf = (m: LiteralMatch) => `${m.location.file}:${m.location.line}:${m.location.column}`;
+export function toHeldCallMatches<M extends HeldSiteMatch>(matches: readonly M[]): M[] {
+  return oneMatchPerSite(matches, 'surface_capped');
+}
+
+/**
+ * Project a pre-computed literal scan down to its UNTRACED selectors (position `usage_unverified`):
+ * a model-named declaration no provider request in the file is seen to use, a default-configuration
+ * object, a CLI `--model` default. One match per site, as {@link toHeldCallMatches}.
+ *
+ * `audit` has always listed these in Tier B. `fix-llm` had no stream for the TypeScript ones, so a
+ * `CODEX_DEFAULTS = { model: "o4-mini" }` that audit called "review required" was simply absent
+ * from fix-llm's report, even under --verbose (greyhaven-ai/autocontext, 2026-10-09).
+ */
+export function toUntracedMatches<M extends HeldSiteMatch>(matches: readonly M[]): M[] {
+  return oneMatchPerSite(matches, 'usage_unverified');
+}
+
+/** The fields {@link oneMatchPerSite} reads: a TypeScript or a Python match. */
+export interface HeldSiteMatch {
+  position: LiteralPosition;
+  location: SourceLocation;
+}
+
+/**
+ * The matches at `position`, one per call site. A scan emits one match per matching registry
+ * record, so a site can carry several; a site a live stream already reports (a `model_arg` match
+ * is a swap or a blocked replacement, an `azure_deployment` match is a deployment alias) is left
+ * to that stream, so every occurrence lands in exactly one tier.
+ */
+function oneMatchPerSite<M extends HeldSiteMatch>(matches: readonly M[], position: LiteralPosition): M[] {
+  const siteOf = (m: HeldSiteMatch) => `${m.location.file}:${m.location.line}:${m.location.column}`;
   const reported = new Set(
     matches.filter((m) => m.position === 'model_arg' || m.position === 'azure_deployment').map(siteOf),
   );
-  const held: LiteralMatch[] = [];
+  const out: M[] = [];
   for (const m of matches) {
-    if (m.position !== 'surface_capped') continue;
+    if (m.position !== position) continue;
     const site = siteOf(m);
     if (reported.has(site)) continue;
     reported.add(site);
-    held.push(m);
+    out.push(m);
   }
-  return held;
+  return out;
 }
 
 /**

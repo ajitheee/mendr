@@ -31,6 +31,10 @@ export type ConfigPurpose =
   | 'generic'
   | 'catalog_definition'
   | 'data_fixture'
+  /** A config file NAMED as a template or example to copy (`.env.template`, `.env.example`,
+      `config.example.yaml`): what a new install starts from, not this checkout's active config.
+      Informational like a fixture, but it is not test data, and it is not labelled as such. */
+  | 'config_template'
   /** `model: openai/gpt-4-0613` — a gateway selector carrying a provider prefix. Real, and
       capped at review: the successor may need a different prefix and the gateway may not
       accept it, so it is never auto-applied. */
@@ -155,6 +159,7 @@ export type ClassificationSignal =
   | 'generated_output' // mendr's own output — hard override
   | 'artifact_path' // build/report/coverage directory — hard override
   | 'fixture_path' // examples/docs/samples/test data
+  | 'template_path' // a config file named as a template / example to copy (.env.example, *.template.yml)
   | 'catalog_definition_file' // the file DEFINES models (label/pricing/parameter_rules…)
   | 'model_keyed_block' // the id is also the map key of the block it sits in
   | 'catalog_density' // many distinct ids in one file (WEAK, never decisive alone)
@@ -210,18 +215,35 @@ export function hasRuntimeContext(text: string): boolean {
 }
 
 export function isTestFixturePath(file: string): boolean {
+  return isConfigTemplatePath(file) || isFixtureLocation(file);
+}
+
+/**
+ * Is this config file NAMED as a template or example to copy — `.env.example`, `.env.template`,
+ * `config.example.yaml`, `settings-template.json`, `example_config.yaml`?
+ *
+ * TEMPLATE files are not active configuration. Partner audits (2026-09-04): mem0's `.env.example`
+ * was reported as a runtime selector. So they stay informational. They are NOT test data, though,
+ * and they used to be reported as "test/data fixture": a deploy `.env.template` that a README says
+ * to copy to `.env` read as a test file (miroslavpejic85/mirotalksfu, 2026-10-09). The path rule is
+ * unchanged; scanConfigText now gives these files their own purpose and role.
+ */
+export function isConfigTemplatePath(file: string): boolean {
   const p = file.replace(/\\/g, '/').toLowerCase();
-  // Generated-output and example/demo trees are DATA, never runtime selectors.
-  if (/(^|\/)(test-results?|test-output|playwright-report|allure-results|coverage|reports?|artifacts|\.mendr)(\/)/.test(p)) return true;
-  if (/(^|\/)(examples?|samples?|demos?|docs?|cookbooks?|benchmarks?|templates?|example[_-]?configs?[^/]*|sample[_-]?configs?[^/]*)(\/)/.test(p)) return true;
-  // TEMPLATE files are not active configuration: `.env.example`, `.env.sample`,
-  // `config.example.yaml`, `settings-template.json`. Partner audits (2026-09-04):
-  // mem0's `.env.example` was reported as a runtime selector.
   if (/(^|\/)\.env\.(example|sample|template|dist|default|local\.example)$/.test(p)) return true;
   if (/(^|\/)[^/]*[._-](example|sample|template|dist)\.[^/]+$/.test(p)) return true;
   if (/(^|\/)[^/]*[._-](example|sample|template)$/.test(p)) return true;
   // `example_config.yaml`, `sample-settings.json`: the name starts with the word.
   if (/(^|\/)(example|sample|template)[._-][^/]*\.[^/]+$/.test(p)) return true;
+  return false;
+}
+
+/** Every rule of {@link isTestFixturePath} except the template FILE NAMES: where the file lives, or what it is. */
+function isFixtureLocation(file: string): boolean {
+  const p = file.replace(/\\/g, '/').toLowerCase();
+  // Generated-output and example/demo trees are DATA, never runtime selectors.
+  if (/(^|\/)(test-results?|test-output|playwright-report|allure-results|coverage|reports?|artifacts|\.mendr)(\/)/.test(p)) return true;
+  if (/(^|\/)(examples?|samples?|demos?|docs?|cookbooks?|benchmarks?|templates?|example[_-]?configs?[^/]*|sample[_-]?configs?[^/]*)(\/)/.test(p)) return true;
   // A test/fixture/mock DIRECTORY anywhere in the path.
   if (/(^|\/)(__data__|__fixtures?__|__mocks?__|fixtures?|test-fixtures?|testdata|test-data|mocks?|snapshots?|__snapshots__)(\/)/.test(p)) return true;
   if (/(^|\/)(tests?|e2e|specs?|__tests__)(\/)/.test(p)) return true;
@@ -454,6 +476,12 @@ const tierOf = (p: ConfigPosition): Tier => (p === 'config_selector' ? 'B' : 'C'
 /** File-level evidence, computed once, fed into every occurrence decision. */
 export interface FileSignals {
   fixturePath: boolean;
+  /**
+   * The fixture verdict above comes ONLY from the file's template-style name (see
+   * isConfigTemplatePath), not from a test, docs or example location and not from .gitignore.
+   * Same tier; the occurrence is reported as a configuration template instead of test data.
+   */
+  templatePath?: boolean;
   /** STRONG: the path says this file defines a model. Demotes even a route key. */
   catalogDefinitionPath: boolean;
   /** WEAK: catalog keys exist somewhere. Never demotes a runtime route. */
@@ -582,7 +610,11 @@ export function classifyOccurrenceWithSignals(
   // It is deliberately not a branch — see FileSignals.globalMockTesting.
   if (file.globalMockTesting) signals.push('global_mock_testing_enabled');
 
-  // 1. Hard override: a fixture / artifact / generated file is DATA, always.
+  // 1. Hard override: a fixture / artifact / generated file is DATA, always. A template to copy is
+  //    informational the same way, under its own name: it is what a new install starts from.
+  if (file.fixturePath && file.templatePath) {
+    return { position: 'config_catalog', purpose: 'config_template', key: base.key, signals: [...signals, 'template_path'] };
+  }
   if (file.fixturePath) {
     return { position: 'config_catalog', purpose: 'data_fixture', key: base.key, signals: [...signals, 'fixture_path'] };
   }
@@ -753,6 +785,7 @@ export function scanConfigText(
   const isYaml = /\.ya?ml$/i.test(file);
   const fileSignals: FileSignals = {
     fixturePath: dataFixture,
+    templatePath: isConfigTemplatePath(file) && !isFixtureLocation(file) && !opts.gitignored,
     catalogDefinitionPath: isCatalogDefinitionPath(file),
     catalogKeys: hasCatalogDefinitionKeys(text),
     dense: distinct >= CATALOG_DENSITY_HINT,

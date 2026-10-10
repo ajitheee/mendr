@@ -108,3 +108,30 @@ describe('config fixture paths', () => {
     expect(isTestFixturePath('src/settings.json')).toBe(false);
   });
 });
+
+// A deploy `.env.template` was reported as a TEST FIXTURE (2026-10-09). It stays informational —
+// it is not this checkout's active config — but it is a template a new install copies, and is
+// classified as one. Only the file-name rule gives that purpose: a template under tests/ or a
+// gitignored one is still a fixture.
+describe('config templates are classified as templates, not test data', () => {
+  const line = 'LLM_MODEL=gpt-3.5-turbo   # Model to use\n';
+  const purposeOf = (file: string, opts: { gitignored?: boolean } = {}) => {
+    const [m] = scanConfigText(file, line, REG, opts);
+    return [m.position, m.purpose, m.tier, m.signals?.includes('template_path') ? 'template_path' : m.signals?.includes('fixture_path') ? 'fixture_path' : null];
+  };
+  it('a template named as one', () => {
+    for (const file of ['.env.template', '.env.example', 'deploy/config.example.yaml', 'docker-compose.template.yml', 'app/.env.sample']) {
+      expect(purposeOf(file), file).toEqual(['config_catalog', 'config_template', 'C', 'template_path']);
+      // The fixture-path predicate is unchanged: these files were and stay non-active config.
+      expect(isTestFixturePath(file), file).toBe(true);
+    }
+  });
+  it('a template that lives in a test, fixture or docs tree, or that the repo gitignores, is still a fixture', () => {
+    expect(purposeOf('tests/.env.example')).toEqual(['config_catalog', 'data_fixture', 'C', 'fixture_path']);
+    expect(purposeOf('docs/config.example.yaml')).toEqual(['config_catalog', 'data_fixture', 'C', 'fixture_path']);
+    expect(purposeOf('.env.template', { gitignored: true })).toEqual(['config_catalog', 'data_fixture', 'C', 'fixture_path']);
+  });
+  it('active configuration is still a selector candidate', () => {
+    expect(purposeOf('.env')).toEqual(['config_selector', undefined, 'B', null]);
+  });
+});

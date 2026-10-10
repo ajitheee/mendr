@@ -188,6 +188,7 @@ const EVIDENCE_LABEL: Record<string, string> = {
   catalog_definition: 'config catalog definition',
   catalog_reference: 'config catalog reference',
   test_fixture: 'test/data fixture',
+  config_template: 'config template (copied at install)',
   code_call_site: 'code call site (model argument)',
   code_candidate: 'code literal (use not proven)',
   code_reference: 'code data reference',

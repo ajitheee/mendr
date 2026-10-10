@@ -19,6 +19,7 @@ import {
   toBlockedModelArgMatches,
   toHeldCallMatches,
   toModelIdDataMatches,
+  toUntracedMatches,
   TYPE_CAST_REASON,
   type LiteralMatch,
 } from './scanLiterals.js';
@@ -238,11 +239,13 @@ async function allFindings(repo: string): Promise<
   push('ts:blocked', toBlockedModelArgMatches(literals));
   push('ts:azure', toAzureDeploymentMatches(literals));
   push('ts:held', toHeldCallMatches(literals));
+  push('ts:untraced', toUntracedMatches(literals));
   push('ts:data', toModelIdDataMatches(literals));
   push('py:tierA', py.swapMatches);
   push('py:blocked', py.blockedMatches);
   push('py:azure', py.azureMatches);
   push('py:usageUnverified', py.usageUnverifiedMatches);
+  push('py:held', py.heldMatches);
   push('py:data', py.dataMatches);
   return rows;
 }

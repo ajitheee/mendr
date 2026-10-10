@@ -381,3 +381,114 @@ def ask(q):
     expect(hit?.tier).toBe('B');
   }, 60_000);
 });
+
+// A CLIENT STORED ON `self` AND SET UP IN ANOTHER METHOD (Open-Finance-Lab/AgenticTrading,
+// 2026-10-09; the fixtures are written for this suite). `__init__` sets the attribute to None and
+// an init method sets it to `AsyncOpenAI(...)` once a key is found. Counting the None as a second
+// binding made the receiver "ambiguous", and fix-llm then printed the held call as
+// `usage_unverified` — "no supported SDK call ... was found in this file" — beside one.
+describe('a client attribute declared None, then built in another method', () => {
+  const agent = (extra = '') => `
+from openai import AsyncOpenAI
+
+class Agent:
+    def __init__(self):
+        self.llm_client = None${extra}
+
+    def _initialize_llm(self, key):
+        self.llm_client = AsyncOpenAI(api_key=key)
+
+    async def analyze(self, prompt):
+        if not self.llm_client:
+            return None
+        return await self.llm_client.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": prompt}],
+        )
+`;
+
+  it('resolves to the first-party client: None is a placeholder, not a second client', async () => {
+    const hit = (await tiers('agents/momentum.py', agent())).find((x) => x.value === 'gpt-4');
+    expect(hit?.tier).toBe('A');
+    expect(hit?.position).toBe('model_arg');
+  }, 60_000);
+
+  it('is still held when a host in the file caps its surface, and the reason names that host', async () => {
+    const hit = (await tiers('agents/momentum.py', agent('\n        self.memory_url = "http://127.0.0.1:8010"'))).find(
+      (x) => x.value === 'gpt-4',
+    );
+    expect(hit?.tier).toBe('B');
+    expect(hit?.position).toBe('surface_capped');
+    expect(hit?.reason).toContain('openai_compatible_proxy');
+    expect(hit?.reason).toContain('127.0.0.1');
+  }, 60_000);
+
+  it('is held when a second real binding exists besides the None', async () => {
+    const two = agent().replace(
+      '    async def analyze',
+      '    def _use_gateway(self):\n        self.llm_client = AsyncOpenAI(base_url="https://gateway.internal/v1")\n\n    async def analyze',
+    );
+    expect((await tiers('agents/momentum.py', two)).find((x) => x.value === 'gpt-4')?.tier).toBe('B');
+  }, 60_000);
+
+  // The None is skipped only beside a binding of the SAME variable. A `self.` attribute is
+  // instance state, so that means the same class: a None in another class is a different object,
+  // a client the host injects later, and mendr never sees what it is.
+  it('is held when the None belongs to a different class than the constructor', async () => {
+    const twoClasses = `
+from openai import OpenAI
+
+class DirectAgent:
+    def __init__(self):
+        self.client = OpenAI()
+
+    def ask(self, q):
+        return self.client.chat.completions.create(model="gpt-4", messages=[{"role": "user", "content": q}])
+
+class HostedAgent:
+    def __init__(self):
+        self.client = None
+
+    def ask(self, q):
+        return self.client.chat.completions.create(model="gpt-3.5-turbo", messages=[{"role": "user", "content": q}])
+`;
+    const hit = (await tiers('svc/agents.py', twoClasses)).find((x) => x.value === 'gpt-3.5-turbo');
+    expect(hit?.tier).toBe('B');
+  }, 60_000);
+
+  it('is held when a plain name is set to None in one function and built in another', async () => {
+    const twoFunctions = `
+from openai import OpenAI
+
+def direct(q):
+    client = OpenAI()
+    return client.chat.completions.create(model="gpt-4", messages=[{"role": "user", "content": q}])
+
+def hosted(q, pool):
+    client = None
+    with pool.connection() as client:
+        return client.chat.completions.create(model="gpt-3.5-turbo", messages=[{"role": "user", "content": q}])
+`;
+    expect((await tiers('svc/agents.py', twoFunctions)).find((x) => x.value === 'gpt-3.5-turbo')?.tier).toBe('B');
+  }, 60_000);
+
+  it('still resolves a plain name set to None, then built, in the same function', async () => {
+    const sameFunction = `
+from openai import OpenAI
+
+def ask(q, key):
+    client = None
+    if key:
+        client = OpenAI(api_key=key)
+    return client.chat.completions.create(model="gpt-4", messages=[{"role": "user", "content": q}])
+`;
+    expect((await tiers('svc/ask.py', sameFunction)).find((x) => x.value === 'gpt-4')?.tier).toBe('A');
+  }, 60_000);
+
+  it('is held when the only other binding is not a first-party constructor', async () => {
+    const built = agent().replace('self.llm_client = AsyncOpenAI(api_key=key)', 'self.llm_client = make_client(key)');
+    const hit = (await tiers('agents/momentum.py', built)).find((x) => x.value === 'gpt-4');
+    expect(hit?.tier).toBe('B');
+    expect(hit?.position).toBe('surface_capped');
+  }, 60_000);
+});

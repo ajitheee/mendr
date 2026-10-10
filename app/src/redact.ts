@@ -29,7 +29,7 @@ const PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\bAKIA[0-9A-Z]{16}\b/g, `AKIA${MARK}`],
   [/\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, `jwt.${MARK}`],
   [
-    /\b([A-Z][A-Z0-9_]{0,60}(?:TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|ACCESS_?KEY|PRIVATE_?KEY|CREDENTIALS?|AUTH|PAT)S?)\s*[:=]\s*["']?[^\s"'<>]{6,}/gi,
+    /\b([A-Z][A-Z0-9_]{0,60}(?:TOKEN(?!S)|(?<!(?:\b|_)(?:(?:MAX|MIN|NUM|TOTAL)_?)?(?:MAX|MIN|NUM|TOTAL|PROMPT|COMPLETION|OUTPUT|REASONING|CACHED|BUDGET)_?|(?:\b|_)MAX_?(?:NEW|INPUT|CONTEXT|RESPONSE|THINKING)_?)TOKENS|SECRET|PASSWORD|PASSWD|API_?KEY|ACCESS_?KEY|PRIVATE_?KEY|CREDENTIALS?|AUTH|PAT)S?)\s*[:=]\s*["']?[^\s"'<>]{6,}/gi,
     `$1=${MARK}`,
   ],
 ];

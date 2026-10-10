@@ -66,6 +66,69 @@ describe('secret shapes never survive', () => {
   });
 });
 
+// A TOKEN COUNT IS NOT A TOKEN. The audit's own JSON snippet of a real server (2026-10-09) read
+// `max_tokens=***REDACTED***` for the line `max_tokens: config?.…?.max_tokens || 1024,`: the
+// NAME rule matched "tokens" in a request parameter. Redacting it hid the one parameter a
+// reviewer of a model swap needs to see, and protected nothing.
+describe('request parameters that count tokens are not secrets', () => {
+  const kept = [
+    'max_tokens: config?.integrations?.llm?.max_tokens || 1024,',
+    'maxTokens: options.maxTokens ?? 4096,',
+    'max_completion_tokens=max_completion_tokens,',
+    'maxOutputTokens: settings.maxOutputTokens,',
+    'max_new_tokens=generation_config.max_new_tokens',
+    'MAX_OUTPUT_TOKENS=128000',
+    'CHATGPT_MAX_TOKENS=100000',
+    'budget_tokens: thinkingBudget,',
+    'thinking_budget_tokens=self.thinking_budget',
+    'total_tokens: usage.total_tokens',
+    'reasoning_tokens: details.reasoning_tokens',
+    'generationConfig.maxOutputTokens: cfg.maxOutputTokens',
+    'maxCompletionTokens: opts.maxCompletionTokens',
+    'max_thinking_tokens=cfg.max_thinking',
+  ];
+  for (const line of kept) {
+    it(`leaves \`${line}\` intact`, () => {
+      expect(sanitize(line)).toBe(line);
+    });
+  }
+
+  // The exemption is for counts only. Every name below still holds a credential, including the
+  // ones a count name could be confused with.
+  const secret: Array<[string, string]> = [
+    ['an access-token list', `ACCESS_TOKENS=${CANARY}`],
+    ['a GitHub Actions input named token', `INPUT_TOKEN=${CANARY}`],
+    ['a GitHub Actions input named tokens', `INPUT_TOKENS=${CANARY}`],
+    ['rotated tokens', `NEW_TOKENS: ${CANARY}`],
+    ['a singular token beside a count word', `OUTPUT_TOKEN=${CANARY}`],
+    ['a secret whose name also mentions a limit', `MAX_TOKENS_SECRET=${CANARY}`],
+    // A word that only ENDS in a count word is not one. The first cut of the carve-out read the
+    // "min" at the end of admin as a count and printed all three of these verbatim.
+    ['admin tokens', `ADMIN_TOKENS=${CANARY}`],
+    ['sysadmin tokens, quoted', `SYSADMIN_TOKENS: "${CANARY}"`],
+    ['camelCase admin tokens', `adminTokens: "${CANARY}"`],
+    ['a word ending in max', `PAYMAX_TOKENS=${CANARY}`],
+    ['a word ending in total', `SUBTOTAL_TOKENS=${CANARY}`],
+    // The price of a case-insensitive pattern: it cannot see a camelCase hump, so a count word
+    // after another camelCase word reads like adminTokens and is redacted, as before the carve-out.
+    ['a count word after another camelCase word', `llmMaxTokens: ${CANARY}`],
+  ];
+  for (const [name, text] of secret) {
+    it(`still redacts ${name}`, () => {
+      expect(sanitize(text)).not.toContain(CANARY);
+    });
+  }
+
+  // The real path the finding came from: a checked-in .env, one line of which the audit quotes as
+  // context around a model id. The exemption works by not matching, so a count on one line and a
+  // key later on the same line are judged separately.
+  it('redacts an admin token beside a model id, and a key after a kept count', () => {
+    const env = `OPENAI_MODEL=gpt-3.5-turbo\nADMIN_TOKENS=${CANARY}\n`;
+    expect(sanitize(env)).toBe('OPENAI_MODEL=gpt-3.5-turbo\nADMIN_TOKENS=***REDACTED***\n');
+    expect(sanitize(`max_tokens=1024&x_api_key=${CANARY}`)).toBe('max_tokens=1024&x_api_key=***REDACTED***');
+  });
+});
+
 describe('by-value redaction — the mechanism patterns cannot replace', () => {
   it('redacts a known value in a format no pattern would recognise', () => {
     const weird = 'hunter2-correct-horse-battery-staple';
@@ -114,6 +177,10 @@ describe('the sanitizer cannot be used to stall a build', () => {
     ['a normal log with versions and paths', 'node_modules/@scope/pkg@1.2.3-beta.4/dist/index.js:42:11\n'.repeat(3_000)],
     ['Bearer prefix without a token', 'Bearer '.repeat(30_000)],
     ['scheme://user: without an at-sign', 'https://user:'.repeat(20_000)],
+    ['count-named parameters, repeated', 'max_completion_tokens: config.x, '.repeat(10_000)],
+    ['a long name of count words', `${'MAX_'.repeat(20_000)}TOKENS=1234567`],
+    ['a long name of words ending in a count word', `${'ADMIN_'.repeat(20_000)}TOKENS=1234567`],
+    ['a long camelCase name of count words', `${'maxOutput'.repeat(15_000)}Tokens=1234567`],
   ];
 
   for (const [name, input] of adversarial) {
