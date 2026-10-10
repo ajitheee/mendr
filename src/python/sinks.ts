@@ -401,14 +401,34 @@ function rootOf(node: PyNode): PyNode {
 }
 
 /**
+ * The scope an assignment to `receiver` binds in, so two bindings can be told to be the SAME
+ * variable. An attribute on `self` or `cls` is instance state, set in one method and read in
+ * another, so its scope is the enclosing class. Any other name binds in the nearest function or
+ * class body, as Python scopes it. Null is the module.
+ */
+function bindingScope(assign: PyNode, receiver: string): PyNode | null {
+  const onInstance = /^(?:self|cls)\./.test(receiver);
+  for (let n: PyNode | null = assign.parent; n; n = n.parent) {
+    if (n.type === 'class_definition') return n;
+    if (!onInstance && n.type === 'function_definition') return n;
+  }
+  return null;
+}
+
+function sameScope(a: PyNode | null, b: PyNode | null): boolean {
+  return a === null ? b === null : b !== null && a.equals(b);
+}
+
+/**
  * Resolve what a receiver name is BOUND to, in this file.
  *
  * Returns the provider family only when the name has EXACTLY ONE binding whose
  * right-hand side is a first-party constructor with no base_url/api_base override.
  * Anything else — a function parameter, a subscript, a call result, a name bound
  * more than once, or no binding at all — is unresolved, and unresolved must
- * reduce authority. A binding to `None` is not counted: it is the "not set yet"
- * placeholder, and it cannot send a request anywhere.
+ * reduce authority. A binding to `None` is not counted when the same variable
+ * (same class for `self.x`, same function otherwise) has another binding: it is
+ * the "not set yet" placeholder, and it cannot send a request anywhere.
  */
 export function resolveReceiverSurface(
   literal: PyNode,
@@ -418,16 +438,27 @@ export function resolveReceiverSurface(
   let found: ProviderFamily | null = null;
   let bindings = 0;
 
+  const assigned: Array<{ right: PyNode; scope: PyNode | null }> = [];
   for (const assign of root.descendantsOfType('assignment')) {
     const left = assign.childForFieldName('left');
     const right = assign.childForFieldName('right');
     if (!left || !right) continue;
     if (left.text.replace(/\s+/g, '') !== receiver) continue;
+    assigned.push({ right, scope: bindingScope(assign, receiver) });
+  }
+
+  for (const { right, scope } of assigned) {
     // `self.client = None` in __init__, then `self.client = OpenAI()` once a key is found: the
     // declare-then-initialise idiom. None is not a client — a call on it raises before any request
-    // leaves — so it is not a second binding that could point the call somewhere else. Every other
-    // right-hand side still counts. (Open-Finance-Lab/AgenticTrading, 2026-10-09.)
-    if (right.type === 'none') continue;
+    // leaves — so it is not a second binding that could point the call somewhere else.
+    // (Open-Finance-Lab/AgenticTrading, 2026-10-09.)
+    //
+    // Only beside another binding of the SAME variable, though. Bindings are matched by receiver
+    // TEXT across the whole file, so `self.client = None` in one class and `self.client = OpenAI()`
+    // in another are two different objects. There the None is the only thing this file says about
+    // the second class's client (the host injects it later), and dropping it would hand that
+    // unseen client the first class's constructor and Tier A. Every other right-hand side counts.
+    if (right.type === 'none' && assigned.some((o) => o.right.type !== 'none' && sameScope(o.scope, scope))) continue;
     bindings++;
     if (right.type !== 'call') continue;
     const dotted = dottedCallee(right);
