@@ -57,8 +57,10 @@ export const TIER_B_REASON_TEXT: Record<TierBReason, string> = {
   //   - a gateway prefix IS a question about the id string (the successor may need another
   //     prefix), so the sentence makes no claim that the hold is "not about the id".
   // The list is "such as": there are more rules.
+  // A fine-tuned model id is held by the same code (usage/fineTune.ts) wherever it is used, because
+  // every replacement is a base model; the sentence names it, since a JSON reader sees only this.
   surface_capped:
-    'is held for review because of where or how it is used, such as in a sample tree, as a gateway-prefixed id, behind a wrapper class, through a proxy or partner client or one mendr cannot resolve, or in a request made at import time; an unattended swap is not safe there. On an Azure client the value names a deployment, so the change may be a provisioning one.',
+    "is held for review because of where or how it is used, such as in a sample tree, as a gateway-prefixed id, behind a wrapper class, through a proxy or partner client or one mendr cannot resolve, or in a request made at import time, or because it names a fine-tuned model, whose training a swap would drop; an unattended swap is not safe there. On an Azure client the value names a deployment, so the change may be a provisioning one.",
   dynamic_model_value:
     'the model value is assembled at runtime, so no single literal here can carry the migration.',
   insufficient_dataflow:

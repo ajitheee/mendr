@@ -218,6 +218,42 @@ describe('buildInvestigations — a fine-tune joins its own row on every runtime
     expect(inv.model).toBe('babbage-002');
     expect(inv.retirementEvidence.shutdownDate).toBe('2026-09-28');
   });
+
+  // The source scanners now find `ft:babbage-002:acme::9abc` in code, join it to the same row,
+  // and hold it (surface_capped). The code location and the runtime traffic are one investigation.
+  it('joins a fine-tune found in code and the same fine-tune observed at runtime into one investigation', () => {
+    const source = { ...codeModel('ft-babbage-002', 'B', 'surface_capped'), replacement: 'gpt-5.6-terra' };
+    const invs = buildInvestigations(fromFile, [], TODAY, [source], FT_REGISTRY);
+    expect(invs.map((i) => [i.model, i.decision, i.locations.selectors.length, i.productionUsage.requests])).toEqual([
+      ['ft-babbage-002', 'review', 1, 120],
+    ]);
+  });
+});
+
+// A held fine-tune is a code_candidate by role, whose generic sentence ("not traced to a provider
+// request") is not why it is held. The investigation and the human report say why instead.
+describe('buildInvestigations — a fine-tuned model id held in code', () => {
+  const fineTune = { ...codeModel('ft-gpt-3.5-turbo', 'B', 'surface_capped'), replacement: 'gpt-5.6-terra' };
+
+  it("says the swap would drop the customer's training, not that the call is untraced", () => {
+    const [inv] = buildInvestigations(NO_RUNTIME_EVIDENCE, [], NOW, [fineTune]);
+    expect(inv.decision).toBe('review');
+    expect(inv.reason).toContain("replacing it with gpt-5.6-terra would drop the customer's training");
+    expect(inv.reason).not.toContain('not traced to a provider request');
+    const meta: AuditMeta = { from: null, to: null, coverage: fullCoverage() };
+    const out = renderAuditReport([inv], meta).join('\n');
+    expect(out).toContain("fine-tuned model id, never swapped because a swap would drop the customer's training (review)");
+    expect(out).toContain('is a fine-tuned model that mendr never swaps');
+  });
+
+  it('leaves every other held call, and a fine-tune row matched as data, with their own wording', () => {
+    const [held] = buildInvestigations(NO_RUNTIME_EVIDENCE, [], NOW, [codeModel('gpt-4', 'B', 'surface_capped')]);
+    expect(held.reason).toContain('not traced to a provider request');
+    expect(held.reason).not.toContain('fine-tuned');
+    const [data] = buildInvestigations(NO_RUNTIME_EVIDENCE, [], NOW, [codeModel('ft-gpt-4', 'C')]);
+    expect(data.decision).toBe('monitor');
+    expect(data.reason).not.toContain('fine-tuned');
+  });
 });
 
 describe('buildInvestigations — catalog reference only, no usage => MONITOR', () => {

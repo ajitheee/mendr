@@ -35,6 +35,7 @@ import type { Tier } from '../report/tiers.js';
 import { displayEntryId } from '../registry/entryId.js';
 import { registryModelId } from '../recon/usageAudit.js';
 import { effectiveVerificationState, modelIdEntries } from '../usage/llmRegistry.js';
+import { FINE_TUNE_ROW_PREFIX } from '../usage/fineTune.js';
 import { daysUntil } from '../watch/exposure.js';
 
 /** The per-model decision. `patch` = a verified auto-fix exists for a code call site. */
@@ -85,6 +86,20 @@ export interface LocationRef {
    * code locations and on config selectors with no env-var-shaped key.
    */
   readerTieBack?: ReaderTieBack;
+}
+
+/**
+ * Is this a fine-tuned model id the source scanners held for review? A code location joins the
+ * registry's row for fine-tunes (`ft-gpt-3.5-turbo`), and the scanners hold every fine-tune they
+ * find outside a data position as `surface_capped` (usage/fineTune.ts). Its generic role label
+ * ("not traced to a provider request") would send the reader to the wrong question: the id is
+ * never swapped because the swap would drop the customer's training.
+ *
+ * A fine-tune that joins its BASE model's row (no `ft-` row covers it) is held the same way, but
+ * is not recognised here, so it keeps the generic label.
+ */
+export function isHeldFineTune(l: Pick<LocationRef, 'surface' | 'reason' | 'value'>): boolean {
+  return l.surface === 'code' && l.reason === 'surface_capped' && l.value.startsWith(FINE_TUNE_ROW_PREFIX);
 }
 
 /** The per-location disposition a tier implies. */
@@ -596,11 +611,15 @@ function decide(inv: ModelInvestigation): { decision: AuditDecision; reason: str
   // Same split for the sibling case: a rule covers the parameter but changes what it means on
   // the replacement. "Not traced to a provider request" would be false here too.
   const hasParamBehaviour = sel.some((s) => s.reason === 'param_behaviour_change');
+  // A held fine-tune is a code_candidate by role too, and "not traced to a provider request" is
+  // not why it is held. See isHeldFineTune.
+  const hasFineTune = sel.some(isHeldFineTune);
   const hasCodeCandidate = sel.some(
     (s) =>
       s.role === 'code_candidate' &&
       s.reason !== 'coupled_param_unverified' &&
-      s.reason !== 'param_behaviour_change',
+      s.reason !== 'param_behaviour_change' &&
+      !isHeldFineTune(s),
   );
   const hasConfig = sel.some((s) => s.surface === 'config');
   const configRead = sel.some((s) => s.surface === 'config' && s.readerTieBack?.proven);
@@ -656,6 +675,14 @@ function decide(inv: ModelInvestigation): { decision: AuditDecision; reason: str
           `the call asks for (a token limit that now also counts reasoning tokens, or a sampling value that is ` +
           `dropped), so the value needs a person`,
       );
+    if (hasFineTune) {
+      const replacement = inv.retirementEvidence.replacement ?? 'a base model';
+      parts.push(
+        `a fine-tuned model id in code, which mendr never swaps: replacing it with ${replacement} would ` +
+          `drop the customer's training, so fine-tune a current model on the same data, or accept ` +
+          `${replacement} without the training, and change the id by hand`,
+      );
+    }
     if (hasCodeCandidate) parts.push('a code default or call not traced to a provider request (its use as a live call is not proven)');
     if (hasConfig) parts.push(configRead ? 'a config selector read by code (tie-back proven)' : 'a config selector candidate (reader tie-back not proven)');
     return {

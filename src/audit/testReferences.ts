@@ -3,6 +3,7 @@ import { relative } from 'node:path';
 import { Node, Project, SyntaxKind } from 'ts-morph';
 import type { LlmModelIdDeprecation, LlmRegistry } from '../types.js';
 import { modelIdEntries } from '../usage/llmRegistry.js';
+import { fineTuneRowId, sourceFineTuneBase } from '../usage/fineTune.js';
 import { buildRegistryPrefilter, collectTestSourceFiles, fallbackCompilerOptions } from '../usage/scanRepo.js';
 import { collectPythonFiles, isPyTestPath, readPythonSources } from '../python/scanPy.js';
 import { usageVerdictState } from '../report/tiers.js';
@@ -29,10 +30,22 @@ function idMap(registry: LlmRegistry): Map<string, LlmModelIdDeprecation> {
   return m;
 }
 
-/** Exact match, or a `<prefix>/<id>` / `<prefix>:<id>` form (openai/gpt-4, models/gemini-…). */
+/**
+ * The record a fine-tuned model id (`ft:gpt-4-0613:acme::abc`) joins, by the source scanners' rule
+ * (usage/fineTune.ts): its `ft-` row, or its base model's. Undefined unless the whole value is one.
+ */
+function fineTuneEntry(map: Map<string, LlmModelIdDeprecation>, value: string): LlmModelIdDeprecation | undefined {
+  const base = sourceFineTuneBase(value);
+  return base === undefined ? undefined : map.get(fineTuneRowId(base, 'unknown', [...map.values()]));
+}
+
+/** Exact match, a fine-tune of a registry row, or a `<prefix>/<id>` / `<prefix>:<id>` form (openai/gpt-4, models/gemini-…). */
 function lookup(map: Map<string, LlmModelIdDeprecation>, value: string): LlmModelIdDeprecation | undefined {
   const direct = map.get(value);
   if (direct) return direct;
+  // Before the prefix cut below, which would read `ft:gpt-4-0613:acme::abc` as the id `abc`.
+  const fineTune = fineTuneEntry(map, value);
+  if (fineTune) return fineTune;
   const slash = value.lastIndexOf('/');
   const colon = value.lastIndexOf(':');
   const cut = Math.max(slash, colon);
@@ -91,6 +104,11 @@ export function findTestReferences(repoPath: string, registry: LlmRegistry): Exp
         while ((mch = re.exec(text)) !== null) {
           out.push(toTestMatch(entry, id, src.path.replace(/\\/g, '/'), i + 1, mch.index + 2));
         }
+      }
+      // A quoted string literal that is a whole fine-tuned model id: "ft:gpt-4-0613:acme::abc".
+      for (const mch of text.matchAll(/["'](ft:[^"'\s]+)["']/g)) {
+        const entry = fineTuneEntry(map, mch[1]);
+        if (entry) out.push(toTestMatch(entry, mch[1], src.path.replace(/\\/g, '/'), i + 1, (mch.index ?? 0) + 2));
       }
     });
   }

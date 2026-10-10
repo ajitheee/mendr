@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { LlmRegistry } from '../types.js';
-import { autoApplyVerification } from '../usage/llmRegistry.js';
+import { autoApplyVerification, withheldVerification } from '../usage/llmRegistry.js';
 import { findTestReferences } from './testReferences.js';
 
 // Test-only references: a retiring id in a test/spec/fixture file is surfaced,
@@ -58,5 +58,35 @@ describe('findTestReferences', () => {
     expect(refs).toHaveLength(1);
     expect(refs[0]).toMatchObject({ value: 'openai/gpt-4', tier: 'C', testFile: true });
     expect(refs[0]!.entry.deprecated).toBe('gpt-4');
+  });
+
+  // A fine-tuned model id joins the registry's row for fine-tunes of its base, by the rule the
+  // source scanners use (usage/fineTune.ts). Before, the prefix cut read it as the id after its
+  // last colon, so a fine-tune in a test was not reported at all.
+  describe('fine-tuned model ids', () => {
+    const FT_REG: LlmRegistry = [
+      ...REG,
+      { provider: 'openai', kind: 'model_id', deprecated: 'ft-gpt-4', replacement: 'gpt-5.6-sol', status: 'deprecated', shutdownDate: '2026-10-23', verification: withheldVerification('quarantined') },
+    ];
+
+    it('are found in TS/JS and Python test files, joined to their ft- row, Tier C + testFile', () => {
+      const dir = repo({
+        'src/ft.test.ts': 'export const m = "ft:gpt-4-0613:acme::abc123";\n',
+        'tests/test_ft.py': 'def test_ft():\n    assert run(model="ft:gpt-4-0613:acme::abc123")\n',
+      });
+      const refs = findTestReferences(dir, FT_REG);
+      expect(refs.map((r) => [r.value, r.entry.deprecated, r.tier, r.testFile, r.line])).toEqual([
+        ['ft:gpt-4-0613:acme::abc123', 'ft-gpt-4', 'C', true, 1],
+        ['ft:gpt-4-0613:acme::abc123', 'ft-gpt-4', 'C', true, 2],
+      ]);
+    });
+
+    it('are not found when the string only contains one, or names a family no row covers', () => {
+      const dir = repo({
+        'src/ft.test.ts': 'export const a = "see ft:gpt-4-0613:acme::abc123";\nexport const b = "ft:gpt-4o:acme::x";\n',
+        'tests/test_ft.py': 'A = "see ft:gpt-4-0613:acme::abc123"\nB = "ft:gpt-4o:acme::x"\nC = "ft:gpt-4-0613"\n',
+      });
+      expect(findTestReferences(dir, FT_REG)).toEqual([]);
+    });
   });
 });
