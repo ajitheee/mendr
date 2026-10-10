@@ -553,6 +553,54 @@ export const PY_DEFAULT_CONTAINER_REASON =
   'model value inside a default-configuration dict; a real default whose consumer is not traced, review before changing';
 export const PY_CLI_DEFAULT_REASON =
   'default value of a command-line option; the model used whenever the flag is omitted, and its use is not traced — review before changing';
+/**
+ * `params = {"model": "gpt-4", …}` … `client.chat.completions.create(**params)`. A real request,
+ * and the Python twin of TS_REQUEST_VARIABLE_REASON. Always held: the call can add or override
+ * keys the dict does not show, and Python's only gate is a re-parse.
+ */
+export const PY_REQUEST_DICT_REASON =
+  'request dict built in a variable and unpacked (**) into a provider request; what the call finally sends is not all visible in the dict, so it is held for review';
+
+/**
+ * Is the dict holding `pair` the value of a plain `name = {…}` assignment whose name is unpacked
+ * (`**name`) into a recognised provider request, model factory or legacy SDK call?
+ *
+ * The dict pair rule only trusted a dict written inside the call's parentheses, so a request built
+ * in a variable first was a catalog value — the false clean the TypeScript scanner gave a Node
+ * server (2026-10-09), in its Python spelling. Narrow on purpose: a `**name` into any other callee
+ * (`log_event(**payload)`) is not evidence of a request, a positional or `json=` argument is not
+ * followed, and the unpacking must be in the dict's own function (or anywhere, for a module-level
+ * dict), so a same-named dict in another function is not mistaken for the one that is sent.
+ */
+function isDictUnpackedIntoProviderCall(pair: PyNode): boolean {
+  const dict = pair.parent;
+  if (!dict || dict.type !== 'dictionary') return false;
+  let node: PyNode = dict;
+  let parent = node.parent;
+  while (parent && isValueTransparent(parent, node)) {
+    node = parent;
+    parent = node.parent;
+  }
+  if (!parent || parent.type !== 'assignment' || !parent.childForFieldName('right')?.equals(node)) return false;
+  const left = parent.childForFieldName('left');
+  if (!left || left.type !== 'identifier') return false;
+  const name = left.text;
+  const scope = enclosingFunction(parent);
+  let root: PyNode = parent;
+  while (root.parent) root = root.parent;
+  for (const splat of (scope ?? root).descendantsOfType('dictionary_splat')) {
+    if (!splat) continue;
+    const inner = splat.namedChildren[0];
+    if (!inner || inner.type !== 'identifier' || inner.text !== name) continue;
+    // A function-local dict is only the one unpacked in that same function.
+    if (scope && !enclosingFunction(splat)?.equals(scope)) continue;
+    const call = splat.parent?.type === 'argument_list' ? splat.parent.parent : null;
+    if (!call || call.type !== 'call') continue;
+    const dotted = dottedCallee(call);
+    if (matchSdkSink(dotted) || isLegacySdkSink(dotted) || isProviderModelFactory(dotted)) return true;
+  }
+  return false;
+}
 
 /** Is the literal the LAST argument of a lookup whose key names a model, or whose result is assigned to a model-named name? */
 function isLookupDefaultForModel(argList: PyNode, literal: PyNode): boolean {
@@ -1102,6 +1150,11 @@ export function classifyPyPosition(
       }
       if (isModelLikeStringKey(key) && isEnclosingDictACallArgument(parent)) {
         return { position: 'model_arg' };
+      }
+      // The same request, built in a variable and unpacked into the call (`create(**params)`).
+      // Flow evidence outranks the name rule below, and it is held, never swapped.
+      if (isModelLikeStringKey(key) && isDictUnpackedIntoProviderCall(parent)) {
+        return { position: 'surface_capped', reason: PY_REQUEST_DICT_REASON };
       }
       // A `"model"` value in a standalone DEFAULT-configuration dict
       // (`DEFAULT_CONFIG = {"llm": {"config": {"model": "…"}}}`) is the default a

@@ -110,6 +110,17 @@ const PROXY_TS = [
   '',
 ].join('\n');
 
+/** The Python spelling of SERVER_JS: a request dict unpacked into the call. */
+const ASK_PY = [
+  'from openai import OpenAI',
+  'client = OpenAI()',
+  '',
+  'def ask(prompt):',
+  '    params = {"model": "gpt-3.5-turbo", "messages": [{"role": "user", "content": prompt}]}',
+  '    return client.chat.completions.create(**params)',
+  '',
+].join('\n');
+
 /** A Python agent: a client attribute set to None, built in another method, held by a host in the file. */
 const AGENT_PY = [
   'from openai import AsyncOpenAI',
@@ -223,11 +234,13 @@ describe('the audit JSON snippet (miss 5: a token limit printed as a redacted se
 
 describe('a request object built in a variable (miss 1: a live call reported as catalog data)', () => {
   it('is listed in fix-llm Tier B, and audit puts the same line in the same tier', async () => {
-    const dir = repo({ 'src/server.js': SERVER_JS, 'src/proxy.ts': PROXY_TS });
+    const dir = repo({ 'src/server.js': SERVER_JS, 'src/proxy.ts': PROXY_TS, 'svc/ask.py': ASK_PY });
     const fix = await fixLlmTierB(dir);
     const rows = fix.tierB.map((f) => [f.file, f.line, f.modelId, f.reason]);
     expect(rows).toContainEqual(['src/server.js', 10, 'gpt-3.5-turbo', 'surface_capped']);
     expect(rows).toContainEqual(['src/proxy.ts', 4, 'o3-mini', 'surface_capped']);
+    // The Python spelling: a dict unpacked into the call.
+    expect(rows).toContainEqual(['svc/ask.py', 5, 'gpt-3.5-turbo', 'surface_capped']);
     // Nothing is patched: the held proxy call's own max_tokens is not renamed either.
     expect(fix.tierA).toEqual([]);
     expect(fix.tierC).toBe(0);
@@ -236,5 +249,6 @@ describe('a request object built in a variable (miss 1: a live call reported as 
     const at = (file: string, line: number) => audit.find((l) => l.file === file && l.line === line);
     expect(at('src/server.js', 10)).toMatchObject({ tier: 'B', reason: 'surface_capped', role: 'code_candidate' });
     expect(at('src/proxy.ts', 4)).toMatchObject({ tier: 'B', reason: 'surface_capped' });
+    expect(at('svc/ask.py', 5)).toMatchObject({ tier: 'B', reason: 'surface_capped' });
   }, 180_000);
 });
