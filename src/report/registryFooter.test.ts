@@ -182,9 +182,11 @@ describe('the SHIPPED registry footer', () => {
     // deprecate it); three image models retiring 2026-12-01 are added, unverifiable by class;
     // the providers' pages settle 11 quarantines and one unverified hold; eight Google ids
     // retiring 2026-10-22 and 2026-11-17 are added, all detect-only; so are OpenAI's six
-    // fine-tune rows, quarantined.
-    expect(lines[0]).toBe('registry: 180 records');
+    // fine-tune rows, quarantined. Then 13 discovered candidates the gate cannot check, added
+    // review-only: 6 OpenAI realtime ids and gemini-2.5-flash-lite-preview-09-2025 (unverified),
+    // 6 OpenAI audio ids (unverifiable by class).
+    expect(lines[0]).toBe('registry: 193 records');
     expect(lines[1]).toBe('auto-fix eligible: 144');
-    expect(lines[2]).toBe('review-only: 36 (quarantined 16, unverified 7, unverifiable 13)');
+    expect(lines[2]).toBe('review-only: 49 (quarantined 16, unverified 14, unverifiable 19)');
   });
 });

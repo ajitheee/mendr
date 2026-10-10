@@ -402,12 +402,15 @@ describe('the shipped registry', () => {
     // -1 unverified. +8 Google ids, all detect-only: 3 Veo previews retiring 2026-10-22
     // (quarantined), gemini-3.1-flash-live-preview (unverified: no catalog lists gemini-3.8-live)
     // and 4 audio/TTS models retiring 2026-11-17 (unverifiable by class). +6 OpenAI fine-tune
-    // rows retiring 2026-10-23, quarantined.
-    expect(provenance.activeEntries).toBe(180);
+    // rows retiring 2026-10-23, quarantined. +13 discovered candidates the promote gate cannot
+    // check, added review-only: 6 OpenAI realtime ids whose replacement no catalog lists and
+    // gemini-2.5-flash-lite-preview-09-2025, whose replacement Google itself retires (+7
+    // unverified), and 6 OpenAI audio ids (+6 unverifiable by class). Eligible is unchanged.
+    expect(provenance.activeEntries).toBe(193);
     expect(provenance.autoFixEligible).toBe(144);
     expect(provenance.reviewOnlyCounts.quarantined).toBe(16);
-    expect(provenance.reviewOnlyCounts.unverified).toBe(7);
-    expect(provenance.reviewOnlyCounts.unverifiable).toBe(13);
+    expect(provenance.reviewOnlyCounts.unverified).toBe(14);
+    expect(provenance.reviewOnlyCounts.unverifiable).toBe(19);
     // Nothing ships in the defence-in-depth state; the validator forbids it.
     expect(provenance.reviewOnlyCounts.withheld).toBe(0);
   });

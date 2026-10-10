@@ -5872,5 +5872,565 @@
         "excerpt": "October 23, 2026 | ft-davinci-002 | gpt-5.6-terra"
       }
     ]
+  },
+  {
+    "entryId": "google.gemini-2.5-flash-lite-preview-09-2025.retirement-2026-03-31",
+    "provider": "google",
+    "kind": "model_id",
+    "deprecated": "gemini-2.5-flash-lite-preview-09-2025",
+    "replacement": "gemini-3.1-flash-lite",
+    "status": "retired",
+    "shutdownDate": "2026-03-31",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "note": "discovered from the google deprecation table; row read as: gemini-2.5-flash-lite-preview-09-2025 | September 25, 2025 | March 31, 2026 | gemini-3.1-flash-lite. Review-only: Google retires gemini-3.1-flash-lite itself on 2027-05-07 (to gemini-3.5-flash-lite), so this is a chained deprecation.",
+    "verification": {
+      "status": "unverified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gemini-3.1-flash-lite\" is ITSELF deprecated in this registry (deprecated, shutdown 2027-05-07); a migration must not point at a retiring id",
+        "Google deprecation page (read 2026-10-10 UTC, snapshot d8b5a2b597a3) states shutdown March 31, 2026 and recommended replacement gemini-3.1-flash-lite; the same table retires gemini-3.1-flash-lite on May 7, 2027 with gemini-3.5-flash-lite",
+        "Google's changelog for March 31, 2026: \"The gemini-2.5-flash-lite-preview-09-2025 model has been shut down.\" It pointed at gemini-3.1-flash-lite-preview, which shut down May 25, 2026; the deprecations table now names gemini-3.1-flash-lite",
+        "the record keeps the target Google names; following the chain to gemini-3.5-flash-lite, as the gemini-2.0-flash-lite records do, is a person's decision"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:f634c61e6afb848a868052963eef89696dd7ae544aaac846f8d31514c61b9c36",
+        "retrievedAt": "2026-09-14T23:54:46.353Z",
+        "excerpt": "gemini-2.5-flash-lite-preview-09-2025 | September 25, 2025 | March 31, 2026 | gemini-3.1-flash-lite"
+      },
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:d8b5a2b597a3462a09f0c94808b1c71a9be2eaf46f7c190f68e6d3c9349b2c06",
+        "retrievedAt": "2026-10-10T05:43:24.963Z",
+        "excerpt": "gemini-2.5-flash-lite-preview-09-2025 | September 25, 2025 | March 31, 2026 | gemini-3.1-flash-lite"
+      },
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:d8b5a2b597a3462a09f0c94808b1c71a9be2eaf46f7c190f68e6d3c9349b2c06",
+        "retrievedAt": "2026-10-10T05:43:24.963Z",
+        "excerpt": "gemini-3.1-flash-lite | May 7, 2026 | May 7, 2027 | gemini-3.5-flash-lite"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-audio.retirement-2027-01-20",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-audio",
+    "replacement": "gpt-audio-1.5",
+    "status": "deprecated",
+    "shutdownDate": "2027-01-20",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Jan 20, 2027 | gpt-audio | gpt-audio-1.5. Review-only: public catalogs do not list audio models, so the gate cannot check gpt-audio-1.5.",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"gpt-audio\" is a audio model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-audio-1.5\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 8d440e5f7cd4) states shutdown Jan 20, 2027 and recommended replacement gpt-audio-1.5",
+        "the gpt-audio model page carries a Deprecated badge; the gpt-audio-1.5 model page shows none (read 2026-10-10)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "Jan 20, 2027 | gpt-audio | gpt-audio-1.5"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T05:43:24.374Z",
+        "excerpt": "Jan 20, 2027 | gpt-audio | gpt-audio-1.5"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-realtime-mini.retirement-2027-01-20",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-realtime-mini",
+    "replacement": "gpt-realtime-2.1-mini",
+    "status": "deprecated",
+    "shutdownDate": "2027-01-20",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Jan 20, 2027 | gpt-realtime-mini | gpt-realtime-2.1-mini. Review-only until OpenRouter or models.dev lists gpt-realtime-2.1-mini.",
+    "verification": {
+      "status": "unverified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-realtime-2.1-mini\" was not found live in any public catalog (models.dev / OpenRouter)",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 8d440e5f7cd4) states shutdown Jan 20, 2027 and recommended replacement gpt-realtime-2.1-mini",
+        "the gpt-realtime-mini model page carries a Deprecated badge; the gpt-realtime-2.1-mini model page shows none (read 2026-10-10)",
+        "not catalog-verified: OpenRouter and models.dev do not list gpt-realtime-2.1-mini yet, so the gate refuses it; re-run `mendr verify-registry` once they do"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "Jan 20, 2027 | gpt-realtime-mini | gpt-realtime-2.1-mini"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T05:43:24.374Z",
+        "excerpt": "Jan 20, 2027 | gpt-realtime-mini | gpt-realtime-2.1-mini"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-audio-mini.retirement-2027-01-20",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-audio-mini",
+    "replacement": "gpt-audio-1.5",
+    "status": "deprecated",
+    "shutdownDate": "2027-01-20",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Jan 20, 2027 | gpt-audio-mini | gpt-audio-1.5. Review-only: public catalogs do not list audio models, so the gate cannot check gpt-audio-1.5.",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"gpt-audio-mini\" is a audio model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-audio-1.5\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 8d440e5f7cd4) states shutdown Jan 20, 2027 and recommended replacement gpt-audio-1.5",
+        "the gpt-audio-mini model page carries a Deprecated badge; the gpt-audio-1.5 model page shows none (read 2026-10-10)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "Jan 20, 2027 | gpt-audio-mini | gpt-audio-1.5"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T05:43:24.374Z",
+        "excerpt": "Jan 20, 2027 | gpt-audio-mini | gpt-audio-1.5"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-4o-mini-transcribe-2025-03-20.retirement-2027-01-20",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4o-mini-transcribe-2025-03-20",
+    "replacement": "gpt-4o-mini-transcribe-2025-12-15",
+    "status": "deprecated",
+    "shutdownDate": "2027-01-20",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Jan 20, 2027 | gpt-4o-mini-transcribe-2025-03-20 | gpt-4o-mini-transcribe-2025-12-15. Review-only: public catalogs do not list audio models, so the gate cannot check gpt-4o-mini-transcribe-2025-12-15. OpenAI also retires gpt-4o-mini-transcribe on 2027-02-26, about five weeks later, and does not say whether that row covers the 2025-12-15 snapshot.",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"gpt-4o-mini-transcribe-2025-03-20\" is a audio model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-4o-mini-transcribe-2025-12-15\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 8d440e5f7cd4) states shutdown Jan 20, 2027 and recommended replacement gpt-4o-mini-transcribe-2025-12-15",
+        "the gpt-4o-mini-transcribe model page lists both gpt-4o-mini-transcribe-2025-03-20 and gpt-4o-mini-transcribe-2025-12-15 as snapshots (read 2026-10-10)",
+        "the same deprecations page retires gpt-4o-mini-transcribe on Feb 26, 2027 (to gpt-live-transcribe or gpt-transcribe) and does not say whether that covers the gpt-4o-mini-transcribe-2025-12-15 snapshot this record migrates to"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "Jan 20, 2027 | gpt-4o-mini-transcribe-2025-03-20 | gpt-4o-mini-transcribe-2025-12-15"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T05:43:24.374Z",
+        "excerpt": "Jan 20, 2027 | gpt-4o-mini-transcribe-2025-03-20 | gpt-4o-mini-transcribe-2025-12-15"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-audio-mini-2025-10-06.retirement-2026-07-23",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-audio-mini-2025-10-06",
+    "replacement": "gpt-audio-1.5",
+    "status": "retired",
+    "shutdownDate": "2026-07-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: July 23, 2026 | gpt-audio-mini-2025-10-06 | gpt-audio-1.5. Review-only: public catalogs do not list audio models, so the gate cannot check gpt-audio-1.5.",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"gpt-audio-mini-2025-10-06\" is a audio model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-audio-1.5\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 8d440e5f7cd4) states shutdown July 23, 2026 and recommended replacement gpt-audio-1.5",
+        "the gpt-audio-mini model page, which lists gpt-audio-mini-2025-10-06 as a snapshot, carries a Deprecated badge; the gpt-audio-1.5 model page shows none (read 2026-10-10)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "July 23, 2026 | gpt-audio-mini-2025-10-06 | gpt-audio-1.5"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T05:43:24.374Z",
+        "excerpt": "July 23, 2026 | gpt-audio-mini-2025-10-06 | gpt-audio-1.5"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-realtime-mini-2025-10-06.retirement-2026-07-23",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-realtime-mini-2025-10-06",
+    "replacement": "gpt-realtime-2.1-mini",
+    "status": "retired",
+    "shutdownDate": "2026-07-23",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: July 23, 2026 | gpt-realtime-mini-2025-10-06 | gpt-realtime-2.1-mini. Review-only until OpenRouter or models.dev lists gpt-realtime-2.1-mini.",
+    "verification": {
+      "status": "unverified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-realtime-2.1-mini\" was not found live in any public catalog (models.dev / OpenRouter)",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 8d440e5f7cd4) states shutdown July 23, 2026 and recommended replacement gpt-realtime-2.1-mini",
+        "the gpt-realtime-mini model page, which lists gpt-realtime-mini-2025-10-06 as a snapshot, carries a Deprecated badge; the gpt-realtime-2.1-mini model page shows none (read 2026-10-10)",
+        "not catalog-verified: OpenRouter and models.dev do not list gpt-realtime-2.1-mini yet, so the gate refuses it; re-run `mendr verify-registry` once they do"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "July 23, 2026 | gpt-realtime-mini-2025-10-06 | gpt-realtime-2.1-mini"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T05:43:24.374Z",
+        "excerpt": "July 23, 2026 | gpt-realtime-mini-2025-10-06 | gpt-realtime-2.1-mini"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-4o-realtime-preview.retirement-2026-05-07",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4o-realtime-preview",
+    "replacement": "gpt-realtime-1.5",
+    "status": "retired",
+    "shutdownDate": "2026-05-07",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2026-05-07 | gpt-4o-realtime-preview | gpt-realtime-1.5. Review-only until OpenRouter or models.dev lists gpt-realtime-1.5.",
+    "verification": {
+      "status": "unverified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-realtime-1.5\" was not found live in any public catalog (models.dev / OpenRouter)",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 8d440e5f7cd4) states shutdown 2026-05-07 and recommended replacement gpt-realtime-1.5",
+        "the gpt-4o-realtime-preview model page carries a Deprecated badge; the gpt-realtime-1.5 model page shows none (read 2026-10-10)",
+        "not catalog-verified: OpenRouter and models.dev do not list gpt-realtime-1.5 yet, so the gate refuses it; re-run `mendr verify-registry` once they do"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2026-05-07 | gpt-4o-realtime-preview | gpt-realtime-1.5"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T05:43:24.374Z",
+        "excerpt": "2026-05-07 | gpt-4o-realtime-preview | gpt-realtime-1.5"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-4o-realtime-preview-2025-06-03.retirement-2026-05-07",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4o-realtime-preview-2025-06-03",
+    "replacement": "gpt-realtime-1.5",
+    "status": "retired",
+    "shutdownDate": "2026-05-07",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2026-05-07 | gpt-4o-realtime-preview-2025-06-03 | gpt-realtime-1.5. Review-only until OpenRouter or models.dev lists gpt-realtime-1.5.",
+    "verification": {
+      "status": "unverified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-realtime-1.5\" was not found live in any public catalog (models.dev / OpenRouter)",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 8d440e5f7cd4) states shutdown 2026-05-07 and recommended replacement gpt-realtime-1.5",
+        "the gpt-4o-realtime-preview model page, which lists gpt-4o-realtime-preview-2025-06-03 as a snapshot, carries a Deprecated badge; the gpt-realtime-1.5 model page shows none (read 2026-10-10)",
+        "not catalog-verified: OpenRouter and models.dev do not list gpt-realtime-1.5 yet, so the gate refuses it; re-run `mendr verify-registry` once they do"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2026-05-07 | gpt-4o-realtime-preview-2025-06-03 | gpt-realtime-1.5"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T05:43:24.374Z",
+        "excerpt": "2026-05-07 | gpt-4o-realtime-preview-2025-06-03 | gpt-realtime-1.5"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-4o-realtime-preview-2024-12-17.retirement-2026-05-07",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4o-realtime-preview-2024-12-17",
+    "replacement": "gpt-realtime-1.5",
+    "status": "retired",
+    "shutdownDate": "2026-05-07",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2026-05-07 | gpt-4o-realtime-preview-2024-12-17 | gpt-realtime-1.5. Review-only until OpenRouter or models.dev lists gpt-realtime-1.5.",
+    "verification": {
+      "status": "unverified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-realtime-1.5\" was not found live in any public catalog (models.dev / OpenRouter)",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 8d440e5f7cd4) states shutdown 2026-05-07 and recommended replacement gpt-realtime-1.5",
+        "the gpt-4o-realtime-preview model page, which lists gpt-4o-realtime-preview-2024-12-17 as a snapshot, carries a Deprecated badge; the gpt-realtime-1.5 model page shows none (read 2026-10-10)",
+        "not catalog-verified: OpenRouter and models.dev do not list gpt-realtime-1.5 yet, so the gate refuses it; re-run `mendr verify-registry` once they do"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2026-05-07 | gpt-4o-realtime-preview-2024-12-17 | gpt-realtime-1.5"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T05:43:24.374Z",
+        "excerpt": "2026-05-07 | gpt-4o-realtime-preview-2024-12-17 | gpt-realtime-1.5"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-4o-audio-preview.retirement-2026-05-07",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4o-audio-preview",
+    "replacement": "gpt-audio-1.5",
+    "status": "retired",
+    "shutdownDate": "2026-05-07",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2026-05-07 | gpt-4o-audio-preview | gpt-audio-1.5. Review-only: public catalogs do not list audio models, so the gate cannot check gpt-audio-1.5.",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"gpt-4o-audio-preview\" is a audio model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-audio-1.5\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 8d440e5f7cd4) states shutdown 2026-05-07 and recommended replacement gpt-audio-1.5",
+        "the gpt-4o-audio-preview model page carries a Deprecated badge; the gpt-audio-1.5 model page shows none (read 2026-10-10)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2026-05-07 | gpt-4o-audio-preview | gpt-audio-1.5"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T05:43:24.374Z",
+        "excerpt": "2026-05-07 | gpt-4o-audio-preview | gpt-audio-1.5"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-4o-realtime-preview-2024-10-01.retirement-2025-10-10",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4o-realtime-preview-2024-10-01",
+    "replacement": "gpt-realtime-1.5",
+    "status": "retired",
+    "shutdownDate": "2025-10-10",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2025-10-10 | gpt-4o-realtime-preview-2024-10-01 | gpt-realtime-1.5. Review-only until OpenRouter or models.dev lists gpt-realtime-1.5.",
+    "verification": {
+      "status": "unverified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-realtime-1.5\" was not found live in any public catalog (models.dev / OpenRouter)",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 8d440e5f7cd4) states shutdown 2025-10-10 and recommended replacement gpt-realtime-1.5",
+        "the gpt-4o-realtime-preview model page, which lists gpt-4o-realtime-preview-2024-10-01 as a snapshot, carries a Deprecated badge; the gpt-realtime-1.5 model page shows none (read 2026-10-10)",
+        "not catalog-verified: OpenRouter and models.dev do not list gpt-realtime-1.5 yet, so the gate refuses it; re-run `mendr verify-registry` once they do"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2025-10-10 | gpt-4o-realtime-preview-2024-10-01 | gpt-realtime-1.5"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T05:43:24.374Z",
+        "excerpt": "2025-10-10 | gpt-4o-realtime-preview-2024-10-01 | gpt-realtime-1.5"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-4o-audio-preview-2024-10-01.retirement-2025-10-10",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4o-audio-preview-2024-10-01",
+    "replacement": "gpt-audio-1.5",
+    "status": "retired",
+    "shutdownDate": "2025-10-10",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: 2025-10-10 | gpt-4o-audio-preview-2024-10-01 | gpt-audio-1.5. Review-only: public catalogs do not list audio models, so the gate cannot check gpt-audio-1.5.",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"gpt-4o-audio-preview-2024-10-01\" is a audio model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-audio-1.5\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 8d440e5f7cd4) states shutdown 2025-10-10 and recommended replacement gpt-audio-1.5",
+        "the gpt-4o-audio-preview model page, which lists gpt-4o-audio-preview-2024-10-01 as a snapshot, carries a Deprecated badge; the gpt-audio-1.5 model page shows none (read 2026-10-10)"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "2025-10-10 | gpt-4o-audio-preview-2024-10-01 | gpt-audio-1.5"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T05:43:24.374Z",
+        "excerpt": "2025-10-10 | gpt-4o-audio-preview-2024-10-01 | gpt-audio-1.5"
+      }
+    ]
   }
 ]
