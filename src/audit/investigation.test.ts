@@ -229,6 +229,48 @@ describe('buildInvestigations — a deprecated id in a test/data fixture is NOT 
   });
 });
 
+describe('buildInvestigations — a deploy template (.env.template) is a template, not test data', () => {
+  // Real-repo finding (2026-10-09): a deploy `.env.template`, which the README says to copy to
+  // `.env`, was reported as "test/data fixture". The fixture below is written for this suite.
+  const line = 'LLM_MODEL=gpt-3.5-turbo                 # Model to use\n';
+  const template = foldConfigExposure(scanConfigText('.env.template', line, REGISTRY));
+  const [inv] = buildInvestigations(NO_RUNTIME_EVIDENCE, template, NOW);
+  const meta: AuditMeta = { from: null, to: null, coverage: fullCoverage() };
+
+  it('gets its own role, stays informational, and is never a selector', () => {
+    expect(inv.locations.selectors).toHaveLength(0);
+    expect(inv.locations.catalog.map((l) => [l.role, l.tier, l.disposition])).toEqual([
+      ['config_template', 'C', 'informational'],
+    ]);
+    expect(inv.decision).toBe('monitor');
+  });
+
+  it('is labelled as a template a new install copies, never as test data', () => {
+    const out = renderAuditReport(buildInvestigations(NO_RUNTIME_EVIDENCE, template, NOW), meta).join('\n');
+    expect(out).toContain('.env.template:1');
+    expect(out).toContain('config template a new install copies');
+    expect(out).not.toContain('test/data fixture');
+  });
+
+  it('still keeps a template-only run out of "no exposure": it counts as a fixture-only reference', () => {
+    const out = renderAuditReport(buildInvestigations(NO_RUNTIME_EVIDENCE, template, NOW), meta).join('\n');
+    expect(out).toContain('Conclusion: FIXTURE-ONLY REFERENCES');
+    expect(out).not.toContain('Conclusion: NO EXPOSURE');
+  });
+
+  it('a template inside a test directory is still a test fixture', () => {
+    const inTests = foldConfigExposure(scanConfigText('tests/.env.example', line, REGISTRY));
+    expect(buildInvestigations(NO_RUNTIME_EVIDENCE, inTests, NOW)[0].locations.catalog[0].role).toBe('test_fixture');
+  });
+
+  it('the active .env beside it is still a runtime selector candidate', () => {
+    const active = foldConfigExposure(scanConfigText('.env', line, REGISTRY));
+    expect(buildInvestigations(NO_RUNTIME_EVIDENCE, active, NOW)[0].locations.selectors[0].role).toBe(
+      'runtime_selector_candidate',
+    );
+  });
+});
+
 describe('renderAuditReport — the conclusion is one of exactly four, and never a general "clean"', () => {
   const base = { from: null, to: null,  };
 
