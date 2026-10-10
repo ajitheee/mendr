@@ -102,6 +102,49 @@ export async function run(messages: any) {
     );
   });
 
+  it('never runs the param pass over a call the scan held for review', () => {
+    // ADDED 2026-10-07. A call under examples/ is held at review (a sample is never patched),
+    // so pass 1 leaves its model id alone. Pass 2 used to rename its max_tokens anyway: the
+    // model id was "no patch generated" while the same call's request sat in the diff.
+    const source = `
+import OpenAI from "openai";
+const client = new OpenAI();
+export const demo = (messages: any) => client.chat.completions.create({ model: "o1", max_tokens: 500, messages });
+`.trimStart();
+    const project = inMemoryProject('examples/demo.ts', source);
+    const result = applyLlmFixesToProject(project, REASONING_REGISTRY);
+
+    expect(result.modelIdSites).toBe(0);
+    expect(result.paramsRenamed).toBe(0);
+    expect(result.diff).toBe('');
+    expect(project.getSourceFileOrThrow('examples/demo.ts').getFullText()).toBe(source);
+  });
+
+  it('with paramsOnSwappedCallsOnly, applies parameter rules only where pass 1 swapped', () => {
+    // migrate --only: the person approved o1, so the o1 call is swapped and its max_tokens
+    // follows the new model. o1-pro has no record here (nobody approved it), and the rule names
+    // o1, so without the option pass 2 renamed its max_tokens too.
+    const source = `
+import OpenAI from "openai";
+const client = new OpenAI();
+export const approved = (messages: any) => client.chat.completions.create({ model: "o1", max_tokens: 1, messages });
+export const other = (messages: any) => client.chat.completions.create({ model: "o1-pro", max_tokens: 2, messages });
+`.trimStart();
+    const restricted = inMemoryProject('src/r.ts', source);
+    const onlySwapped = applyLlmFixesToProject(restricted, REASONING_REGISTRY, undefined, {
+      paramsOnSwappedCallsOnly: true,
+    });
+    expect(onlySwapped.modelIdSites).toBe(1);
+    expect(onlySwapped.paramsRenamed).toBe(1);
+    const text = restricted.getSourceFileOrThrow('src/r.ts').getFullText();
+    expect(text).toContain('{ model: "gpt-5.6-sol", max_completion_tokens: 1, messages }');
+    expect(text).toContain('{ model: "o1-pro", max_tokens: 2, messages }');
+
+    // The default is unchanged: a call whose current model a rule names gets the rule.
+    const full = inMemoryProject('src/r.ts', source);
+    expect(applyLlmFixesToProject(full, REASONING_REGISTRY).paramsRenamed).toBe(2);
+  });
+
   it('is a no-op with an empty diff when nothing matches', () => {
     const project = inMemoryProject(
       'src/clean.ts',

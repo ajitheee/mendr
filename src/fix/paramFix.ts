@@ -10,7 +10,15 @@ import type {
 import type { LlmParamDeprecation, LlmRegistry, SourceLocation } from '../types.js';
 import { loadProject } from '../usage/scanRepo.js';
 import { modelMatches, paramEntries } from '../usage/llmRegistry.js';
-import { isTestPath } from '../usage/scanLiterals.js';
+import { fileAnnotation, isTestPath } from '../usage/scanLiterals.js';
+import {
+  classifyCallSurface,
+  enclosingCallOfObject,
+  enclosingNewOfObject,
+  hasCatalogSiblings,
+  TS_EXAMPLE_CALL_REASON,
+  TS_PREFIXED_REASON,
+} from '../usage/tsSurface.js';
 
 // LLM mode — fix (MODEL-COUPLED param transform). This is the flagship
 // "AST beats regex" case, and the ONE correctness property that matters is:
@@ -132,6 +140,10 @@ export function findParamSites(project: Project, registry: LlmRegistry): ParamMa
     const file = sf.getFilePath();
     if (file.includes('/node_modules/')) continue;
     if (isTestPath(file)) continue;
+    // A file the repo annotated `mendr: ignore-file` or `mendr: model-catalog` is never edited,
+    // the same rule the model-id scan follows. The param pass used to skip that check, and
+    // renamed `max_tokens` inside a catalog row the report listed as "no action".
+    if (fileAnnotation(sf.getFullText()) !== undefined) continue;
 
     for (const object of sf.getDescendantsOfKind(SyntaxKind.ObjectLiteralExpression)) {
       const modelProp = object.getProperty('model');
@@ -161,6 +173,213 @@ export function findParamSites(project: Project, registry: LlmRegistry): ParamMa
   }
 
   return out;
+}
+
+/** The node a `model` property's value is written in: the literal, or the one-hop const's literal. */
+function modelLiteralNode(modelProp: Node | undefined): Node | undefined {
+  if (!modelProp) return undefined;
+  let expr: Expression | undefined;
+  if (Node.isPropertyAssignment(modelProp)) expr = modelProp.getInitializer();
+  else if (Node.isShorthandPropertyAssignment(modelProp)) expr = modelProp.getNameNode();
+  if (!expr) return undefined;
+  if (literalStringValue(expr) !== undefined) return expr;
+  if (Node.isIdentifier(expr)) {
+    const decl = expr.getSymbol()?.getValueDeclaration();
+    if (decl && Node.isVariableDeclaration(decl)) {
+      const init = decl.getInitializer();
+      if (literalStringValue(init) !== undefined) return init;
+    }
+  }
+  return undefined;
+}
+
+/** A literal the model-id scan held for review: the node itself, and the scan's reason. */
+export interface HeldLiteral {
+  node: Node;
+  reason?: string;
+}
+
+/**
+ * Drop the param sites on calls the model-id scan HELD for review (position `surface_capped`):
+ * an example tree, a proxy or partner client, a gateway-prefixed id, a coupled parameter. A held
+ * call is reported as "review required, no patch generated", so no pass should edit its request
+ * either; the param pass used to, which left the same call in Tier B and in the Tier A diff. This
+ * skips the request objects it can tie to a held call. The README's "Held calls: what is and is
+ * not protected" lists the shapes it cannot tie yet (shorthand `{ model }`, `this.model`, …).
+ *
+ * DECIDED PER CALL, NOT PER LITERAL. The first version keyed on the model literal's file, line
+ * and value, and the 2026-10-07 review of it found two ways that held back calls nobody held:
+ *   - a `const MODEL` shared by a held call and an ordinary one. The scan holds the DECLARATION
+ *     when any consumer is held (judgeDeclarationSinks: "any capped consumer wins"), so keying
+ *     on the declaration dropped the ordinary call's parameter fix as well;
+ *   - two calls with the same model on one line, one held and one not.
+ * So a site is held when its OWN model literal is a held node (node identity: a held literal is
+ * never swapped, so its wrapper survives pass 1's edits elsewhere in the file), or, when the
+ * model comes through a declaration the scan held, when the rule that held the declaration also
+ * holds THIS call: the file is an example tree, or this call's own surface is capped.
+ */
+export function withoutHeldCalls(sites: ParamMatch[], held: ReadonlyArray<HeldLiteral>): ParamMatch[] {
+  if (held.length === 0) return sites;
+  const reasonsByNode = new Map<Node, (string | undefined)[]>();
+  for (const h of held) {
+    const list = reasonsByNode.get(h.node);
+    if (list) list.push(h.reason);
+    else reasonsByNode.set(h.node, [h.reason]);
+  }
+  return sites.filter((site) => !isHeldSite(site, reasonsByNode));
+}
+
+/**
+ * A site is held when its request object is held, or when that object sits inside a held
+ * request: `fallbacks: [{ model, max_tokens }]` or `override: { … }` within a held call's own
+ * argument. The nested object's literal is data to the scan (it is not a call argument), so its
+ * own verdict cannot say the call is held; the request it is part of can. (Review of PR #50,
+ * round two: the nested `max_tokens` was still renamed inside a call listed as held.)
+ */
+function isHeldSite(site: ParamMatch, reasonsByNode: ReadonlyMap<Node, (string | undefined)[]>): boolean {
+  return requestObjectsAround(site.object).some((obj) => isHeldObject(obj, reasonsByNode));
+}
+
+/**
+ * `obj`, then every object literal it is nested in, climbing only through one argument's own
+ * expression tree (objects, arrays, spreads, parentheses, casts). The climb stops at anything
+ * else, so it never leaves the request: not through a call, a function body or a statement.
+ */
+function requestObjectsAround(obj: ObjectLiteralExpression): ObjectLiteralExpression[] {
+  const out = [obj];
+  let child: Node = obj;
+  for (
+    let parent: Node | undefined = obj.getParent();
+    parent && selectsValueOf(parent, child);
+    parent = parent.getParent()
+  ) {
+    if (Node.isObjectLiteralExpression(parent)) out.push(parent);
+    child = parent;
+  }
+  return out;
+}
+
+/**
+ * Does `parent` only carry or select `child`'s value, inside one expression? Objects, arrays,
+ * spreads, parentheses and type wrappers carry it; `||`, `??`, `&&` and a ternary's branches
+ * select it (review of PR #50, round three: `fallbacks: allow ? [{ … }] : undefined` inside a
+ * held gateway call was still edited). A ternary's CONDITION, a call, a function and a
+ * statement are none of these, so the climb never leaves the request.
+ */
+function selectsValueOf(parent: Node, child: Node): boolean {
+  if (
+    Node.isObjectLiteralExpression(parent) ||
+    Node.isPropertyAssignment(parent) ||
+    Node.isArrayLiteralExpression(parent) ||
+    Node.isSpreadAssignment(parent) ||
+    Node.isSpreadElement(parent) ||
+    Node.isParenthesizedExpression(parent) ||
+    Node.isAsExpression(parent) ||
+    Node.isSatisfiesExpression(parent) ||
+    Node.isTypeAssertion(parent) ||
+    Node.isNonNullExpression(parent)
+  ) {
+    return true;
+  }
+  if (Node.isConditionalExpression(parent)) {
+    return parent.getWhenTrue() === child || parent.getWhenFalse() === child;
+  }
+  if (Node.isBinaryExpression(parent)) {
+    const op = parent.getOperatorToken().getKind();
+    return (
+      op === SyntaxKind.BarBarToken ||
+      op === SyntaxKind.QuestionQuestionToken ||
+      op === SyntaxKind.AmpersandAmpersandToken
+    );
+  }
+  return false;
+}
+
+/** One string literal a `model` value can take, and whether it was reached through a declaration. */
+interface ModelLeaf {
+  node: Node;
+  viaDeclaration: boolean;
+}
+
+/**
+ * Every string literal a `model` property's value can take, through the wrappers the scanner
+ * treats as transparent for a value (isValueTransparent: parentheses, `as`, `||`, `??`, a
+ * ternary's branches) and one hop through a const. The scanner holds a call whose model is
+ * `opts.model || "o3-mini"` or `"o3-mini" as const` (review of PR #50, round three), so the
+ * guard has to find that literal too, not only a bare one.
+ */
+function modelValueLeaves(modelProp: Node | undefined): ModelLeaf[] {
+  if (!modelProp || !Node.isPropertyAssignment(modelProp)) {
+    // Shorthand `{ model }` and anything else: the one-hop rule modelLiteralNode follows.
+    const node = modelLiteralNode(modelProp);
+    return node ? [{ node, viaDeclaration: true }] : [];
+  }
+  const init = modelProp.getInitializer();
+  return init ? valueLeaves(init, false) : [];
+}
+
+function valueLeaves(expr: Node, viaDeclaration: boolean): ModelLeaf[] {
+  if (Node.isStringLiteral(expr) || Node.isNoSubstitutionTemplateLiteral(expr)) return [{ node: expr, viaDeclaration }];
+  if (Node.isParenthesizedExpression(expr) || Node.isAsExpression(expr)) {
+    return valueLeaves(expr.getExpression(), viaDeclaration);
+  }
+  if (Node.isConditionalExpression(expr)) {
+    return [...valueLeaves(expr.getWhenTrue(), viaDeclaration), ...valueLeaves(expr.getWhenFalse(), viaDeclaration)];
+  }
+  if (Node.isBinaryExpression(expr)) {
+    const op = expr.getOperatorToken().getKind();
+    if (op !== SyntaxKind.BarBarToken && op !== SyntaxKind.QuestionQuestionToken) return [];
+    return [...valueLeaves(expr.getLeft(), viaDeclaration), ...valueLeaves(expr.getRight(), viaDeclaration)];
+  }
+  if (Node.isIdentifier(expr) && !viaDeclaration) {
+    const decl = expr.getSymbol()?.getValueDeclaration();
+    const init = decl && Node.isVariableDeclaration(decl) ? decl.getInitializer() : undefined;
+    return init ? valueLeaves(init, true) : [];
+  }
+  return [];
+}
+
+/** Is this request object one the scan held, judged by the rule the scan applied to its model? */
+function isHeldObject(
+  obj: ObjectLiteralExpression,
+  reasonsByNode: ReadonlyMap<Node, (string | undefined)[]>,
+): boolean {
+  for (const leaf of modelValueLeaves(obj.getProperty('model'))) {
+    const reasons = reasonsByNode.get(leaf.node);
+    if (!reasons) continue;
+    // The object's own value: the scan judged this very request.
+    if (!leaf.viaDeclaration) return true;
+    if (isHeldConsumer(obj, leaf.node, reasons)) return true;
+  }
+  return false;
+}
+
+/**
+ * A request fed a declaration the scan held. The scan holds a declaration when ANY consumer
+ * is held, so judge THIS consumer the way the scan judges a literal written in it
+ * (classifyByEnclosure, then the example-tree and gateway-prefix rules in findModelIdLiterals).
+ */
+function isHeldConsumer(obj: ObjectLiteralExpression, literal: Node, reasons: (string | undefined)[]): boolean {
+  // The scan judges a declaration by the consumers in its own file (collectTsSinks is per
+  // file), so a consumer elsewhere was never part of that verdict.
+  if (literal.getSourceFile() !== obj.getSourceFile()) return false;
+  const call = enclosingCallOfObject(obj);
+  const wrapperCtor = !call && enclosingNewOfObject(obj) !== undefined && !hasCatalogSiblings(obj);
+  // An example tree, and a gateway-prefixed id, hold every real request that uses the value,
+  // and nothing that is data.
+  if (reasons.includes(TS_EXAMPLE_CALL_REASON) || reasons.includes(TS_PREFIXED_REASON)) {
+    return call ? classifyCallSurface(call).position !== 'data' : wrapperCtor;
+  }
+  if (call) return classifyCallSurface(call).position === 'surface_capped';
+  return wrapperCtor;
+}
+
+/** Keep only the param sites whose model literal pass 1 swapped (see LlmFixOptions). */
+export function onSwappedCalls(sites: ParamMatch[], swapped: ReadonlySet<Node>): ParamMatch[] {
+  return sites.filter((site) => {
+    const literal = modelLiteralNode(site.object.getProperty('model'));
+    return literal !== undefined && swapped.has(literal);
+  });
 }
 
 /** Rename a property key to `replacement`, preserving a quoted-key's quote style. */

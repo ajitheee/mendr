@@ -282,11 +282,19 @@ export function evidenceOf(entry: LlmModelIdDeprecation, now: Date): MigrationEv
   };
 }
 
-async function plan(repoPath: string, registry: LlmRegistry, now: Date): Promise<PlannedMigration> {
+async function plan(
+  repoPath: string,
+  registry: LlmRegistry,
+  now: Date,
+  restricted = false,
+): Promise<PlannedMigration> {
   // TS/JS: a fresh baseline and a patched load (the type-check gate needs both).
   const baselineProject = loadProject(repoPath);
   const patchedProject = loadProject(repoPath);
-  const tsResult = applyLlmFixesToProject(patchedProject, registry, repoPath);
+  // Restricted (--only): parameter rules apply only at the calls this run swaps (LlmFixOptions).
+  const tsResult = applyLlmFixesToProject(patchedProject, registry, repoPath, {
+    paramsOnSwappedCallsOnly: restricted,
+  });
   const tsWrites: PendingWrite[] = tsResult.changedFiles.map((absPath) => ({
     absPath,
     newText: patchedProject.getSourceFileOrThrow(absPath).getFullText(),
@@ -398,7 +406,7 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
 
   const only = (opts.only ?? []).map((s) => s.trim()).filter(Boolean);
   const onlyNote = only.length ? [`Restricted to ${only.join(', ')} (--only); every other retiring model was left untouched.`] : [];
-  const planned = await plan(repoPath, restrictRegistry(registry, only), now);
+  const planned = await plan(repoPath, restrictRegistry(registry, only), now, only.length > 0);
 
   if (planned.patchedFiles.length === 0) {
     return {

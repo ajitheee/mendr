@@ -53,6 +53,11 @@ export type Tier = 'A' | 'B' | 'C';
  *                            did not clear the verification gate.
  *   `platform_blocked`       the position is a platform alias (an Azure
  *                            deployment name), so the fix is provisioning.
+ *   `surface_capped`         a call mendr holds at review because of how it is
+ *                            made — an example tree, a gateway-prefixed id, a
+ *                            wrapper class, a proxy or partner client, a request
+ *                            made at import time; the scanner's own sentence
+ *                            says which. Never an unattended swap.
  *   `dynamic_model_value`    the model is assembled at runtime; no single
  *                            literal can carry the swap. RESERVED — no detector
  *                            emits this today.
@@ -69,6 +74,7 @@ export type TierBReason =
   | 'usage_unverified'
   | 'replacement_unverified'
   | 'platform_blocked'
+  | 'surface_capped'
   | 'dynamic_model_value'
   | 'insufficient_dataflow'
   | 'coupled_param_unverified'

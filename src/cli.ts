@@ -62,7 +62,9 @@ import {
   scanProjectAnnotations,
   toAzureDeploymentMatches,
   toBlockedModelArgMatches,
+  toHeldCallMatches,
   toModelIdDataMatches,
+  toUntracedMatches,
   AZURE_DEPLOYMENT_REASON,
   TYPE_CAST_REASON,
   USAGE_UNVERIFIED_REASON,
@@ -113,7 +115,7 @@ import {
   type AtomicWriteResult,
   type PendingWrite,
 } from './fix/atomicWrite.js';
-import { findParamSites } from './fix/paramFix.js';
+import { findParamSites, withoutHeldCalls } from './fix/paramFix.js';
 import { dedupeSwapsByNode } from './fix/modelId.js';
 import { applyLlmFixesToProject, type LlmFixResult } from './fix/llmFix.js';
 import { collectPythonFiles, countPyTestFiles, readPythonSources, scanPyAnnotations } from './python/scanPy.js';
@@ -427,7 +429,8 @@ program
       console.error(
         'mendr: --fail-on blocked is deprecated -- it now means --fail-on tierB, which covers ' +
           'every review-required finding (unverified replacements, platform aliases, ' +
-          'usage-unverified assignments, type-cast-masked ids).',
+          'calls held at review for their parameters or their surface, usage-unverified ' +
+          'assignments, type-cast-masked ids).',
       );
     }
     const failOn = rawFailOn === 'blocked' ? 'tierB' : rawFailOn;
@@ -570,7 +573,12 @@ program
     }
 
     const modelMatches = findModelIdLiterals(scanProject, registry, resolved);
-    const paramMatches = findParamSites(scanProject, registry);
+    // Skip param sites in a call held at review, as far as withoutHeldCalls can tie them to it
+    // (the README's "Held calls: what is and is not protected" lists the shapes it cannot yet).
+    const paramMatches = withoutHeldCalls(
+      findParamSites(scanProject, registry),
+      modelMatches.filter((m) => m.position === 'surface_capped'),
+    );
 
     // Python pass: scan + swap + syntax gate, all in memory (see fixPy.ts).
     // Run up front (it is cheap) so the nothing-to-fix check covers BOTH
@@ -582,6 +590,8 @@ program
     //   - `model_arg` + verified     -> Tier A, a safe automatic patch;
     //   - `model_arg` + NOT verified -> Tier B, `replacement_unverified`;
     //   - `azure_deployment`         -> Tier B, `platform_blocked`;
+    //   - `surface_capped` (a call held at review) -> Tier B, the code classifyOccurrenceTier
+    //     gives it: `param_behaviour_change`, `coupled_param_unverified` or `surface_capped`;
     //   - model-like assignment, no sink -> Tier B, `usage_unverified` (py);
     //   - `data` behind an `as` cast -> Tier B, `type_cast_masked`;
     //   - `data` otherwise           -> Tier C, informational (never edited).
@@ -594,24 +604,21 @@ program
     const swapMatches = dedupeSwapsByNode(modelArgMatches.filter((m) => isVerified(m.deprecation)));
     const blockedAll = [...toBlockedModelArgMatches(modelMatches), ...pyResult.blockedMatches];
     const azureAll = [...toAzureDeploymentMatches(modelMatches), ...pyResult.azureMatches];
-    // Usage-unverified candidates (Python sink rule): model-like assignments
-    // never traced to an in-file sink. Manual review only — never auto-applied.
+    // Usage-unverified candidates, both languages: a model-named declaration or default no
+    // provider request in the file is seen to use. Manual review only — never auto-applied.
+    // The TypeScript half used to have no stream at all, so a default that audit listed as
+    // "review required" was missing from fix-llm even under --verbose (see toUntracedMatches).
     const usageUnverifiedAll = pyResult.usageUnverifiedMatches;
-    // Live TS calls the scanner CAPPED at review (position `surface_capped`): a parameter
-    // rule that starts applying at the replacement, a model-dependent param no rule covers,
-    // a call in an example tree, a gateway-prefixed id, a wrapper class. audit has always
-    // listed them as Tier B; fix-llm used to drop them, print "Nothing to fix" and pass
-    // `--fail-on tierB` (measured on v0.5.8-alpha). Python's capped matches already ride in
-    // usageUnverifiedAll. One finding per call site: the scan emits one match per matching
-    // registry record.
-    const cappedSites = new Set<string>();
-    const cappedAll = modelMatches.filter((m) => {
-      if (m.position !== 'surface_capped') return false;
-      const site = `${m.location.file}:${m.location.line}:${m.location.column}`;
-      if (cappedSites.has(site)) return false;
-      cappedSites.add(site);
-      return true;
-    });
+    const untracedTs = toUntracedMatches(modelMatches);
+    // Live calls the scanner CAPPED at review (position `surface_capped`), both languages: a
+    // parameter rule that starts applying at the replacement, a model-dependent param no rule
+    // covers, a call in an example tree, a gateway-prefixed id, a wrapper class or factory, a
+    // client mendr cannot resolve. audit has always listed them as Tier B; fix-llm used to drop
+    // the TypeScript ones and print the Python ones as `usage_unverified` ("no supported SDK
+    // call was found") beside a call that is one. One finding per call site, and none for a
+    // site another stream already reports (see toHeldCallMatches), so no held occurrence lands
+    // in two tiers.
+    const cappedAll = [...toHeldCallMatches(modelMatches), ...pyResult.heldMatches];
     const allDataViews: DataFindingView[] = [
       ...toModelIdDataMatches(modelMatches),
       ...pyResult.dataMatches,
@@ -713,7 +720,7 @@ program
     };
 
     /**
-     * TIER B, assembled from the four EXISTING detection surfaces. Nothing new
+     * TIER B, assembled from the five EXISTING detection surfaces. Nothing new
      * is detected here — each finding already existed, it just used to be
      * reported under a heading of its own with prose instead of a reason code.
      * Ordering is applied once, in report/tiers.ts, so every surface (human,
@@ -771,33 +778,57 @@ program
             verdictCheckedAt: verdictDateFor(u.value),
             quarantineReason: quarantineReasonOf(u.value),
             withheldSwitches: withheldSwitchesOf(u.value),
+            // The scanner's own sentence, when it says more than the generic one (a field
+            // default, a lookup fallback, a CLI option default).
+            ...(u.reason !== USAGE_UNVERIFIED_REASON ? { detail: [u.reason] } : {}),
           },
           'usage_unverified',
         ),
       ),
-      // The reason code is the one audit gives the same call (classifyOccurrenceTier), so the
-      // two commands cannot disagree about it; the scanner's own sentence says why it is held.
-      ...cappedAll.map((m) =>
-        tierBFinding(
+      // The TypeScript untraced selectors, built like the held calls below: every registry field
+      // from the record the scan matched, the scanner's sentence as the detail.
+      ...untracedTs.map((m) => {
+        const state = effectiveVerificationState(m.deprecation);
+        return tierBFinding(
           {
             file: rel(m.location.file),
             line: m.location.line,
             column: m.location.column,
             modelId: m.value,
-            entryId: entryIdOf(m.value),
+            entryId: displayEntryId(m.deprecation),
             replacement: m.deprecation.replacement,
-            registryVerdict: verdictFor(m.value),
-            verdictCheckedAt: verdictDateFor(m.value),
-            quarantineReason: quarantineReasonOf(m.value),
-            withheldSwitches: withheldSwitchesOf(m.value),
-            detail: [
-              ...heldBackDetail(effectiveVerificationState(m.deprecation)),
-              ...(m.reason ? [m.reason] : []),
-            ],
+            registryVerdict: state,
+            verdictCheckedAt: m.deprecation.verification?.checkedAt,
+            quarantineReason: m.deprecation.verification?.quarantineReason ?? undefined,
+            withheldSwitches: state === 'withheld' ? withheldSwitches(m.deprecation) : undefined,
+            detail: [...heldBackDetail(state), ...(m.reason ? [m.reason] : [])],
           },
-          classifyOccurrenceTier(m).reason ?? 'platform_blocked',
-        ),
-      ),
+          classifyOccurrenceTier(m).reason ?? 'usage_unverified',
+        );
+      }),
+      // The reason code is the one audit gives the same call (classifyOccurrenceTier), so the
+      // two commands cannot disagree about it; the scanner's own sentence says why it is held.
+      // Every registry field comes from the RECORD the scan matched, never a lookup by the
+      // literal: a gateway-prefixed literal such as 'openai/gpt-4-0613' is not a registry key.
+      ...cappedAll.map((m) => {
+        const state = effectiveVerificationState(m.deprecation);
+        return tierBFinding(
+          {
+            file: rel(m.location.file),
+            line: m.location.line,
+            column: m.location.column,
+            modelId: m.value,
+            entryId: displayEntryId(m.deprecation),
+            replacement: m.deprecation.replacement,
+            registryVerdict: state,
+            verdictCheckedAt: m.deprecation.verification?.checkedAt,
+            quarantineReason: m.deprecation.verification?.quarantineReason ?? undefined,
+            withheldSwitches: state === 'withheld' ? withheldSwitches(m.deprecation) : undefined,
+            detail: [...heldBackDetail(state), ...(m.reason ? [m.reason] : [])],
+          },
+          classifyOccurrenceTier(m).reason ?? 'surface_capped',
+        );
+      }),
       ...castMaskedViews.map((d) =>
         tierBFinding(
           {

@@ -63,4 +63,15 @@ describe('the App redacts exactly what the CLI redacts', () => {
       expect(redactSecrets(c)).toContain('REDACTED');
     }
   });
+
+  // The CLI's carve-out for token COUNTS (max_tokens, maxOutputTokens), with the same limits.
+  it('keeps a token-count parameter and still redacts a token', () => {
+    expect(redactSecrets('max_tokens: config?.llm?.max_tokens || 1024,')).toBe('max_tokens: config?.llm?.max_tokens || 1024,');
+    expect(redactSecrets('INPUT_TOKENS=abcdefghijklmnop')).toContain('REDACTED');
+    expect(redactSecrets('ACCESS_TOKENS=abcdefghijklmnop')).toContain('REDACTED');
+    // A word that only ends in a count word ("admin" ends in "min") is not a count.
+    expect(redactSecrets('ADMIN_TOKENS=abcdefgh123')).toBe('ADMIN_TOKENS=***REDACTED***');
+    expect(redactSecrets('SYSADMIN_TOKENS: "abcdefgh123"')).not.toContain('abcdefgh123');
+    expect(redactSecrets('adminTokens: "abcdefgh123"')).not.toContain('abcdefgh123');
+  });
 });

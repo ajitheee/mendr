@@ -550,6 +550,11 @@ describe('a Tier A candidate that fails its gates', () => {
  *   - `claude-opus-4-1-20250805` + `max_tokens`: a model-dependent param no Anthropic rule
  *     covers (coupled_param_unverified);
  *   - a real SDK call under `examples/`: a sample is capped at review, never patched.
+ * The follow-up review of that fix (2026-10-07) added two shapes:
+ *   - `openai/gpt-4-0613`: a gateway-prefixed id is not a registry key, so a finding built by
+ *     looking its value up lost its record and called a verified mapping unverified;
+ *   - `o3-mini` + `max_tokens` under `examples/`: the model id was held, but the parameter pass
+ *     still renamed `max_tokens`, so one call was "no patch generated" and in the diff.
  */
 function makeCappedRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'mendr-capped-'));
@@ -590,8 +595,30 @@ function makeCappedRepo(): string {
       '',
     ].join('\n'),
   );
+  writeFileSync(
+    join(dir, 'src', 'prefixed.ts'),
+    [
+      'import OpenAI from "openai";',
+      'const client = new OpenAI();',
+      'export async function viaGateway() {',
+      "  return client.chat.completions.create({ model: 'openai/gpt-4-0613', messages: [] });",
+      '}',
+      '',
+    ].join('\n'),
+  );
+  writeFileSync(join(dir, 'examples', 'o3.ts'), CAPPED_O3_EXAMPLE);
   return dir;
 }
+
+/** A held call whose request the parameter pass has a rule for (max_tokens on an o-series model). */
+const CAPPED_O3_EXAMPLE = [
+  'import OpenAI from "openai";',
+  'const client = new OpenAI();',
+  'export async function reason() {',
+  "  return client.chat.completions.create({ model: 'o3-mini', max_tokens: 50, messages: [] });",
+  '}',
+  '',
+].join('\n');
 
 describe('a call the scanner caps at review', () => {
   it('is listed in Tier B with the reason audit gives it, and never patched', async () => {
@@ -606,9 +633,59 @@ describe('a call the scanner caps at review', () => {
     expect(at('src/opus.ts').map((f) => [f.modelId, f.line, f.reason])).toEqual([
       ['claude-opus-4-1-20250805', 4, 'coupled_param_unverified'],
     ]);
-    expect(at('examples/agent.ts').map((f) => [f.modelId, f.line])).toEqual([['gpt-4-0613', 4]]);
-    expect(report.tierB).toHaveLength(3);
+    // A held call is not a deployment key: its own reason code, and none of the legacy
+    // `azure` array's "deployment alias" sentence.
+    expect(at('examples/agent.ts').map((f) => [f.modelId, f.line, f.reason])).toEqual([
+      ['gpt-4-0613', 4, 'surface_capped'],
+    ]);
+    expect(at('examples/o3.ts').map((f) => [f.modelId, f.line, f.reason])).toEqual([
+      ['o3-mini', 4, 'surface_capped'],
+    ]);
+    expect(report.azure).toEqual([]);
+    expect(report.tierB).toHaveLength(5);
+    // The held o3-mini call's max_tokens is NOT renamed: the parameter pass skips a held call.
     expect(report.tierA).toEqual([]);
+  }, 120_000);
+
+  it('takes a held finding\'s quarantine verdict and reason from its record, prefixed ids included', async () => {
+    const repo = makeCappedRepo();
+    writeFileSync(
+      join(repo, 'src', 'prefixedQuarantined.ts'),
+      [
+        'import OpenAI from "openai";',
+        'const client = new OpenAI();',
+        'export async function viaGateway() {',
+        "  return client.chat.completions.create({ model: 'openai/gpt-4-0314', messages: [] });",
+        '}',
+        '',
+      ].join('\n'),
+    );
+    const { stdout } = await runFixLlm([repo, '--skip-gates', '--json']);
+    const report = JSON.parse(stdout) as JsonReport & { tierB: { replacementVerdict: string }[] };
+    const held = report.tierB.filter((f) => f.file === 'src/prefixedQuarantined.ts');
+    expect(held.map((f) => [f.entryId, f.replacementVerdict, f.reason])).toEqual([
+      ['openai.gpt-4-0314.retirement-undated', 'quarantined', 'surface_capped'],
+    ]);
+    // The human report prints the record's own quarantine reason, which a lookup by the
+    // prefixed literal could never find.
+    const human = await runFixLlm([repo, '--skip-gates']);
+    const block = human.stdout.slice(human.stdout.indexOf('src/prefixedQuarantined.ts:4'));
+    expect(block).toMatch(/replacement verdict: +quarantined \(registry stamp \d{4}-\d{2}-\d{2}\) -- stamped/);
+    expect(block.replace(/\s+/g, ' ')).toContain('held for review until that contradiction is resolved');
+  }, 120_000);
+
+  it('builds a held finding from the record the scan matched, prefixed ids included', async () => {
+    const repo = makeCappedRepo();
+    const { stdout } = await runFixLlm([repo, '--skip-gates', '--json']);
+    const report = JSON.parse(stdout) as JsonReport & {
+      tierB: { replacementVerdict: string; verdictCheckedAt: string | null }[];
+    };
+    const prefixed = report.tierB.filter((f) => f.file === 'src/prefixed.ts');
+    // 'openai/gpt-4-0613' is not a registry key; the record it matched is.
+    expect(prefixed.map((f) => [f.modelId, f.entryId, f.replacement, f.replacementVerdict, f.reason])).toEqual([
+      ['openai/gpt-4-0613', 'openai.gpt-4-0613.retirement-2026-10-23', 'gpt-5.6-sol', 'verified', 'surface_capped'],
+    ]);
+    expect(prefixed[0].verdictCheckedAt).toMatch(/^\d{4}-\d{2}-\d{2}/);
   }, 120_000);
 
   it('does not report the repo as clean, and says why each call is held', async () => {
@@ -616,7 +693,9 @@ describe('a call the scanner caps at review', () => {
     const { stdout } = await runFixLlm([repo, '--skip-gates']);
     expect(stdout).not.toContain('Nothing to fix');
     expect(stdout).toContain('Found: 0 tier A');
-    expect(stdout).toContain('3 tier B');
+    expect(stdout).toContain('5 tier B');
+    // The held calls are never described as sitting under a deployment key.
+    expect(stdout).not.toContain('sits under a deployment key');
     // The scanner's own sentence for each cap reaches the reader, not just a code.
     expect(stdout).toMatch(/max_completion_tokens/);
     expect(stdout).toMatch(/max_tokens/);
@@ -627,7 +706,54 @@ describe('a call the scanner caps at review', () => {
     const { exitCode } = await runFixLlm([repo, '--skip-gates', '--fail-on', 'tierB']);
     expect(exitCode).toBe(1);
   }, 120_000);
+
+  it('under --write, leaves every held call untouched and still fixes the calls around it', async () => {
+    const repo = makeCappedRepo();
+    // A live call, so the write path (applyLlmFixesToProject) actually runs: with no Tier A
+    // candidate it never starts, and a test of it would pass for the wrong reason.
+    writeFileSync(
+      join(repo, 'src', 'live.ts'),
+      [
+        'import OpenAI from "openai";',
+        'const client = new OpenAI();',
+        'export async function live() {',
+        "  return client.chat.completions.create({ model: 'gpt-4-0613', messages: [] });",
+        '}',
+        '',
+      ].join('\n'),
+    );
+    // One const, two consumers: the proxy call is held (so the scan holds the declaration),
+    // the direct call is not, and its max_tokens fix must stand.
+    writeFileSync(join(repo, 'src', 'shared.ts'), SHARED_CONST_SOURCE);
+    // Gates off so an edit, had one been made, reaches the disk in this dependency-less
+    // fixture: the test then fails on the file, not on a gate.
+    writeFileSync(
+      join(repo, 'mendr.config.json'),
+      JSON.stringify({ gates: { typecheck: { required: false }, tests: { required: false } } }),
+    );
+    const { stdout } = await runFixLlm([repo, '--write']);
+    expect(readFileSync(join(repo, 'src', 'live.ts'), 'utf8')).toContain("model: 'gpt-5.6-sol'");
+    expect(readFileSync(join(repo, 'examples', 'o3.ts'), 'utf8')).toBe(CAPPED_O3_EXAMPLE);
+    const shared = readFileSync(join(repo, 'src', 'shared.ts'), 'utf8');
+    expect(shared).toContain('proxy.chat.completions.create({ model: MODEL, max_tokens: 1, messages: [] })');
+    expect(shared).toContain('client.chat.completions.create({ model: MODEL, max_completion_tokens: 2, messages: [] })');
+    expect(stdout).toContain('files modified: 2');
+  }, 180_000);
 });
+
+/** A const shared by a held call (a proxy client) and an ordinary one. */
+const SHARED_CONST_SOURCE = [
+  'import OpenAI from "openai";',
+  'const client = new OpenAI();',
+  'const proxy = new OpenAI({ baseURL: "https://llm-proxy.internal/v1" });',
+  'const MODEL = "o3-mini";',
+  'export async function run() {',
+  '  const viaProxy = await proxy.chat.completions.create({ model: MODEL, max_tokens: 1, messages: [] });',
+  '  const direct = await client.chat.completions.create({ model: MODEL, max_tokens: 2, messages: [] });',
+  '  return { viaProxy, direct };',
+  '}',
+  '',
+].join('\n');
 
 describe('fix-llm --fail-on', () => {
   it('gates on tierB', async () => {

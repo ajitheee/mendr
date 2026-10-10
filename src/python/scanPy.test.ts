@@ -463,8 +463,11 @@ describe('python sink rule: assignments swap ONLY when traced to an in-file sink
 
     expect(result.siteCount).toBe(0);
     expect(result.patchedFiles).toHaveLength(0);
-    // …and it is still SURFACED, not silently dropped.
-    expect(result.usageUnverifiedMatches.length).toBeGreaterThan(0);
+    // …and it is still SURFACED, not silently dropped: as a HELD call, with the guard's own
+    // reason, not as an untraced assignment (it is traced, to a callee mendr does not trust).
+    expect(result.heldMatches.length).toBeGreaterThan(0);
+    expect(result.heldMatches.every((m) => m.position === 'surface_capped')).toBe(true);
+    expect(result.usageUnverifiedMatches).toHaveLength(0);
   });
 
   it('a self.model assignment traces through the attribute name', async () => {

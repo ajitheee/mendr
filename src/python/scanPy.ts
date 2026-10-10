@@ -12,7 +12,7 @@ import {
   splitProviderPrefix,
 } from '../usage/sharedRules.js';
 import {
-  detectPySurface,
+  explainPySurface,
   dottedCallee,
   enclosingCall,
   inCollectionDisplay,
@@ -509,12 +509,20 @@ export function collectPySinkNames(tree: Tree): Set<string> {
 /** Per-file evidence the guards need: the provider surface of this file. */
 export interface PyGuardContext {
   surface: PySurface;
+  /** What in the file decided a non-direct `surface` (see explainPySurface), for the reason. */
+  surfaceVia?: string;
   value?: string;
   /** Where each traced name flows — lets the caps follow a variable hop. */
   sinkTargets?: Map<string, PySinkTarget[]>;
 }
 
 export const PY_SURFACE_REASON = 'provider surface is not a verified direct provider — a direct replacement is not valid here';
+
+/** {@link PY_SURFACE_REASON}, naming the surface and, when known, the evidence in the file. */
+function surfaceCapReason(surface: PySurface, ctx?: PyGuardContext): string {
+  return `${PY_SURFACE_REASON} (${surface}${ctx?.surfaceVia ? `: ${ctx.surfaceVia}` : ''})`;
+}
+
 export const PY_ENDPOINT_REASON = 'the successor is not endpoint-compatibility verified for this endpoint';
 export const PY_LEGACY_SDK_REASON = 'legacy provider SDK — the migration differs from the modern client';
 export const PY_MODULE_REQUEST_REASON = 'a provider request executed at module import — real, but not an unattended swap';
@@ -545,6 +553,72 @@ export const PY_DEFAULT_CONTAINER_REASON =
   'model value inside a default-configuration dict; a real default whose consumer is not traced, review before changing';
 export const PY_CLI_DEFAULT_REASON =
   'default value of a command-line option; the model used whenever the flag is omitted, and its use is not traced — review before changing';
+/**
+ * `params = {"model": "gpt-4", …}` … `client.chat.completions.create(**params)`. A real request,
+ * and the Python twin of TS_REQUEST_VARIABLE_REASON. Always held: the call can add or override
+ * keys the dict does not show, and Python's only gate is a re-parse.
+ */
+export const PY_REQUEST_DICT_REASON =
+  'request dict built in a variable and unpacked (**) into a provider request; what the call finally sends is not all visible in the dict, so it is held for review';
+
+/**
+ * Is the dict holding `pair` the value of a plain `name = {…}` assignment whose name is unpacked
+ * (`**name`) into a recognised provider request, model factory or legacy SDK call?
+ *
+ * The dict pair rule only trusted a dict written inside the call's parentheses, so a request built
+ * in a variable first was a catalog value — the false clean the TypeScript scanner gave a Node
+ * server (2026-10-09), in its Python spelling. Narrow on purpose: a `**name` into any other callee
+ * (`log_event(**payload)`) is not evidence of a request, a positional or `json=` argument is not
+ * followed, and the unpacking must be in the dict's own function (or anywhere, for a module-level
+ * dict), so a same-named dict in another function is not mistaken for the one that is sent.
+ */
+/**
+ * Every `**name` in a parse, by name, built once per tree. Walking the tree per matched literal
+ * was quadratic: 800 module-level model dicts in a 4,800-function file took 60 s, against 1.1 s
+ * without the rule. A tree is never re-parsed in place, so the index is never read across an edit.
+ */
+const SPLAT_INDEX = new WeakMap<Tree, Map<string, PyNode[]>>();
+
+function splatsNamed(tree: Tree, name: string): PyNode[] {
+  let byName = SPLAT_INDEX.get(tree);
+  if (!byName) {
+    byName = new Map();
+    for (const splat of tree.rootNode.descendantsOfType('dictionary_splat')) {
+      const inner = splat?.namedChildren[0];
+      if (!splat || !inner || inner.type !== 'identifier') continue;
+      const list = byName.get(inner.text);
+      if (list) list.push(splat);
+      else byName.set(inner.text, [splat]);
+    }
+    SPLAT_INDEX.set(tree, byName);
+  }
+  return byName.get(name) ?? [];
+}
+
+function isDictUnpackedIntoProviderCall(pair: PyNode): boolean {
+  const dict = pair.parent;
+  if (!dict || dict.type !== 'dictionary') return false;
+  let node: PyNode = dict;
+  let parent = node.parent;
+  while (parent && isValueTransparent(parent, node)) {
+    node = parent;
+    parent = node.parent;
+  }
+  if (!parent || parent.type !== 'assignment' || !parent.childForFieldName('right')?.equals(node)) return false;
+  const left = parent.childForFieldName('left');
+  if (!left || left.type !== 'identifier') return false;
+  const name = left.text;
+  const scope = enclosingFunction(parent);
+  for (const splat of splatsNamed(pair.tree, name)) {
+    // A function-local dict is only the one unpacked in that same function.
+    if (scope && !enclosingFunction(splat)?.equals(scope)) continue;
+    const call = splat.parent?.type === 'argument_list' ? splat.parent.parent : null;
+    if (!call || call.type !== 'call') continue;
+    const dotted = dottedCallee(call);
+    if (matchSdkSink(dotted) || isLegacySdkSink(dotted) || isProviderModelFactory(dotted)) return true;
+  }
+  return false;
+}
 
 /** Is the literal the LAST argument of a lookup whose key names a model, or whose result is assigned to a model-named name? */
 function isLookupDefaultForModel(argList: PyNode, literal: PyNode): boolean {
@@ -679,7 +753,7 @@ function capFactory(
   }
   const surface = ctx?.surface ?? 'unknown_wrapper';
   if (SURFACE_MAX_TIER[surface] !== 'A') {
-    return { position: 'surface_capped', reason: `${PY_SURFACE_REASON} (${surface})` };
+    return { position: 'surface_capped', reason: surfaceCapReason(surface, ctx) };
   }
   return null;
 }
@@ -817,7 +891,7 @@ export function applyPyGuards(
     // G4 — the surface caps the tier. Only a verified direct provider reaches A.
     const surface = ctx?.surface ?? 'unknown_wrapper';
     if (SURFACE_MAX_TIER[surface] !== 'A') {
-      return { position: 'surface_capped', reason: `${PY_SURFACE_REASON} (${surface})` };
+      return { position: 'surface_capped', reason: surfaceCapReason(surface, ctx) };
     }
     // G4 (receiver-bound). A file-wide text signal cannot say WHICH object the
     // call is made on. Without this, one unused import — or the word "openai" in
@@ -905,7 +979,7 @@ function judgeSinkCall(
   }
   const surface = ctx?.surface ?? 'unknown_wrapper';
   if (SURFACE_MAX_TIER[surface] !== 'A') {
-    return { position: 'surface_capped', reason: `${PY_SURFACE_REASON} (${surface})` };
+    return { position: 'surface_capped', reason: surfaceCapReason(surface, ctx) };
   }
   const receiver = receiverOf(dotted ?? '', sink.suffix);
   const bound = receiver ? resolveReceiverSurface(literal, receiver) : null;
@@ -1095,6 +1169,11 @@ export function classifyPyPosition(
       if (isModelLikeStringKey(key) && isEnclosingDictACallArgument(parent)) {
         return { position: 'model_arg' };
       }
+      // The same request, built in a variable and unpacked into the call (`create(**params)`).
+      // Flow evidence outranks the name rule below, and it is held, never swapped.
+      if (isModelLikeStringKey(key) && isDictUnpackedIntoProviderCall(parent)) {
+        return { position: 'surface_capped', reason: PY_REQUEST_DICT_REASON };
+      }
       // A `"model"` value in a standalone DEFAULT-configuration dict
       // (`DEFAULT_CONFIG = {"llm": {"config": {"model": "…"}}}`) is the default a
       // caller inherits — review — unless the dict is catalog-shaped.
@@ -1244,7 +1323,7 @@ export async function findPyModelIdLiterals(
       const sinkNames = collectPySinkNames(tree);
       const sinkTargets = collectPySinkTargets(tree);
       // G4: the provider surface, resolved once per file, caps every tier below.
-      const surface = detectPySurface(source.path, source.text);
+      const { surface, via: surfaceVia } = explainPySurface(source.path, source.text);
       // An examples/samples/demos/docs tree is informational by rule (C3).
       const example = isExamplePath(source.path);
       for (const node of tree.rootNode.descendantsOfType('string')) {
@@ -1264,7 +1343,7 @@ export async function findPyModelIdLiterals(
         // Position/purpose belong to the CST node, not the registry entry, so
         // classify once and emit one match per matching record (multimap).
         let classification: { position: LiteralPosition; purpose?: DataPurpose; reason?: string } =
-          classifyPyLiteral(node, sinkNames, { surface, sinkTargets });
+          classifyPyLiteral(node, sinkNames, { surface, surfaceVia, sinkTargets });
         // Rule C3, narrowed 2026-09-28 — the PYTHON half of the same change made in
         // scanLiterals.ts. An example tree is informational BY DEFAULT, and everything the
         // parser reads as data there still is. But a sample that actually reaches a provider
@@ -1356,10 +1435,16 @@ export function toPyAzureDeploymentMatches(matches: PyLiteralMatch[]): AzureDepl
  * Project a Python scan down to its USAGE-UNVERIFIED candidates: model-like
  * assignments the sink rule could not tie to any in-file sink. Reported for
  * manual review only — never auto-applied, never included in --write.
+ *
+ * Only `usage_unverified`. This used to take `surface_capped` matches too, and fix-llm printed
+ * every one of them under `usage_unverified` — "no supported SDK call or parameter sink was found
+ * in this file" — beside a call that IS a supported SDK call, held for its client or its wrapper
+ * (Open-Finance-Lab/AgenticTrading, 2026-10-09). audit had them as `surface_capped` all along.
+ * A held call now has its own projection, toHeldCallMatches, shared with TypeScript.
  */
 export function toPyUsageUnverifiedMatches(matches: PyLiteralMatch[]): UsageUnverifiedLocate[] {
   return matches
-    .filter((m) => m.position === 'usage_unverified' || m.position === 'surface_capped')
+    .filter((m) => m.position === 'usage_unverified')
     .map((m) => ({
       value: m.value,
       replacement: m.deprecation.replacement,

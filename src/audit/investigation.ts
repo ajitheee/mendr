@@ -46,6 +46,8 @@ export type LocationRole =
   | 'catalog_definition'
   | 'catalog_reference'
   | 'test_fixture'
+  /** A config file named as a template / example to copy (`.env.template`): informational, not test data. */
+  | 'config_template'
   | 'code_call_site'
   | 'code_candidate'
   | 'code_reference';
@@ -406,7 +408,10 @@ export function countFixtureReferences(investigations: readonly ModelInvestigati
   for (const inv of investigations) {
     if (isExposure(inv)) continue;
     const all = [...inv.locations.selectors, ...inv.locations.catalog];
-    if (all.some((l) => l.role === 'test_fixture')) n++;
+    // A configuration template counts here exactly as it did when it was labelled a fixture: what
+    // it breaks is a developer setting the project up, which is what FIXTURE_ONLY_NOTE says. Not
+    // counting it would turn a template-only run into "no exposure", a clean it has not earned.
+    if (all.some((l) => l.role === 'test_fixture' || l.role === 'config_template')) n++;
   }
   return n;
 }
@@ -490,7 +495,9 @@ function toConfigLocation(m: ConfigMatch, readers?: Map<string, EnvReader[]>): L
         ? 'catalog_definition'
         : m.purpose === 'data_fixture'
           ? 'test_fixture'
-          : 'catalog_reference';
+          : m.purpose === 'config_template'
+            ? 'config_template'
+            : 'catalog_reference';
   const loc: LocationRef = {
     file: m.file, line: m.line, column: m.column, key: m.key, value: m.value,
     role, surface: 'config', tier: m.tier, providerSurface: m.providerSurface, patchEligible: false,
