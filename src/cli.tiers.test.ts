@@ -457,7 +457,7 @@ describe('fix-llm three-tier report', () => {
   // helper below fails loudly rather than passing vacuously over a repo that
   // no longer contains the state under test.
   const NON_VERIFIED: { state: string; modelId: string; entryId: string }[] = [
-    { state: 'unverified', modelId: 'o1-preview', entryId: 'openai.o1-preview.retirement-undated' },
+    { state: 'unverified', modelId: 'o1-preview', entryId: 'openai.o1-preview.retirement-2025-07-28' },
     {
       state: 'unverifiable',
       modelId: 'dall-e-3',

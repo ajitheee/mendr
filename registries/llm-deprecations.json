@@ -324,48 +324,59 @@
     }
   },
   {
-    "entryId": "openai.o1-preview.retirement-undated",
+    "entryId": "openai.o1-preview.retirement-2025-07-28",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "o1-preview",
-    "replacement": "o1",
-    "note": "o1-preview deprecated in favor of the GA o1 reasoning model",
+    "replacement": "gpt-5.6-sol",
+    "status": "retired",
+    "shutdownDate": "2025-07-28",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "status": "deprecated",
+    "note": "o1-preview shut down 2025-07-28. OpenAI named o3, whose dated snapshot o3-2025-04-16 retires 2026-12-11 with gpt-5.6-sol as its replacement, so this entry follows that chain to gpt-5.6-sol. It used to target o1, which OpenAI itself shuts down on 2026-10-23.",
     "verification": {
       "status": "unverified",
       "officialSourceConfirmed": true,
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
       ],
       "reasons": [
-        "replacement \"o1\" is live in a public catalog",
-        "the provider officially recommends \"o3\", but the registry uses \"o1\" (live, but not the currently-recommended target — stale)",
-        "Neither o1-preview nor its target o1 was researched this pass — no verdict on either id. Do not auto-apply until both are verified."
+        "replacement \"gpt-5.6-sol\" is live in a public catalog",
+        "the provider officially recommends \"o3\", but the registry uses \"gpt-5.6-sol\" (live, but not the currently-recommended target — stale)",
+        "OpenAI deprecation page (read 2026-10-10) states shutdown 2025-07-28, replacement o3; the same page retires o3-2025-04-16 on Dec 11, 2026 with gpt-5.6-sol, and o1 (the previous target) on October 23, 2026 with gpt-5.6-sol",
+        "review-only: the catalog check compares against the provider's one-hop replacement (o3), and the registry carries the end of the chain instead"
       ]
-    }
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T04:58:56.260Z",
+        "excerpt": "2025-07-28 | o1-preview | o3"
+      }
+    ]
   },
   {
-    "entryId": "openai.o1-mini.retirement-undated",
+    "entryId": "openai.o1-mini.retirement-2025-10-27",
     "provider": "openai",
     "kind": "model_id",
     "deprecated": "o1-mini",
     "replacement": "gpt-5.6-terra",
-    "note": "o1-mini deprecated; OpenAI recommends o4-mini as the small reasoning model",
+    "status": "retired",
+    "shutdownDate": "2025-10-27",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "status": "deprecated",
+    "note": "o1-mini shut down 2025-10-27. OpenAI named o4-mini, which itself shuts down 2026-10-23 with gpt-5.6-terra as its replacement, so this entry carries gpt-5.6-terra.",
     "verification": {
       "status": "unverified",
       "officialSourceConfirmed": true,
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
@@ -373,9 +384,18 @@
       "reasons": [
         "replacement \"gpt-5.6-terra\" is live in a public catalog",
         "the provider officially recommends \"o4-mini\", but the registry uses \"gpt-5.6-terra\" (live, but not the currently-recommended target — stale)",
-        "Source not researched (status unknown), and target o4-mini is confirmed deprecated (shutdown 2026-10-23, provider replacement gpt-5.6-terra) — the registry currently proposes a dying model as an upgrade. On re-verification retarget to gpt-5.6-terra."
+        "OpenAI deprecation page (read 2026-10-10) states shutdown 2025-10-27, replacement o4-mini; the same page retires o4-mini on October 23, 2026 with gpt-5.6-terra",
+        "review-only: the catalog check compares against the provider's one-hop replacement (o4-mini), and the registry carries the end of the chain instead"
       ]
-    }
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T04:58:56.260Z",
+        "excerpt": "2025-10-27 | o1-mini | o4-mini"
+      }
+    ]
   },
   {
     "entryId": "openai.text-davinci-003.retirement-undated",
@@ -820,7 +840,7 @@
     "kind": "model_id",
     "deprecated": "gpt-3.5-turbo-1106",
     "replacement": "gpt-5.6-terra",
-    "status": "deprecated",
+    "status": "retired",
     "shutdownDate": "2026-09-28",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
     "note": "Provider-named replacement. Announced 2025-09-26.",
@@ -902,7 +922,7 @@
     "kind": "model_id",
     "deprecated": "gpt-3.5-turbo-instruct",
     "replacement": "gpt-5.6-terra",
-    "status": "deprecated",
+    "status": "retired",
     "shutdownDate": "2026-09-28",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
     "note": "Provider-named. Announced 2025-09-26.",
@@ -3587,7 +3607,7 @@
     "kind": "model_id",
     "deprecated": "babbage-002",
     "replacement": "gpt-5.6-terra",
-    "status": "deprecated",
+    "status": "retired",
     "shutdownDate": "2026-09-28",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
     "note": "discovered from the openai deprecation table; row read as: 2026-09-28 | babbage-002 | gpt-5.6-terra",
@@ -3604,7 +3624,7 @@
       ],
       "reasons": [
         "replacement \"gpt-5.6-terra\" is live in a public catalog",
-        "the deprecation claim for \"babbage-002\" is self-consistent (status \"deprecated\", shutdown 2026-09-28) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+        "the deprecation claim for \"babbage-002\" is self-consistent (status \"retired\", shutdown 2026-09-28) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
       ]
     },
     "evidence": [
@@ -3622,7 +3642,7 @@
     "kind": "model_id",
     "deprecated": "davinci-002",
     "replacement": "gpt-5.6-terra",
-    "status": "deprecated",
+    "status": "retired",
     "shutdownDate": "2026-09-28",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
     "note": "discovered from the openai deprecation table; row read as: 2026-09-28 | davinci-002 | gpt-5.6-terra",
@@ -3639,7 +3659,7 @@
       ],
       "reasons": [
         "replacement \"gpt-5.6-terra\" is live in a public catalog",
-        "the deprecation claim for \"davinci-002\" is self-consistent (status \"deprecated\", shutdown 2026-09-28) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
+        "the deprecation claim for \"davinci-002\" is self-consistent (status \"retired\", shutdown 2026-09-28) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
       ]
     },
     "evidence": [
@@ -4603,22 +4623,23 @@
     "kind": "model_id",
     "deprecated": "gpt-5.4-cyber",
     "replacement": "gpt-5.6-cyber",
-    "status": "deprecated",
+    "status": "retired",
     "shutdownDate": "2026-10-01",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "gpt-5.4-cyber is removed from the API on 2026-10-01; OpenAI names gpt-5.6-cyber. The replacement requires separate Daybreak Red (Trusted Access for Cyber) approval and provisioning, so a caller of 5.4 is not guaranteed access to 5.6. Detect-only.",
+    "note": "gpt-5.4-cyber was removed from the API on 2026-10-01. OpenAI's page no longer names a model: it says to migrate to \"the most capable cyber model available to you\". This entry keeps gpt-5.6-cyber, which OpenAI's model page describes as an alias for its most advanced cyber models; it needs separate approval and provisioning, so a caller of 5.4 is not guaranteed access. Detect-only.",
     "verification": {
       "status": "quarantined",
       "officialSourceConfirmed": true,
       "replacementConfirmed": false,
       "autoApplyAllowed": false,
-      "quarantineReason": "restricted access: gpt-5.6-cyber needs separate Daybreak Red (Trusted Access for Cyber) approval and provisioning; the model id alone does not grant access, so an automatic edit can break a caller who is not provisioned",
-      "checkedAt": "2026-09-18",
+      "quarantineReason": "restricted access, and no named replacement: OpenAI now says only \"the most capable cyber model available to you\", and gpt-5.6-cyber needs separate approval and provisioning (the Daybreak program); the model id alone does not grant access, so an automatic edit can break a caller who is not provisioned",
+      "checkedAt": "2026-10-10",
       "sources": [
         "provider pages"
       ],
       "reasons": [
-        "OpenAI deprecation page (live 2026-09-18, section \"2026-09-11: GPT-5.4-Cyber\") matches the stored row: removed from the API on Oct 1, 2026, migrate to gpt-5.6-cyber",
+        "OpenAI deprecation page (read 2026-10-10, section \"2026-09-11: GPT-5.4-Cyber\") states removal from the API on Oct 1, 2026 and names no model: \"Migrate to the most capable cyber model available to you\"; when read on 2026-09-18 the same section named gpt-5.6-cyber",
+        "gpt-5.6-cyber model page (read 2026-10-10): \"An alias for our most advanced purpose-trained cybersecurity models\"; access \"requires separate approval and provisioning\"",
         "gpt-5.6-cyber has a live OpenAI model page and no deprecation entry of its own",
         "restricted access: \"This model requires separate approval and provisioning\" (gpt-5.6-cyber model page) and \"the model ID alone doesn’t grant access\" (API cybersecurity checks guide), so an automatic edit could break a caller who is not provisioned",
         "not catalog-verified: neither OpenRouter nor models.dev lists gpt-5.4-cyber or gpt-5.6-cyber (checked 2026-09-18)"
@@ -4630,6 +4651,12 @@
         "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
         "retrievedAt": "2026-09-14T23:54:48.968Z",
         "excerpt": "Oct 1, 2026 | gpt-5.4-cyber | gpt-5.6-cyber"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T04:58:56.260Z",
+        "excerpt": "Oct 1, 2026 | gpt-5.4-cyber | The most capable cyber model available to you."
       }
     ]
   },

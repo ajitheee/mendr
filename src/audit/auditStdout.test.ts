@@ -433,7 +433,9 @@ describe('audit CLI — no recursive self-detection', () => {
     const dir = mkdtempSync(join(tmpdir(), 'mendr-undated-'));
     created.push(dir);
     writeFileSync(join(dir, 'ok.ts'), 'export const x = 1;\n');
-    writeFileSync(join(dir, 'models.yaml'), 'supported:\n  - o1-mini\n'); // undated in the registry
+    // Undated in the registry: Google's table says "No shutdown date announced". o1-mini was the
+    // example until 2026-10-10, when the registry took its date (2025-10-27) from OpenAI's page.
+    writeFileSync(join(dir, 'models.yaml'), 'supported:\n  - gemini-3-flash-preview\n');
     const { stdout } = await runAudit([dir]);
     if (stdout.includes('no dated deadline')) {
       expect(stdout).toContain('Next action: Monitor provider status');
