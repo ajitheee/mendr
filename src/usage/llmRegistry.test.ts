@@ -384,10 +384,12 @@ describe('the shipped registry', () => {
     // 2026-10-04: -4 gpt-5 aliases (no provider date), +10 ids OpenAI retires
     // 2026-10-23 (2 of them pro-mode), and 2 shipping pro-mode records quarantined.
     // 2026-10-06: +1 claude-sonnet-4-5-20250929, quarantined, so auto-fix eligible is unchanged.
+    // 2026-10-10: gemini-2.0-flash-live-001 and gemini-live-2.5-flash-preview retarget to
+    // gemini-3.8-live, which no public catalog lists yet: -2 eligible, +2 unverified.
     expect(provenance.activeEntries).toBe(164);
-    expect(provenance.autoFixEligible).toBe(135);
+    expect(provenance.autoFixEligible).toBe(133);
     expect(provenance.reviewOnlyCounts.quarantined).toBe(18);
-    expect(provenance.reviewOnlyCounts.unverified).toBe(5);
+    expect(provenance.reviewOnlyCounts.unverified).toBe(7);
     expect(provenance.reviewOnlyCounts.unverifiable).toBe(6);
     // Nothing ships in the defence-in-depth state; the validator forbids it.
     expect(provenance.reviewOnlyCounts.withheld).toBe(0);

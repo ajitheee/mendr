@@ -177,8 +177,10 @@ describe('the SHIPPED registry footer', () => {
     // 2026-10-04: -4 gpt-5 aliases (no provider date), +10 ids OpenAI retires
     // 2026-10-23, and the 4 reasoning.mode: pro replacements moved to quarantine. 2026-10-06:
     // +1 claude-sonnet-4-5-20250929, quarantined (Sonnet 5.5 rejects settings an id swap keeps).
+    // 2026-10-10: the two retired Live API ids move to gemini-3.8-live, which no public catalog
+    // lists yet, so they leave auto-fix for unverified.
     expect(lines[0]).toBe('registry: 164 records');
-    expect(lines[1]).toBe('auto-fix eligible: 135');
-    expect(lines[2]).toBe('review-only: 29 (quarantined 18, unverified 5, unverifiable 6)');
+    expect(lines[1]).toBe('auto-fix eligible: 133');
+    expect(lines[2]).toBe('review-only: 31 (quarantined 18, unverified 7, unverifiable 6)');
   });
 });

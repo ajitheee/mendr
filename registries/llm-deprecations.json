@@ -2999,33 +2999,36 @@
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-2.0-flash-live-001",
-    "replacement": "gemini-3.1-flash-live-preview",
+    "replacement": "gemini-3.8-live",
     "status": "retired",
     "shutdownDate": "2025-12-09",
     "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-    "note": "discovered from the google deprecation table; row read as: gemini-2.0-flash-live-001 | April 9, 2025 | December 9, 2025 | gemini-3.1-flash-live-preview",
+    "note": "gemini-2.0-flash-live-001 shut down 2025-12-09. Google's table now names gemini-3.8-live, the Live API model it made generally available on 2026-09-15. Until 2026-10-10 this entry targeted gemini-3.1-flash-live-preview, which the same table now shuts down on 2026-11-17, so every fix written with it would have stopped working five weeks later. Detect-only until the public catalogs list gemini-3.8-live.",
     "verification": {
-      "status": "verified",
+      "status": "unverified",
       "officialSourceConfirmed": true,
-      "replacementConfirmed": true,
-      "autoApplyAllowed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
       ],
       "reasons": [
-        "replacement \"gemini-3.1-flash-live-preview\" is live in a public catalog",
+        "replacement \"gemini-3.8-live\" was not found live in any public catalog (models.dev / OpenRouter)",
+        "Google deprecation page (read 2026-10-10) states shutdown December 9, 2025 and recommended replacement gemini-3.8-live; on 2026-09-14 it named gemini-3.1-flash-live-preview, which it now shuts down November 17, 2026",
+        "gemini-3.8-live is generally available per Google's changelog (2026-09-15) and listed on the deprecations page with no shutdown date announced",
+        "not catalog-verified: OpenRouter and models.dev do not list gemini-3.8-live yet, so the gate refuses it; re-run `mendr verify-registry` once they do",
         "the deprecation claim for \"gemini-2.0-flash-live-001\" is self-consistent (status \"retired\", shutdown 2025-12-09) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
       ]
     },
     "evidence": [
       {
         "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-        "contentHash": "sha256:f634c61e6afb848a868052963eef89696dd7ae544aaac846f8d31514c61b9c36",
-        "retrievedAt": "2026-09-14T23:54:46.353Z",
-        "excerpt": "gemini-2.0-flash-live-001 | April 9, 2025 | December 9, 2025 | gemini-3.1-flash-live-preview"
+        "contentHash": "sha256:d8b5a2b597a3462a09f0c94808b1c71a9be2eaf46f7c190f68e6d3c9349b2c06",
+        "retrievedAt": "2026-10-10T04:58:57.129Z",
+        "excerpt": "gemini-2.0-flash-live-001 | April 9, 2025 | December 9, 2025 | gemini-3.8-live"
       }
     ]
   },
@@ -3034,33 +3037,36 @@
     "provider": "google",
     "kind": "model_id",
     "deprecated": "gemini-live-2.5-flash-preview",
-    "replacement": "gemini-3.1-flash-live-preview",
+    "replacement": "gemini-3.8-live",
     "status": "retired",
     "shutdownDate": "2025-12-09",
     "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-    "note": "discovered from the google deprecation table; row read as: gemini-live-2.5-flash-preview | June 17, 2025 | December 9, 2025 | gemini-3.1-flash-live-preview",
+    "note": "gemini-live-2.5-flash-preview shut down 2025-12-09. Google's table now names gemini-3.8-live, the Live API model it made generally available on 2026-09-15. Until 2026-10-10 this entry targeted gemini-3.1-flash-live-preview, which the same table now shuts down on 2026-11-17, so every fix written with it would have stopped working five weeks later. Detect-only until the public catalogs list gemini-3.8-live.",
     "verification": {
-      "status": "verified",
+      "status": "unverified",
       "officialSourceConfirmed": true,
-      "replacementConfirmed": true,
-      "autoApplyAllowed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
       "quarantineReason": null,
-      "checkedAt": "2026-09-15",
+      "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
         "models.dev"
       ],
       "reasons": [
-        "replacement \"gemini-3.1-flash-live-preview\" is live in a public catalog",
+        "replacement \"gemini-3.8-live\" was not found live in any public catalog (models.dev / OpenRouter)",
+        "Google deprecation page (read 2026-10-10) states shutdown December 9, 2025 and recommended replacement gemini-3.8-live; on 2026-09-14 it named gemini-3.1-flash-live-preview, which it now shuts down November 17, 2026",
+        "gemini-3.8-live is generally available per Google's changelog (2026-09-15) and listed on the deprecations page with no shutdown date announced",
+        "not catalog-verified: OpenRouter and models.dev do not list gemini-3.8-live yet, so the gate refuses it; re-run `mendr verify-registry` once they do",
         "the deprecation claim for \"gemini-live-2.5-flash-preview\" is self-consistent (status \"retired\", shutdown 2025-12-09) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)"
       ]
     },
     "evidence": [
       {
         "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
-        "contentHash": "sha256:f634c61e6afb848a868052963eef89696dd7ae544aaac846f8d31514c61b9c36",
-        "retrievedAt": "2026-09-14T23:54:46.353Z",
-        "excerpt": "gemini-live-2.5-flash-preview | June 17, 2025 | December 9, 2025 | gemini-3.1-flash-live-preview"
+        "contentHash": "sha256:d8b5a2b597a3462a09f0c94808b1c71a9be2eaf46f7c190f68e6d3c9349b2c06",
+        "retrievedAt": "2026-10-10T04:58:57.129Z",
+        "excerpt": "gemini-live-2.5-flash-preview | June 17, 2025 | December 9, 2025 | gemini-3.8-live"
       }
     ]
   },
