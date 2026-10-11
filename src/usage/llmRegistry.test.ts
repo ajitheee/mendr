@@ -337,10 +337,10 @@ describe('the shipped registry', () => {
     // because Anthropic's Sonnet 5.5 migration guide names settings Sonnet 4.5 accepts that
     // return a 400 on Sonnet 5.5 (thinking budgets, sampling parameters, assistant prefill,
     // forced tool choice, thinking type "disabled") and turns thinking on by default, so code
-    // reading content[0].text breaks. No parameter rule covers Sonnet 5.5 (extending the
-    // sampling rules to it made fix-llm drop these call sites from its report), and the
-    // Python path has no parameter guard, so the quarantine is what keeps every call site in
-    // review, in audit and fix-llm alike.
+    // reading content[0].text breaks. Since 2026-10-10 the sampling rules cover Sonnet 5.5 (fix-llm
+    // has listed held calls since v0.5.9-alpha), but they cover only temperature, top_p and top_k,
+    // and the Python path has no parameter guard, so the quarantine is still what keeps every
+    // call site in review, in audit and fix-llm alike.
     const entry = modelIdEntries(loadLlmRegistry(resolveRegistryPath())).find(
       (e) => e.deprecated === 'claude-sonnet-4-5-20250929',
     )!;

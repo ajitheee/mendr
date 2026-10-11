@@ -671,9 +671,15 @@
     "on_models": [
       "claude-opus-4-7",
       "claude-opus-4-8",
-      "claude-opus-5"
+      "claude-opus-5",
+      "claude-sonnet-5",
+      "claude-sonnet-5-5",
+      "claude-haiku-5-5",
+      "claude-fable-5",
+      "claude-mythos-5",
+      "claude-mythos-preview"
     ],
-    "note": "temperature rejected (HTTP 400) on Opus 4.7+ and newer; steer via prompt.",
+    "note": "temperature is rejected (HTTP 400) at any non-default value on Claude Opus 4.7 and later, Claude Sonnet 5 and 5.5, Claude Haiku 5.5, Claude Fable 5 and 5.1, Claude Mythos 5 and 5.1, and Claude Mythos Preview; steer via the prompt. Anthropic's deprecations page says it of all Claude 4.7 and later models and Claude Mythos Preview; each model's own guide says it of that model (quoted below). Claude Mythos 5 and 5.1 rest on the deprecations page, and on the Fable 5.1 overview saying Mythos 5.1 shares its specifications. Claude Sonnet 4.6, Claude Haiku 4.5 and earlier models accept it (Anthropic's Sonnet 5.5 and Haiku 5.5 guides), so they are not listed.",
     "quotes": [
       {
         "sourceUrl": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide",
@@ -684,6 +690,36 @@
         "sourceUrl": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide",
         "text": "Omit temperature, top_p, and top_k, or leave them at their defaults: any other value is rejected.",
         "about": "behaviour"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/sonnet-5-5/migration-guide",
+        "text": "Claude Sonnet 4.6 and earlier models and Claude Haiku 4.5 accept temperature, top_p, and top_k. On Claude Sonnet 5.5, a non-default value returns a 400 error.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide",
+        "text": "Manual extended thinking, non-default sampling parameters, and assistant prefill return a 400 error on both models, so nothing changes there.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/haiku-5-5/migration-guide",
+        "text": "Claude Haiku 4.5 accepts temperature, top_p, and top_k. On Claude Haiku 5.5, omit all three and use prompting to guide the model's behavior instead.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/haiku-5-5/migration-guide",
+        "text": "Any other temperature or top_p value returns a 400 error, including a top_p of 1. So does any top_k value, and so does a request that includes both temperature and top_p.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/fable-5-1/whats-new-fable-5-1",
+        "text": "Non-default temperature, top_p, or top_k values return a 400 error.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+        "text": "Returns a 400 error when set to a non-default value on Claude 4.7 and later models and Claude Mythos Preview.",
+        "about": "rule"
       }
     ]
   },
@@ -694,9 +730,15 @@
     "on_models": [
       "claude-opus-4-7",
       "claude-opus-4-8",
-      "claude-opus-5"
+      "claude-opus-5",
+      "claude-sonnet-5",
+      "claude-sonnet-5-5",
+      "claude-haiku-5-5",
+      "claude-fable-5",
+      "claude-mythos-5",
+      "claude-mythos-preview"
     ],
-    "note": "top_p rejected (HTTP 400) on Opus 4.7+ and newer.",
+    "note": "top_p is rejected (HTTP 400) at any non-default value on Claude Opus 4.7 and later, Claude Sonnet 5 and 5.5, Claude Haiku 5.5, Claude Fable 5 and 5.1, Claude Mythos 5 and 5.1, and Claude Mythos Preview; steer via the prompt. Anthropic's deprecations page says it of all Claude 4.7 and later models and Claude Mythos Preview; each model's own guide says it of that model (quoted below). Claude Mythos 5 and 5.1 rest on the deprecations page, and on the Fable 5.1 overview saying Mythos 5.1 shares its specifications. Claude Sonnet 4.6, Claude Haiku 4.5 and earlier models accept it (Anthropic's Sonnet 5.5 and Haiku 5.5 guides), so they are not listed.",
     "quotes": [
       {
         "sourceUrl": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide",
@@ -707,6 +749,36 @@
         "sourceUrl": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide",
         "text": "Omit temperature, top_p, and top_k, or leave them at their defaults: any other value is rejected.",
         "about": "behaviour"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/sonnet-5-5/migration-guide",
+        "text": "Claude Sonnet 4.6 and earlier models and Claude Haiku 4.5 accept temperature, top_p, and top_k. On Claude Sonnet 5.5, a non-default value returns a 400 error.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide",
+        "text": "Manual extended thinking, non-default sampling parameters, and assistant prefill return a 400 error on both models, so nothing changes there.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/haiku-5-5/migration-guide",
+        "text": "Claude Haiku 4.5 accepts temperature, top_p, and top_k. On Claude Haiku 5.5, omit all three and use prompting to guide the model's behavior instead.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/haiku-5-5/migration-guide",
+        "text": "Any other temperature or top_p value returns a 400 error, including a top_p of 1. So does any top_k value, and so does a request that includes both temperature and top_p.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/fable-5-1/whats-new-fable-5-1",
+        "text": "Non-default temperature, top_p, or top_k values return a 400 error.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+        "text": "Returns a 400 error when set to a non-default value on Claude 4.7 and later models and Claude Mythos Preview.",
+        "about": "rule"
       }
     ]
   },
@@ -717,9 +789,15 @@
     "on_models": [
       "claude-opus-4-7",
       "claude-opus-4-8",
-      "claude-opus-5"
+      "claude-opus-5",
+      "claude-sonnet-5",
+      "claude-sonnet-5-5",
+      "claude-haiku-5-5",
+      "claude-fable-5",
+      "claude-mythos-5",
+      "claude-mythos-preview"
     ],
-    "note": "top_k rejected (HTTP 400) on Opus 4.7+ and newer.",
+    "note": "top_k is rejected (HTTP 400) at any non-default value on Claude Opus 4.7 and later, Claude Sonnet 5 and 5.5, Claude Haiku 5.5, Claude Fable 5 and 5.1, Claude Mythos 5 and 5.1, and Claude Mythos Preview; steer via the prompt. Anthropic's deprecations page says it of all Claude 4.7 and later models and Claude Mythos Preview; each model's own guide says it of that model (quoted below). Claude Mythos 5 and 5.1 rest on the deprecations page, and on the Fable 5.1 overview saying Mythos 5.1 shares its specifications. Claude Sonnet 4.6, Claude Haiku 4.5 and earlier models accept it (Anthropic's Sonnet 5.5 and Haiku 5.5 guides), so they are not listed.",
     "quotes": [
       {
         "sourceUrl": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide",
@@ -730,6 +808,36 @@
         "sourceUrl": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide",
         "text": "Omit temperature, top_p, and top_k, or leave them at their defaults: any other value is rejected.",
         "about": "behaviour"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/sonnet-5-5/migration-guide",
+        "text": "Claude Sonnet 4.6 and earlier models and Claude Haiku 4.5 accept temperature, top_p, and top_k. On Claude Sonnet 5.5, a non-default value returns a 400 error.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide",
+        "text": "Manual extended thinking, non-default sampling parameters, and assistant prefill return a 400 error on both models, so nothing changes there.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/haiku-5-5/migration-guide",
+        "text": "Claude Haiku 4.5 accepts temperature, top_p, and top_k. On Claude Haiku 5.5, omit all three and use prompting to guide the model's behavior instead.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/haiku-5-5/migration-guide",
+        "text": "Any other temperature or top_p value returns a 400 error, including a top_p of 1. So does any top_k value, and so does a request that includes both temperature and top_p.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/fable-5-1/whats-new-fable-5-1",
+        "text": "Non-default temperature, top_p, or top_k values return a 400 error.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+        "text": "Returns a 400 error when set to a non-default value on Claude 4.7 and later models and Claude Mythos Preview.",
+        "about": "rule"
       }
     ]
   },
