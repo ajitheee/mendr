@@ -51,7 +51,12 @@ your token; the App only records the decision and what your CI reports.
 
 1. Installs your repo's dependencies (auto-detected from your lockfile) so the build and test gates can actually run.
 2. Runs `mendr migrate . --write`, which verifies the migration in a throwaway copy with your CI credentials stripped (type-check, your build, your test suite, an optional `eval-command`) and applies it to the working tree ONLY when the verdict is `verified`.
-3. If a tracked file changed, it commits to a stable branch (`mendr/deprecated-model-ids`) and opens or updates a single PR whose body lists every swap and each gate's outcome. If there was nothing to migrate, it closes a stale Mendr PR if one was open. If a migration existed but did not verify, it applies nothing, opens no PR, and leaves any existing PR untouched (`outcome: not-verified`).
+3. If a tracked file changed, it commits to a stable branch (`mendr/deprecated-model-ids`) and opens or updates a single PR whose body lists every swap, each gate's outcome, and every retiring id it left for a person (*Left alone*). If nothing changed, the run is one of three things:
+   - **clean** (`outcome: clean`): nothing to migrate and nothing held for review. It closes a stale Mendr PR if one was open. An approval-gated run looked only at the approved models, so it cannot say the repository is clean, and it leaves any open Mendr PR as it is.
+   - **held for review** (`outcome: held-for-review`): every retiring id it found was held for a person (a parameter the replacement treats differently, a fine-tune, an example tree, an untraced setting, an unverified replacement, and the other Tier B reasons). The repository is not clean. The job summary says how many places need a person and lists each one with its file, line, reason code and reason; the log carries a warning with the count. It opens no PR and leaves any open Mendr PR as it is.
+   - **not verified** (`outcome: not-verified`): a migration existed but did not verify. It applies nothing, opens no PR, and leaves any existing PR untouched.
+
+   On `v0.5.10-alpha` and earlier, a held-for-review run was reported as clean and closed an open Mendr PR with "no deprecated model ids remain". The change is on `main` and reaches a workflow pinned to a release only from the next tag.
 
 Re-running never stacks new PRs. It keeps the one branch current, and it never merges — a human approves.
 
@@ -61,7 +66,7 @@ Re-running never stacks new PRs. It keeps the one branch current, and it never m
 | --- | --- | --- |
 | `working-directory` | `.` | where your code lives, if not the repo root |
 | `mendr-spec` | `github:ajitheee/mendr#v0.5.10-alpha` | the CLI that runs in your CI (npm spec once published) |
-| `app-url` | (empty) | your Mendr App URL; when set, the result — outcome, PR url, verdict, gate statuses, swaps and file paths, and the diff of the swap itself (see `send-diff`), **never whole files** — is reported there, proven by the run's OIDC token. Grant `id-token: write` in the job; without it nothing is sent and the job still succeeds |
+| `app-url` | (empty) | your Mendr App URL; when set, the result — outcome, PR url, verdict, gate statuses, swaps and file paths, how many calls were held for review (a count, not the list), and the diff of the swap itself (see `send-diff`), **never whole files** — is reported there, proven by the run's OIDC token. Grant `id-token: write` in the job; without it nothing is sent and the job still succeeds |
 | `send-diff` | `true` | include the unified diff of the model-id swap in the report, so the person who approved sees the change on the finding without opening GitHub (the App redacts secrets and caps it). `false` = everything except the diff |
 | `approval-gated` | `false` | `true` = carry out only the migrations a person approved in your Mendr App (needs `app-url` and `id-token: write`): ask the App, claim them, migrate exactly those models (`mendr migrate --only`), stream each step back to the finding, and enable GitHub's auto-merge only when the approval asked for it. Nothing approved = nothing done, in seconds, before any dependency install |
 | `approval` | (empty) | the approval id the App passed when it started the workflow (`workflow_dispatch`); informational — every queued approval is picked up regardless |
