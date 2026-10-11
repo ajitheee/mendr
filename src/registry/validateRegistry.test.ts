@@ -231,8 +231,11 @@ describe('the shipped registry', () => {
     // and gpt-5.4-nano (2027-04-01), four TTS models (2027-01-06), four transcription models
     // (2027-02-26), the gpt-4o-audio, gpt-4o-mini-audio and gpt-4o-mini-realtime family rows
     // (2027-01-20) and gpt-4-turbo-preview-completions (2026-03-26), and Google's five retired
-    // Veo 3.0 and 2.0 ids.
-    expect(result.recordsChecked).toBe(213);
+    // Veo 3.0 and 2.0 ids. Then + 6 dated snapshots those rows leave out, each with no shutdown
+    // date because OpenAI names only the alias or the family: gpt-5.1-2025-11-13,
+    // gpt-5.4-nano-2026-03-17, gpt-4o-audio-preview-2025-06-03 and -2024-12-17,
+    // gpt-4o-mini-audio-preview-2024-12-17 and gpt-4o-mini-realtime-preview-2024-12-17.
+    expect(result.recordsChecked).toBe(219);
   });
 });
 

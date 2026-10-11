@@ -193,9 +193,12 @@ describe('the SHIPPED registry footer', () => {
     // to a different reasoning effort); 4 TTS, 4 transcription and 2 audio ids are unverifiable by
     // class; gpt-4o-mini-realtime, gpt-4-turbo-preview-completions and 5 retired Veo ids are
     // unverified. Then gpt-5.3-codex is quarantined too (OpenAI's GPT-6 guide changes
-    // prompt_cache_retention, which mendr does not check).
-    expect(lines[0]).toBe('registry: 213 records');
+    // prompt_cache_retention, which mendr does not check), and 6 dated snapshots with no
+    // provider-stated date are added: gpt-5.1's and gpt-5.4-nano's (quarantined like their
+    // aliases), three audio snapshots (unverifiable by class) and gpt-4o-mini-realtime's
+    // (quarantined until OpenAI states its date).
+    expect(lines[0]).toBe('registry: 219 records');
     expect(lines[1]).toBe('auto-fix eligible: 135');
-    expect(lines[2]).toBe('review-only: 78 (quarantined 19, unverified 30, unverifiable 29)');
+    expect(lines[2]).toBe('review-only: 84 (quarantined 22, unverified 30, unverifiable 32)');
   });
 });
