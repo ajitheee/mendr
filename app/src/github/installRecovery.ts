@@ -19,7 +19,8 @@ import type { ActionsClaims } from './oidc.js';
 //      token names (never a name from the request body). 404: the App is not installed there.
 //   2. An installation token for that installation, limited to the repository id the OIDC token
 //      names and to `metadata: read`. GitHub refuses to mint it when the installation does not
-//      cover that id.
+//      cover that id. It is minted for every lookup, never taken from a cache: this mint is the
+//      only step that proves coverage for a public repository, which step 3 reads with any token.
 //   3. `GET /repos/{owner}/{repo}` with that token: GitHub's id for the name must equal the
 //      token's repository_id.
 //

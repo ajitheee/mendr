@@ -73,9 +73,11 @@ export interface GitHubApi {
   getRepoInstallation(repoFullName: string): Promise<AppInstallation | null>;
   /**
    * Install recovery, step 2: the repository as an installation token limited to `repoId` and
-   * `metadata: read` sees it (`GET /repos/{owner}/{repo}`). Null when GitHub will not mint that
-   * token, because the installation does not cover that repository id, or when the token cannot
-   * see the repository. The caller compares the id GitHub returns with the one it asked for.
+   * `metadata: read` sees it (`GET /repos/{owner}/{repo}`). The token is minted for every call and
+   * never reused, so GitHub answers whether the installation covers `repoId` each time. Null when
+   * GitHub will not mint that token, because the installation does not cover that repository id,
+   * or when the token cannot see the repository. The caller compares the id GitHub returns with
+   * the one it asked for.
    */
   getRepoAsInstallation(installationId: number, repoFullName: string, repoId: number): Promise<InstallationRepo | null>;
   /** Installations of this App the signed-in user can access (`GET /user/installations`, the user's own token; first 100). */
@@ -197,13 +199,12 @@ export function createGitHubApi(cfg: ApiConfig): GitHubApi {
     );
   }
 
-  async function installationToken(installationId: number, repoId: number, permissions: Record<string, string> = { checks: 'write' }): Promise<string> {
-    const key = `${installationId}:${repoId}:${Object.entries(permissions)
-      .map(([k, v]) => `${k}=${v}`)
-      .sort()
-      .join(',')}`;
-    const cached = tokens.get(key);
-    if (cached && cached.expiresAt - 60_000 > Date.now()) return cached.token;
+  /**
+   * Ask GitHub for a new installation token, limited to one repository id and the given
+   * permissions. GitHub refuses (422) when the installation does not cover that id, so each mint
+   * is also GitHub's answer, at that moment, to "does this installation cover this repository?".
+   */
+  async function mintInstallationToken(installationId: number, repoId: number, permissions: Record<string, string>): Promise<{ token: string; expiresAt: number }> {
     if (!cfg.githubAppId || !cfg.githubPrivateKey) throw new GitHubApiError(503, 'the App is not configured (GITHUB_APP_ID / GITHUB_PRIVATE_KEY)');
     const jwt = await appJwt(cfg.githubAppId, cfg.githubPrivateKey);
     const { json } = await call(
@@ -218,9 +219,20 @@ export function createGitHubApi(cfg: ApiConfig): GitHubApi {
     );
     const r = json as { token?: string; expires_at?: string };
     if (!r?.token) throw new GitHubApiError(502, 'installation token response had no token');
-    const expiresAt = r.expires_at ? Date.parse(r.expires_at) : Date.now() + 50 * 60_000;
-    tokens.set(key, { token: r.token, expiresAt });
-    return r.token;
+    return { token: r.token, expiresAt: r.expires_at ? Date.parse(r.expires_at) : Date.now() + 50 * 60_000 };
+  }
+
+  /** An installation token for writing to a repository the store already holds, reused until a minute before it expires. */
+  async function installationToken(installationId: number, repoId: number, permissions: Record<string, string> = { checks: 'write' }): Promise<string> {
+    const key = `${installationId}:${repoId}:${Object.entries(permissions)
+      .map(([k, v]) => `${k}=${v}`)
+      .sort()
+      .join(',')}`;
+    const cached = tokens.get(key);
+    if (cached && cached.expiresAt - 60_000 > Date.now()) return cached.token;
+    const minted = await mintInstallationToken(installationId, repoId, permissions);
+    tokens.set(key, minted);
+    return minted.token;
   }
 
   return {
@@ -308,8 +320,11 @@ export function createGitHubApi(cfg: ApiConfig): GitHubApi {
       let token: string;
       try {
         // Limited to the one repository id the OIDC token named: GitHub refuses to mint it when
-        // the installation does not cover that id.
-        token = await installationToken(installationId, repoId, { metadata: 'read' });
+        // the installation does not cover that id. Minted for every lookup and never cached: the
+        // mint IS the coverage check, and step 3 cannot replace it, because a public repository
+        // reads with any token. A token cached from an earlier lookup would let a repository
+        // removed from the installation's selection since then be stored again.
+        token = (await mintInstallationToken(installationId, repoId, { metadata: 'read' })).token;
       } catch (e) {
         if (isRefusal(e)) return null;
         throw e;

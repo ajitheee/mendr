@@ -2,6 +2,7 @@ import { generateKeyPairSync } from 'node:crypto';
 import { decodeJwt } from 'jose';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig } from '../config.js';
+import type { CheckRunPayload } from '../ingest/checkRun.js';
 import { createGitHubApi, GitHubApiError } from './api.js';
 
 // The install-recovery calls against a GitHub-shaped fetch: which endpoint, with which
@@ -86,6 +87,57 @@ describe('install recovery: the GitHub calls behind it', () => {
     seen = github((req) => (req.method === 'POST' ? { status: 201, body: { token: 'ghs_recovery', expires_at: inAnHour() } } : { status: 404, body: { message: 'Not Found' } }));
     expect(await api().getRepoAsInstallation(42, 'acme/gone', 1234)).toBeNull();
     expect(seen).toHaveLength(2);
+  });
+
+  it('mints a new token for every lookup, so a repository removed from the selection within the hour is refused', async () => {
+    // A public repository reads with any token, so only the mint can say the installation covers it.
+    let covered = true;
+    const seen = github((req) => {
+      if (req.method === 'POST' && req.path === '/app/installations/42/access_tokens') {
+        return covered
+          ? { status: 201, body: { token: 'ghs_recovery', expires_at: inAnHour() } }
+          : { status: 422, body: { message: 'There is at least one repository that does not exist or is not accessible to the parent installation.' } };
+      }
+      if (req.method === 'GET' && req.path === '/repos/acme/pub') return { status: 200, body: { id: 1234, full_name: 'acme/pub', private: false } };
+      return { status: 404, body: { message: 'Not Found' } };
+    });
+    const gh = api(); // one client, as in the running App
+    expect(await gh.getRepoAsInstallation(42, 'acme/pub', 1234)).toEqual({ id: 1234, fullName: 'acme/pub', private: false });
+    covered = false; // the owner takes acme/pub out of the App's selection
+    expect(await gh.getRepoAsInstallation(42, 'acme/pub', 1234)).toBeNull();
+    const mints = seen.filter((s) => s.method === 'POST' && s.path === '/app/installations/42/access_tokens');
+    expect(mints).toHaveLength(2);
+    expect(mints.every((m) => JSON.stringify(m.body) === JSON.stringify({ repository_ids: [1234], permissions: { metadata: 'read' } }))).toBe(true);
+    expect(seen.filter((s) => s.path === '/repos/acme/pub')).toHaveLength(1); // no read after the refused mint
+  });
+
+  it('a covered repository is still found on every lookup, each with its own token', async () => {
+    let n = 0;
+    const seen = github((req) => {
+      if (req.method === 'POST') return { status: 201, body: { token: `ghs_recovery_${++n}`, expires_at: inAnHour() } };
+      if (req.path === '/repos/acme/pub') return { status: 200, body: { id: 1234, full_name: 'acme/pub', private: false } };
+      return { status: 404, body: { message: 'Not Found' } };
+    });
+    const gh = api();
+    for (let i = 0; i < 2; i++) expect(await gh.getRepoAsInstallation(42, 'acme/pub', 1234)).toEqual({ id: 1234, fullName: 'acme/pub', private: false });
+    expect(seen.filter((s) => s.path === '/repos/acme/pub').map((s) => s.auth)).toEqual(['Bearer ghs_recovery_1', 'Bearer ghs_recovery_2']);
+  });
+
+  it('the check-run token is still reused within its hour, and a recovery mint does not stand in for it', async () => {
+    const seen = github((req) => {
+      if (req.method === 'POST' && req.path === '/app/installations/42/access_tokens') return { status: 201, body: { token: `ghs_${(req.body as { permissions: Record<string, string> }).permissions.checks ? 'checks' : 'recovery'}`, expires_at: inAnHour() } };
+      if (req.method === 'POST' && req.path === '/repos/acme/api/check-runs') return { status: 201, body: { id: 1, html_url: 'https://github.test/acme/api/runs/1' } };
+      if (req.method === 'GET' && req.path === '/repos/acme/api') return { status: 200, body: { id: 1234, full_name: 'acme/api', private: true } };
+      return { status: 404, body: { message: 'Not Found' } };
+    });
+    const gh = api();
+    const payload = {} as CheckRunPayload; // its shape is not what this test is about
+    await gh.getRepoAsInstallation(42, 'acme/api', 1234);
+    await gh.createCheckRun(42, 'acme/api', 1234, payload);
+    await gh.createCheckRun(42, 'acme/api', 1234, payload);
+    const mints = seen.filter((s) => s.method === 'POST' && s.path === '/app/installations/42/access_tokens').map((s) => (s.body as { permissions: unknown }).permissions);
+    expect(mints).toEqual([{ metadata: 'read' }, { checks: 'write' }]);
+    expect(seen.filter((s) => s.path === '/repos/acme/api/check-runs').map((s) => s.auth)).toEqual(['Bearer ghs_checks', 'Bearer ghs_checks']);
   });
 
   it('a rate-limited token request is an error, not a refusal', async () => {

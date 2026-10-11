@@ -37,7 +37,9 @@ GitHub before refusing it (`src/github/installRecovery.ts`):
 2. An installation token limited to the token's `repository_id` and
    `metadata: read`. GitHub will not mint it if the installation does not cover
    that id, so a repository outside the installation's selection is refused
-   here even if step 1 answered.
+   here even if step 1 answered. The App asks for a new token on every lookup
+   and never reuses one. Step 3 cannot stand in for this step, because a public
+   repository can be read with any token.
 3. `GET /repos/{owner}/{repo}` with that token: GitHub's id must equal the
    token's `repository_id`.
 

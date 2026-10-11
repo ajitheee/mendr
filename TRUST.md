@@ -538,7 +538,9 @@ before refusing it:
    needs no installation permission. A 404 is read as "not installed".
 2. An installation token limited to the repository id in the OIDC token and to
    `metadata: read`, which every GitHub App holds. GitHub refuses to mint it
-   when the installation does not cover that id.
+   when the installation does not cover that id. The App asks for a new token
+   on every lookup and never reuses one, so a repository removed from the
+   installation's selection is refused here even when it is public.
 3. `GET /repos/{owner}/{repo}` with that token. GitHub's id for the repository
    must equal the OIDC token's `repository_id`.
 

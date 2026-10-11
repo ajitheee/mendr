@@ -1,14 +1,14 @@
-import { createHmac } from 'node:crypto';
+import { createHmac, generateKeyPairSync } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT, type JWTPayload } from 'jose';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { buildManifest, createApp } from './app.js';
 import { sealSession, SESSION_COOKIE } from './auth/session.js';
 import { loadConfig, type AppConfig } from './config.js';
 import type { CheckRunPayload } from './ingest/checkRun.js';
 import { sampleReport } from '../test/sampleReport.js';
-import { GitHubApiError, type GitHubApi } from './github/api.js';
+import { createGitHubApi, GitHubApiError, type GitHubApi } from './github/api.js';
 import { FAILED_LOOKUP_TTL_MS, REFUSAL_TTL_MS, USER_RECOVERY_INTERVAL_MS } from './github/installRecovery.js';
 import { createActionsVerifier } from './github/oidc.js';
 import { MemoryStore } from './store/memory.js';
@@ -126,7 +126,14 @@ function fakeGitHub(userRepos: Record<string, number> = {}) {
   return { api, checkRuns, dispatches, world, lookups };
 }
 
-function harness(userRepos: Record<string, number> = {}, over: Partial<AppConfig> = {}) {
+interface HarnessOptions {
+  /** Use this GitHub client instead of the recording fake (gh.api), e.g. the real createGitHubApi over a stubbed fetch. */
+  github?: (config: AppConfig) => GitHubApi;
+  /** The upload's install-lookup deadline; 40 ms unless a test needs the real client's crypto to fit. */
+  installLookupTimeoutMs?: number;
+}
+
+function harness(userRepos: Record<string, number> = {}, over: Partial<AppConfig> = {}, opts: HarnessOptions = {}) {
   const config: AppConfig = {
     ...loadConfig({}),
     appUrl: 'https://app.example',
@@ -151,7 +158,7 @@ function harness(userRepos: Record<string, number> = {}, over: Partial<AppConfig
   const app = createApp({
     config,
     store,
-    github: gh.api,
+    github: opts.github ? opts.github(config) : gh.api,
     now: () => new Date(Date.now() + skewMs),
     verifyActionsToken: verify,
     log: (m, extra) => {
@@ -161,7 +168,7 @@ function harness(userRepos: Record<string, number> = {}, over: Partial<AppConfig
     // Real value is 8s; asserting the deadline should not cost the suite eight seconds.
     interactiveTimeoutMs: 40,
     // Real value is 20s, for the same reason.
-    installLookupTimeoutMs: 40,
+    installLookupTimeoutMs: opts.installLookupTimeoutMs ?? 40,
   });
   const webhook = (event: string, payload: unknown) => {
     const body = JSON.stringify(payload);
@@ -1006,6 +1013,9 @@ describe('install recovery: an upload the database cannot place is checked with 
     expect(await h.store.getInstallation(42)).toBeNull();
   });
 
+  // This fake has no token cache and applies the coverage check on every call. The real client
+  // is driven through the same path, twice, under "install recovery against the real GitHub
+  // client" below.
   it('does not rely on the installation lookup alone: a repository outside the selection is refused at the token', async () => {
     const h = harness();
     h.gh.world.repos[REPO.full_name] = { id: REPO.id, private: true };
@@ -1160,6 +1170,91 @@ describe('install recovery: an upload the database cannot place is checked with 
   it('asks for no new permission: the manifest is unchanged', () => {
     const { config } = harness();
     expect(buildManifest(config).default_permissions).toEqual({ checks: 'write', metadata: 'read' });
+  });
+});
+
+// The fake above has no token cache. The real client does (for check runs), so these tests run
+// install recovery through createGitHubApi itself, on a GitHub-shaped fetch, and recover twice on
+// one client. acme/api is public here: GET /repos/acme/api answers any token, so step 3 proves
+// nothing about coverage. And GET /repos/acme/api/installation answers installation 42 whatever its
+// selection holds: the case step 2, the token mint, exists for.
+describe('install recovery against the real GitHub client: coverage is asked on every lookup', () => {
+  const API = 'https://api.github.test';
+  const { privateKey: appKey } = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** GitHub as seen through fetch. `covered` is installation 42's selection; `mints` records each token request and GitHub's answer. */
+  function githubOverFetch() {
+    const covered = new Set<number>([REPO.id]);
+    const mints: { permissions: Record<string, string>; status: number }[] = [];
+    let n = 0;
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit = {}) => {
+      const path = new URL(url).pathname;
+      const method = init.method ?? 'GET';
+      const answer = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+      if (method === 'GET' && path === '/repos/acme/api/installation') return answer(200, { id: 42, account: { login: 'acme', type: 'Organization' }, suspended_at: null });
+      if (method === 'POST' && path === '/app/installations/42/access_tokens') {
+        const body = JSON.parse(String(init.body)) as { repository_ids: number[]; permissions: Record<string, string> };
+        const ok = body.repository_ids.every((id) => covered.has(id));
+        mints.push({ permissions: body.permissions, status: ok ? 201 : 422 });
+        return ok
+          ? answer(201, { token: `ghs_${++n}`, expires_at: new Date(Date.now() + 3_600_000).toISOString() })
+          : answer(422, { message: 'There is at least one repository that does not exist or is not accessible to the parent installation.' });
+      }
+      if (method === 'GET' && path === '/repos/acme/api') return answer(200, { id: REPO.id, full_name: REPO.full_name, private: false });
+      if (method === 'POST' && path === '/repos/acme/api/check-runs') return answer(201, { id: 1, html_url: 'https://github.test/acme/api/runs/1' });
+      return answer(404, { message: 'Not Found' });
+    });
+    const metadataMints = () => mints.filter((m) => m.permissions.metadata === 'read').map((m) => m.status);
+    return { covered, mints, metadataMints };
+  }
+
+  const realHarness = () =>
+    harness({}, { githubApiUrl: API, githubPrivateKey: appKey }, { github: (config) => createGitHubApi(config), installLookupTimeoutMs: 10_000 });
+  const outcomes = (h: ReturnType<typeof harness>) => h.logEvents.filter((l) => l.message === 'install recovery refused' || l.message === 'install recovery failed').map((l) => l.extra?.outcome);
+  const recovered = async (h: ReturnType<typeof harness>) => (await h.store.listAuditLog()).filter((e) => e.event === 'installation_recovered');
+
+  it('a public repository taken out of the selection within the hour is refused, not stored again', async () => {
+    const gh = githubOverFetch();
+    const h = realHarness();
+    // (1) Recovered on a CI upload.
+    expect((await h.ingest(await actionsToken(), sampleReport())).status).toBe(200);
+    expect(await h.store.getRepo(REPO.id)).toMatchObject({ installationId: 42, private: false });
+    // (2) The owner removes acme/api from the App's selection; the webhook hard-deletes the row.
+    gh.covered.delete(REPO.id);
+    await h.webhook('installation_repositories', { action: 'removed', installation: INSTALLATION, repositories_added: [], repositories_removed: [REPO] });
+    expect(await h.store.getRepo(REPO.id)).toBeNull();
+    // (3) Within the hour the repository's own workflow uploads again, and step 1 still names 42.
+    const res = await h.ingest(await actionsToken({ run_id: '100' }), sampleReport());
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: string }).error).toBe('the Mendr GitHub App is not installed on acme/api');
+    expect(outcomes(h)).toEqual(['repository_not_covered']);
+    expect(await h.store.getRepo(REPO.id)).toBeNull();
+    expect(await h.store.listRuns(REPO.id, 10)).toEqual([]);
+    // GitHub was asked to mint a token for the second lookup too, and refused it.
+    expect(gh.metadataMints()).toEqual([201, 422]);
+    expect(await recovered(h)).toHaveLength(1);
+  });
+
+  it('a repository GitHub still covers is recovered again with a new token, not refused', async () => {
+    const gh = githubOverFetch();
+    const h = realHarness();
+    expect((await h.ingest(await actionsToken(), sampleReport())).status).toBe(200);
+    // The database loses the row again; GitHub's selection still holds acme/api.
+    await h.store.deleteRepoData(REPO.id);
+    expect(await h.store.getRepo(REPO.id)).toBeNull();
+    expect((await h.ingest(await actionsToken({ run_id: '100' }), sampleReport())).status).toBe(200);
+    expect(await h.store.getRepo(REPO.id)).toMatchObject({ installationId: 42 });
+    expect(outcomes(h)).toEqual([]);
+    expect(gh.metadataMints()).toEqual([201, 201]);
+    expect(await recovered(h)).toHaveLength(2);
   });
 });
 
