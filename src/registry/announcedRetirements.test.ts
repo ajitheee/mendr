@@ -76,8 +76,8 @@ describe('the dated retirements added on 2026-10-10', () => {
     // The default-effort change that holds gpt-5.1 does not reach gpt-5.3-codex (low through
     // xhigh, Responses only). This does: the guide tells a migration from GPT-5.5 or earlier to
     // replace prompt_cache_retention with prompt_cache_options.ttl. No parameter rule names the
-    // GPT-6 family, so the TypeScript guard does not look at a swap to gpt-6-sol, and Python has
-    // no guard. Swapped as verified, `prompt_cache_retention="24h"` stayed in the request.
+    // GPT-6 family, so neither the TypeScript guard nor the Python one looks at a swap to
+    // gpt-6-sol. Swapped as verified, `prompt_cache_retention="24h"` stayed in the request.
     const record = find('gpt-5.3-codex');
     expect(record.verification?.status).toBe('quarantined');
     expect(record.verification?.autoApplyAllowed).toBe(false);

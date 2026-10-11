@@ -1,0 +1,679 @@
+import { beforeAll, describe, expect, it } from 'vitest';
+import { Project } from 'ts-morph';
+import type { LlmRegistry } from '../types.js';
+import { autoApplyVerification, loadLlmRegistry, resolveRegistryPath, withheldVerification } from '../usage/llmRegistry.js';
+import { findModelIdLiterals } from '../usage/scanLiterals.js';
+import { TS_COUPLED_PARAM_REASON } from '../usage/coupledParams.js';
+import { classifyOccurrenceTier } from '../report/classifyOccurrence.js';
+import { findPyModelIdLiterals, PY_EXAMPLE_CALL_REASON, PY_REQUEST_DICT_REASON } from './scanPy.js';
+import { applyPyModelIdFixesToSources } from './fixPy.js';
+
+// THE PYTHON PARAMETER GUARD (src/python/scanPy.ts, "The parameter guard").
+//
+// Known issue in v0.5.9-alpha: Python had no parameter guard.
+//
+//     client.chat.completions.create(model="gpt-3.5-turbo", max_tokens=20)
+//
+// was a Tier A swap to gpt-5.6-terra with `max_tokens` kept, and
+//
+//     anthropic_client.messages.create(model="claude-opus-4-1-20250805", max_tokens=1024, temperature=0.7, ...)
+//
+// a Tier A swap to claude-opus-4-8 with `temperature` kept, although the registry's own parameter
+// rules say each replacement rejects that request. TypeScript held the same calls for review. Python
+// has no parameter pass either, so nothing edited the request after the swap.
+//
+// The guard asks the TypeScript question (paramHoldReason) about the call's keyword arguments and
+// the keys of a dict unpacked into it, so the two languages give one call the same reason code.
+
+const RENAME = {
+  provider: 'openai',
+  kind: 'param_rename',
+  param: 'max_tokens',
+  replacement: 'max_completion_tokens',
+  on_models: ['o1', 'o3', 'o4', 'gpt-5', 'gpt-5.6', 'gpt-5.5', 'gpt-5.4'],
+} as const;
+
+const removal = (param: string) =>
+  ({ provider: 'anthropic', kind: 'param_removal', param, on_models: ['claude-opus-4-7', 'claude-opus-4-8', 'claude-opus-5'] }) as const;
+
+const model = (provider: string, deprecated: string, replacement: string, verified = true) => ({
+  provider,
+  kind: 'model_id' as const,
+  deprecated,
+  replacement,
+  status: 'deprecated' as const,
+  shutdownDate: '2026-10-23',
+  verification: verified ? autoApplyVerification() : withheldVerification('unverified'),
+});
+
+const REG: LlmRegistry = [
+  model('openai', 'gpt-3.5-turbo', 'gpt-5.6-terra'),
+  model('openai', 'gpt-4-0613', 'gpt-4o-mini'),
+  model('openai', 'o3-mini', 'gpt-5.6-sol'),
+  model('openai', 'gpt-4-0314', 'gpt-5.6-sol', false),
+  model('anthropic', 'claude-opus-4-1-20250805', 'claude-opus-4-8'),
+  model('anthropic', 'claude-3-5-sonnet-20241022', 'claude-sonnet-4-6'),
+  RENAME,
+  removal('temperature'),
+  removal('top_p'),
+  removal('top_k'),
+];
+
+const OPENAI = 'from openai import OpenAI\nclient = OpenAI()\n';
+const ANTHROPIC = 'from anthropic import Anthropic\nanthropic_client = Anthropic()\n';
+
+/** Scan one Python file and return the verdict for `value`, as audit, watch and fix-llm see it. */
+async function py(text: string, value: string, path = 'app/llm.py', registry: LlmRegistry = REG) {
+  const m = (await findPyModelIdLiterals([{ path, text }], registry)).find((x) => x.value === value);
+  if (!m) return undefined;
+  const t = classifyOccurrenceTier(m);
+  return { tier: t.tier, reason: t.reason, position: m.position, sentence: m.reason };
+}
+
+/** The same verdict from the TypeScript scanner. */
+function ts(text: string, value: string, registry: LlmRegistry = REG) {
+  const project = new Project({ useInMemoryFileSystem: true });
+  project.createSourceFile('src/llm.ts', text);
+  const m = findModelIdLiterals(project, registry).find((x) => x.value === value);
+  if (!m) return undefined;
+  const t = classifyOccurrenceTier(m);
+  return { tier: t.tier, reason: t.reason, position: m.position, sentence: m.reason };
+}
+
+beforeAll(async () => {
+  await findPyModelIdLiterals([{ path: 'warm.py', text: 'x = 1\n' }], REG);
+}, 60_000);
+
+describe('the two calls v0.5.9-alpha swapped, against the bundled registry', () => {
+  const bundled = loadLlmRegistry(resolveRegistryPath());
+
+  it('gpt-3.5-turbo with max_tokens=20 is held: the rename starts at gpt-5.6-terra', async () => {
+    const v = await py(
+      `${OPENAI}\ndef title(p):\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, max_tokens=20)\n`,
+      'gpt-3.5-turbo',
+      'app/llm.py',
+      bundled,
+    );
+    expect(v).toMatchObject({ tier: 'B', reason: 'param_behaviour_change', position: 'surface_capped' });
+  }, 60_000);
+
+  it('Claude Opus 4.1 with max_tokens and temperature is held, as TypeScript holds it', async () => {
+    const v = await py(
+      `${ANTHROPIC}\ndef ask(m):\n    return anthropic_client.messages.create(model="claude-opus-4-1-20250805", max_tokens=1024, temperature=0.7, messages=m)\n`,
+      'claude-opus-4-1-20250805',
+      'app/llm.py',
+      bundled,
+    );
+    expect(v).toMatchObject({ tier: 'B', reason: 'coupled_param_unverified' });
+  }, 60_000);
+});
+
+// The bundled registry's newer rules reach Python through the same guard: prompt_cache_retention is
+// a model-dependent parameter on a swap onto GPT-5.6, and the Anthropic sampling rules cover
+// Claude Sonnet 5.5, the replacement of the quarantined claude-sonnet-4-5-20250929 record. Each
+// verdict is the one TypeScript gives the same call, sentence included.
+describe('the bundled registry rules reach a Python call as they reach a TypeScript one', () => {
+  const bundled = loadLlmRegistry(resolveRegistryPath());
+  const TS_OPENAI = "import OpenAI from 'openai';\nconst client = new OpenAI();\n";
+  const TS_ANTHROPIC = "import Anthropic from '@anthropic-ai/sdk';\nconst anthropic_client = new Anthropic();\n";
+  const pyCodex = (model: string, extra: string) =>
+    `${OPENAI}\ndef run(text):\n    return client.responses.create(model="${model}", input=text${extra})\n`;
+  const tsCodex = (model: string, extra: string) =>
+    `${TS_OPENAI}export const run = (text: string) => client.responses.create({ model: '${model}', input: text${extra} });\n`;
+  const pySonnet = (extra: string) =>
+    `${ANTHROPIC}\ndef ask(m):\n    return anthropic_client.messages.create(model="claude-sonnet-4-5-20250929", messages=m${extra})\n`;
+  const tsSonnet = (extra: string) =>
+    `${TS_ANTHROPIC}export const ask = (m: never[]) => anthropic_client.messages.create({ model: 'claude-sonnet-4-5-20250929', messages: m${extra} });\n`;
+
+  it('holds a gpt-5-codex call that passes prompt_cache_retention, and swaps it without the field', async () => {
+    const held = await py(pyCodex('gpt-5-codex', ', prompt_cache_retention="24h"'), 'gpt-5-codex', 'app/llm.py', bundled);
+    expect(held).toMatchObject({ tier: 'B', reason: 'coupled_param_unverified', position: 'surface_capped' });
+    expect(held?.sentence).toBe(TS_COUPLED_PARAM_REASON('gpt-5.6-sol', ['prompt_cache_retention']));
+    expect(held).toEqual(ts(tsCodex('gpt-5-codex', ", prompt_cache_retention: '24h'"), 'gpt-5-codex', bundled));
+    const free = await py(pyCodex('gpt-5-codex', ''), 'gpt-5-codex', 'app/llm.py', bundled);
+    expect(free).toMatchObject({ tier: 'A', position: 'model_arg' });
+  }, 60_000);
+
+  it('leaves gpt-5.3-codex to its quarantine: no rule names the GPT-6 family, so the guard says nothing', async () => {
+    const v = await py(pyCodex('gpt-5.3-codex', ', prompt_cache_retention="24h"'), 'gpt-5.3-codex', 'app/llm.py', bundled);
+    expect(v).toMatchObject({ tier: 'B', reason: 'replacement_unverified', position: 'model_arg' });
+  }, 60_000);
+
+  it('gives a Sonnet 4.5 call the reason its parameters earn on Sonnet 5.5, as TypeScript does', async () => {
+    const shapes: Array<[string, string, string, string]> = [
+      ['temperature only', ', temperature=0.7', ', temperature: 0.7', 'param_behaviour_change'],
+      ['temperature and max_tokens', ', temperature=0.7, max_tokens=1024', ', temperature: 0.7, max_tokens: 1024', 'coupled_param_unverified'],
+      ['neither', '', '', 'replacement_unverified'],
+    ];
+    for (const [name, pyExtra, tsExtra, reason] of shapes) {
+      const pyV = await py(pySonnet(pyExtra), 'claude-sonnet-4-5-20250929', 'app/llm.py', bundled);
+      expect(pyV, name).toMatchObject({ tier: 'B', reason });
+      expect(pyV, name).toEqual(ts(tsSonnet(tsExtra), 'claude-sonnet-4-5-20250929', bundled));
+    }
+  }, 60_000);
+});
+
+describe('a model declared once and read by name is held in both languages', () => {
+  const TS_OPENAI = "import OpenAI from 'openai';\nconst client = new OpenAI();\n";
+  const pyDecl = (params: string) =>
+    `${OPENAI}MODEL = "gpt-3.5-turbo"\n\ndef title(p):\n    return client.chat.completions.create(model=MODEL, messages=p${params})\n`;
+  const tsDecl = (params: string) =>
+    `${TS_OPENAI}const MODEL = 'gpt-3.5-turbo';\nexport const title = (p: never[]) => client.chat.completions.create({ model: MODEL, messages: p${params} });\n`;
+
+  it('holds the declaration for the parameters of the call that reads it, with the same reason code', async () => {
+    const pyV = await py(pyDecl(', max_tokens=20'), 'gpt-3.5-turbo');
+    const tsV = ts(tsDecl(', max_tokens: 20'), 'gpt-3.5-turbo');
+    expect(pyV).toMatchObject({ tier: 'B', reason: 'param_behaviour_change', position: 'surface_capped' });
+    expect(tsV).toMatchObject({ tier: 'B', reason: 'param_behaviour_change', position: 'surface_capped' });
+    // Python names the call's line, because the finding sits on the declaration's line.
+    expect(pyV?.sentence).toBe(`the call on line 6 of this file takes this value as its model; ${tsV?.sentence}`);
+  }, 60_000);
+
+  it('swaps the declaration in both languages when the call that reads it passes no such parameter', async () => {
+    expect(await py(pyDecl(''), 'gpt-3.5-turbo')).toMatchObject({ tier: 'A', position: 'model_arg' });
+    expect(ts(tsDecl(''), 'gpt-3.5-turbo')).toMatchObject({ tier: 'A', position: 'model_arg' });
+  }, 60_000);
+});
+
+describe('a call whose keyword arguments the replacement rejects is held', () => {
+  it('names a covered rename that starts at the replacement (param_behaviour_change)', async () => {
+    const v = await py(
+      `${OPENAI}\ndef title(p):\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, max_tokens=20)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'B', reason: 'param_behaviour_change' });
+    expect(v?.sentence).toContain('`max_tokens` becomes `max_completion_tokens`');
+  }, 60_000);
+
+  it('names a model-dependent parameter no rule covers (coupled_param_unverified)', async () => {
+    const v = await py(
+      `${OPENAI}\ndef title(p):\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, temperature=0.7, max_tokens=20)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'B', reason: 'coupled_param_unverified' });
+    expect(v?.sentence).toBe(TS_COUPLED_PARAM_REASON('gpt-5.6-terra', ['temperature']));
+  }, 60_000);
+
+  it('holds an Anthropic Opus call whose temperature the replacement drops', async () => {
+    const v = await py(
+      `${ANTHROPIC}\ndef ask(m):\n    return anthropic_client.messages.create(model="claude-opus-4-1-20250805", max_tokens=1024, temperature=0.7, messages=m)\n`,
+      'claude-opus-4-1-20250805',
+    );
+    expect(v).toMatchObject({ tier: 'B', reason: 'coupled_param_unverified' });
+    // max_tokens is model-dependent and no Anthropic rule covers it, so it is named first, as in TypeScript.
+    expect(v?.sentence).toContain('`max_tokens`');
+  }, 60_000);
+
+  it('holds the call through an `or` fallback in the model argument', async () => {
+    const v = await py(
+      `${OPENAI}\ndef title(p, m=None):\n    return client.chat.completions.create(model=m or "gpt-3.5-turbo", messages=p, max_tokens=20)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(v?.sentence).toBeDefined();
+    expect(v).toMatchObject({ tier: 'B', reason: 'param_behaviour_change' });
+  }, 60_000);
+});
+
+describe('a dict unpacked into the call with **name is read', () => {
+  it('a dict built in the same function', async () => {
+    const v = await py(
+      `${OPENAI}\ndef title(p):\n    params = {"max_tokens": 20, "stream": False}\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, **params)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'B', reason: 'param_behaviour_change' });
+  }, 60_000);
+
+  it('a module-level dict the function does not rebind', async () => {
+    const v = await py(
+      `${OPENAI}\nDEFAULTS = {"temperature": 0.2}\n\ndef title(p):\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, **DEFAULTS)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'B', reason: 'coupled_param_unverified' });
+    expect(v?.sentence).toContain('`temperature`');
+  }, 60_000);
+
+  it('a dict(...) call, and keys added later with a subscript or .update()', async () => {
+    const built = await py(
+      `${OPENAI}\ndef title(p):\n    params = dict(max_tokens=20)\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, **params)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(built?.sentence).toContain('`max_tokens` becomes');
+    const subscript = await py(
+      `${OPENAI}\ndef title(p, limit):\n    params = {}\n    if limit:\n        params["max_tokens"] = limit\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, **params)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(subscript).toMatchObject({ tier: 'B', reason: 'param_behaviour_change' });
+    const updated = await py(
+      `${OPENAI}\ndef title(p):\n    params = {"stream": False}\n    params.update(top_p=0.9)\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, **params)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(updated).toMatchObject({ tier: 'B', reason: 'coupled_param_unverified' });
+    expect(updated?.sentence).toContain('`top_p`');
+  }, 60_000);
+
+  it('a **{...} or **dict(...) written in the call', async () => {
+    const inline = await py(
+      `${OPENAI}\ndef title(p):\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, **{"max_tokens": 5})\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(inline).toMatchObject({ tier: 'B', reason: 'param_behaviour_change' });
+    const call = await py(
+      `${OPENAI}\ndef title(p):\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, **dict(temperature=0))\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(call).toMatchObject({ tier: 'B', reason: 'coupled_param_unverified' });
+  }, 60_000);
+
+  // The most common wrapper: a **kwargs parameter whose own keys mendr cannot see, but a key added
+  // to it beside the call is always sent.
+  it('keys added to a **kwargs parameter with setdefault, a subscript or update', async () => {
+    const setdefault = await py(
+      `${OPENAI}\ndef chat(messages, **kwargs):\n    kwargs.setdefault("max_tokens", 512)\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=messages, **kwargs)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(setdefault).toMatchObject({ tier: 'B', reason: 'param_behaviour_change' });
+    expect(setdefault?.sentence).toContain('`max_tokens` becomes `max_completion_tokens`');
+    const subscript = await py(
+      `${OPENAI}\ndef chat(messages, **kwargs):\n    kwargs["temperature"] = 0\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=messages, **kwargs)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(subscript).toMatchObject({ tier: 'B', reason: 'coupled_param_unverified' });
+    expect(subscript?.sentence).toContain('`temperature`');
+    const updated = await py(
+      `${OPENAI}\ndef chat(messages, **kwargs):\n    kwargs.update(top_p=1)\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=messages, **kwargs)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(updated).toMatchObject({ tier: 'B', reason: 'coupled_param_unverified' });
+    expect(updated?.sentence).toContain('`top_p`');
+  }, 60_000);
+
+  it('a key read from or removed from **kwargs, or added to another function\'s kwargs, adds nothing', async () => {
+    const popped = await py(
+      `${OPENAI}\ndef chat(messages, **kwargs):\n    limit = kwargs.pop("max_tokens", None)\n    kwargs.get("temperature")\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=messages, **kwargs)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(popped).toMatchObject({ tier: 'A', position: 'model_arg' });
+    const elsewhere = await py(
+      `${OPENAI}\ndef other(**kwargs):\n    kwargs["max_tokens"] = 5\n    return kwargs\n\ndef chat(messages, **kwargs):\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=messages, **kwargs)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(elsewhere).toMatchObject({ tier: 'A', position: 'model_arg' });
+  }, 60_000);
+
+  it('a dict built from another dict (`{**base, ...}`) and one that refers to itself', async () => {
+    const v = await py(
+      `${OPENAI}\nBASE = {"max_tokens": 20}\n\ndef title(p):\n    params = {**BASE, "stream": False}\n    params = {**params, "user": "u"}\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, **params)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'B', reason: 'param_behaviour_change' });
+  }, 60_000);
+});
+
+describe('a model bound to a name the scanner traces into the call', () => {
+  it('a module constant passed as model=MODEL; the reason says where the call is', async () => {
+    const v = await py(
+      `${OPENAI}MODEL = "gpt-3.5-turbo"\n\ndef title(p):\n    return client.chat.completions.create(model=MODEL, messages=p, max_tokens=20)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'B', reason: 'param_behaviour_change' });
+    expect(v?.sentence).toMatch(/^the call on line 6 of this file takes this value as its model; moving from gpt-3\.5-turbo/);
+  }, 60_000);
+
+  it('an instance attribute set in __init__ and used in another method', async () => {
+    const v = await py(
+      `${ANTHROPIC}\nclass Bot:\n    def __init__(self):\n        self.model = "claude-opus-4-1-20250805"\n\n    def ask(self, m):\n        return anthropic_client.messages.create(model=self.model, max_tokens=256, messages=m)\n`,
+      'claude-opus-4-1-20250805',
+    );
+    expect(v).toMatchObject({ tier: 'B', reason: 'coupled_param_unverified' });
+    expect(v?.sentence).toContain('the call on line 9 of this file');
+  }, 60_000);
+
+  it('a parameter default passed on as model=model', async () => {
+    const v = await py(
+      `${OPENAI}\ndef ask(p, model="gpt-3.5-turbo"):\n    return client.chat.completions.create(model=model, messages=p, max_tokens=20)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'B', reason: 'param_behaviour_change' });
+    expect(v?.sentence).toContain('the call on line 5 of this file');
+  }, 60_000);
+
+  it('a constant whose call passes no model-dependent parameter stays Tier A', async () => {
+    const v = await py(
+      `${OPENAI}MODEL = "gpt-3.5-turbo"\n\ndef title(p):\n    return client.chat.completions.create(model=MODEL, messages=p, stream=True)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'A', position: 'model_arg' });
+  }, 60_000);
+
+  it('a class attribute read as self.model in a method of that class', async () => {
+    const v = await py(
+      `${OPENAI}\nclass Bot:\n    model = "gpt-3.5-turbo"\n\n    def run(self, p):\n        return client.chat.completions.create(model=self.model, messages=p, max_tokens=20)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'B', reason: 'param_behaviour_change' });
+    expect(v?.sentence).toContain('the call on line 8 of this file');
+  }, 60_000);
+});
+
+// Review finding on this guard: the sink trace keys calls by the last name only (`model` for both
+// `model` and `self.judge.model`), and a module binding is in scope everywhere. Reading every such
+// call held a value at a call that never takes it, and the sentence named that call. Only a call
+// whose model is the same reference (the same binding of the name, or `self.<name>` in the same
+// class) is read. Each shape that held wrongly sits next to the shape that still holds.
+describe('a traced model holds only the calls that take that same value', () => {
+  // Line numbers in the sentences count from the two OPENAI lines.
+  const BOT = (runParams: string) =>
+    `${OPENAI}\nclass Bot:\n    def __init__(self, judge):\n        self.model = "gpt-3.5-turbo"\n        self.judge = judge\n\n` +
+    `    def run(self, p):\n        return client.chat.completions.create(model=self.model, messages=p${runParams})\n\n` +
+    `    def grade(self, p):\n        return client.chat.completions.create(model=self.judge.model, messages=p, temperature=0)\n`;
+
+  it('self.model is not held by a call on self.judge.model (it was a Tier A swap in v0.5.9-alpha)', async () => {
+    const v = await py(BOT(''), 'gpt-3.5-turbo');
+    expect(v).toMatchObject({ tier: 'A', position: 'model_arg' });
+  }, 60_000);
+
+  it('self.model is held by its own call, and the sentence names that call, not the self.judge.model one', async () => {
+    const v = await py(BOT(', max_tokens=20'), 'gpt-3.5-turbo');
+    expect(v).toMatchObject({ tier: 'B', reason: 'param_behaviour_change' });
+    expect(v?.sentence).toMatch(/^the call on line 10 of this file takes this value as its model; /);
+    expect(v?.sentence).not.toContain('temperature');
+  }, 60_000);
+
+  const MODULE = (other: string) =>
+    `${OPENAI}model = "gpt-3.5-turbo"\n\ndef title(p):\n    return client.chat.completions.create(model=model, messages=p)\n\n${other}`;
+
+  it('a module binding is not held by a call on another function\'s own `model` parameter', async () => {
+    const v = await py(
+      MODULE('def judge(p, model):\n    return client.chat.completions.create(model=model, messages=p, max_tokens=20)\n'),
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'A', position: 'model_arg' });
+  }, 60_000);
+
+  it('a module binding is not held by a call on `args.model`', async () => {
+    const v = await py(
+      MODULE('def main(args, p):\n    return client.chat.completions.create(model=args.model, messages=p, max_tokens=20)\n'),
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'A', position: 'model_arg' });
+  }, 60_000);
+
+  it('a module binding is not held by a call on a local that shadows it, an import, or a comprehension variable', async () => {
+    const local = await py(
+      MODULE('def judge(p, pick):\n    model = pick()\n    return client.chat.completions.create(model=model, messages=p, max_tokens=20)\n'),
+      'gpt-3.5-turbo',
+    );
+    expect(local).toMatchObject({ tier: 'A', position: 'model_arg' });
+    const imported = await py(
+      MODULE('def judge(p):\n    from settings import model\n    return client.chat.completions.create(model=model, messages=p, max_tokens=20)\n'),
+      'gpt-3.5-turbo',
+    );
+    expect(imported).toMatchObject({ tier: 'A', position: 'model_arg' });
+    const comprehension = await py(
+      MODULE('def sweep(p, models):\n    return [client.chat.completions.create(model=model, messages=p, max_tokens=20) for model in models]\n'),
+      'gpt-3.5-turbo',
+    );
+    expect(comprehension).toMatchObject({ tier: 'A', position: 'model_arg' });
+  }, 60_000);
+
+  it('a module constant is not held by a function whose MODEL parameter default shadows it', async () => {
+    const v = await py(
+      `${OPENAI}MODEL = "gpt-3.5-turbo"\n\ndef title(p):\n    return client.chat.completions.create(model=MODEL, messages=p)\n\n` +
+        `def judge(p, MODEL="gpt-4o"):\n    return client.chat.completions.create(model=MODEL, messages=p, max_tokens=20)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'A', position: 'model_arg' });
+  }, 60_000);
+
+  it('a typed parameter default is held by its own function\'s call', async () => {
+    const v = await py(
+      `${OPENAI}\ndef ask(p, model: str = "gpt-3.5-turbo"):\n    return client.chat.completions.create(model=model, messages=p, max_tokens=20)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'B', reason: 'param_behaviour_change' });
+    expect(v?.sentence).toContain('the call on line 5 of this file');
+  }, 60_000);
+
+  it('a module binding is still held by a call in another function that reads it, and names that call', async () => {
+    const v = await py(
+      MODULE('def judge(p):\n    return client.chat.completions.create(model=model, messages=p, max_tokens=20)\n'),
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'B', reason: 'param_behaviour_change' });
+    expect(v?.sentence).toMatch(/^the call on line 9 of this file takes this value as its model; /);
+  }, 60_000);
+});
+
+describe('calls the guard leaves alone', () => {
+  it('a Python Anthropic call whose replacement is in no rule\'s family stays Tier A', async () => {
+    // claude-sonnet-4-6 matches no param rule's on_models, so nothing about it is known to be
+    // constrained: `max_tokens` and `temperature` are ordinary arguments.
+    const v = await py(
+      `${ANTHROPIC}\ndef ask(m):\n    return anthropic_client.messages.create(model="claude-3-5-sonnet-20241022", max_tokens=1024, temperature=0.7, messages=m)\n`,
+      'claude-3-5-sonnet-20241022',
+    );
+    expect(v).toMatchObject({ tier: 'A', position: 'model_arg' });
+  }, 60_000);
+
+  it('the same, against the bundled registry', async () => {
+    const v = await py(
+      `${ANTHROPIC}\ndef ask(m):\n    return anthropic_client.messages.create(model="claude-3-5-sonnet-20241022", max_tokens=1024, temperature=0.7, messages=m)\n`,
+      'claude-3-5-sonnet-20241022',
+      'app/llm.py',
+      loadLlmRegistry(resolveRegistryPath()),
+    );
+    expect(v).toMatchObject({ tier: 'A' });
+  }, 60_000);
+
+  it('an OpenAI replacement whose family no rule constrains keeps temperature and stays Tier A', async () => {
+    const v = await py(
+      `${OPENAI}\ndef ask(p):\n    return client.chat.completions.create(model="gpt-4-0613", messages=p, temperature=0.7, max_tokens=20)\n`,
+      'gpt-4-0613',
+    );
+    expect(v).toMatchObject({ tier: 'A' });
+  }, 60_000);
+
+  it('a call with no model-dependent parameter stays Tier A', async () => {
+    const v = await py(
+      `${OPENAI}\ndef ask(p):\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, stream=True, user="u", timeout=30)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'A' });
+  }, 60_000);
+
+  it('a rule the old model was already under stays Tier A, as in TypeScript', async () => {
+    const v = await py(
+      `${OPENAI}\ndef ask(p):\n    return client.chat.completions.create(model="o3-mini", messages=p, max_tokens=500)\n`,
+      'o3-mini',
+    );
+    expect(v).toMatchObject({ tier: 'A' });
+  }, 60_000);
+
+  it('**kwargs from a function parameter adds none of the caller\'s keys: mendr cannot see them', async () => {
+    const v = await py(
+      `${OPENAI}\nparams = {"max_tokens": 20}\n\ndef ask(p, **params):\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, **params)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'A' });
+    const named = await py(
+      `${OPENAI}\nparams = {"max_tokens": 20}\n\ndef ask(p, params):\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, **params)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(named).toMatchObject({ tier: 'A' });
+    const typed = await py(
+      `${OPENAI}\nfrom typing import Any\nparams = {"max_tokens": 20}\n\ndef ask(p, **params: Any):\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, **params)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(typed).toMatchObject({ tier: 'A' });
+  }, 60_000);
+
+  it('a typed **kwargs: Any parameter still reads the keys added to it', async () => {
+    const v = await py(
+      `${OPENAI}\nfrom typing import Any\n\ndef chat(messages, **kwargs: Any):\n    kwargs.setdefault("max_tokens", 512)\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=messages, **kwargs)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'B', reason: 'param_behaviour_change' });
+  }, 60_000);
+
+  it('a module dict shadowed by an import or a comprehension variable is not read', async () => {
+    const imported = await py(
+      `${OPENAI}\nparams = {"max_tokens": 20}\n\ndef ask(p):\n    from settings import params\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, **params)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(imported).toMatchObject({ tier: 'A' });
+    const comprehension = await py(
+      `${OPENAI}\nparams = {"max_tokens": 20}\n\ndef sweep(p, variants):\n    return [client.chat.completions.create(model="gpt-3.5-turbo", messages=p, **params) for params in variants]\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(comprehension).toMatchObject({ tier: 'A' });
+  }, 60_000);
+
+  it('a same-named dict in another function is not the one unpacked', async () => {
+    const v = await py(
+      `${OPENAI}\ndef card():\n    params = {"max_tokens": 20}\n    return params\n\ndef ask(p):\n    params = {"stream": False}\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, **params)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'A' });
+  }, 60_000);
+
+  it('a module dict shadowed by a local one is not read', async () => {
+    const v = await py(
+      `${OPENAI}\nparams = {"max_tokens": 20}\n\ndef ask(p):\n    params = {"stream": False}\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, **params)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'A' });
+  }, 60_000);
+
+  it('a parameter in another call nearby is not this call\'s parameter', async () => {
+    const v = await py(
+      `${OPENAI}\ndef ask(p):\n    other = client.chat.completions.create(model="gpt-4o", messages=p, max_tokens=5)\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'A' });
+  }, 60_000);
+
+  it('a parameter-shaped key in a catalog dict changes nothing: the guard only reads live calls', async () => {
+    const v = await py(
+      `${OPENAI}\nMODELS = {"gpt-3.5-turbo": {"max_tokens": 4096, "label": "GPT-3.5"}}\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'C' });
+  }, 60_000);
+
+  it('a call held for its surface keeps its own reason', async () => {
+    // An example tree and a request dict are held already; the parameter guard does not relabel them.
+    const sample = await py(
+      `${OPENAI}\ndef ask(p):\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, max_tokens=20)\n`,
+      'gpt-3.5-turbo',
+      'examples/ask.py',
+    );
+    expect(sample).toMatchObject({ tier: 'B', reason: 'surface_capped', sentence: PY_EXAMPLE_CALL_REASON });
+    const dict = await py(
+      `${OPENAI}\ndef ask(p):\n    params = {"model": "gpt-3.5-turbo", "max_tokens": 20}\n    return client.chat.completions.create(messages=p, **params)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(dict).toMatchObject({ tier: 'B', reason: 'surface_capped', sentence: PY_REQUEST_DICT_REASON });
+  }, 60_000);
+});
+
+describe('an unverified replacement with a parameter the guard holds', () => {
+  it('carries the parameter reason, as TypeScript gives it', async () => {
+    const pyV = await py(
+      `${OPENAI}\ndef ask(p):\n    return client.chat.completions.create(model="gpt-4-0314", messages=p, max_tokens=20)\n`,
+      'gpt-4-0314',
+    );
+    const tsV = ts(
+      "import OpenAI from 'openai';\nconst client = new OpenAI();\nexport const ask = (p: never[]) => client.chat.completions.create({ model: 'gpt-4-0314', messages: p, max_tokens: 20 });\n",
+      'gpt-4-0314',
+    );
+    expect(pyV).toMatchObject({ tier: 'B', reason: 'param_behaviour_change' });
+    expect(tsV).toMatchObject({ tier: 'B', reason: 'param_behaviour_change' });
+  }, 60_000);
+});
+
+describe('TypeScript and Python give one call the same verdict', () => {
+  const TS_OPENAI = "import OpenAI from 'openai';\nconst client = new OpenAI();\n";
+  const TS_ANTHROPIC = "import Anthropic from '@anthropic-ai/sdk';\nconst anthropic_client = new Anthropic();\n";
+  const cases: Array<{ name: string; value: string; py: string; ts: string }> = [
+    {
+      name: 'gpt-3.5-turbo + max_tokens',
+      value: 'gpt-3.5-turbo',
+      py: `${OPENAI}\ndef t(p):\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, max_tokens=20)\n`,
+      ts: `${TS_OPENAI}export const t = (p: never[]) => client.chat.completions.create({ model: 'gpt-3.5-turbo', messages: p, max_tokens: 20 });\n`,
+    },
+    {
+      name: 'gpt-3.5-turbo + temperature + max_tokens',
+      value: 'gpt-3.5-turbo',
+      py: `${OPENAI}\ndef t(p):\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, temperature=0.7, max_tokens=20)\n`,
+      ts: `${TS_OPENAI}export const t = (p: never[]) => client.chat.completions.create({ model: 'gpt-3.5-turbo', messages: p, temperature: 0.7, max_tokens: 20 });\n`,
+    },
+    {
+      name: 'Opus 4.1 + max_tokens + temperature',
+      value: 'claude-opus-4-1-20250805',
+      py: `${ANTHROPIC}\ndef t(m):\n    return anthropic_client.messages.create(model="claude-opus-4-1-20250805", max_tokens=1024, temperature=0.7, messages=m)\n`,
+      ts: `${TS_ANTHROPIC}export const t = (m: never[]) => anthropic_client.messages.create({ model: 'claude-opus-4-1-20250805', max_tokens: 1024, temperature: 0.7, messages: m });\n`,
+    },
+    {
+      name: 'Sonnet 3.5 + max_tokens + temperature',
+      value: 'claude-3-5-sonnet-20241022',
+      py: `${ANTHROPIC}\ndef t(m):\n    return anthropic_client.messages.create(model="claude-3-5-sonnet-20241022", max_tokens=1024, temperature=0.7, messages=m)\n`,
+      ts: `${TS_ANTHROPIC}export const t = (m: never[]) => anthropic_client.messages.create({ model: 'claude-3-5-sonnet-20241022', max_tokens: 1024, temperature: 0.7, messages: m });\n`,
+    },
+    {
+      name: 'o3-mini + max_tokens',
+      value: 'o3-mini',
+      py: `${OPENAI}\ndef t(p):\n    return client.chat.completions.create(model="o3-mini", messages=p, max_tokens=500)\n`,
+      ts: `${TS_OPENAI}export const t = (p: never[]) => client.chat.completions.create({ model: 'o3-mini', messages: p, max_tokens: 500 });\n`,
+    },
+    {
+      name: 'gpt-3.5-turbo, no parameters',
+      value: 'gpt-3.5-turbo',
+      py: `${OPENAI}\ndef t(p):\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p)\n`,
+      ts: `${TS_OPENAI}export const t = (p: never[]) => client.chat.completions.create({ model: 'gpt-3.5-turbo', messages: p });\n`,
+    },
+  ];
+  for (const c of cases) {
+    it(c.name, async () => {
+      const pyV = await py(c.py, c.value);
+      const tsV = ts(c.ts, c.value);
+      expect(pyV).toBeDefined();
+      expect(tsV).toBeDefined();
+      // Tier, reason code, position and the very sentence: one rule, asked once, in both languages.
+      expect(pyV).toEqual(tsV);
+    }, 60_000);
+  }
+});
+
+describe('each function\'s own `params` is the one read', () => {
+  // The name index is keyed by scope: a file where every function binds `params` reads each
+  // function's own dict, never a neighbour's.
+  it('holds only the calls whose own dict carries the parameter', async () => {
+    const lines = [OPENAI];
+    for (let i = 0; i < 40; i++) {
+      const param = i % 2 === 0 ? `"max_tokens": ${i}` : `"stream": False`;
+      lines.push(`def f${i}(p):\n    params = {${param}}\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, **params)\n`);
+    }
+    const matches = await findPyModelIdLiterals([{ path: 'app/many.py', text: lines.join('\n') }], REG);
+    expect(matches).toHaveLength(40);
+    const held = matches.filter((m) => classifyOccurrenceTier(m).tier === 'B');
+    expect(held).toHaveLength(20);
+    expect(held.every((m) => classifyOccurrenceTier(m).reason === 'param_behaviour_change')).toBe(true);
+  }, 60_000);
+});
+
+describe('fix-llm and migrate do not swap a held Python call', () => {
+  it('leaves the held call out of the diff and lists it as held, while a clean call is still swapped', async () => {
+    const text =
+      `${OPENAI}\ndef title(p):\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, max_tokens=20)\n\n` +
+      `def plain(p):\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p)\n`;
+    const result = await applyPyModelIdFixesToSources([{ path: 'app/llm.py', text }], REG);
+    expect(result.siteCount).toBe(1);
+    expect(result.diff).toContain('+    return client.chat.completions.create(model="gpt-5.6-terra", messages=p)');
+    expect(result.diff).not.toContain('model="gpt-5.6-terra", messages=p, max_tokens=20');
+    expect(result.heldMatches.map((m) => [m.location.line, classifyOccurrenceTier(m).reason])).toEqual([
+      [5, 'param_behaviour_change'],
+    ]);
+    expect(result.blockedMatches).toEqual([]);
+    expect(result.usageUnverifiedMatches).toEqual([]);
+  }, 60_000);
+});

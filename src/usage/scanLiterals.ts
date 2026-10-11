@@ -890,6 +890,7 @@ export function findModelIdLiterals(
         //
         // The requests are the ones this value REACHES (requestKeySets): its own object when the
         // id is written in the call, every consumer's when it is declared once and used by name.
+        // The Python scanner asks the same paramHoldReason.
         let coupled = classification;
         if (coupled.position === 'model_arg') {
           keySets ??= requestKeySets(node, sinks);

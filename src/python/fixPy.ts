@@ -70,7 +70,9 @@ export interface PyModelIdFixResult {
   usageUnverifiedMatches: UsageUnverifiedLocate[];
   /**
    * Calls a guard HELD at review (position `surface_capped`): a wrapper factory, a client mendr
-   * cannot resolve, a proxy surface, an unrecognised callee, a request made at import. One match
+   * cannot resolve, a proxy surface, an unrecognised callee, a request made at import, or a
+   * request whose parameters the replacement's rules change or do not cover (the parameter guard,
+   * shared with TypeScript through paramHoldReason; Python has no parameter pass). One match
    * per site, with the record it matched and the guard's own reason, for the same Tier B stream
    * the TypeScript held calls use. Never auto-applied.
    */

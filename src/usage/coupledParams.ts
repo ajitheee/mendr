@@ -26,8 +26,17 @@ import type { LlmModelIdDeprecation, LlmParamDeprecation, LlmRegistry } from '..
 //      by an actual rule for that provider and that model. Any that is not is reported by
 //      name, and the finding drops to review.
 //
-// Scope, stated plainly: this is the TypeScript/JavaScript half. `src/python/scanPy.ts` has
-// the same blind spot and is not fixed here — see MEASUREMENT / the regression case.
+// Both scanners ask the question through {@link paramHoldReason}: `src/usage/scanLiterals.ts`
+// with the keys of every request the model reaches (the object literal that holds it, or each
+// in-scope request that reads its declaration; see requestKeySets), `src/python/scanPy.ts` with
+// the keyword arguments of the call the model reaches (and the keys of a dict unpacked into it
+// with `**name`). The scanners only collect parameter names; the rules and the sentences live
+// here.
+//
+// One difference follows from what each language's fix pass can do. TypeScript has a parameter
+// pass, so a rule that already applied to the model being replaced (`o3-mini` with `max_tokens`)
+// is applied after the swap and the call stays Tier A. Python has no parameter pass: that call
+// stays Tier A too, and keeps `max_tokens`, which the same rule says the old model rejected as well.
 
 /**
  * Request parameters whose acceptance depends on WHICH model serves the request, rather than
@@ -184,10 +193,19 @@ export function paramRulesStartingAt(
  * rule covers is the stronger reason (the provider rejects the request), so it is looked for in
  * every request before a behaviour change is.
  *
+ * The one decision both scanners make, so TypeScript and Python cannot drift apart:
+ *   1. a model-dependent parameter no rule covers for the replacement -> the coupled-parameter
+ *      reason (`coupled_param_unverified`);
+ *   2. otherwise, a rule that starts applying only at the replacement -> the behaviour-change
+ *      reason (`param_behaviour_change`);
+ *   3. otherwise nothing: the replacement's family constrains nothing these requests pass, or
+ *      every rule that covers them already applied to the model being replaced.
+ *
  * For a single key set this is exactly the check an inline `create({ model: '…', … })` gets, so
  * an id written in the call and the same id read through a const, a shorthand or a cast are held
  * by one rule, with one sentence. (Found 2026-10-07: those three shapes skipped the check and
- * were swapped unattended while the inline twin was held.)
+ * were swapped unattended while the inline twin was held.) The Python scanner asks once per
+ * request, with one key set, so that its sentence can name the call's line.
  */
 export function paramHoldReason(
   keySets: readonly (readonly string[])[],
