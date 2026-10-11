@@ -130,6 +130,41 @@ describe('mendr-action → App migration report', () => {
     expect(raw).toContain('"diff":null');
   });
 
+  // v0.5.10-alpha known issue: a held-only run was sent as `clean`. The action now sends
+  // `held-for-review` and the count of held calls (never the list), and the App accepts both.
+  it('carries a held-for-review run to the App as needing review, with the count and no list', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mendr-report-'));
+    created.push(dir);
+    const path = join(dir, 'mendr-migration.json');
+    const a = artifact();
+    a.migrated = false;
+    a.migrations = [];
+    a.changedFiles = [];
+    a.diff = '';
+    a.prReady = false;
+    a.verification = {
+      typeCheck: { status: 'not_run' },
+      build: { status: 'not_run' },
+      tests: { status: 'not_run' },
+      eval: { status: 'not_run' },
+      behavioralTested: false,
+      verdict: 'held_for_review',
+    };
+    a.skipped = [
+      { file: 'src/ask.ts', line: 4, column: 15, model: 'claude-opus-4-1-20250805', replacement: 'claude-opus-4-8', code: 'coupled_param_unverified', reason: 'the replacement may not accept max_tokens', language: 'ts' },
+      { file: 'app/llm.py', line: 6, column: 49, model: 'gpt-3.5-turbo', replacement: 'gpt-5.6-terra', code: 'param_behaviour_change', reason: 'max_tokens becomes max_completion_tokens', language: 'py' },
+    ];
+    writeFileSync(path, JSON.stringify(a));
+    const raw = JSON.stringify(build(path, 'held-for-review', ''));
+    // The count leaves the runner; the held calls' paths and sentences do not.
+    expect(raw).not.toContain('src/ask.ts');
+    expect(raw).not.toContain('max_completion_tokens');
+    const v = validateMigrationReport(raw, 1_000_000);
+    expect(v.ok).toBe(true);
+    if (!v.ok) return;
+    expect(v.report).toMatchObject({ outcome: 'held-for-review', verdict: 'held_for_review', heldForReview: 2, prUrl: null, migrations: [] });
+  });
+
   it('reports an error outcome even with no artifact at all', () => {
     const v = validateMigrationReport(JSON.stringify(build('', 'error', '')), 1_000_000);
     expect(v.ok).toBe(true);

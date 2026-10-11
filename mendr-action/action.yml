@@ -53,7 +53,8 @@ inputs:
       Your Mendr App URL (e.g. https://mendr-app.onrender.com). When set, the
       migration result is reported to it, proven by this run's GitHub OIDC token
       — the outcome, the PR url, the verdict, the gate statuses, the model swaps
-      and the file paths they touch, and (see `send-diff`) the diff of the swap
+      and the file paths they touch, how many calls were held for review (a
+      count, not the list), and (see `send-diff`) the diff of the swap
       itself so the finding shows what changes. Never whole files. The calling
       workflow must grant `id-token: write`; without it nothing is sent and the
       job still succeeds. Empty = nothing is sent.
@@ -86,11 +87,14 @@ inputs:
 outputs:
   outcome:
     description: >-
-      clean (nothing to migrate) | migration-proposed (a verified migration is in
-      the PR) | pr-blocked (verified and pushed to the branch, but the repository
-      does not allow Actions to create pull requests — enable it under Settings →
-      Actions → General, or open the PR by hand; the job fails red) | not-verified
-      (a migration exists but did not verify; nothing applied, no PR) | error
+      clean (nothing to migrate and nothing held for review) | migration-proposed
+      (a verified migration is in the PR) | pr-blocked (verified and pushed to the
+      branch, but the repository does not allow Actions to create pull requests —
+      enable it under Settings → Actions → General, or open the PR by hand; the
+      job fails red) | not-verified (a migration exists but did not verify;
+      nothing applied, no PR) | held-for-review (nothing migrated because every
+      retiring id found was held for a person; NOT clean: the job summary lists
+      each one, and an open Mendr PR is left open) | error
       (Mendr never completed a scan; the job fails red and no existing PR is
       touched) | empty when approval-gated and nothing was approved
     value: ${{ steps.mendr.outputs.outcome }}

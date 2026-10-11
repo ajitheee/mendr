@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Build the mendr-migration-report/v1 that mendr-action sends to the customer's
 // Mendr App: the outcome, the PR url, and from the migration artifact the
-// verdict, gates, swaps and file paths — plus, unless MENDR_SEND_DIFF=false, the
+// verdict, gates, swaps and file paths, how many calls were held for a person —
+// plus, unless MENDR_SEND_DIFF=false, the
 // unified diff of the swap itself so the finding can show what changes (the
 // change, never whole files; the App redacts and caps it again). Built by
 // whitelisting fields, so nothing else rides along.
@@ -50,6 +51,10 @@ const report = {
           .map((m) => ({ provider: str(m.provider), from: str(m.from), to: str(m.to), language: str(m.language) ?? 'unknown', sites: Number.isInteger(m.sites) ? m.sites : 0, files: list(m.files) }))
       : [],
   changedFiles: a ? list(a.changedFiles) : [],
+  // How many retiring ids the run left for a person: a count only, never the list. The list
+  // carries file paths and the scanner's sentences; the App already has every held call from
+  // the audit, and needs only to know that this run did not resolve them. null = not stated.
+  heldForReview: a && Array.isArray(a.skipped) ? a.skipped.length : null,
   notes: a ? list(a.notes) : [],
   registry:
     a && a.registry && typeof a.registry === 'object'
