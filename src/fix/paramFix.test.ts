@@ -156,7 +156,7 @@ describe('withoutHeldCalls: a call held at review is never edited, and only a he
   /** The param sites the guard keeps, as `model:max_tokens value`, for one in-memory project. */
   function keptSites(project: Project, registry: LlmRegistry = HELD_REGISTRY): string[] {
     const held = findModelIdLiterals(project, registry).filter((m) => m.position === 'surface_capped');
-    return withoutHeldCalls(findParamSites(project, registry), held).map(
+    return withoutHeldCalls(findParamSites(project, registry), held, registry).map(
       (s) => `${s.model}:${s.paramProp.getInitializer()?.getText()}`,
     );
   }
@@ -432,6 +432,108 @@ export async function run() {
     expect(keptSites(project)).toEqual(['o3-mini:2']);
   });
 
+  // REGRESSION (2026-10-07): the scan now holds a const, a `{ model }` shorthand or a quoted-key
+  // request for its parameters, as it holds the inline twin. The param pass must see the same
+  // request as held, or it would edit a call listed as "review required, no patch generated".
+  it('skips a held call whose model is a `{ model }` shorthand', () => {
+    const project = inMemoryProject(
+      'src/shorthand.ts',
+      `${HEADER}
+export async function run() {
+  const model = "o3-mini";
+  return client.chat.completions.create({ model, max_tokens: 1, temperature: 0 });
+}
+`,
+    );
+    const held = findModelIdLiterals(project, HELD_REGISTRY).filter((m) => m.position === 'surface_capped');
+    expect(held.map((m) => m.location.line)).toEqual([5]);
+    // The param pass sees the shorthand's model (it did not before), so withoutHeldCalls decides.
+    expect(findParamSites(project, HELD_REGISTRY).map((s) => s.model)).toEqual(['o3-mini']);
+    expect(keptSites(project)).toEqual([]);
+  });
+
+  it('skips a held call written with quoted keys', () => {
+    const project = inMemoryProject(
+      'src/quoted.ts',
+      `${HEADER}
+export async function run() {
+  return client.chat.completions.create({ "model": "o3-mini", "max_tokens": 1, "temperature": 0 });
+}
+`,
+    );
+    expect(findParamSites(project, HELD_REGISTRY)).toHaveLength(1);
+    expect(keptSites(project)).toEqual([]);
+  });
+
+  it('judges each consumer of a const held for its parameters by its own parameters', () => {
+    // Call a passes a parameter no rule covers on the replacement, so the scan holds MODEL; call
+    // b passes none, and its own fix (max_tokens on o3-mini, which the rule names) stands.
+    const project = inMemoryProject(
+      'src/consumers.ts',
+      `${HEADER}
+const MODEL = "o3-mini";
+export async function run() {
+  const a = await client.chat.completions.create({ model: MODEL, max_tokens: 1, temperature: 0 });
+  const b = await client.chat.completions.create({ model: MODEL, max_tokens: 2 });
+  return { a, b };
+}
+`,
+    );
+    const held = findModelIdLiterals(project, HELD_REGISTRY).filter((m) => m.position === 'surface_capped');
+    expect(held.map((m) => m.location.line)).toEqual([4]);
+    expect(keptSites(project)).toEqual(['o3-mini:2']);
+  });
+
+  it('holds a direct consumer by its own parameters when the const was held at another call\'s surface', () => {
+    // The proxy call holds MODEL at its surface; the scan never reached the parameter check. The
+    // direct call with `temperature` would be held inline, so its request is not edited either.
+    const project = inMemoryProject(
+      'src/surface.ts',
+      `${HEADER}
+const MODEL = "o3-mini";
+export async function run() {
+  await proxy.chat.completions.create({ model: MODEL, messages: [] });
+  await client.chat.completions.create({ model: MODEL, max_tokens: 1, temperature: 0 });
+  return client.chat.completions.create({ model: MODEL, max_tokens: 2 });
+}
+`,
+    );
+    expect(keptSites(project)).toEqual(['o3-mini:2']);
+  });
+
+  // REGRESSION (2026-10-10): the scan now holds a call whose model is a fallback or a ternary branch
+  // for its parameters, as it holds the bare literal. Its nested requests are skipped with it.
+  it('skips the nested requests of a call held for its parameters through a fallback, and keeps an unheld twin\'s', () => {
+    const project = inMemoryProject(
+      'src/fallback.ts',
+      `${HEADER}
+export async function run(opts: { model?: string }) {
+  await client.chat.completions.create({ model: opts.model || "o3-mini", temperature: 0, messages: [], fallbacks: [{ model: "o3-mini", max_tokens: 41 }] });
+  return client.chat.completions.create({ model: opts.model || "o3-mini", messages: [], fallbacks: [{ model: "o3-mini", max_tokens: 42 }] });
+}
+`,
+    );
+    const held = findModelIdLiterals(project, HELD_REGISTRY).filter((m) => m.position === 'surface_capped');
+    expect(held.map((m) => m.location.line)).toEqual([5]);
+    expect(keptSites(project)).toEqual(['o3-mini:42']);
+  });
+
+  // REGRESSION (2026-10-10): `MODEL!` hid a held call's model from the guard, so the nested request
+  // of a held proxy call was edited. The scan's sink rule has always read `MODEL!` as `MODEL`.
+  it('holds the nested requests of a held call whose model is read through `!`', () => {
+    const project = inMemoryProject(
+      'src/nonnull.ts',
+      `${HEADER}
+const MODEL = "o3-mini";
+export async function run() {
+  await proxy.chat.completions.create({ model: MODEL!, messages: [], fallbacks: [{ model: "o3-mini", max_tokens: 31 }] });
+  return client.chat.completions.create({ model: MODEL!, messages: [], fallbacks: [{ model: "o3-mini", max_tokens: 32 }] });
+}
+`,
+    );
+    expect(keptSites(project)).toEqual(['o3-mini:32']);
+  });
+
   it('keeps every site when nothing was held', () => {
     const project = inMemoryProject(
       'src/plain.ts',
@@ -441,7 +543,7 @@ export async function run() {
 }
 `,
     );
-    expect(withoutHeldCalls(findParamSites(project, HELD_REGISTRY), [])).toHaveLength(1);
+    expect(withoutHeldCalls(findParamSites(project, HELD_REGISTRY), [], HELD_REGISTRY)).toHaveLength(1);
     expect(keptSites(project)).toEqual(['o3-mini:2']);
   });
 });
@@ -466,6 +568,249 @@ export async function run(messages: any) {
     const text = project.getSourceFileOrThrow('src/const-model.ts').getFullText();
     expect(text).toContain('{ model: m, messages }');
     expect(text).not.toContain('temperature');
+  });
+
+  // REGRESSION (2026-10-07): `getNameNode().getSymbol()` on a shorthand is the PROPERTY's symbol,
+  // so `{ model }` never resolved, and a swap of `const model = '…'` left the request unfixed.
+  it('resolves a `{ model }` shorthand through the variable it names', () => {
+    const project = inMemoryProject(
+      'src/shorthand.ts',
+      'export async function run(client: any) {\n  const model = "o1-mini";\n  return client.chat.completions.create({ model, max_tokens: 100 });\n}\n',
+    );
+    expect(applyParamFixes(project, REGISTRY)).toEqual([
+      { kind: 'param_rename', param: 'max_tokens', replacement: 'max_completion_tokens', model: 'o1-mini' },
+    ]);
+    expect(project.getSourceFileOrThrow('src/shorthand.ts').getFullText()).toContain(
+      '{ model, max_completion_tokens: 100 }',
+    );
+  });
+
+  // REGRESSION (2026-10-07): `getProperty(name)` compares a key as written, so a quoted key was
+  // invisible: the model was swapped and `"max_tokens"` beside it never renamed.
+  it('finds quoted keys, and renames them in their own quote style', () => {
+    const project = inMemoryProject(
+      'src/quoted.ts',
+      [
+        'export const a = (c: any) => c.chat.completions.create({ "model": "o1-mini", "max_tokens": 1 });',
+        "export const b = (c: any) => c.chat.completions.create({ model: 'o1-mini', 'max_tokens': 2 });",
+        '',
+      ].join('\n'),
+    );
+    expect(applyParamFixes(project, REGISTRY)).toHaveLength(2);
+    const text = project.getSourceFileOrThrow('src/quoted.ts').getFullText();
+    expect(text).toContain('{ "model": "o1-mini", "max_completion_tokens": 1 }');
+    expect(text).toContain("{ model: 'o1-mini', 'max_completion_tokens': 2 }");
+  });
+
+  // A quoted or computed key is how a JSON-shaped model table is usually written. Reading it as the
+  // plain key is for following a swap into its request; outside a request it would rename a
+  // catalog row's key, which breaks the row's readers and fixes no request.
+  it('reads a quoted or computed key only in a request: a call argument or a request variable', () => {
+    const project = inMemoryProject(
+      'src/tables.ts',
+      [
+        'export const CATALOG = [{ "model": "o1-mini", "max_tokens": 65536, "label": "o1 mini" }];',
+        'export const ROW = { ["model"]: "o1-mini", ["max_tokens"]: 7 };',
+        'export const MIXED = { model: "o1-mini", "max_tokens": 8 };',
+        'export const QUOTED_MODEL = { "model": "o1-mini", max_tokens: 9 };',
+        'export async function viaVariable(c: any) {',
+        '  const req = { "model": "o1-mini", "max_tokens": 10 };',
+        '  return c.chat.completions.create(req);',
+        '}',
+        'export const viaCall = (c: any) => c.chat.completions.create(({ "model": "o1-mini", ["max_tokens"]: 11 }));',
+        '',
+      ].join('\n'),
+    );
+    expect(applyParamFixes(project, REGISTRY)).toHaveLength(2);
+    const text = project.getSourceFileOrThrow('src/tables.ts').getFullText();
+    expect(text).toContain('[{ "model": "o1-mini", "max_tokens": 65536, "label": "o1 mini" }]');
+    expect(text).toContain('{ ["model"]: "o1-mini", ["max_tokens"]: 7 }');
+    expect(text).toContain('{ model: "o1-mini", "max_tokens": 8 }');
+    expect(text).toContain('{ "model": "o1-mini", max_tokens: 9 }');
+    expect(text).toContain('const req = { "model": "o1-mini", "max_completion_tokens": 10 };');
+    expect(text).toContain('({ "model": "o1-mini", ["max_completion_tokens"]: 11 })');
+  });
+
+  // The sink rule reads `MODEL!` as `MODEL`, so pass 1 swaps the const behind it; pass 2 has to
+  // read the request's model there too, or the swap ships without its parameter fix.
+  it('reads a model through a non-null `!`', () => {
+    const project = inMemoryProject(
+      'src/nonnull.ts',
+      'const M = "o1-mini";\nexport const a = (c: any) => c.chat.completions.create({ model: M!, max_tokens: 6 });\n',
+    );
+    expect(applyParamFixes(project, REGISTRY)).toEqual([
+      { kind: 'param_rename', param: 'max_tokens', replacement: 'max_completion_tokens', model: 'o1-mini' },
+    ]);
+    expect(project.getSourceFileOrThrow('src/nonnull.ts').getFullText()).toContain(
+      '{ model: M!, max_completion_tokens: 6 }',
+    );
+  });
+
+  it('reads a model through parentheses and a cast that masks nothing, never through one that does', () => {
+    // Pass 1 swaps a literal behind `as string` / `as const` / parentheses, so pass 2 has to read
+    // it there too. A cast to the repo's own type masks the id and pass 1 does not swap it.
+    const project = inMemoryProject(
+      'src/casts.ts',
+      [
+        'type ModelId = "o1-mini" | "gpt-4o";',
+        'const M = "o1-mini" as const;',
+        'export const a = (c: any) => c.chat.completions.create({ model: "o1-mini" as string, max_tokens: 1 });',
+        'export const b = (c: any) => c.chat.completions.create({ model: ("o1-mini"), max_tokens: 2 });',
+        'export const d = (c: any) => c.chat.completions.create({ model: M, max_tokens: 3 });',
+        'export const e = (c: any) => c.chat.completions.create({ model: "o1-mini" as ModelId, max_tokens: 4 });',
+        'export const f = (c: any) => c.chat.completions.create({ model: M as string, max_tokens: 5 });',
+        '',
+      ].join('\n'),
+    );
+    applyParamFixes(project, REGISTRY);
+    const text = project.getSourceFileOrThrow('src/casts.ts').getFullText();
+    expect(text).toContain('{ model: "o1-mini" as string, max_completion_tokens: 1 }');
+    expect(text).toContain('{ model: ("o1-mini"), max_completion_tokens: 2 }');
+    expect(text).toContain('{ model: M, max_completion_tokens: 3 }');
+    expect(text).toContain('{ model: "o1-mini" as ModelId, max_tokens: 4 }');
+    expect(text).toContain('{ model: M as string, max_completion_tokens: 5 }');
+  });
+
+  // REGRESSION (review of 947967d, 2026-10-10): the model shapes this pass learned to read after
+  // 0.5.9 (a `{ model }` shorthand, a cast, parentheses, `!`) were read in ANY object, so a presets
+  // table whose own code reads `.max_tokens`, and a settings object, lost `max_tokens` and
+  // `temperature` with no swap anywhere. 0.5.9 made no edit there. They are read only in a request
+  // now, as a quoted key is; a request written in those shapes is still followed.
+  it('reads a shorthand, cast, parenthesised or `!` model only in a request, never in a table', () => {
+    const project = inMemoryProject(
+      'src/presets.ts',
+      [
+        'const model = "o1-mini";',
+        'const opus = "claude-opus-5";',
+        'const C = "o1-mini" as const;',
+        "export const PRESETS = [{ name: 'Short', model, max_tokens: 256 }, { name: 'Long', model, max_tokens: 4096 }];",
+        'export function maxFor(i: number) { return PRESETS[i].max_tokens; }',
+        "export const SETTINGS = { model: opus as string, temperature: 0.7, label: 'Opus' };",
+        "export const ROWS = [{ model: 'o1-mini' as string, max_tokens: 1, label: 'a' }, { model: 'o1-mini' as const, max_tokens: 2 }];",
+        'export const BANG = { model: model!, max_tokens: 3 };',
+        "export const PARENS = { model: ('o1-mini'), max_tokens: 4 };",
+        'export const VIA_CAST_CONST = { model: C, max_tokens: 5 };',
+        // As in 0.5.9: a row written `model: '…'` or `model: NAME` is renamed (see the header).
+        "export const PLAIN = { model: 'o1-mini', max_tokens: 6 };",
+        // The same shapes in a request are followed.
+        'export const a = (c: any) => c.chat.completions.create({ model, max_tokens: 7 });',
+        'export const b = (c: any) => c.messages.create({ model: opus as string, temperature: 0.7 });',
+        'export const d = (c: any) => c.chat.completions.create({ model: model!, max_tokens: 8 });',
+        'export const e = (c: any) => c.chat.completions.create({ model: C, max_tokens: 9 });',
+        'export async function f(c: any) {',
+        '  const req = { model, max_tokens: 10 };',
+        '  return c.chat.completions.create(req);',
+        '}',
+        '',
+      ].join('\n'),
+    );
+    expect(findParamSites(project, REGISTRY).map((s) => s.location.line)).toEqual([11, 12, 13, 14, 15, 17]);
+    expect(applyParamFixes(project, REGISTRY)).toHaveLength(6);
+    const text = project.getSourceFileOrThrow('src/presets.ts').getFullText();
+    expect(text).toContain("[{ name: 'Short', model, max_tokens: 256 }, { name: 'Long', model, max_tokens: 4096 }]");
+    expect(text).toContain('return PRESETS[i].max_tokens;');
+    expect(text).toContain("{ model: opus as string, temperature: 0.7, label: 'Opus' }");
+    expect(text).toContain("[{ model: 'o1-mini' as string, max_tokens: 1, label: 'a' }, { model: 'o1-mini' as const, max_tokens: 2 }]");
+    expect(text).toContain('{ model: model!, max_tokens: 3 }');
+    expect(text).toContain("{ model: ('o1-mini'), max_tokens: 4 }");
+    expect(text).toContain('{ model: C, max_tokens: 5 }');
+    expect(text).toContain("{ model: 'o1-mini', max_completion_tokens: 6 }");
+    expect(text).toContain('create({ model, max_completion_tokens: 7 })');
+    expect(text).toContain('create({ model: opus as string })');
+    expect(text).toContain('create({ model: model!, max_completion_tokens: 8 })');
+    expect(text).toContain('create({ model: C, max_completion_tokens: 9 })');
+    expect(text).toContain('const req = { model, max_completion_tokens: 10 };');
+  });
+
+  // REGRESSION (review of 402c1e4, 2026-10-07): a reassigned `let` is either model at run time, and
+  // resolving it to its initializer removed `temperature` from a request that may go to Sonnet.
+  // Written `{ model: model }` that was already so on 0df2dce; resolving the shorthand made
+  // `{ model }` do it too.
+  it('SKIPS a let or var that is reassigned, in every way a variable can be written', () => {
+    const writes: Array<[string, string]> = [
+      ['an if', "if (cheap) model = 'claude-sonnet-4-6';"],
+      ['a compound assignment', "model ??= 'claude-sonnet-4-6';"],
+      ['an increment', 'if (cheap) model++;'],
+      ['an array destructuring assignment', "[model] = ['claude-sonnet-4-6'];"],
+      ['an object destructuring assignment', "({ model } = { model: 'claude-sonnet-4-6' });"],
+      ['a renamed destructuring assignment', "({ m: model } = { m: 'claude-sonnet-4-6' });"],
+      ['a for-of head', "for (model of ['claude-sonnet-4-6']) break;"],
+      ['a nested function', "const pick = () => { model = 'claude-sonnet-4-6'; }; pick();"],
+    ];
+    // One project, one file per variant: a type checker per project is what makes these slow.
+    const project = new Project({ useInMemoryFileSystem: true });
+    const files = new Map<string, string>();
+    let n = 0;
+    for (const kind of ['let', 'var']) {
+      for (const [label, write] of writes) {
+        for (const value of ['model', 'model: model']) {
+          const file = `src/let${n++}.ts`;
+          files.set(file, `${kind} / ${label} / ${value}`);
+          project.createSourceFile(
+            file,
+            [
+              'export async function run(anthropic: any, cheap: boolean) {',
+              `  ${kind} model = 'claude-opus-5';`,
+              `  ${write}`,
+              `  return anthropic.messages.create({ ${value}, temperature: 0.2, max_tokens: 100 });`,
+              '}',
+              '',
+            ].join('\n'),
+          );
+        }
+      }
+    }
+    const sites = findParamSites(project, REGISTRY).map((s) => files.get(s.location.file.replace(/^\//, '')));
+    expect(sites).toEqual([]);
+    // Control, in the same project: without the write, the same request is a site.
+    project.createSourceFile(
+      'src/control.ts',
+      "export async function run(anthropic: any) {\n  let model = 'claude-opus-5';\n  return anthropic.messages.create({ model, temperature: 0.2, max_tokens: 100 });\n}\n",
+    );
+    expect(findParamSites(project, REGISTRY).map((s) => s.location.file)).toEqual(['/src/control.ts']);
+  }, 30_000);
+
+  it('resolves a let that nothing reassigns, and is not fooled by a write to another binding of the name', () => {
+    const source = [
+      'export async function run(anthropic: any) {',
+      "  let model = 'claude-opus-5';",
+      '  return anthropic.messages.create({ model, temperature: 0.2, max_tokens: 100 });',
+      '}',
+      // A different `model` (a parameter) written elsewhere in the file.
+      "export function other(model: string) { model = 'x'; return model; }",
+      // `model++` on yet another binding, and a read in a comparison: neither writes the let.
+      'export function counter() { let model = 0; model++; return model; }',
+      "export const same = (m: string) => m === 'model';",
+      '',
+    ].join('\n');
+    const project = inMemoryProject('src/let.ts', source);
+    expect(applyParamFixes(project, REGISTRY)).toEqual([
+      { kind: 'param_removal', param: 'temperature', model: 'claude-opus-5' },
+    ]);
+    expect(project.getSourceFileOrThrow('src/let.ts').getFullText()).toContain(
+      'create({ model, max_tokens: 100 })',
+    );
+  });
+
+  // `["max_tokens"]: 5` is `max_tokens` to the provider; the scan now reads it so, and the param
+  // pass follows the swap the same way, keeping the computed form.
+  it('finds a computed string key, and renames it keeping the brackets and quotes', () => {
+    const project = inMemoryProject(
+      'src/computed.ts',
+      [
+        'export const a = (c: any) => c.chat.completions.create({ model: "o1-mini", ["max_tokens"]: 1 });',
+        "export const b = (c: any) => c.chat.completions.create({ ['model']: 'o1-mini', [`max_tokens`]: 2 });",
+        'const k = "max_tokens";',
+        'export const d = (c: any) => c.chat.completions.create({ model: "o1-mini", [k]: 3 });',
+        '',
+      ].join('\n'),
+    );
+    expect(applyParamFixes(project, REGISTRY)).toHaveLength(2);
+    const text = project.getSourceFileOrThrow('src/computed.ts').getFullText();
+    expect(text).toContain('{ model: "o1-mini", ["max_completion_tokens"]: 1 }');
+    expect(text).toContain("{ ['model']: 'o1-mini', [`max_completion_tokens`]: 2 }");
+    // A computed key whose name is not written there is not read.
+    expect(text).toContain('{ model: "o1-mini", [k]: 3 }');
   });
 
   it('SKIPS a site whose model cannot be resolved to a concrete string', () => {

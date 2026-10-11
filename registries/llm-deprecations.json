@@ -671,9 +671,15 @@
     "on_models": [
       "claude-opus-4-7",
       "claude-opus-4-8",
-      "claude-opus-5"
+      "claude-opus-5",
+      "claude-sonnet-5",
+      "claude-sonnet-5-5",
+      "claude-haiku-5-5",
+      "claude-fable-5",
+      "claude-mythos-5",
+      "claude-mythos-preview"
     ],
-    "note": "temperature rejected (HTTP 400) on Opus 4.7+ and newer; steer via prompt.",
+    "note": "temperature is rejected (HTTP 400) at any non-default value on Claude Opus 4.7 and later, Claude Sonnet 5 and 5.5, Claude Haiku 5.5, Claude Fable 5 and 5.1, Claude Mythos 5 and 5.1, and Claude Mythos Preview; steer via the prompt. Anthropic's deprecations page says it of all Claude 4.7 and later models and Claude Mythos Preview; each model's own guide says it of that model (quoted below). Claude Mythos 5 and 5.1 rest on the deprecations page, and on the Fable 5.1 overview saying Mythos 5.1 shares its specifications. Claude Sonnet 4.6, Claude Haiku 4.5 and earlier models accept it (Anthropic's Sonnet 5.5 and Haiku 5.5 guides), so they are not listed.",
     "quotes": [
       {
         "sourceUrl": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide",
@@ -684,6 +690,36 @@
         "sourceUrl": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide",
         "text": "Omit temperature, top_p, and top_k, or leave them at their defaults: any other value is rejected.",
         "about": "behaviour"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/sonnet-5-5/migration-guide",
+        "text": "Claude Sonnet 4.6 and earlier models and Claude Haiku 4.5 accept temperature, top_p, and top_k. On Claude Sonnet 5.5, a non-default value returns a 400 error.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide",
+        "text": "Manual extended thinking, non-default sampling parameters, and assistant prefill return a 400 error on both models, so nothing changes there.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/haiku-5-5/migration-guide",
+        "text": "Claude Haiku 4.5 accepts temperature, top_p, and top_k. On Claude Haiku 5.5, omit all three and use prompting to guide the model's behavior instead.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/haiku-5-5/migration-guide",
+        "text": "Any other temperature or top_p value returns a 400 error, including a top_p of 1. So does any top_k value, and so does a request that includes both temperature and top_p.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/fable-5-1/whats-new-fable-5-1",
+        "text": "Non-default temperature, top_p, or top_k values return a 400 error.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+        "text": "Returns a 400 error when set to a non-default value on Claude 4.7 and later models and Claude Mythos Preview.",
+        "about": "rule"
       }
     ]
   },
@@ -694,9 +730,15 @@
     "on_models": [
       "claude-opus-4-7",
       "claude-opus-4-8",
-      "claude-opus-5"
+      "claude-opus-5",
+      "claude-sonnet-5",
+      "claude-sonnet-5-5",
+      "claude-haiku-5-5",
+      "claude-fable-5",
+      "claude-mythos-5",
+      "claude-mythos-preview"
     ],
-    "note": "top_p rejected (HTTP 400) on Opus 4.7+ and newer.",
+    "note": "top_p is rejected (HTTP 400) at any non-default value on Claude Opus 4.7 and later, Claude Sonnet 5 and 5.5, Claude Haiku 5.5, Claude Fable 5 and 5.1, Claude Mythos 5 and 5.1, and Claude Mythos Preview; steer via the prompt. Anthropic's deprecations page says it of all Claude 4.7 and later models and Claude Mythos Preview; each model's own guide says it of that model (quoted below). Claude Mythos 5 and 5.1 rest on the deprecations page, and on the Fable 5.1 overview saying Mythos 5.1 shares its specifications. Claude Sonnet 4.6, Claude Haiku 4.5 and earlier models accept it (Anthropic's Sonnet 5.5 and Haiku 5.5 guides), so they are not listed.",
     "quotes": [
       {
         "sourceUrl": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide",
@@ -707,6 +749,36 @@
         "sourceUrl": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide",
         "text": "Omit temperature, top_p, and top_k, or leave them at their defaults: any other value is rejected.",
         "about": "behaviour"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/sonnet-5-5/migration-guide",
+        "text": "Claude Sonnet 4.6 and earlier models and Claude Haiku 4.5 accept temperature, top_p, and top_k. On Claude Sonnet 5.5, a non-default value returns a 400 error.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide",
+        "text": "Manual extended thinking, non-default sampling parameters, and assistant prefill return a 400 error on both models, so nothing changes there.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/haiku-5-5/migration-guide",
+        "text": "Claude Haiku 4.5 accepts temperature, top_p, and top_k. On Claude Haiku 5.5, omit all three and use prompting to guide the model's behavior instead.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/haiku-5-5/migration-guide",
+        "text": "Any other temperature or top_p value returns a 400 error, including a top_p of 1. So does any top_k value, and so does a request that includes both temperature and top_p.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/fable-5-1/whats-new-fable-5-1",
+        "text": "Non-default temperature, top_p, or top_k values return a 400 error.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+        "text": "Returns a 400 error when set to a non-default value on Claude 4.7 and later models and Claude Mythos Preview.",
+        "about": "rule"
       }
     ]
   },
@@ -717,9 +789,15 @@
     "on_models": [
       "claude-opus-4-7",
       "claude-opus-4-8",
-      "claude-opus-5"
+      "claude-opus-5",
+      "claude-sonnet-5",
+      "claude-sonnet-5-5",
+      "claude-haiku-5-5",
+      "claude-fable-5",
+      "claude-mythos-5",
+      "claude-mythos-preview"
     ],
-    "note": "top_k rejected (HTTP 400) on Opus 4.7+ and newer.",
+    "note": "top_k is rejected (HTTP 400) at any non-default value on Claude Opus 4.7 and later, Claude Sonnet 5 and 5.5, Claude Haiku 5.5, Claude Fable 5 and 5.1, Claude Mythos 5 and 5.1, and Claude Mythos Preview; steer via the prompt. Anthropic's deprecations page says it of all Claude 4.7 and later models and Claude Mythos Preview; each model's own guide says it of that model (quoted below). Claude Mythos 5 and 5.1 rest on the deprecations page, and on the Fable 5.1 overview saying Mythos 5.1 shares its specifications. Claude Sonnet 4.6, Claude Haiku 4.5 and earlier models accept it (Anthropic's Sonnet 5.5 and Haiku 5.5 guides), so they are not listed.",
     "quotes": [
       {
         "sourceUrl": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide",
@@ -730,6 +808,36 @@
         "sourceUrl": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide",
         "text": "Omit temperature, top_p, and top_k, or leave them at their defaults: any other value is rejected.",
         "about": "behaviour"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/sonnet-5-5/migration-guide",
+        "text": "Claude Sonnet 4.6 and earlier models and Claude Haiku 4.5 accept temperature, top_p, and top_k. On Claude Sonnet 5.5, a non-default value returns a 400 error.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide",
+        "text": "Manual extended thinking, non-default sampling parameters, and assistant prefill return a 400 error on both models, so nothing changes there.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/haiku-5-5/migration-guide",
+        "text": "Claude Haiku 4.5 accepts temperature, top_p, and top_k. On Claude Haiku 5.5, omit all three and use prompting to guide the model's behavior instead.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/haiku-5-5/migration-guide",
+        "text": "Any other temperature or top_p value returns a 400 error, including a top_p of 1. So does any top_k value, and so does a request that includes both temperature and top_p.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/models/fable-5-1/whats-new-fable-5-1",
+        "text": "Non-default temperature, top_p, or top_k values return a 400 error.",
+        "about": "rule"
+      },
+      {
+        "sourceUrl": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+        "text": "Returns a 400 error when set to a non-default value on Claude 4.7 and later models and Claude Mythos Preview.",
+        "about": "rule"
       }
     ]
   },
@@ -6448,6 +6556,1288 @@
         "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
         "retrievedAt": "2026-10-10T05:43:24.374Z",
         "excerpt": "2025-10-10 | gpt-4o-audio-preview-2024-10-01 | gpt-audio-1.5"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-5.1.retirement-2027-04-01",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-5.1",
+    "replacement": "gpt-6-sol",
+    "status": "deprecated",
+    "shutdownDate": "2027-04-01",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Apr 1, 2027 | gpt-5.1 | gpt-6-sol. Detect-only: GPT-6 Sol defaults to a different reasoning effort. GPT-5.1 defaults to none and gpt-6-sol to medium, and OpenAI says that above none, temperature, top_p and top_logprobs must be removed and that Chat Completions takes function calls only at none.",
+    "verification": {
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": false,
+      "quarantineReason": "the replacement, GPT-6 Sol, defaults to a different reasoning effort: OpenAI's model pages give gpt-5.1 a default of none and gpt-6-sol a default of medium, and OpenAI's GPT-6 guide says that when reasoning effort is not none, temperature, top_p and top_logprobs must be removed, and that GPT-6 Sol supports function calling in Chat Completions only with reasoning_effort set to none; swapping the id alone can turn a call that works today into one that fails, so a person should change the model and set reasoning_effort (none keeps today's default) or remove those parameters",
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-6-sol\" is live in a public catalog",
+        "the deprecation claim for \"gpt-5.1\" is self-consistent (status \"deprecated\", shutdown 2027-04-01) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 461d3951ff15) states shutdown Apr 1, 2027 and recommended replacement gpt-6-sol",
+        "the gpt-5.1 model page (read 2026-10-10 UTC, snapshot 69a7cf7832b7) carries a Deprecated badge and says \"Reasoning.effort supports: none (default), low, medium, and high.\"",
+        "the gpt-6-sol model page (read 2026-10-10 UTC, snapshot e33e1b357565) says \"reasoning.effort supports none, low, medium (default), high, xhigh, and max.\" and \"Chat Completions supports function calling only with reasoning_effort set to none.\"",
+        "OpenAI's GPT-6 guide (read 2026-10-10 UTC, snapshot 14d2ce97ad60) says \"When reasoning effort is not none, remove temperature, top_p, and top_logprobs.\" and \"GPT-6 Sol and GPT-6 Luna support function calling in Chat Completions only with reasoning_effort: \"none\".\"",
+        "held review-only on 2026-10-10: the candidate gate stamped this record verified, which would have swapped the id in calls that rely on the default reasoning effort"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "Apr 1, 2027 | gpt-5.1 | gpt-6-sol"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:461d3951ff159cc1da04ceb6e0c380ad62dc611d23d0ad7d81143c6b1274475c",
+        "retrievedAt": "2026-10-10T20:48:24.498Z",
+        "excerpt": "Apr 1, 2027 | gpt-5.1 | gpt-6-sol"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-5.1",
+        "contentHash": "sha256:69a7cf7832b7cd5579c99a4ff407c167db056596fe479fc6b909a2b3b2ae43ca",
+        "retrievedAt": "2026-10-10T20:59:47.107Z",
+        "excerpt": "Reasoning.effort supports: none (default), low, medium, and high."
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-6-sol",
+        "contentHash": "sha256:e33e1b357565eb707c55a147b1c42ebf8a7316a10e7f4c84c05b70e5a7570db4",
+        "retrievedAt": "2026-10-10T20:59:47.462Z",
+        "excerpt": "reasoning.effort supports none, low, medium (default), high, xhigh, and max."
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-6-sol",
+        "contentHash": "sha256:e33e1b357565eb707c55a147b1c42ebf8a7316a10e7f4c84c05b70e5a7570db4",
+        "retrievedAt": "2026-10-10T20:59:47.462Z",
+        "excerpt": "Chat Completions supports function calling only with reasoning_effort set to none."
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/guides/latest-model",
+        "contentHash": "sha256:14d2ce97ad602db06a1a0e70bfab41e573220cee89dbdfe88227777bf4223428",
+        "retrievedAt": "2026-10-10T20:58:45.852Z",
+        "excerpt": "When reasoning effort is not none, remove temperature, top_p, and top_logprobs."
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/guides/latest-model",
+        "contentHash": "sha256:14d2ce97ad602db06a1a0e70bfab41e573220cee89dbdfe88227777bf4223428",
+        "retrievedAt": "2026-10-10T20:58:45.852Z",
+        "excerpt": "GPT-6 Sol and GPT-6 Luna support function calling in Chat Completions only with reasoning_effort: \"none\"."
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-5.1-2025-11-13.retirement-undated",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-5.1-2025-11-13",
+    "replacement": "gpt-6-sol",
+    "status": "deprecated",
+    "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-5.1",
+    "note": "The dated snapshot the gpt-5.1 alias points to. OpenAI's gpt-5.1 model page lists it with a Deprecated badge. OpenAI's deprecations page retires gpt-5.1 on Apr 1, 2027 and does not name this snapshot, so the record states no shutdown date: a future date has to be stated by the provider for this id. Detect-only, for the same reason as gpt-5.1: GPT-5.1 defaults to reasoning effort none and gpt-6-sol to medium, and OpenAI says that above none, temperature, top_p and top_logprobs must be removed and that Chat Completions takes function calls only at none.",
+    "verification": {
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": false,
+      "quarantineReason": "the replacement, GPT-6 Sol, defaults to a different reasoning effort: OpenAI's model pages give gpt-5.1, which this snapshot serves, a default of none and gpt-6-sol a default of medium, and OpenAI's GPT-6 guide says that when reasoning effort is not none, temperature, top_p and top_logprobs must be removed, and that GPT-6 Sol supports function calling in Chat Completions only with reasoning_effort set to none; swapping the id alone can turn a call that works today into one that fails, so a person should change the model and set reasoning_effort (none keeps today's default) or remove those parameters",
+      "checkedAt": "2026-10-11",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-6-sol\" is live in a public catalog",
+        "the gpt-5.1 model page (read 2026-10-10 UTC, snapshot 69a7cf7832b7) lists gpt-5.1-2025-11-13 as its snapshot with a Deprecated badge and says \"Reasoning.effort supports: none (default), low, medium, and high.\"",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 461d3951ff15) states shutdown Apr 1, 2027 and recommended replacement gpt-6-sol for gpt-5.1, and does not name gpt-5.1-2025-11-13; this record carries no shutdown date because the provider states none for this id",
+        "the gpt-6-sol model page (read 2026-10-10 UTC, snapshot e33e1b357565) says \"reasoning.effort supports none, low, medium (default), high, xhigh, and max.\" and \"Chat Completions supports function calling only with reasoning_effort set to none.\"",
+        "OpenAI's GPT-6 guide (read 2026-10-10 UTC, snapshot 14d2ce97ad60) says \"When reasoning effort is not none, remove temperature, top_p, and top_logprobs.\" and \"GPT-6 Sol and GPT-6 Luna support function calling in Chat Completions only with reasoning_effort: \"none\".\"",
+        "held review-only on 2026-10-10: added beside gpt-5.1 so that a call or a usage row on the pinned snapshot gets the same review finding as one on the alias"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-5.1",
+        "contentHash": "sha256:69a7cf7832b7cd5579c99a4ff407c167db056596fe479fc6b909a2b3b2ae43ca",
+        "retrievedAt": "2026-10-10T20:59:47.107Z",
+        "excerpt": "gpt-5.1-2025-11-13 Deprecated"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:461d3951ff159cc1da04ceb6e0c380ad62dc611d23d0ad7d81143c6b1274475c",
+        "retrievedAt": "2026-10-10T20:48:24.498Z",
+        "excerpt": "Apr 1, 2027 | gpt-5.1 | gpt-6-sol"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-6-sol",
+        "contentHash": "sha256:e33e1b357565eb707c55a147b1c42ebf8a7316a10e7f4c84c05b70e5a7570db4",
+        "retrievedAt": "2026-10-10T20:59:47.462Z",
+        "excerpt": "reasoning.effort supports none, low, medium (default), high, xhigh, and max."
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-6-sol",
+        "contentHash": "sha256:e33e1b357565eb707c55a147b1c42ebf8a7316a10e7f4c84c05b70e5a7570db4",
+        "retrievedAt": "2026-10-10T20:59:47.462Z",
+        "excerpt": "Chat Completions supports function calling only with reasoning_effort set to none."
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/guides/latest-model",
+        "contentHash": "sha256:14d2ce97ad602db06a1a0e70bfab41e573220cee89dbdfe88227777bf4223428",
+        "retrievedAt": "2026-10-10T20:58:45.852Z",
+        "excerpt": "When reasoning effort is not none, remove temperature, top_p, and top_logprobs."
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/guides/latest-model",
+        "contentHash": "sha256:14d2ce97ad602db06a1a0e70bfab41e573220cee89dbdfe88227777bf4223428",
+        "retrievedAt": "2026-10-10T20:58:45.852Z",
+        "excerpt": "GPT-6 Sol and GPT-6 Luna support function calling in Chat Completions only with reasoning_effort: \"none\"."
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-5.3-codex.retirement-2027-04-01",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-5.3-codex",
+    "replacement": "gpt-6-sol",
+    "status": "deprecated",
+    "shutdownDate": "2027-04-01",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Apr 1, 2027 | gpt-5.3-codex | gpt-6-sol. Detect-only: OpenAI's GPT-6 guide says a migration from GPT-5.5 or earlier must replace prompt_cache_retention with prompt_cache_options.ttl set to \"30m\", and mendr neither checks nor rewrites that field on a swap to gpt-6-sol. The reasoning-effort change that holds gpt-5.1 and gpt-5.4-nano does not reach this model, which takes low through xhigh and only the Responses API.",
+    "verification": {
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": false,
+      "quarantineReason": "OpenAI's GPT-6 guide says a migration from GPT-5.5 or earlier must replace prompt_cache_retention with prompt_cache_options.ttl set to \"30m\", and mendr does not check or rewrite that field when it swaps an id to gpt-6-sol; the guide does not say whether gpt-6-sol rejects the old field, so a call that passes prompt_cache_retention could stop working after an automatic swap. A person should change the model and move any prompt_cache_retention setting to prompt_cache_options.ttl",
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-6-sol\" is live in a public catalog",
+        "the deprecation claim for \"gpt-5.3-codex\" is self-consistent (status \"deprecated\", shutdown 2027-04-01) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 461d3951ff15) states shutdown Apr 1, 2027 and recommended replacement gpt-6-sol",
+        "the gpt-5.3-codex model page (read 2026-10-10 UTC, snapshot 1d0a898facea) carries a Deprecated badge, says \"GPT-5.3-Codex supports low, medium, high, and xhigh reasoning effort settings.\", and lists the Responses API but not Chat Completions; gpt-6-sol accepts each of those effort levels, so the default-effort change that holds gpt-5.1 and gpt-5.4-nano for review does not reach a gpt-5.3-codex call",
+        "OpenAI's GPT-6 guide (read 2026-10-10 UTC, snapshot 14d2ce97ad60) says \"When migrating from GPT-5.5 or earlier, replace prompt_cache_retention with prompt_cache_options.ttl set to \"30m\".\" No parameter rule names the GPT-6 family, so mendr's TypeScript parameter guard does not look at a swap to gpt-6-sol, and Python has no parameter guard; the guide does not say whether the API rejects the old field",
+        "held review-only on 2026-10-10: the candidate gate stamped this record verified, which would have swapped the id in a call that passes prompt_cache_retention and kept the field"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "Apr 1, 2027 | gpt-5.3-codex | gpt-6-sol"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:461d3951ff159cc1da04ceb6e0c380ad62dc611d23d0ad7d81143c6b1274475c",
+        "retrievedAt": "2026-10-10T20:48:24.498Z",
+        "excerpt": "Apr 1, 2027 | gpt-5.3-codex | gpt-6-sol"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-5.3-codex",
+        "contentHash": "sha256:1d0a898facea9eaa85733dc8a438fd329cffa76e9c58545ff8629101c53a860d",
+        "retrievedAt": "2026-10-10T20:59:49.114Z",
+        "excerpt": "GPT-5.3-Codex supports low, medium, high, and xhigh reasoning effort settings."
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/guides/latest-model",
+        "contentHash": "sha256:14d2ce97ad602db06a1a0e70bfab41e573220cee89dbdfe88227777bf4223428",
+        "retrievedAt": "2026-10-10T20:58:45.852Z",
+        "excerpt": "When migrating from GPT-5.5 or earlier, replace prompt_cache_retention with prompt_cache_options.ttl set to \"30m\"."
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-5.4-nano.retirement-2027-04-01",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-5.4-nano",
+    "replacement": "gpt-6-luna",
+    "status": "deprecated",
+    "shutdownDate": "2027-04-01",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Apr 1, 2027 | gpt-5.4-nano | gpt-6-luna. Detect-only: GPT-6 Luna defaults to a different reasoning effort. GPT-5.4 nano defaults to none and gpt-6-luna to medium, and OpenAI says that above none, temperature, top_p and top_logprobs must be removed and that Chat Completions takes function calls only at none.",
+    "verification": {
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": false,
+      "quarantineReason": "the replacement, GPT-6 Luna, defaults to a different reasoning effort: OpenAI's model pages give gpt-5.4-nano a default of none and gpt-6-luna a default of medium, and OpenAI's GPT-6 guide says that when reasoning effort is not none, temperature, top_p and top_logprobs must be removed, and that GPT-6 Luna supports function calling in Chat Completions only with reasoning_effort set to none; swapping the id alone can turn a call that works today into one that fails, so a person should change the model and set reasoning_effort (none keeps today's default) or remove those parameters",
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-6-luna\" is live in a public catalog",
+        "the deprecation claim for \"gpt-5.4-nano\" is self-consistent (status \"deprecated\", shutdown 2027-04-01) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 461d3951ff15) states shutdown Apr 1, 2027 and recommended replacement gpt-6-luna",
+        "the gpt-5.4-nano model page (read 2026-10-10 UTC, snapshot 261bf9b9790c) carries a Deprecated badge and says \"Reasoning.effort supports: none (default), low, medium, high and xhigh.\"",
+        "the gpt-6-luna model page (read 2026-10-10 UTC, snapshot fea955e492c1) says \"reasoning.effort supports none, low, medium (default), high, xhigh, and max.\" and \"Chat Completions supports function calling only with reasoning_effort set to none.\"",
+        "OpenAI's GPT-6 guide (read 2026-10-10 UTC, snapshot 14d2ce97ad60) says \"When reasoning effort is not none, remove temperature, top_p, and top_logprobs.\" and \"GPT-6 Sol and GPT-6 Luna support function calling in Chat Completions only with reasoning_effort: \"none\".\"",
+        "held review-only on 2026-10-10: the candidate gate stamped this record verified, which would have swapped the id in calls that rely on the default reasoning effort"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "Apr 1, 2027 | gpt-5.4-nano | gpt-6-luna"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:461d3951ff159cc1da04ceb6e0c380ad62dc611d23d0ad7d81143c6b1274475c",
+        "retrievedAt": "2026-10-10T20:48:24.498Z",
+        "excerpt": "Apr 1, 2027 | gpt-5.4-nano | gpt-6-luna"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-5.4-nano",
+        "contentHash": "sha256:261bf9b9790c0bf22da7bd20b9b0212558f388fb745f733df3036759ef13725f",
+        "retrievedAt": "2026-10-10T20:59:48.834Z",
+        "excerpt": "Reasoning.effort supports: none (default), low, medium, high and xhigh."
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+        "contentHash": "sha256:fea955e492c1cdc8e3a8517566513fd8951cc7b6982bbbf9f2176587cec4da0f",
+        "retrievedAt": "2026-10-10T20:59:47.806Z",
+        "excerpt": "reasoning.effort supports none, low, medium (default), high, xhigh, and max."
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+        "contentHash": "sha256:fea955e492c1cdc8e3a8517566513fd8951cc7b6982bbbf9f2176587cec4da0f",
+        "retrievedAt": "2026-10-10T20:59:47.806Z",
+        "excerpt": "Chat Completions supports function calling only with reasoning_effort set to none."
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/guides/latest-model",
+        "contentHash": "sha256:14d2ce97ad602db06a1a0e70bfab41e573220cee89dbdfe88227777bf4223428",
+        "retrievedAt": "2026-10-10T20:58:45.852Z",
+        "excerpt": "When reasoning effort is not none, remove temperature, top_p, and top_logprobs."
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/guides/latest-model",
+        "contentHash": "sha256:14d2ce97ad602db06a1a0e70bfab41e573220cee89dbdfe88227777bf4223428",
+        "retrievedAt": "2026-10-10T20:58:45.852Z",
+        "excerpt": "GPT-6 Sol and GPT-6 Luna support function calling in Chat Completions only with reasoning_effort: \"none\"."
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-5.4-nano-2026-03-17.retirement-undated",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-5.4-nano-2026-03-17",
+    "replacement": "gpt-6-luna",
+    "status": "deprecated",
+    "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-5.4-nano",
+    "note": "The dated snapshot the gpt-5.4-nano alias points to. OpenAI's gpt-5.4-nano model page lists it with a Deprecated badge. OpenAI's deprecations page retires gpt-5.4-nano on Apr 1, 2027 and does not name this snapshot, so the record states no shutdown date: a future date has to be stated by the provider for this id. Detect-only, for the same reason as gpt-5.4-nano: GPT-5.4 nano defaults to reasoning effort none and gpt-6-luna to medium, and OpenAI says that above none, temperature, top_p and top_logprobs must be removed and that Chat Completions takes function calls only at none.",
+    "verification": {
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": true,
+      "autoApplyAllowed": false,
+      "quarantineReason": "the replacement, GPT-6 Luna, defaults to a different reasoning effort: OpenAI's model pages give gpt-5.4-nano, which this snapshot serves, a default of none and gpt-6-luna a default of medium, and OpenAI's GPT-6 guide says that when reasoning effort is not none, temperature, top_p and top_logprobs must be removed, and that GPT-6 Luna supports function calling in Chat Completions only with reasoning_effort set to none; swapping the id alone can turn a call that works today into one that fails, so a person should change the model and set reasoning_effort (none keeps today's default) or remove those parameters",
+      "checkedAt": "2026-10-11",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-6-luna\" is live in a public catalog",
+        "the gpt-5.4-nano model page (read 2026-10-10 UTC, snapshot 261bf9b9790c) lists gpt-5.4-nano-2026-03-17 as its snapshot with a Deprecated badge and says \"Reasoning.effort supports: none (default), low, medium, high and xhigh.\"",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 461d3951ff15) states shutdown Apr 1, 2027 and recommended replacement gpt-6-luna for gpt-5.4-nano, and does not name gpt-5.4-nano-2026-03-17; this record carries no shutdown date because the provider states none for this id",
+        "the gpt-6-luna model page (read 2026-10-10 UTC, snapshot fea955e492c1) says \"reasoning.effort supports none, low, medium (default), high, xhigh, and max.\" and \"Chat Completions supports function calling only with reasoning_effort set to none.\"",
+        "OpenAI's GPT-6 guide (read 2026-10-10 UTC, snapshot 14d2ce97ad60) says \"When reasoning effort is not none, remove temperature, top_p, and top_logprobs.\" and \"GPT-6 Sol and GPT-6 Luna support function calling in Chat Completions only with reasoning_effort: \"none\".\"",
+        "held review-only on 2026-10-10: added beside gpt-5.4-nano so that a call or a usage row on the pinned snapshot gets the same review finding as one on the alias"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-5.4-nano",
+        "contentHash": "sha256:261bf9b9790c0bf22da7bd20b9b0212558f388fb745f733df3036759ef13725f",
+        "retrievedAt": "2026-10-10T20:59:48.834Z",
+        "excerpt": "gpt-5.4-nano-2026-03-17 Deprecated"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:461d3951ff159cc1da04ceb6e0c380ad62dc611d23d0ad7d81143c6b1274475c",
+        "retrievedAt": "2026-10-10T20:48:24.498Z",
+        "excerpt": "Apr 1, 2027 | gpt-5.4-nano | gpt-6-luna"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+        "contentHash": "sha256:fea955e492c1cdc8e3a8517566513fd8951cc7b6982bbbf9f2176587cec4da0f",
+        "retrievedAt": "2026-10-10T20:59:47.806Z",
+        "excerpt": "reasoning.effort supports none, low, medium (default), high, xhigh, and max."
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+        "contentHash": "sha256:fea955e492c1cdc8e3a8517566513fd8951cc7b6982bbbf9f2176587cec4da0f",
+        "retrievedAt": "2026-10-10T20:59:47.806Z",
+        "excerpt": "Chat Completions supports function calling only with reasoning_effort set to none."
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/guides/latest-model",
+        "contentHash": "sha256:14d2ce97ad602db06a1a0e70bfab41e573220cee89dbdfe88227777bf4223428",
+        "retrievedAt": "2026-10-10T20:58:45.852Z",
+        "excerpt": "When reasoning effort is not none, remove temperature, top_p, and top_logprobs."
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/guides/latest-model",
+        "contentHash": "sha256:14d2ce97ad602db06a1a0e70bfab41e573220cee89dbdfe88227777bf4223428",
+        "retrievedAt": "2026-10-10T20:58:45.852Z",
+        "excerpt": "GPT-6 Sol and GPT-6 Luna support function calling in Chat Completions only with reasoning_effort: \"none\"."
+      }
+    ]
+  },
+  {
+    "entryId": "openai.tts-1.retirement-2027-01-06",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "tts-1",
+    "replacement": "gpt-realtime-2.1-mini",
+    "status": "deprecated",
+    "shutdownDate": "2027-01-06",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Jan 6, 2027 | tts-1 | gpt-realtime-2.1-mini. Review-only: this is a text-to-speech model, and OpenAI names gpt-realtime-2.1-mini, a Realtime API model, so the migration moves the call from the speech endpoint to a Realtime session. Swapping the id alone is not that migration, and public catalogs do not list text-to-speech models, so the gate cannot check the replacement.",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"tts-1\" is a tts model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-realtime-2.1-mini\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 461d3951ff15) states shutdown Jan 6, 2027 for tts-1 and says \"Migrate to gpt-realtime-2.1-mini before the shutdown date. See the Realtime API guide to plan your migration.\"",
+        "the replacement is called through the Realtime API rather than the speech endpoint, so a person has to move the call; mendr flags it and never swaps the id"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "Jan 6, 2027 | tts-1 | gpt-realtime-2.1-mini"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:461d3951ff159cc1da04ceb6e0c380ad62dc611d23d0ad7d81143c6b1274475c",
+        "retrievedAt": "2026-10-10T20:48:24.498Z",
+        "excerpt": "Jan 6, 2027 | tts-1 | gpt-realtime-2.1-mini"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.tts-1-hd.retirement-2027-01-06",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "tts-1-hd",
+    "replacement": "gpt-realtime-2.1-mini",
+    "status": "deprecated",
+    "shutdownDate": "2027-01-06",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Jan 6, 2027 | tts-1-hd | gpt-realtime-2.1-mini. Review-only: this is a text-to-speech model, and OpenAI names gpt-realtime-2.1-mini, a Realtime API model, so the migration moves the call from the speech endpoint to a Realtime session. Swapping the id alone is not that migration, and public catalogs do not list text-to-speech models, so the gate cannot check the replacement.",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"tts-1-hd\" is a tts model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-realtime-2.1-mini\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 461d3951ff15) states shutdown Jan 6, 2027 for tts-1-hd and says \"Migrate to gpt-realtime-2.1-mini before the shutdown date. See the Realtime API guide to plan your migration.\"",
+        "the replacement is called through the Realtime API rather than the speech endpoint, so a person has to move the call; mendr flags it and never swaps the id"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "Jan 6, 2027 | tts-1-hd | gpt-realtime-2.1-mini"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:461d3951ff159cc1da04ceb6e0c380ad62dc611d23d0ad7d81143c6b1274475c",
+        "retrievedAt": "2026-10-10T20:48:24.498Z",
+        "excerpt": "Jan 6, 2027 | tts-1-hd | gpt-realtime-2.1-mini"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-4o-mini-tts-2025-03-20.retirement-2027-01-06",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4o-mini-tts-2025-03-20",
+    "replacement": "gpt-realtime-2.1-mini",
+    "status": "deprecated",
+    "shutdownDate": "2027-01-06",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Jan 6, 2027 | gpt-4o-mini-tts-2025-03-20 | gpt-realtime-2.1-mini. Review-only: this is a text-to-speech model, and OpenAI names gpt-realtime-2.1-mini, a Realtime API model, so the migration moves the call from the speech endpoint to a Realtime session. Swapping the id alone is not that migration, and public catalogs do not list text-to-speech models, so the gate cannot check the replacement.",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"gpt-4o-mini-tts-2025-03-20\" is a tts model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-realtime-2.1-mini\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 461d3951ff15) states shutdown Jan 6, 2027 for gpt-4o-mini-tts-2025-03-20 and says \"Migrate to gpt-realtime-2.1-mini before the shutdown date. See the Realtime API guide to plan your migration.\"",
+        "the replacement is called through the Realtime API rather than the speech endpoint, so a person has to move the call; mendr flags it and never swaps the id"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "Jan 6, 2027 | gpt-4o-mini-tts-2025-03-20 | gpt-realtime-2.1-mini"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:461d3951ff159cc1da04ceb6e0c380ad62dc611d23d0ad7d81143c6b1274475c",
+        "retrievedAt": "2026-10-10T20:48:24.498Z",
+        "excerpt": "Jan 6, 2027 | gpt-4o-mini-tts-2025-03-20 | gpt-realtime-2.1-mini"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-4o-mini-tts-2025-12-15.retirement-2027-01-06",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4o-mini-tts-2025-12-15",
+    "replacement": "gpt-realtime-2.1-mini",
+    "status": "deprecated",
+    "shutdownDate": "2027-01-06",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Jan 6, 2027 | gpt-4o-mini-tts-2025-12-15 | gpt-realtime-2.1-mini. Review-only: this is a text-to-speech model, and OpenAI names gpt-realtime-2.1-mini, a Realtime API model, so the migration moves the call from the speech endpoint to a Realtime session. Swapping the id alone is not that migration, and public catalogs do not list text-to-speech models, so the gate cannot check the replacement.",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"gpt-4o-mini-tts-2025-12-15\" is a tts model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-realtime-2.1-mini\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 461d3951ff15) states shutdown Jan 6, 2027 for gpt-4o-mini-tts-2025-12-15 and says \"Migrate to gpt-realtime-2.1-mini before the shutdown date. See the Realtime API guide to plan your migration.\"",
+        "the replacement is called through the Realtime API rather than the speech endpoint, so a person has to move the call; mendr flags it and never swaps the id"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:9621ae7344728022427239ba5800023255205969f946efaa237808bc376a22cc",
+        "retrievedAt": "2026-10-05T03:51:08.286Z",
+        "excerpt": "Jan 6, 2027 | gpt-4o-mini-tts-2025-12-15 | gpt-realtime-2.1-mini"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:461d3951ff159cc1da04ceb6e0c380ad62dc611d23d0ad7d81143c6b1274475c",
+        "retrievedAt": "2026-10-10T20:48:24.498Z",
+        "excerpt": "Jan 6, 2027 | gpt-4o-mini-tts-2025-12-15 | gpt-realtime-2.1-mini"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-4o-audio.retirement-2027-01-20",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4o-audio",
+    "replacement": "gpt-audio-1.5",
+    "status": "deprecated",
+    "shutdownDate": "2027-01-20",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Jan 20, 2027 | gpt-4o-audio | gpt-audio-1.5. Review-only: public catalogs do not list audio models, so the gate cannot check gpt-audio-1.5. OpenAI's row names the gpt-4o-audio model family. OpenAI's model page for it (read 2026-10-11 UTC) lists gpt-4o-audio-preview and the snapshots gpt-4o-audio-preview-2025-06-03, gpt-4o-audio-preview-2024-12-17, gpt-4o-audio-preview-2024-10-01, and no model by the literal id gpt-4o-audio. mendr matches exact ids, so this record finds only a call that sends the literal id gpt-4o-audio, which no OpenAI page lists as callable. The callable ids have records of their own: gpt-4o-audio-preview and gpt-4o-audio-preview-2024-10-01 with the earlier dates OpenAI gave them, and gpt-4o-audio-preview-2025-06-03 and gpt-4o-audio-preview-2024-12-17 with no date, because OpenAI names only the family.",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"gpt-4o-audio\" is a audio model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-audio-1.5\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 461d3951ff15) states shutdown Jan 20, 2027 and recommended replacement gpt-audio-1.5, in the \"Legacy audio, realtime, and transcription models\" notice for model families and snapshots",
+        "the gpt-4o-audio-preview model page (read 2026-10-11 UTC, snapshot ac22c96d7566) marks GPT-4o Audio Deprecated and lists gpt-4o-audio-preview and the snapshots gpt-4o-audio-preview-2025-06-03, gpt-4o-audio-preview-2024-12-17, gpt-4o-audio-preview-2024-10-01; it lists no model by the literal id gpt-4o-audio, so this record matches no id OpenAI lists as callable"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "Jan 20, 2027 | gpt-4o-audio | gpt-audio-1.5"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:461d3951ff159cc1da04ceb6e0c380ad62dc611d23d0ad7d81143c6b1274475c",
+        "retrievedAt": "2026-10-10T20:48:24.498Z",
+        "excerpt": "Jan 20, 2027 | gpt-4o-audio | gpt-audio-1.5"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-4o-audio-preview",
+        "contentHash": "sha256:ac22c96d7566eea9c37584b6a1c074ebef7c2c6e4192da56211a77775ce16391",
+        "retrievedAt": "2026-10-11T01:12:04.706Z",
+        "excerpt": "GPT-4o Audio Deprecated"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-4o-audio-preview-2025-06-03.retirement-undated",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4o-audio-preview-2025-06-03",
+    "replacement": "gpt-audio-1.5",
+    "status": "deprecated",
+    "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-4o-audio-preview",
+    "note": "A dated snapshot of the gpt-4o-audio family. OpenAI's gpt-4o-audio-preview model page marks GPT-4o Audio Deprecated and lists this snapshot. OpenAI's deprecations page retires the gpt-4o-audio model family and snapshots on Jan 20, 2027 and names no snapshot, so the record states no shutdown date: a future date has to be stated by the provider for this id. Review-only: public catalogs do not list audio models, so the gate cannot check gpt-audio-1.5.",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-11",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"gpt-4o-audio-preview-2025-06-03\" is a audio model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-audio-1.5\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
+        "the gpt-4o-audio-preview model page (read 2026-10-11 UTC, snapshot ac22c96d7566) marks GPT-4o Audio Deprecated and lists gpt-4o-audio-preview-2025-06-03 among its snapshots",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 461d3951ff15) retires the gpt-4o-audio model family and snapshots on Jan 20, 2027 with recommended replacement gpt-audio-1.5, and names no snapshot; this record carries no shutdown date because the provider states none for this id"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-4o-audio-preview",
+        "contentHash": "sha256:ac22c96d7566eea9c37584b6a1c074ebef7c2c6e4192da56211a77775ce16391",
+        "retrievedAt": "2026-10-11T01:12:04.706Z",
+        "excerpt": "gpt-4o-audio-preview-2025-06-03 Deprecated"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:461d3951ff159cc1da04ceb6e0c380ad62dc611d23d0ad7d81143c6b1274475c",
+        "retrievedAt": "2026-10-10T20:48:24.498Z",
+        "excerpt": "Jan 20, 2027 | gpt-4o-audio | gpt-audio-1.5"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-4o-audio-preview-2024-12-17.retirement-undated",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4o-audio-preview-2024-12-17",
+    "replacement": "gpt-audio-1.5",
+    "status": "deprecated",
+    "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-4o-audio-preview",
+    "note": "A dated snapshot of the gpt-4o-audio family. OpenAI's gpt-4o-audio-preview model page marks GPT-4o Audio Deprecated and lists this snapshot. OpenAI's deprecations page retires the gpt-4o-audio model family and snapshots on Jan 20, 2027 and names no snapshot, so the record states no shutdown date: a future date has to be stated by the provider for this id. Review-only: public catalogs do not list audio models, so the gate cannot check gpt-audio-1.5.",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-11",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"gpt-4o-audio-preview-2024-12-17\" is a audio model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-audio-1.5\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
+        "the gpt-4o-audio-preview model page (read 2026-10-11 UTC, snapshot ac22c96d7566) marks GPT-4o Audio Deprecated and lists gpt-4o-audio-preview-2024-12-17 among its snapshots",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 461d3951ff15) retires the gpt-4o-audio model family and snapshots on Jan 20, 2027 with recommended replacement gpt-audio-1.5, and names no snapshot; this record carries no shutdown date because the provider states none for this id"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-4o-audio-preview",
+        "contentHash": "sha256:ac22c96d7566eea9c37584b6a1c074ebef7c2c6e4192da56211a77775ce16391",
+        "retrievedAt": "2026-10-11T01:12:04.706Z",
+        "excerpt": "gpt-4o-audio-preview-2025-06-03 gpt-4o-audio-preview-2024-12-17 gpt-4o-audio-preview-2024-10-01"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:461d3951ff159cc1da04ceb6e0c380ad62dc611d23d0ad7d81143c6b1274475c",
+        "retrievedAt": "2026-10-10T20:48:24.498Z",
+        "excerpt": "Jan 20, 2027 | gpt-4o-audio | gpt-audio-1.5"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-4o-mini-audio.retirement-2027-01-20",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4o-mini-audio",
+    "replacement": "gpt-audio-1.5",
+    "status": "deprecated",
+    "shutdownDate": "2027-01-20",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Jan 20, 2027 | gpt-4o-mini-audio | gpt-audio-1.5. Review-only: public catalogs do not list audio models, so the gate cannot check gpt-audio-1.5. OpenAI's row names the gpt-4o-mini-audio model family. OpenAI's model page for it (read 2026-10-11 UTC) lists gpt-4o-mini-audio-preview and the snapshot gpt-4o-mini-audio-preview-2024-12-17, and no model by the literal id gpt-4o-mini-audio. mendr matches exact ids, so this record finds only a call that sends the literal id gpt-4o-mini-audio, which no OpenAI page lists as callable. gpt-4o-mini-audio-preview-2024-12-17 has a record of its own with no date, because OpenAI names only the family. gpt-4o-mini-audio-preview has none yet: it waits in the candidate queue with the 2026-05-07 date of OpenAI's 2025-09-15 notice, so a call on that alias gets no finding.",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"gpt-4o-mini-audio\" is a audio model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-audio-1.5\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 461d3951ff15) states shutdown Jan 20, 2027 and recommended replacement gpt-audio-1.5, in the \"Legacy audio, realtime, and transcription models\" notice for model families and snapshots",
+        "the gpt-4o-mini-audio-preview model page (read 2026-10-11 UTC, snapshot a482d9dbe55b) marks GPT-4o Mini Audio Deprecated and lists gpt-4o-mini-audio-preview and the snapshot gpt-4o-mini-audio-preview-2024-12-17; it lists no model by the literal id gpt-4o-mini-audio, so this record matches no id OpenAI lists as callable"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "Jan 20, 2027 | gpt-4o-mini-audio | gpt-audio-1.5"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:461d3951ff159cc1da04ceb6e0c380ad62dc611d23d0ad7d81143c6b1274475c",
+        "retrievedAt": "2026-10-10T20:48:24.498Z",
+        "excerpt": "Jan 20, 2027 | gpt-4o-mini-audio | gpt-audio-1.5"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-4o-mini-audio-preview",
+        "contentHash": "sha256:a482d9dbe55bdd023df5773c7c684330a1560bb0a4ea05e3385543606d77c0ad",
+        "retrievedAt": "2026-10-11T01:12:04.886Z",
+        "excerpt": "GPT-4o Mini Audio Deprecated"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-4o-mini-audio-preview-2024-12-17.retirement-undated",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4o-mini-audio-preview-2024-12-17",
+    "replacement": "gpt-audio-1.5",
+    "status": "deprecated",
+    "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-4o-mini-audio-preview",
+    "note": "A dated snapshot of the gpt-4o-mini-audio family. OpenAI's gpt-4o-mini-audio-preview model page marks GPT-4o Mini Audio Deprecated and lists this snapshot. OpenAI's deprecations page retires the gpt-4o-mini-audio model family and snapshots on Jan 20, 2027 and names no snapshot, so the record states no shutdown date: a future date has to be stated by the provider for this id. Review-only: public catalogs do not list audio models, so the gate cannot check gpt-audio-1.5.",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-11",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"gpt-4o-mini-audio-preview-2024-12-17\" is a audio model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-audio-1.5\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
+        "the gpt-4o-mini-audio-preview model page (read 2026-10-11 UTC, snapshot a482d9dbe55b) marks GPT-4o Mini Audio Deprecated and lists gpt-4o-mini-audio-preview-2024-12-17 among its snapshots",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 461d3951ff15) retires the gpt-4o-mini-audio model family and snapshots on Jan 20, 2027 with recommended replacement gpt-audio-1.5, and names no snapshot; this record carries no shutdown date because the provider states none for this id"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-4o-mini-audio-preview",
+        "contentHash": "sha256:a482d9dbe55bdd023df5773c7c684330a1560bb0a4ea05e3385543606d77c0ad",
+        "retrievedAt": "2026-10-11T01:12:04.886Z",
+        "excerpt": "gpt-4o-mini-audio-preview-2024-12-17 Deprecated"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:461d3951ff159cc1da04ceb6e0c380ad62dc611d23d0ad7d81143c6b1274475c",
+        "retrievedAt": "2026-10-10T20:48:24.498Z",
+        "excerpt": "Jan 20, 2027 | gpt-4o-mini-audio | gpt-audio-1.5"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-4o-mini-realtime.retirement-2027-01-20",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4o-mini-realtime",
+    "replacement": "gpt-realtime-2.1-mini",
+    "status": "deprecated",
+    "shutdownDate": "2027-01-20",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "discovered from the openai deprecation table; row read as: Jan 20, 2027 | gpt-4o-mini-realtime | gpt-realtime-2.1-mini. Review-only until OpenRouter or models.dev lists gpt-realtime-2.1-mini. OpenAI's row names the gpt-4o-mini-realtime model family. OpenAI's model page for it (read 2026-10-11 UTC) lists gpt-4o-mini-realtime-preview and the snapshot gpt-4o-mini-realtime-preview-2024-12-17, and no model by the literal id gpt-4o-mini-realtime. mendr matches exact ids, so this record finds only a call that sends the literal id gpt-4o-mini-realtime, which no OpenAI page lists as callable. gpt-4o-mini-realtime-preview-2024-12-17 has a record of its own with no date, because OpenAI names only the family. gpt-4o-mini-realtime-preview has none yet: it waits in the candidate queue with the 2026-05-07 date of OpenAI's 2025-09-15 notice, so a call on that alias gets no finding.",
+    "verification": {
+      "status": "unverified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-realtime-2.1-mini\" was not found live in any public catalog (models.dev / OpenRouter)",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 461d3951ff15) states shutdown Jan 20, 2027 and recommended replacement gpt-realtime-2.1-mini, in the \"Legacy audio, realtime, and transcription models\" notice for model families and snapshots",
+        "not catalog-verified: OpenRouter and models.dev do not list gpt-realtime-2.1-mini yet, so the gate refuses it; re-run `mendr verify-registry` once they do",
+        "the gpt-4o-mini-realtime-preview model page (read 2026-10-11 UTC, snapshot ef4d2c830276) marks GPT-4o Mini Realtime Deprecated and lists gpt-4o-mini-realtime-preview and the snapshot gpt-4o-mini-realtime-preview-2024-12-17; it lists no model by the literal id gpt-4o-mini-realtime, so this record matches no id OpenAI lists as callable"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:494977348f9e7dab22d7c222fe04ae27b3aa3124f7efa89c7273de918bbf04dc",
+        "retrievedAt": "2026-09-14T23:54:48.968Z",
+        "excerpt": "Jan 20, 2027 | gpt-4o-mini-realtime | gpt-realtime-2.1-mini"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:461d3951ff159cc1da04ceb6e0c380ad62dc611d23d0ad7d81143c6b1274475c",
+        "retrievedAt": "2026-10-10T20:48:24.498Z",
+        "excerpt": "Jan 20, 2027 | gpt-4o-mini-realtime | gpt-realtime-2.1-mini"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-4o-mini-realtime-preview",
+        "contentHash": "sha256:ef4d2c8302764e4e10ab96a0a7219b0176e1edb9231c301da6f3fa94eb19d405",
+        "retrievedAt": "2026-10-11T01:12:05.237Z",
+        "excerpt": "GPT-4o Mini Realtime Deprecated"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-4o-mini-realtime-preview-2024-12-17.retirement-undated",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4o-mini-realtime-preview-2024-12-17",
+    "replacement": "gpt-realtime-2.1-mini",
+    "status": "deprecated",
+    "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-4o-mini-realtime-preview",
+    "note": "A dated snapshot of the gpt-4o-mini-realtime family. OpenAI's gpt-4o-mini-realtime-preview model page marks GPT-4o Mini Realtime Deprecated and lists this snapshot. OpenAI's deprecations page retires the gpt-4o-mini-realtime model family and snapshots on Jan 20, 2027 and names no snapshot, so the record states no shutdown date: a future date has to be stated by the provider for this id. Review-only: held until OpenAI states a date for this id, and the gate cannot check gpt-realtime-2.1-mini, which no public catalog lists yet.",
+    "verification": {
+      "status": "quarantined",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": "OpenAI states no shutdown date for gpt-4o-mini-realtime-preview-2024-12-17: its deprecations page names only the gpt-4o-mini-realtime family (Jan 20, 2027), and an automatic swap needs a date the provider states for the id. A person should confirm the date for this snapshot before moving the call to gpt-realtime-2.1-mini",
+      "checkedAt": "2026-10-11",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-realtime-2.1-mini\" was not found live in any public catalog (models.dev / OpenRouter)",
+        "the gpt-4o-mini-realtime-preview model page (read 2026-10-11 UTC, snapshot ef4d2c830276) marks GPT-4o Mini Realtime Deprecated and lists gpt-4o-mini-realtime-preview-2024-12-17 among its snapshots",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 461d3951ff15) retires the gpt-4o-mini-realtime model family and snapshots on Jan 20, 2027 with recommended replacement gpt-realtime-2.1-mini, and names no snapshot; this record carries no shutdown date because the provider states none for this id",
+        "held review-only on 2026-10-10: without a stated date, a catalog listing gpt-realtime-2.1-mini later must not make this record an automatic swap"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-4o-mini-realtime-preview",
+        "contentHash": "sha256:ef4d2c8302764e4e10ab96a0a7219b0176e1edb9231c301da6f3fa94eb19d405",
+        "retrievedAt": "2026-10-11T01:12:05.237Z",
+        "excerpt": "gpt-4o-mini-realtime-preview-2024-12-17 Deprecated"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:461d3951ff159cc1da04ceb6e0c380ad62dc611d23d0ad7d81143c6b1274475c",
+        "retrievedAt": "2026-10-10T20:48:24.498Z",
+        "excerpt": "Jan 20, 2027 | gpt-4o-mini-realtime | gpt-realtime-2.1-mini"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.whisper-1.retirement-2027-02-26",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "whisper-1",
+    "replacement": "gpt-transcribe",
+    "status": "deprecated",
+    "shutdownDate": "2027-02-26",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "read by hand from the openai deprecation table, which discovery skips because the row names two replacements; row read as: Feb 26, 2027 | whisper-1 | gpt-live-transcribe or gpt-transcribe. Review-only: OpenAI names two replacements. This record carries gpt-transcribe, the model OpenAI's transcription guide recommends for file transcription; for live audio the guide recommends gpt-live-transcribe. The same guide still sends word timestamps, srt and vtt subtitles, and translation into English to whisper-1, so check that the replacement covers what the call uses.",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"whisper-1\" is a audio model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-transcribe\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshots 8d440e5f7cd4 and 461d3951ff15, same text) states shutdown Feb 26, 2027 and names \"gpt-live-transcribe or gpt-transcribe\"",
+        "OpenAI's transcription guide (read 2026-10-10 UTC, snapshot 3f881da3a130) recommends gpt-transcribe for \"File transcription\" and gpt-live-transcribe for \"Realtime transcription\"",
+        "the transcription guide still names whisper-1 for \"Word timestamps or srt and vtt subtitles\" and for \"Translation of a completed recording into English\""
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T05:43:24.374Z",
+        "excerpt": "Feb 26, 2027 | whisper-1 | gpt-live-transcribe or gpt-transcribe"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:461d3951ff159cc1da04ceb6e0c380ad62dc611d23d0ad7d81143c6b1274475c",
+        "retrievedAt": "2026-10-10T20:48:24.498Z",
+        "excerpt": "Feb 26, 2027 | whisper-1 | gpt-live-transcribe or gpt-transcribe"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/guides/transcription",
+        "contentHash": "sha256:3f881da3a130b96c9d31f3c93ec768127ae7fefa3ff3c6ec5a8562d2913f5668",
+        "retrievedAt": "2026-10-10T20:55:53.233Z",
+        "excerpt": "File transcription | You have a completed recording or a bounded audio request. Upload the file and receive a final transcript, or stream text while the file is processed. | gpt-transcribe"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/guides/transcription",
+        "contentHash": "sha256:3f881da3a130b96c9d31f3c93ec768127ae7fefa3ff3c6ec5a8562d2913f5668",
+        "retrievedAt": "2026-10-10T20:55:53.233Z",
+        "excerpt": "Realtime transcription | You have a microphone, call, or other live audio stream and need text as speech arrives. | gpt-live-transcribe"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/guides/transcription",
+        "contentHash": "sha256:3f881da3a130b96c9d31f3c93ec768127ae7fefa3ff3c6ec5a8562d2913f5668",
+        "retrievedAt": "2026-10-10T20:55:53.233Z",
+        "excerpt": "Word timestamps or srt and vtt subtitles | whisper-1 with file transcription."
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/guides/transcription",
+        "contentHash": "sha256:3f881da3a130b96c9d31f3c93ec768127ae7fefa3ff3c6ec5a8562d2913f5668",
+        "retrievedAt": "2026-10-10T20:55:53.233Z",
+        "excerpt": "Translation of a completed recording into English | whisper-1 with the audio translations endpoint."
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-4o-transcribe.retirement-2027-02-26",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4o-transcribe",
+    "replacement": "gpt-transcribe",
+    "status": "deprecated",
+    "shutdownDate": "2027-02-26",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "read by hand from the openai deprecation table, which discovery skips because the row names two replacements; row read as: Feb 26, 2027 | gpt-4o-transcribe | gpt-live-transcribe or gpt-transcribe. Review-only: OpenAI names two replacements. This record carries gpt-transcribe, the model OpenAI's transcription guide recommends for file transcription; for live audio the guide recommends gpt-live-transcribe. A call in a Realtime transcription session should move to gpt-live-transcribe instead.",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"gpt-4o-transcribe\" is a audio model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-transcribe\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshots 8d440e5f7cd4 and 461d3951ff15, same text) states shutdown Feb 26, 2027 and names \"gpt-live-transcribe or gpt-transcribe\"",
+        "OpenAI's transcription guide (read 2026-10-10 UTC, snapshot 3f881da3a130) recommends gpt-transcribe for \"File transcription\" and gpt-live-transcribe for \"Realtime transcription\""
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T05:43:24.374Z",
+        "excerpt": "Feb 26, 2027 | gpt-4o-transcribe | gpt-live-transcribe or gpt-transcribe"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:461d3951ff159cc1da04ceb6e0c380ad62dc611d23d0ad7d81143c6b1274475c",
+        "retrievedAt": "2026-10-10T20:48:24.498Z",
+        "excerpt": "Feb 26, 2027 | gpt-4o-transcribe | gpt-live-transcribe or gpt-transcribe"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/guides/transcription",
+        "contentHash": "sha256:3f881da3a130b96c9d31f3c93ec768127ae7fefa3ff3c6ec5a8562d2913f5668",
+        "retrievedAt": "2026-10-10T20:55:53.233Z",
+        "excerpt": "File transcription | You have a completed recording or a bounded audio request. Upload the file and receive a final transcript, or stream text while the file is processed. | gpt-transcribe"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/guides/transcription",
+        "contentHash": "sha256:3f881da3a130b96c9d31f3c93ec768127ae7fefa3ff3c6ec5a8562d2913f5668",
+        "retrievedAt": "2026-10-10T20:55:53.233Z",
+        "excerpt": "Realtime transcription | You have a microphone, call, or other live audio stream and need text as speech arrives. | gpt-live-transcribe"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-4o-mini-transcribe.retirement-2027-02-26",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4o-mini-transcribe",
+    "replacement": "gpt-transcribe",
+    "status": "deprecated",
+    "shutdownDate": "2027-02-26",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "read by hand from the openai deprecation table, which discovery skips because the row names two replacements; row read as: Feb 26, 2027 | gpt-4o-mini-transcribe | gpt-live-transcribe or gpt-transcribe. Review-only: OpenAI names two replacements. This record carries gpt-transcribe, the model OpenAI's transcription guide recommends for file transcription; for live audio the guide recommends gpt-live-transcribe. A call in a Realtime transcription session should move to gpt-live-transcribe instead.",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"gpt-4o-mini-transcribe\" is a audio model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-transcribe\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshots 8d440e5f7cd4 and 461d3951ff15, same text) states shutdown Feb 26, 2027 and names \"gpt-live-transcribe or gpt-transcribe\"",
+        "OpenAI's transcription guide (read 2026-10-10 UTC, snapshot 3f881da3a130) recommends gpt-transcribe for \"File transcription\" and gpt-live-transcribe for \"Realtime transcription\""
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T05:43:24.374Z",
+        "excerpt": "Feb 26, 2027 | gpt-4o-mini-transcribe | gpt-live-transcribe or gpt-transcribe"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:461d3951ff159cc1da04ceb6e0c380ad62dc611d23d0ad7d81143c6b1274475c",
+        "retrievedAt": "2026-10-10T20:48:24.498Z",
+        "excerpt": "Feb 26, 2027 | gpt-4o-mini-transcribe | gpt-live-transcribe or gpt-transcribe"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/guides/transcription",
+        "contentHash": "sha256:3f881da3a130b96c9d31f3c93ec768127ae7fefa3ff3c6ec5a8562d2913f5668",
+        "retrievedAt": "2026-10-10T20:55:53.233Z",
+        "excerpt": "File transcription | You have a completed recording or a bounded audio request. Upload the file and receive a final transcript, or stream text while the file is processed. | gpt-transcribe"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/guides/transcription",
+        "contentHash": "sha256:3f881da3a130b96c9d31f3c93ec768127ae7fefa3ff3c6ec5a8562d2913f5668",
+        "retrievedAt": "2026-10-10T20:55:53.233Z",
+        "excerpt": "Realtime transcription | You have a microphone, call, or other live audio stream and need text as speech arrives. | gpt-live-transcribe"
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-4o-transcribe-diarize.retirement-2027-02-26",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4o-transcribe-diarize",
+    "replacement": "gpt-transcribe",
+    "status": "deprecated",
+    "shutdownDate": "2027-02-26",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "read by hand from the openai deprecation table, which discovery skips because the row names two replacements; row read as: Feb 26, 2027 | gpt-4o-transcribe-diarize | gpt-live-transcribe or gpt-transcribe. Review-only: OpenAI names two replacements. This record carries gpt-transcribe, the model OpenAI's transcription guide recommends for file transcription; for live audio the guide recommends gpt-live-transcribe. The same guide still sends speaker-labeled transcripts to gpt-4o-transcribe-diarize, so check that the replacement covers what the call uses.",
+    "verification": {
+      "status": "unverifiable",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "\"gpt-4o-transcribe-diarize\" is a audio model; public catalogs (models.dev, OpenRouter) do not list this class, so \"gpt-transcribe\" cannot be catalog-verified (this is NOT evidence the mapping is wrong)",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshots 8d440e5f7cd4 and 461d3951ff15, same text) states shutdown Feb 26, 2027 and names \"gpt-live-transcribe or gpt-transcribe\"",
+        "OpenAI's transcription guide (read 2026-10-10 UTC, snapshot 3f881da3a130) recommends gpt-transcribe for \"File transcription\" and gpt-live-transcribe for \"Realtime transcription\"",
+        "the transcription guide still names gpt-4o-transcribe-diarize for \"Speaker-labeled transcripts\""
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T05:43:24.374Z",
+        "excerpt": "Feb 26, 2027 | gpt-4o-transcribe-diarize | gpt-live-transcribe or gpt-transcribe"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:461d3951ff159cc1da04ceb6e0c380ad62dc611d23d0ad7d81143c6b1274475c",
+        "retrievedAt": "2026-10-10T20:48:24.498Z",
+        "excerpt": "Feb 26, 2027 | gpt-4o-transcribe-diarize | gpt-live-transcribe or gpt-transcribe"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/guides/transcription",
+        "contentHash": "sha256:3f881da3a130b96c9d31f3c93ec768127ae7fefa3ff3c6ec5a8562d2913f5668",
+        "retrievedAt": "2026-10-10T20:55:53.233Z",
+        "excerpt": "File transcription | You have a completed recording or a bounded audio request. Upload the file and receive a final transcript, or stream text while the file is processed. | gpt-transcribe"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/guides/transcription",
+        "contentHash": "sha256:3f881da3a130b96c9d31f3c93ec768127ae7fefa3ff3c6ec5a8562d2913f5668",
+        "retrievedAt": "2026-10-10T20:55:53.233Z",
+        "excerpt": "Realtime transcription | You have a microphone, call, or other live audio stream and need text as speech arrives. | gpt-live-transcribe"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/guides/transcription",
+        "contentHash": "sha256:3f881da3a130b96c9d31f3c93ec768127ae7fefa3ff3c6ec5a8562d2913f5668",
+        "retrievedAt": "2026-10-10T20:55:53.233Z",
+        "excerpt": "Speaker-labeled transcripts | gpt-4o-transcribe-diarize with file transcription."
+      }
+    ]
+  },
+  {
+    "entryId": "openai.gpt-4-turbo-preview-completions.retirement-2026-03-26",
+    "provider": "openai",
+    "kind": "model_id",
+    "deprecated": "gpt-4-turbo-preview-completions",
+    "replacement": "gpt-4.1",
+    "status": "retired",
+    "shutdownDate": "2026-03-26",
+    "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+    "note": "gpt-4-turbo-preview-completions pointed to gpt-4-0125-preview, which shut down 2026-03-26; OpenAI's deprecation table names it in that row. OpenAI names two replacements, \"gpt-5 or gpt-4.1*\", and footnotes gpt-4.1: \"*For tasks that are especially latency sensitive and don’t require reasoning\". Which one a call needs is a person's decision, so this entry is review-only. It carries gpt-4.1, as the gpt-4-turbo-preview entry from the same row does.",
+    "verification": {
+      "status": "unverified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"gpt-4.1\" is live in a public catalog",
+        "the provider names more than one replacement (\"gpt-5 or gpt-4.1\"); which one fits a call is a person's decision, so the swap is never automatic",
+        "OpenAI deprecation page (read 2026-10-10 UTC, snapshots 8d440e5f7cd4 and 461d3951ff15, same text) states shutdown 2026-03-26 for gpt-4-0125-preview \"including gpt-4-turbo-preview and gpt-4-turbo-preview-completions, which point to this snapshot\", with \"gpt-5 or gpt-4.1\"",
+        "added 2026-10-10: the row's other two ids were already in the registry, and this one was missing"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:8d440e5f7cd4e2e3d92368b96f9d51806ae5058c500d13178bd72602110d543e",
+        "retrievedAt": "2026-10-10T05:43:24.374Z",
+        "excerpt": "2026‑03‑26 | gpt-4-0125-preview (including gpt-4-turbo-preview and gpt-4-turbo-preview-completions , which point to this snapshot) | gpt-5 or gpt-4.1*"
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
+        "contentHash": "sha256:461d3951ff159cc1da04ceb6e0c380ad62dc611d23d0ad7d81143c6b1274475c",
+        "retrievedAt": "2026-10-10T20:48:24.498Z",
+        "excerpt": "2026‑03‑26 | gpt-4-0125-preview (including gpt-4-turbo-preview and gpt-4-turbo-preview-completions , which point to this snapshot) | gpt-5 or gpt-4.1*"
+      }
+    ]
+  },
+  {
+    "entryId": "google.veo-3.0-generate-001.retirement-2026-06-30",
+    "provider": "google",
+    "kind": "model_id",
+    "deprecated": "veo-3.0-generate-001",
+    "replacement": "veo-3.1-generate-preview",
+    "status": "retired",
+    "shutdownDate": "2026-06-30",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "note": "read from the google deprecation table; row read as: veo-3.0-generate-001 | September 9, 2025 | June 30, 2026 | veo-3.1-generate-preview or the GA models on the Gemini Enterprise Agent Platform. Review-only: Google's named replacement, veo-3.1-generate-preview, itself shuts down on 2026-10-22, and Google names gemini-omni-1.1-flash after it, a different model family behind a different request. For this row Google also offers \"the GA models on the Gemini Enterprise Agent Platform\". A person picks the target.",
+    "verification": {
+      "status": "unverified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"veo-3.1-generate-preview\" is ITSELF deprecated in this registry (deprecated, shutdown 2026-10-22); a migration must not point at a retiring id",
+        "Google deprecation page (read 2026-10-10 UTC, snapshot d8b5a2b597a3) states the shutdown and names \"veo-3.1-generate-preview or the GA models on the Gemini Enterprise Agent Platform\"",
+        "veo-3.1-generate-preview shuts down 2026-10-22 (Google's page, the same snapshot), with gemini-omni-1.1-flash named after it"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:d8b5a2b597a3462a09f0c94808b1c71a9be2eaf46f7c190f68e6d3c9349b2c06",
+        "retrievedAt": "2026-10-10T20:48:26.026Z",
+        "excerpt": "veo-3.0-generate-001 | September 9, 2025 | June 30, 2026 | veo-3.1-generate-preview or the GA models on the Gemini Enterprise Agent Platform"
+      }
+    ]
+  },
+  {
+    "entryId": "google.veo-3.0-fast-generate-001.retirement-2026-06-30",
+    "provider": "google",
+    "kind": "model_id",
+    "deprecated": "veo-3.0-fast-generate-001",
+    "replacement": "veo-3.1-fast-generate-preview",
+    "status": "retired",
+    "shutdownDate": "2026-06-30",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "note": "read from the google deprecation table; row read as: veo-3.0-fast-generate-001 | September 9, 2025 | June 30, 2026 | veo-3.1-fast-generate-preview or the GA models on the Gemini Enterprise Agent Platform. Review-only: Google's named replacement, veo-3.1-fast-generate-preview, itself shuts down on 2026-10-22, and Google names gemini-omni-1.1-flash after it, a different model family behind a different request. For this row Google also offers \"the GA models on the Gemini Enterprise Agent Platform\". A person picks the target.",
+    "verification": {
+      "status": "unverified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"veo-3.1-fast-generate-preview\" is ITSELF deprecated in this registry (deprecated, shutdown 2026-10-22); a migration must not point at a retiring id",
+        "Google deprecation page (read 2026-10-10 UTC, snapshot d8b5a2b597a3) states the shutdown and names \"veo-3.1-fast-generate-preview or the GA models on the Gemini Enterprise Agent Platform\"",
+        "veo-3.1-fast-generate-preview shuts down 2026-10-22 (Google's page, the same snapshot), with gemini-omni-1.1-flash named after it"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:d8b5a2b597a3462a09f0c94808b1c71a9be2eaf46f7c190f68e6d3c9349b2c06",
+        "retrievedAt": "2026-10-10T20:48:26.026Z",
+        "excerpt": "veo-3.0-fast-generate-001 | September 9, 2025 | June 30, 2026 | veo-3.1-fast-generate-preview or the GA models on the Gemini Enterprise Agent Platform"
+      }
+    ]
+  },
+  {
+    "entryId": "google.veo-2.0-generate-001.retirement-2026-06-30",
+    "provider": "google",
+    "kind": "model_id",
+    "deprecated": "veo-2.0-generate-001",
+    "replacement": "veo-3.1-generate-preview",
+    "status": "retired",
+    "shutdownDate": "2026-06-30",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "note": "read from the google deprecation table; row read as: veo-2.0-generate-001 | April 9, 2025 | June 30, 2026 | veo-3.1-generate-preview or the GA models on the Gemini Enterprise Agent Platform. Review-only: Google's named replacement, veo-3.1-generate-preview, itself shuts down on 2026-10-22, and Google names gemini-omni-1.1-flash after it, a different model family behind a different request. For this row Google also offers \"the GA models on the Gemini Enterprise Agent Platform\". A person picks the target.",
+    "verification": {
+      "status": "unverified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"veo-3.1-generate-preview\" is ITSELF deprecated in this registry (deprecated, shutdown 2026-10-22); a migration must not point at a retiring id",
+        "Google deprecation page (read 2026-10-10 UTC, snapshot d8b5a2b597a3) states the shutdown and names \"veo-3.1-generate-preview or the GA models on the Gemini Enterprise Agent Platform\"",
+        "veo-3.1-generate-preview shuts down 2026-10-22 (Google's page, the same snapshot), with gemini-omni-1.1-flash named after it"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:d8b5a2b597a3462a09f0c94808b1c71a9be2eaf46f7c190f68e6d3c9349b2c06",
+        "retrievedAt": "2026-10-10T20:48:26.026Z",
+        "excerpt": "veo-2.0-generate-001 | April 9, 2025 | June 30, 2026 | veo-3.1-generate-preview or the GA models on the Gemini Enterprise Agent Platform"
+      }
+    ]
+  },
+  {
+    "entryId": "google.veo-3.0-generate-preview.retirement-2025-11-12",
+    "provider": "google",
+    "kind": "model_id",
+    "deprecated": "veo-3.0-generate-preview",
+    "replacement": "veo-3.1-generate-preview",
+    "status": "retired",
+    "shutdownDate": "2025-11-12",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "note": "read from the google deprecation table; row read as: veo-3.0-generate-preview | July 31, 2025 | November 12, 2025 | veo-3.1-generate-preview. Review-only: Google's named replacement, veo-3.1-generate-preview, itself shuts down on 2026-10-22, and Google names gemini-omni-1.1-flash after it, a different model family behind a different request. A person picks the target.",
+    "verification": {
+      "status": "unverified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"veo-3.1-generate-preview\" is ITSELF deprecated in this registry (deprecated, shutdown 2026-10-22); a migration must not point at a retiring id",
+        "Google deprecation page (read 2026-10-10 UTC, snapshot d8b5a2b597a3) states the shutdown and names veo-3.1-generate-preview",
+        "veo-3.1-generate-preview shuts down 2026-10-22 (Google's page, the same snapshot), with gemini-omni-1.1-flash named after it"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:d8b5a2b597a3462a09f0c94808b1c71a9be2eaf46f7c190f68e6d3c9349b2c06",
+        "retrievedAt": "2026-10-10T20:48:26.026Z",
+        "excerpt": "veo-3.0-generate-preview | July 31, 2025 | November 12, 2025 | veo-3.1-generate-preview"
+      }
+    ]
+  },
+  {
+    "entryId": "google.veo-3.0-fast-generate-preview.retirement-2025-11-12",
+    "provider": "google",
+    "kind": "model_id",
+    "deprecated": "veo-3.0-fast-generate-preview",
+    "replacement": "veo-3.1-fast-generate-preview",
+    "status": "retired",
+    "shutdownDate": "2025-11-12",
+    "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "note": "read from the google deprecation table; row read as: veo-3.0-fast-generate-preview | July 31, 2025 | November 12, 2025 | veo-3.1-fast-generate-preview. Review-only: Google's named replacement, veo-3.1-fast-generate-preview, itself shuts down on 2026-10-22, and Google names gemini-omni-1.1-flash after it, a different model family behind a different request. A person picks the target.",
+    "verification": {
+      "status": "unverified",
+      "officialSourceConfirmed": true,
+      "replacementConfirmed": false,
+      "autoApplyAllowed": false,
+      "quarantineReason": null,
+      "checkedAt": "2026-10-10",
+      "sources": [
+        "openrouter",
+        "models.dev"
+      ],
+      "reasons": [
+        "replacement \"veo-3.1-fast-generate-preview\" is ITSELF deprecated in this registry (deprecated, shutdown 2026-10-22); a migration must not point at a retiring id",
+        "Google deprecation page (read 2026-10-10 UTC, snapshot d8b5a2b597a3) states the shutdown and names veo-3.1-fast-generate-preview",
+        "veo-3.1-fast-generate-preview shuts down 2026-10-22 (Google's page, the same snapshot), with gemini-omni-1.1-flash named after it"
+      ]
+    },
+    "evidence": [
+      {
+        "sourceUrl": "https://ai.google.dev/gemini-api/docs/deprecations",
+        "contentHash": "sha256:d8b5a2b597a3462a09f0c94808b1c71a9be2eaf46f7c190f68e6d3c9349b2c06",
+        "retrievedAt": "2026-10-10T20:48:26.026Z",
+        "excerpt": "veo-3.0-fast-generate-preview | July 31, 2025 | November 12, 2025 | veo-3.1-fast-generate-preview"
       }
     ]
   }

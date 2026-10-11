@@ -108,6 +108,73 @@ describe('the two calls v0.5.9-alpha swapped, against the bundled registry', () 
   }, 60_000);
 });
 
+// The bundled registry's newer rules reach Python through the same guard: prompt_cache_retention is
+// a model-dependent parameter on a swap onto GPT-5.6, and the Anthropic sampling rules cover
+// Claude Sonnet 5.5, the replacement of the quarantined claude-sonnet-4-5-20250929 record. Each
+// verdict is the one TypeScript gives the same call, sentence included.
+describe('the bundled registry rules reach a Python call as they reach a TypeScript one', () => {
+  const bundled = loadLlmRegistry(resolveRegistryPath());
+  const TS_OPENAI = "import OpenAI from 'openai';\nconst client = new OpenAI();\n";
+  const TS_ANTHROPIC = "import Anthropic from '@anthropic-ai/sdk';\nconst anthropic_client = new Anthropic();\n";
+  const pyCodex = (model: string, extra: string) =>
+    `${OPENAI}\ndef run(text):\n    return client.responses.create(model="${model}", input=text${extra})\n`;
+  const tsCodex = (model: string, extra: string) =>
+    `${TS_OPENAI}export const run = (text: string) => client.responses.create({ model: '${model}', input: text${extra} });\n`;
+  const pySonnet = (extra: string) =>
+    `${ANTHROPIC}\ndef ask(m):\n    return anthropic_client.messages.create(model="claude-sonnet-4-5-20250929", messages=m${extra})\n`;
+  const tsSonnet = (extra: string) =>
+    `${TS_ANTHROPIC}export const ask = (m: never[]) => anthropic_client.messages.create({ model: 'claude-sonnet-4-5-20250929', messages: m${extra} });\n`;
+
+  it('holds a gpt-5-codex call that passes prompt_cache_retention, and swaps it without the field', async () => {
+    const held = await py(pyCodex('gpt-5-codex', ', prompt_cache_retention="24h"'), 'gpt-5-codex', 'app/llm.py', bundled);
+    expect(held).toMatchObject({ tier: 'B', reason: 'coupled_param_unverified', position: 'surface_capped' });
+    expect(held?.sentence).toBe(TS_COUPLED_PARAM_REASON('gpt-5.6-sol', ['prompt_cache_retention']));
+    expect(held).toEqual(ts(tsCodex('gpt-5-codex', ", prompt_cache_retention: '24h'"), 'gpt-5-codex', bundled));
+    const free = await py(pyCodex('gpt-5-codex', ''), 'gpt-5-codex', 'app/llm.py', bundled);
+    expect(free).toMatchObject({ tier: 'A', position: 'model_arg' });
+  }, 60_000);
+
+  it('leaves gpt-5.3-codex to its quarantine: no rule names the GPT-6 family, so the guard says nothing', async () => {
+    const v = await py(pyCodex('gpt-5.3-codex', ', prompt_cache_retention="24h"'), 'gpt-5.3-codex', 'app/llm.py', bundled);
+    expect(v).toMatchObject({ tier: 'B', reason: 'replacement_unverified', position: 'model_arg' });
+  }, 60_000);
+
+  it('gives a Sonnet 4.5 call the reason its parameters earn on Sonnet 5.5, as TypeScript does', async () => {
+    const shapes: Array<[string, string, string, string]> = [
+      ['temperature only', ', temperature=0.7', ', temperature: 0.7', 'param_behaviour_change'],
+      ['temperature and max_tokens', ', temperature=0.7, max_tokens=1024', ', temperature: 0.7, max_tokens: 1024', 'coupled_param_unverified'],
+      ['neither', '', '', 'replacement_unverified'],
+    ];
+    for (const [name, pyExtra, tsExtra, reason] of shapes) {
+      const pyV = await py(pySonnet(pyExtra), 'claude-sonnet-4-5-20250929', 'app/llm.py', bundled);
+      expect(pyV, name).toMatchObject({ tier: 'B', reason });
+      expect(pyV, name).toEqual(ts(tsSonnet(tsExtra), 'claude-sonnet-4-5-20250929', bundled));
+    }
+  }, 60_000);
+});
+
+describe('a model declared once and read by name is held in both languages', () => {
+  const TS_OPENAI = "import OpenAI from 'openai';\nconst client = new OpenAI();\n";
+  const pyDecl = (params: string) =>
+    `${OPENAI}MODEL = "gpt-3.5-turbo"\n\ndef title(p):\n    return client.chat.completions.create(model=MODEL, messages=p${params})\n`;
+  const tsDecl = (params: string) =>
+    `${TS_OPENAI}const MODEL = 'gpt-3.5-turbo';\nexport const title = (p: never[]) => client.chat.completions.create({ model: MODEL, messages: p${params} });\n`;
+
+  it('holds the declaration for the parameters of the call that reads it, with the same reason code', async () => {
+    const pyV = await py(pyDecl(', max_tokens=20'), 'gpt-3.5-turbo');
+    const tsV = ts(tsDecl(', max_tokens: 20'), 'gpt-3.5-turbo');
+    expect(pyV).toMatchObject({ tier: 'B', reason: 'param_behaviour_change', position: 'surface_capped' });
+    expect(tsV).toMatchObject({ tier: 'B', reason: 'param_behaviour_change', position: 'surface_capped' });
+    // Python names the call's line, because the finding sits on the declaration's line.
+    expect(pyV?.sentence).toBe(`the call on line 6 of this file takes this value as its model; ${tsV?.sentence}`);
+  }, 60_000);
+
+  it('swaps the declaration in both languages when the call that reads it passes no such parameter', async () => {
+    expect(await py(pyDecl(''), 'gpt-3.5-turbo')).toMatchObject({ tier: 'A', position: 'model_arg' });
+    expect(ts(tsDecl(''), 'gpt-3.5-turbo')).toMatchObject({ tier: 'A', position: 'model_arg' });
+  }, 60_000);
+});
+
 describe('a call whose keyword arguments the replacement rejects is held', () => {
   it('names a covered rename that starts at the replacement (param_behaviour_change)', async () => {
     const v = await py(

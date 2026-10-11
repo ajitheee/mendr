@@ -27,9 +27,11 @@ import type { LlmModelIdDeprecation, LlmParamDeprecation, LlmRegistry } from '..
 //      name, and the finding drops to review.
 //
 // Both scanners ask the question through {@link paramHoldReason}: `src/usage/scanLiterals.ts`
-// with the keys of the object literal that holds the model, `src/python/scanPy.ts` with the
-// keyword arguments of the call the model reaches (and the keys of a dict unpacked into it with
-// `**name`). The scanners only collect parameter names; the rules and the sentences live here.
+// with the keys of every request the model reaches (the object literal that holds it, or each
+// in-scope request that reads its declaration; see requestKeySets), `src/python/scanPy.ts` with
+// the keyword arguments of the call the model reaches (and the keys of a dict unpacked into it
+// with `**name`). The scanners only collect parameter names; the rules and the sentences live
+// here.
 //
 // One difference follows from what each language's fix pass can do. TypeScript has a parameter
 // pass, so a rule that already applied to the model being replaced (`o3-mini` with `max_tokens`)
@@ -43,9 +45,19 @@ import type { LlmModelIdDeprecation, LlmParamDeprecation, LlmRegistry } from '..
  * tool definition) is not model-dependent in a way that a model swap changes.
  *
  * Kept narrow and evidence-led on purpose. Every entry here is a parameter reported in the
- * wild as rejected or renamed on the gpt-5 / o-series families. Adding a key that is actually
- * portable would push real migrations into the review queue for no reason, which is the
- * failure mode on the other side of this guard.
+ * wild as rejected or renamed on the gpt-5 / o-series families, or one the provider's own
+ * migration guide says to change. Adding a key that is actually portable would push real
+ * migrations into the review queue for no reason, which is the failure mode on the other side
+ * of this guard.
+ *
+ * `prompt_cache_retention` is the second kind. OpenAI's latest-model guide (read 2026-10-10,
+ * snapshot 14d2ce97ad60) tells a GPT-5.6 migration to "replace prompt_cache_retention with
+ * prompt_cache_options.ttl", and a GPT-6 migration from GPT-5.5 or earlier to set that ttl to
+ * "30m". No registry rule can express the change (the value moves into a nested object and its
+ * allowed values differ), and the guide does not say whether the API rejects the old field. So a
+ * call that passes it is held for review rather than swapped with the field kept. Like every
+ * entry here, it holds a call only when the replacement is in a family some rule constrains
+ * (gpt-5.6 is; gpt-6 is not, which is why the gpt-5.3-codex record is quarantined instead).
  */
 export const MODEL_DEPENDENT_PARAMS: ReadonlySet<string> = new Set([
   'temperature',
@@ -58,6 +70,7 @@ export const MODEL_DEPENDENT_PARAMS: ReadonlySet<string> = new Set([
   'top_logprobs',
   'max_tokens',
   'n',
+  'prompt_cache_retention',
 ]);
 
 /**
@@ -172,6 +185,45 @@ export function paramRulesStartingAt(
   );
 }
 
+/**
+ * The review reason a swap earns from the requests its model reaches, or undefined when the
+ * parameters of none of them hold it. One key set per request: an inline model id reaches one
+ * request (its own object); a declaration reaches every in-scope consumer, and is held when ANY
+ * of them would be held, with the reason that consumer's inline twin would carry. A parameter no
+ * rule covers is the stronger reason (the provider rejects the request), so it is looked for in
+ * every request before a behaviour change is.
+ *
+ * The one decision both scanners make, so TypeScript and Python cannot drift apart:
+ *   1. a model-dependent parameter no rule covers for the replacement -> the coupled-parameter
+ *      reason (`coupled_param_unverified`);
+ *   2. otherwise, a rule that starts applying only at the replacement -> the behaviour-change
+ *      reason (`param_behaviour_change`);
+ *   3. otherwise nothing: the replacement's family constrains nothing these requests pass, or
+ *      every rule that covers them already applied to the model being replaced.
+ *
+ * For a single key set this is exactly the check an inline `create({ model: '…', … })` gets, so
+ * an id written in the call and the same id read through a const, a shorthand or a cast are held
+ * by one rule, with one sentence. (Found 2026-10-07: those three shapes skipped the check and
+ * were swapped unattended while the inline twin was held.) The Python scanner asks once per
+ * request, with one key set, so that its sentence can name the call's line.
+ */
+export function paramHoldReason(
+  keySets: readonly (readonly string[])[],
+  deprecation: Pick<LlmModelIdDeprecation, 'provider' | 'deprecated' | 'replacement'>,
+  registry: LlmRegistry,
+): string | undefined {
+  const { provider, deprecated, replacement } = deprecation;
+  for (const keys of keySets) {
+    const unresolved = unresolvedCoupledParams(keys, provider, replacement, registry);
+    if (unresolved.length > 0) return TS_COUPLED_PARAM_REASON(replacement, unresolved);
+  }
+  for (const keys of keySets) {
+    const starting = paramRulesStartingAt(keys, provider, deprecated, replacement, registry);
+    if (starting.length > 0) return TS_PARAM_BEHAVIOUR_REASON(deprecated, replacement, starting);
+  }
+  return undefined;
+}
+
 /** The sentence a rule's behaviour change is explained by: its `behaviour` quote, else its `rule` quote. */
 function explainingQuote(rule: LlmParamDeprecation): string | undefined {
   const quotes = rule.quotes ?? [];
@@ -198,33 +250,3 @@ export const TS_PARAM_BEHAVIOUR_REASON = (
     'take an automatic patch'
   );
 };
-
-/**
- * Why a swap of this call's model must be held for its request, or `undefined` when nothing about
- * the request holds it. `paramNames` are the parameter names the request passes beside the model.
- *
- * The one decision both scanners make, so TypeScript and Python cannot drift apart:
- *   1. a model-dependent parameter no rule covers for the replacement -> the coupled-parameter
- *      reason (`coupled_param_unverified`);
- *   2. otherwise, a rule that starts applying only at the replacement -> the behaviour-change
- *      reason (`param_behaviour_change`);
- *   3. otherwise nothing: the replacement's family constrains nothing this call passes, or every
- *      rule that covers it already applied to the model being replaced.
- */
-export function paramHoldReason(
-  paramNames: readonly string[],
-  deprecation: Pick<LlmModelIdDeprecation, 'provider' | 'deprecated' | 'replacement'>,
-  registry: LlmRegistry,
-): string | undefined {
-  const unresolved = unresolvedCoupledParams(paramNames, deprecation.provider, deprecation.replacement, registry);
-  if (unresolved.length > 0) return TS_COUPLED_PARAM_REASON(deprecation.replacement, unresolved);
-  const starting = paramRulesStartingAt(
-    paramNames,
-    deprecation.provider,
-    deprecation.deprecated,
-    deprecation.replacement,
-    registry,
-  );
-  if (starting.length > 0) return TS_PARAM_BEHAVIOUR_REASON(deprecation.deprecated, deprecation.replacement, starting);
-  return undefined;
-}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Project } from 'ts-morph';
 import type { LlmRegistry } from '../types.js';
-import { autoApplyVerification } from './llmRegistry.js';
+import { autoApplyVerification, loadLlmRegistry, resolveRegistryPath } from './llmRegistry.js';
 import { findModelIdLiterals } from './scanLiterals.js';
 import { classifyOccurrenceTier } from '../report/classifyOccurrence.js';
 import {
@@ -177,6 +177,346 @@ describe('recommended_replacement_requires_coupled_parameter_migration', () => {
   });
 });
 
+// REGRESSION (review of PR #50, 2026-10-07): the parameter guards ran only on a literal that was
+// the DIRECT value of `model:`. The same id read through a const, a `{ model }` shorthand or an
+// `as string` cast skipped both checks and was swapped unattended, while the inline twin was held:
+// `const model = 'gpt-4-0613'; create({ model, max_tokens: 13 })` became `'gpt-5.6-sol'` with
+// `max_tokens` still on it, which the bundled rule says gpt-5.6 rejects.
+describe('an id read through a const, a shorthand or a cast is held exactly as its inline twin is', () => {
+  const HEAD = ["import OpenAI from 'openai';", 'const openai = new OpenAI();'];
+  /** One call, written with `model` as given and `params` beside it. */
+  const call = (model: string, params: string, before: string[] = []) =>
+    [
+      ...HEAD,
+      'export async function title() {',
+      ...before.map((l) => `  ${l}`),
+      `  return openai.chat.completions.create({ ${model}, ${params}, messages: [] });`,
+      '}',
+    ].join('\n');
+  const inlineTwin = (params: string) => verdict(call("model: 'gpt-3.5-turbo'", params), 'gpt-3.5-turbo');
+
+  const shapes: Array<[string, (params: string) => string]> = [
+    ['a shorthand `{ model }`', (p) => call('model', p, ["const model = 'gpt-3.5-turbo';"])],
+    [
+      'a module-level const',
+      (p) =>
+        [
+          ...HEAD,
+          "const TITLE_MODEL = 'gpt-3.5-turbo';",
+          'export async function title() {',
+          `  return openai.chat.completions.create({ model: TITLE_MODEL, ${p}, messages: [] });`,
+          '}',
+        ].join('\n'),
+    ],
+    ['a const read behind `as string`', (p) => call('model: TITLE_MODEL as string', p, ["const TITLE_MODEL = 'gpt-3.5-turbo' as const;"])],
+    ['a const read behind `!`', (p) => call('model: TITLE_MODEL!', p, ["const TITLE_MODEL = 'gpt-3.5-turbo';"])],
+    ['an assignment `model = …`', (p) => call('model', p, ['let model: string;', "model = 'gpt-3.5-turbo';"])],
+    [
+      'a class property read as `this.model`',
+      (p) =>
+        [
+          ...HEAD,
+          'export class Titles {',
+          "  model = 'gpt-3.5-turbo';",
+          '  async title() {',
+          `    return openai.chat.completions.create({ model: this.model, ${p}, messages: [] });`,
+          '  }',
+          '}',
+        ].join('\n'),
+    ],
+    [
+      'a constructor assignment `this.model = …` read as `this.model`',
+      (p) =>
+        [
+          ...HEAD,
+          'export class Titles {',
+          '  private model: string;',
+          "  constructor() { this.model = 'gpt-3.5-turbo'; }",
+          '  async title() {',
+          `    return openai.chat.completions.create({ model: this.model, ${p}, messages: [] });`,
+          '  }',
+          '}',
+        ].join('\n'),
+    ],
+    ['an `as string` cast', (p) => call("model: 'gpt-3.5-turbo' as string", p)],
+    ['parentheses', (p) => call("model: ('gpt-3.5-turbo')", p)],
+    ['quoted keys', (p) => call('"model": "gpt-3.5-turbo"', p.replace(/(\w+):/g, '"$1":'))],
+    ['computed string keys `["max_tokens"]`', (p) => call("model: 'gpt-3.5-turbo'", p.replace(/(\w+):/g, '["$1"]:'))],
+  ];
+
+  for (const [name, shape] of shapes) {
+    it(`${name}: a rule that starts at the replacement holds it, with the twin's sentence`, () => {
+      const twin = inlineTwin('max_tokens: 20');
+      expect(twin?.reason).toContain('changes what this call asks for'); // the twin is held
+      const v = verdict(shape('max_tokens: 20'), 'gpt-3.5-turbo');
+      expect(v).toEqual(twin);
+      expect(v?.tier).toBe('B');
+    });
+
+    it(`${name}: a parameter no rule covers holds it, with the twin's sentence`, () => {
+      const twin = inlineTwin('temperature: 0.7, max_tokens: 20');
+      expect(twin?.reason).toBe(TS_COUPLED_PARAM_REASON('gpt-5.6-terra', ['temperature']));
+      expect(verdict(shape('temperature: 0.7, max_tokens: 20'), 'gpt-3.5-turbo')).toEqual(twin);
+    });
+
+    it(`${name}: no model-dependent parameter leaves it Tier A, like the twin`, () => {
+      expect(inlineTwin('stream: false')?.tier).toBe('A');
+      expect(verdict(shape('stream: false'), 'gpt-3.5-turbo')?.tier).toBe('A');
+    });
+  }
+
+  const DECL = [...HEAD, "const TITLE_MODEL = 'gpt-3.5-turbo';"];
+
+  it('a const consumed only by calls with no model-dependent parameter stays Tier A', () => {
+    const src = [
+      ...DECL,
+      'export const a = async () => openai.chat.completions.create({ model: TITLE_MODEL, messages: [] });',
+      'export const b = async () => openai.chat.completions.create({ model: TITLE_MODEL, messages: [], stream: true });',
+    ].join('\n');
+    expect(verdict(src, 'gpt-3.5-turbo')).toMatchObject({ tier: 'A', position: 'model_arg' });
+  });
+
+  it('a const consumed by one held call and one free call is held, with the held call\'s sentence', () => {
+    const src = [
+      ...DECL,
+      'export const free = async () => openai.chat.completions.create({ model: TITLE_MODEL, messages: [] });',
+      'export const held = async () => openai.chat.completions.create({ model: TITLE_MODEL, max_tokens: 20, messages: [] });',
+    ].join('\n');
+    expect(verdict(src, 'gpt-3.5-turbo')).toEqual(inlineTwin('max_tokens: 20'));
+  });
+
+  it('a parameter no rule covers wins over a behaviour change, whichever consumer comes first', () => {
+    const src = [
+      ...DECL,
+      'export const a = async () => openai.chat.completions.create({ model: TITLE_MODEL, max_tokens: 20, messages: [] });',
+      'export const b = async () => openai.chat.completions.create({ model: TITLE_MODEL, top_p: 0.5, messages: [] });',
+    ].join('\n');
+    expect(verdict(src, 'gpt-3.5-turbo')?.reason).toBe(TS_COUPLED_PARAM_REASON('gpt-5.6-terra', ['top_p']));
+  });
+
+  it('reads the request that carries the const, not another object argument of the same call', () => {
+    for (const other of ["{ model: 'x', max_tokens: 20 }", '{ fallbackModel, max_tokens: 20 }']) {
+      const src = [
+        ...DECL,
+        `export const a = async (fallbackModel: string) => openai.chat.completions.create({ model: TITLE_MODEL, messages: [] }, ${other});`,
+      ].join('\n');
+      expect(verdict(src, 'gpt-3.5-turbo'), other).toMatchObject({ tier: 'A', position: 'model_arg' });
+    }
+  });
+
+  it('a call that cannot see the declaration does not hold it', () => {
+    // `model` in b() is b's own parameter, not the const in a(): the sink rule's scope applies.
+    const src = [
+      ...HEAD,
+      'export async function a() {',
+      "  const model = 'gpt-3.5-turbo';",
+      '  return openai.chat.completions.create({ model, messages: [] });',
+      '}',
+      'export async function b(model: string) {',
+      '  return openai.chat.completions.create({ model, max_tokens: 20, messages: [] });',
+      '}',
+    ].join('\n');
+    expect(verdict(src, 'gpt-3.5-turbo')).toMatchObject({ tier: 'A', position: 'model_arg' });
+  });
+
+  // REGRESSION (2026-10-10, on main after #50 and #55): a fallback or a ternary branch skipped both
+  // checks, inline and through a const, so `model: process.env.MODEL || 'gpt-4-0613', max_tokens`
+  // was swapped to gpt-5.6-sol with `max_tokens` kept. The param pass resolves one concrete model and
+  // never a fallback, so nothing renamed it either: whenever the fallback was taken, the request was
+  // one the bundled rule says the replacement rejects.
+  const fallbackShapes: Array<[string, (params: string) => string]> = [
+    ['an inline `||` fallback', (p) => call("model: process.env.M || 'gpt-3.5-turbo'", p)],
+    ['an inline `??` fallback', (p) => call("model: process.env.M ?? 'gpt-3.5-turbo'", p)],
+    ['an inline ternary branch', (p) => call("model: fast ? 'gpt-4.1' : 'gpt-3.5-turbo'", p, ['const fast = Math.random() > 0.5;'])],
+    ['a const whose initializer is a fallback', (p) => call('model: TITLE_MODEL', p, ["const TITLE_MODEL = process.env.M || 'gpt-3.5-turbo';"])],
+    ['a const read through a fallback', (p) => call('model: process.env.M ?? TITLE_MODEL', p, ["const TITLE_MODEL = 'gpt-3.5-turbo';"])],
+    ['a shorthand-named const read in a ternary', (p) => call('model: fast ? model : "gpt-4.1"', p, ["const model = 'gpt-3.5-turbo';", 'const fast = Math.random() > 0.5;'])],
+  ];
+  for (const [name, shape] of fallbackShapes) {
+    it(`${name}: a rule that starts at the replacement holds it, with the inline twin's sentence`, () => {
+      expect(verdict(shape('max_tokens: 20'), 'gpt-3.5-turbo')).toEqual(inlineTwin('max_tokens: 20'));
+    });
+
+    it(`${name}: a parameter no rule covers holds it, with the inline twin's sentence`, () => {
+      expect(verdict(shape('temperature: 0.7, max_tokens: 20'), 'gpt-3.5-turbo')).toEqual(
+        inlineTwin('temperature: 0.7, max_tokens: 20'),
+      );
+    });
+
+    it(`${name}: no model-dependent parameter leaves it Tier A`, () => {
+      expect(verdict(shape('stream: false'), 'gpt-3.5-turbo')).toMatchObject({ tier: 'A', position: 'model_arg' });
+    });
+  }
+
+  it('a factory argument adds no request keys, inline or through a const', () => {
+    // `openai('…')` is the AI SDK's model handle; the call's options are the SDK's own spelling,
+    // which the SDK maps per model, so neither form is judged by them.
+    const head = ["import { openai } from '@ai-sdk/openai';", "import { generateText } from 'ai';"];
+    const inline = [
+      ...head,
+      "export const a = async () => generateText({ model: openai('gpt-3.5-turbo'), max_tokens: 20, prompt: 'x' });",
+    ].join('\n');
+    const viaConst = [
+      ...head,
+      "const TITLE_MODEL = 'gpt-3.5-turbo';",
+      "export const a = async () => generateText({ model: openai(TITLE_MODEL), max_tokens: 20, prompt: 'x' });",
+    ].join('\n');
+    expect(verdict(inline, 'gpt-3.5-turbo')).toMatchObject({ tier: 'A', position: 'model_arg' });
+    expect(verdict(viaConst, 'gpt-3.5-turbo')).toMatchObject({ tier: 'A', position: 'model_arg' });
+  });
+});
+
+// REGRESSION (review of 402c1e4, 2026-10-07): the sink map files a consumer by NAME, and the
+// parameter check read the keys of every consumer filed under the declaration's name. A call whose
+// `model` is a different binding — a parameter, a local, another member — held the declaration for
+// ITS `max_tokens`, and the report said the declaration "changes what this call asks for" about a
+// call that never reads it. Each control below was Tier A on 0df2dce and Tier B on 402c1e4.
+describe('a same-named binding that is not the declaration does not hold it', () => {
+  const HEAD = ["import OpenAI from 'openai';", 'const openai = new OpenAI();'];
+  const create = (args: string) => `openai.chat.completions.create({ ${args}, messages: [] })`;
+  const fn = (name: string, params: string, body: string[]) => [`export async function ${name}(${params}) {`, ...body.map((l) => `  ${l}`), '}'];
+  const twin = () => verdict([...HEAD, ...fn('t', '', [`return ${create("model: 'gpt-3.5-turbo', max_tokens: 5")};`])].join('\n'), 'gpt-3.5-turbo');
+  const FREE = fn('usesConst', '', [`return ${create('model')};`]);
+  /** A class whose constructor assigns the field from its own parameter, and a request that reads the field. */
+  const CTOR_ASSIGNED = [
+    'export class Bot {',
+    '  private model: string;',
+    '  constructor(model: string) { this.model = model; }',
+    `  async ask() { return ${create('model: this.model, max_tokens: 5')}; }`,
+    '}',
+  ];
+  /** The parameter-property form, written as a class expression. */
+  const CLASS_EXPRESSION = [
+    'export const Bot = class {',
+    '  constructor(private model: string) {}',
+    `  async ask() { return ${create('model: this.model, max_tokens: 5')}; }`,
+    '};',
+  ];
+  /** A function whose own `model` parameter reaches a request with `max_tokens`. */
+  const ASK = fn('ask', 'model: string', [`return ${create('model, max_tokens: 5')};`]);
+  const WITH_RETRY = 'declare function withRetry(f: (m: string) => Promise<unknown>, m: string): Promise<unknown>;';
+  /** The declaration is a property of another object, read back as `config.model`. */
+  const CONFIG = [
+    'const config: { model?: string } = {};',
+    "config.model = 'gpt-3.5-turbo';",
+    ...fn('a', '', [`return ${create('model: config.model!')};`]),
+  ];
+
+  const controls: Array<[string, string[]]> = [
+    ['a parameter of the same name', ["const model = 'gpt-3.5-turbo';", ...FREE, ...fn('usesParam', 'model: string', [`return ${create('model, max_tokens: 5')};`])]],
+    [
+      'a local const of the same name in another function',
+      [
+        "const MODEL = 'gpt-3.5-turbo';",
+        ...fn('usesConst', '', [`return ${create('model: MODEL')};`]),
+        ...fn('usesLocal', '', ["const MODEL = 'gpt-4.1';", `return ${create('model: MODEL, max_tokens: 5')};`]),
+      ],
+    ],
+    ['a local shorthand of the same name', ["const model = 'gpt-3.5-turbo';", ...FREE, ...fn('b', '', ["const model = 'gpt-4.1';", `return ${create('model, max_tokens: 5')};`])]],
+    ['a destructured parameter', ["const model = 'gpt-3.5-turbo';", ...FREE, ...fn('ask', '{ model }: { model: string }', [`return ${create('model, max_tokens: 5')};`])]],
+    ['a local destructured from something else', ["const model = 'gpt-3.5-turbo';", ...FREE, ...fn('ask', 'opts: { model: string }', ['const { model } = opts;', `return ${create('model: model, max_tokens: 5')};`])]],
+    [
+      'a nested arrow with its own parameter, called with another model',
+      fn('a', '', [
+        "const model = 'gpt-3.5-turbo';",
+        `await ${create('model')};`,
+        `const inner = async (model: string) => ${create('model, max_tokens: 5')};`,
+        "return inner('gpt-4.1');",
+      ]),
+    ],
+    [
+      'a parameter property `this.model` of another class',
+      ["const model = 'gpt-3.5-turbo';", ...FREE, 'export class Other {', '  constructor(private model: string) {}', `  async ask() { return ${create('model: this.model, max_tokens: 5')}; }`, '}'],
+    ],
+    [
+      'a method parameter beside a class property',
+      ['export class Bot {', "  model = 'gpt-3.5-turbo';", `  async ask() { return ${create('model: this.model')}; }`, `  async other(model: string) { return ${create('model, max_tokens: 5')}; }`, '}'],
+    ],
+    [
+      'a parameter of the same name beside an assignment `model = …`',
+      ['let model: string;', "model = 'gpt-3.5-turbo';", ...FREE, ...fn('usesParam', 'model: string', [`return ${create('model, max_tokens: 5')};`])],
+    ],
+    [
+      'a method local beside a class property',
+      ['export class Bot {', "  private readonly model = 'gpt-3.5-turbo';", `  async ask() { return ${create('model: this.model')}; }`, "  async summarize() { const model = 'gpt-4.1'; return " + create('model, max_tokens: 200') + '; }', '}'],
+    ],
+    // Review of 947967d (2026-10-10): the twins of the fed shapes in `keeps` below, fed another model.
+    [
+      'a constructor parameter assigned to the field, constructed with another model',
+      ["const model = 'gpt-3.5-turbo';", ...FREE, ...CTOR_ASSIGNED, "export const bot = new Bot('gpt-4.1');"],
+    ],
+    ['a constructor parameter assigned to the field, never constructed in the file', ["const model = 'gpt-3.5-turbo';", ...FREE, ...CTOR_ASSIGNED]],
+    [
+      'a class expression constructed with another model',
+      ["const model = 'gpt-3.5-turbo';", ...FREE, ...CLASS_EXPRESSION, "export const bot = new Bot('gpt-4.1');"],
+    ],
+    ['a parameter passed a local set to another model', ["const model = 'gpt-3.5-turbo';", ...FREE, ...ASK, ...fn('run', '', ["const m = 'gpt-4.1';", 'return ask(m);'])]],
+    [
+      'a function handed to another call beside another model',
+      ["const model = 'gpt-3.5-turbo';", ...FREE, ...ASK, WITH_RETRY, ...fn('run', '', ["return withRetry(ask, 'gpt-4.1');"])],
+    ],
+    [
+      'the const handed to a call beside a different function',
+      ["const model = 'gpt-3.5-turbo';", ...FREE, ...ASK, WITH_RETRY, ...fn('other', 'm: string', ['return m;']), ...fn('run', '', ['return withRetry(other, model);'])],
+    ],
+    [
+      'a recursive function that only calls itself',
+      ["const model = 'gpt-3.5-turbo';", ...FREE, ...fn('ask', 'model: string, n: number', ['if (n > 0) return ask(model, n - 1);', `return ${create('model, max_tokens: 5')};`])],
+    ],
+    // `config.model = …` can be read back only through a `.model` read: a function's own parameter,
+    // never passed one, cannot read it. (It was held with b's `max_tokens`.)
+    ['a parameter beside a property assignment `config.model = …`', [...CONFIG, ...fn('b', 'model: string', [`return ${create('model, max_tokens: 5')};`])]],
+  ];
+  for (const [name, body] of controls) {
+    it(`${name}: stays Tier A`, () => {
+      expect(twin()?.tier).toBe('B');
+      expect(verdict([...HEAD, ...body].join('\n'), 'gpt-3.5-turbo')).toMatchObject({ tier: 'A', position: 'model_arg' });
+    });
+  }
+
+  // A binding that is FED the declaration still reads it, and still holds it like the inline twin.
+  const keeps: Array<[string, string[]]> = [
+    ['a parameter defaulting to `this.model`', ['export class Bot {', "  model = 'gpt-3.5-turbo';", `  async chat(model = this.model) { return ${create('model, max_tokens: 5')}; }`, '}']],
+    ['a local destructured from `this`', ['export class Bot {', "  model = 'gpt-3.5-turbo';", '  async ask() {', '    const { model } = this;', `    return ${create('model, max_tokens: 5')};`, '  }', '}']],
+    ['a parameter passed the const at a call in the file', ["const model = 'gpt-3.5-turbo';", ...fn('ask', 'model: string', [`return ${create('model, max_tokens: 5')};`]), 'export const go = () => ask(model);']],
+    [
+      'a constructor parameter property passed the const',
+      ["const model = 'gpt-3.5-turbo';", 'export class Bot {', '  constructor(private model: string) {}', `  async ask() { return ${create('model: this.model, max_tokens: 5')}; }`, '}', 'export const bot = new Bot(model);'],
+    ],
+    ['a class property initialised from the const', ["const model = 'gpt-3.5-turbo';", 'export class Bot {', '  model = model;', `  async ask() { return ${create('model: this.model, max_tokens: 5')}; }`, '}']],
+    ['a `this.model` assigned the const', ["const model = 'gpt-3.5-turbo';", 'export class Bot {', '  model: string;', '  constructor() { this.model = model; }', `  async ask() { return ${create('model: this.model, max_tokens: 5')}; }`, '}']],
+    ['a local initialised from `this.model`', ['export class Bot {', "  model = 'gpt-3.5-turbo';", '  async ask() {', '    const model = this.model ?? "x";', `    return ${create('model, max_tokens: 5')};`, '  }', '}']],
+    ['a closure over the const', fn('a', '', ["const model = 'gpt-3.5-turbo';", `const run = async () => ${create('model, max_tokens: 5')};`, 'return run();'])],
+    ['an unresolved name in a class method', ['export class Bot {', "  model = 'gpt-3.5-turbo';", `  async ask() { return ${create('model, max_tokens: 5')}; }`, '}']],
+    // Review of 947967d (2026-10-10): each of these was read as unfed, and the const swapped to
+    // gpt-5.6 with `max_tokens` kept. `constructor(private model: string)` was held; its plain twin
+    // that assigns the field was not.
+    ['a constructor parameter assigned to the field, passed the const', ["const model = 'gpt-3.5-turbo';", ...CTOR_ASSIGNED, 'export const bot = new Bot(model);']],
+    ['a class expression\'s parameter property passed the const', ["const model = 'gpt-3.5-turbo';", ...CLASS_EXPRESSION, 'export const bot = new Bot(model);']],
+    ['a parameter passed a local alias of the const', ["const model = 'gpt-3.5-turbo';", ...ASK, ...fn('run', '', ['const m = model;', 'return ask(m);'])]],
+    ['a function handed to another call beside the const', ["const model = 'gpt-3.5-turbo';", ...ASK, WITH_RETRY, ...fn('run', '', ['return withRetry(ask, model);'])]],
+    ['a parameter passed `config.model`', [...CONFIG, ...fn('b', 'model: string', [`return ${create('model, max_tokens: 5')};`]), 'export const go = () => b(config.model!);']],
+    ['a local destructured from `config`', [...CONFIG, ...fn('c', '', ['const { model } = config;', `return ${create('model, max_tokens: 5')};`])]],
+    ['a local initialised from `config.model`', [...CONFIG, ...fn('c', '', ['const model = config.model!;', `return ${create('model, max_tokens: 5')};`])]],
+  ];
+  for (const [name, body] of keeps) {
+    it(`${name}: is held with the inline twin's sentence`, () => {
+      expect(verdict([...HEAD, ...body].join('\n'), 'gpt-3.5-turbo')).toEqual(twin());
+    });
+  }
+
+  it('a consumer that cannot be ruled out keeps the hold even beside one that is ruled out', () => {
+    // b's `model` is its own parameter (ruled out); c reads the const (kept). Any kept consumer holds.
+    const src = [
+      ...HEAD,
+      "const model = 'gpt-3.5-turbo';",
+      ...fn('b', 'model: string', [`return ${create('model, max_tokens: 5')};`]),
+      ...fn('c', '', [`return ${create('model, max_tokens: 5')};`]),
+    ].join('\n');
+    expect(verdict(src, 'gpt-3.5-turbo')).toEqual(twin());
+  });
+});
+
 // paramRulesStartingAt: the rules a swap STARTS applying, for parameters the call passes.
 describe('paramRulesStartingAt', () => {
   const rename = REG[2] as Extract<LlmRegistry[number], { kind: 'param_rename' }>;
@@ -219,5 +559,112 @@ describe('paramRulesStartingAt', () => {
     const reason = TS_PARAM_BEHAVIOUR_REASON('gpt-3.5-turbo', 'gpt-5.6-terra', [rename]);
     const t = classifyOccurrenceTier({ position: 'surface_capped', deprecation: REG[0] as never, reason });
     expect(t).toEqual({ tier: 'B', reason: 'param_behaviour_change' });
+  });
+});
+
+// prompt_cache_retention. OpenAI's latest-model guide (read 2026-10-10, snapshot 14d2ce97ad60)
+// tells a GPT-5.6 migration to "replace prompt_cache_retention with prompt_cache_options.ttl".
+// No rule can make that edit, so a call that passes the field and would be swapped onto a
+// constrained family is held, and nothing else changes.
+describe('prompt_cache_retention on a swap', () => {
+  const CODEX: LlmRegistry[number] = {
+    provider: 'openai',
+    kind: 'model_id',
+    deprecated: 'gpt-5-codex',
+    replacement: 'gpt-5.6-sol',
+    status: 'deprecated',
+    shutdownDate: '2026-07-23',
+    verification: autoApplyVerification(),
+  };
+  const REG_CODEX: LlmRegistry = [...REG, CODEX];
+
+  function codexVerdict(model: string, extra: string) {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      'src/codex.ts',
+      [
+        "import OpenAI from 'openai';",
+        'const openai = new OpenAI();',
+        'export async function run(input: string) {',
+        `  return openai.responses.create({ model: '${model}', input${extra} });`,
+        '}',
+      ].join('\n'),
+    );
+    const m = findModelIdLiterals(project, REG_CODEX).find((x) => x.value === model);
+    if (!m) return undefined;
+    return { ...classifyOccurrenceTier({ position: m.position, deprecation: m.deprecation, reason: m.reason }), why: m.reason };
+  }
+
+  it('holds a call that passes it when the replacement is gpt-5.6, and names the field', () => {
+    const v = codexVerdict('gpt-5-codex', ", prompt_cache_retention: '24h'");
+    expect(v?.tier).toBe('B');
+    expect(v?.reason).toBe('coupled_param_unverified');
+    expect(v?.why).toBe(TS_COUPLED_PARAM_REASON('gpt-5.6-sol', ['prompt_cache_retention']));
+  });
+
+  it('still swaps the same call when it does not pass the field', () => {
+    expect(codexVerdict('gpt-5-codex', '')?.tier).toBe('A');
+  });
+
+  it('says nothing when the replacement is in no constrained family', () => {
+    // gpt-4-0613 -> gpt-4o-mini: no rule names gpt-4o, so nothing is known to change there.
+    expect(codexVerdict('gpt-4-0613', ", prompt_cache_retention: '24h'")?.tier).toBe('A');
+  });
+
+  it('reports nothing for a current model that passes the field', () => {
+    // The guard only qualifies a finding. A call on a model nobody is retiring is not one.
+    expect(codexVerdict('gpt-5.6-sol', ", prompt_cache_retention: '24h'")).toBeUndefined();
+  });
+
+  it('holds the same call when its model comes through a const or a shorthand, and swaps it without the field', () => {
+    // The parameter checks read every request a declaration reaches, so the field holds a const
+    // or `{ model }` call exactly as it holds the inline one. Without the field, both stay Tier A.
+    function declVerdict(modelProp: string, extra: string) {
+      const project = new Project({ useInMemoryFileSystem: true });
+      project.createSourceFile(
+        'src/codex.ts',
+        [
+          "import OpenAI from 'openai';",
+          'const openai = new OpenAI();',
+          "const model = 'gpt-5-codex';",
+          'export async function run(input: string) {',
+          `  return openai.responses.create({ ${modelProp}, input${extra} });`,
+          '}',
+        ].join('\n'),
+      );
+      const m = findModelIdLiterals(project, REG_CODEX).find((x) => x.value === 'gpt-5-codex');
+      if (!m) return undefined;
+      return { ...classifyOccurrenceTier({ position: m.position, deprecation: m.deprecation, reason: m.reason }), why: m.reason };
+    }
+    for (const shape of ['model: model', 'model']) {
+      const held = declVerdict(shape, ", prompt_cache_retention: '24h'");
+      expect(held?.tier, shape).toBe('B');
+      expect(held?.reason, shape).toBe('coupled_param_unverified');
+      expect(held?.why, shape).toBe(TS_COUPLED_PARAM_REASON('gpt-5.6-sol', ['prompt_cache_retention']));
+      expect(declVerdict(shape, '')?.tier, shape).toBe('A');
+    }
+  });
+
+  it('holds the shipped codex records that pass it, and swaps none of them with the field kept', () => {
+    // The shipped registry. gpt-5-codex -> gpt-5.6-sol is verified, so only the guard holds a
+    // call that passes the field. gpt-5.3-codex -> gpt-6-sol is quarantined: no rule names the
+    // GPT-6 family, so the guard cannot reach that swap and the record holds every call.
+    const shipped = loadLlmRegistry(resolveRegistryPath());
+    function shippedVerdict(model: string, extra: string) {
+      const project = new Project({ useInMemoryFileSystem: true });
+      project.createSourceFile(
+        'src/codex.ts',
+        [
+          "import OpenAI from 'openai';",
+          'const openai = new OpenAI();',
+          `export const run = (input: string) => openai.responses.create({ model: '${model}', input${extra} });`,
+        ].join('\n'),
+      );
+      const [m] = findModelIdLiterals(project, shipped).filter((x) => x.value === model);
+      return classifyOccurrenceTier({ position: m.position, deprecation: m.deprecation, reason: m.reason });
+    }
+    expect(shippedVerdict('gpt-5-codex', ", prompt_cache_retention: '24h'")).toEqual({ tier: 'B', reason: 'coupled_param_unverified' });
+    expect(shippedVerdict('gpt-5-codex', '')).toEqual({ tier: 'A' });
+    expect(shippedVerdict('gpt-5.3-codex', ", prompt_cache_retention: '24h'")).toEqual({ tier: 'B', reason: 'replacement_unverified' });
   });
 });

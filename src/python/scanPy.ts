@@ -1735,14 +1735,17 @@ function pyRequestParams(literal: PyNode, ctx: PyGuardContext): PyRequestParams[
     }));
 }
 
-/** paramHoldReason over each request the model reaches; the first that holds the call decides. */
+/**
+ * paramHoldReason over each request the model reaches, one request at a time; the first that holds
+ * the call decides, so the sentence can name that call's line.
+ */
 function pyParamHoldReason(
   requests: readonly PyRequestParams[],
   deprecation: LlmModelIdDeprecation,
   registry: LlmRegistry,
 ): string | undefined {
   for (const r of requests) {
-    const held = paramHoldReason(r.names, deprecation, registry);
+    const held = paramHoldReason([r.names], deprecation, registry);
     if (!held) continue;
     // The finding sits on the line the value is written on, so say where the call is.
     return r.callLine === undefined ? held : `the call on line ${r.callLine} of this file takes this value as its model; ${held}`;

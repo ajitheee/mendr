@@ -323,7 +323,11 @@ describe('the shipped registry', () => {
     // previews: Google's replacement is Gemini Omni Flash, another model family called through
     // another API, so an id swap is not the migration. Plus OpenAI's six fine-tune rows
     // (ft-babbage-002 ...): the replacement is a base model, and a swap drops the training.
-    expect(quarantined).toHaveLength(16);
+    // Plus gpt-5.1 and gpt-5.4-nano (see the GPT-6 test below), and their dated snapshots
+    // gpt-5.1-2025-11-13 and gpt-5.4-nano-2026-03-17. Plus gpt-5.3-codex: OpenAI's GPT-6 guide
+    // changes prompt_cache_retention, which no guard checks on a swap to gpt-6-sol. Plus
+    // gpt-4o-mini-realtime-preview-2024-12-17, which has no provider-stated date.
+    expect(quarantined).toHaveLength(22);
     for (const entry of quarantined) {
       expect(isVerified(entry), entry.deprecated).toBe(false);
       // Every quarantine says what has to be resolved. A hold nobody can act
@@ -337,10 +341,12 @@ describe('the shipped registry', () => {
     // because Anthropic's Sonnet 5.5 migration guide names settings Sonnet 4.5 accepts that
     // return a 400 on Sonnet 5.5 (thinking budgets, sampling parameters, assistant prefill,
     // forced tool choice, thinking type "disabled") and turns thinking on by default, so code
-    // reading content[0].text breaks. No parameter rule covers Sonnet 5.5 (extending the
-    // sampling rules to it made fix-llm drop these call sites from its report), so the parameter
-    // guard, TypeScript's and Python's alike, has no rule to hold them with. The quarantine is
-    // what keeps every call site in review, in audit and fix-llm alike.
+    // reading content[0].text breaks. Since 2026-10-10 the sampling rules cover Sonnet 5.5 (fix-llm
+    // has listed held calls since v0.5.9-alpha), and the parameter guard, TypeScript's and
+    // Python's alike, holds a call that passes temperature, top_p, top_k or max_tokens. The rules
+    // say nothing about thinking, prefill or tool choice, and a call that passes none of those
+    // parameters gives the guard nothing to hold, so the quarantine is still what keeps every
+    // call site in review, in audit and fix-llm alike.
     const entry = modelIdEntries(loadLlmRegistry(resolveRegistryPath())).find(
       (e) => e.deprecated === 'claude-sonnet-4-5-20250929',
     )!;
@@ -410,11 +416,22 @@ describe('the shipped registry', () => {
     // rows (-9 eligible, +9 unverified): gpt-4-0314, gpt-4-0125-preview and gpt-4-turbo-preview,
     // whose OpenAI row names two targets, and gpt-3.5-turbo-0301, -16k-0613, text-davinci-003,
     // -002, gemini-2.0-flash-lite and -001, which carry the end of a chain, not the named target.
-    expect(provenance.activeEntries).toBe(193);
+    // Then +20 dated retirements the providers' pages announce. Through the promote gate:
+    // gpt-5.3-codex -> gpt-6-sol (+1 eligible), and gpt-5.1 and gpt-5.4-nano, quarantined after
+    // promotion (+2 quarantined). By the manual review-only path, stamped by the classifier:
+    // 4 TTS, 4 transcription and the gpt-4o-audio and gpt-4o-mini-audio family rows (+10
+    // unverifiable), and gpt-4o-mini-realtime, gpt-4-turbo-preview-completions and 5 retired
+    // Veo 3.0/2.0 ids (+7 unverified).
+    // Then gpt-5.3-codex is quarantined (-1 eligible, +1 quarantined): OpenAI's GPT-6 guide says
+    // to replace prompt_cache_retention, and no guard checks that field on a swap to gpt-6-sol.
+    // And +6 dated snapshots the providers' rows leave out, with no date of their own:
+    // gpt-5.1-2025-11-13, gpt-5.4-nano-2026-03-17 and gpt-4o-mini-realtime-preview-2024-12-17
+    // (+3 quarantined), and three gpt-4o audio snapshots (+3 unverifiable by class).
+    expect(provenance.activeEntries).toBe(219);
     expect(provenance.autoFixEligible).toBe(135);
-    expect(provenance.reviewOnlyCounts.quarantined).toBe(16);
-    expect(provenance.reviewOnlyCounts.unverified).toBe(23);
-    expect(provenance.reviewOnlyCounts.unverifiable).toBe(19);
+    expect(provenance.reviewOnlyCounts.quarantined).toBe(22);
+    expect(provenance.reviewOnlyCounts.unverified).toBe(30);
+    expect(provenance.reviewOnlyCounts.unverifiable).toBe(32);
     // Nothing ships in the defence-in-depth state; the validator forbids it.
     expect(provenance.reviewOnlyCounts.withheld).toBe(0);
   });
