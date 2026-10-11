@@ -323,7 +323,8 @@ describe('the shipped registry', () => {
     // previews: Google's replacement is Gemini Omni Flash, another model family called through
     // another API, so an id swap is not the migration. Plus OpenAI's six fine-tune rows
     // (ft-babbage-002 ...): the replacement is a base model, and a swap drops the training.
-    expect(quarantined).toHaveLength(16);
+    // Plus gpt-5.1 and gpt-5.4-nano (see the GPT-6 test below).
+    expect(quarantined).toHaveLength(18);
     for (const entry of quarantined) {
       expect(isVerified(entry), entry.deprecated).toBe(false);
       // Every quarantine says what has to be resolved. A hold nobody can act
@@ -410,11 +411,17 @@ describe('the shipped registry', () => {
     // rows (-9 eligible, +9 unverified): gpt-4-0314, gpt-4-0125-preview and gpt-4-turbo-preview,
     // whose OpenAI row names two targets, and gpt-3.5-turbo-0301, -16k-0613, text-davinci-003,
     // -002, gemini-2.0-flash-lite and -001, which carry the end of a chain, not the named target.
-    expect(provenance.activeEntries).toBe(193);
-    expect(provenance.autoFixEligible).toBe(135);
-    expect(provenance.reviewOnlyCounts.quarantined).toBe(16);
-    expect(provenance.reviewOnlyCounts.unverified).toBe(23);
-    expect(provenance.reviewOnlyCounts.unverifiable).toBe(19);
+    // Then +20 dated retirements the providers' pages announce. Through the promote gate:
+    // gpt-5.3-codex -> gpt-6-sol (+1 eligible), and gpt-5.1 and gpt-5.4-nano, quarantined after
+    // promotion (+2 quarantined). By the manual review-only path, stamped by the classifier:
+    // 4 TTS, 4 transcription and the gpt-4o-audio and gpt-4o-mini-audio family rows (+10
+    // unverifiable), and gpt-4o-mini-realtime, gpt-4-turbo-preview-completions and 5 retired
+    // Veo 3.0/2.0 ids (+7 unverified).
+    expect(provenance.activeEntries).toBe(213);
+    expect(provenance.autoFixEligible).toBe(136);
+    expect(provenance.reviewOnlyCounts.quarantined).toBe(18);
+    expect(provenance.reviewOnlyCounts.unverified).toBe(30);
+    expect(provenance.reviewOnlyCounts.unverifiable).toBe(29);
     // Nothing ships in the defence-in-depth state; the validator forbids it.
     expect(provenance.reviewOnlyCounts.withheld).toBe(0);
   });
