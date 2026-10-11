@@ -18,7 +18,7 @@ supposed to happen.
 | Does it have a real type-check? (`tsc`, `mypy`) | |
 | Does it have a test suite that passes today? | |
 | Reviewer name and role | |
-| Mendr pin (40-char SHA) | `072ee836b30f7c202c01643ee094998c0f41e634` |
+| Mendr pin (40-char SHA) | `b109696e506c388cdfbd12c511c7a05f3c5bb54a` |
 | Registry version at first run | |
 | Date onboarded | |
 

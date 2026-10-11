@@ -33,8 +33,8 @@ commit SHA rather than a tag, because a tag can be moved and a moved tag is indi
 the original.
 
 ```yaml
-uses: ajitheee/mendr/.github/workflows/reusable-audit.yml@072ee836b30f7c202c01643ee094998c0f41e634
-uses: ajitheee/mendr/.github/workflows/reusable-migrate.yml@072ee836b30f7c202c01643ee094998c0f41e634
+uses: ajitheee/mendr/.github/workflows/reusable-audit.yml@b109696e506c388cdfbd12c511c7a05f3c5bb54a
+uses: ajitheee/mendr/.github/workflows/reusable-migrate.yml@b109696e506c388cdfbd12c511c7a05f3c5bb54a
 ```
 
 Set the repository variable `MENDR_SPEC` to the same SHA so the CLI it fetches is pinned too.
@@ -110,7 +110,13 @@ the Mendr action by tag. Every other link is pinned by content or commit. This i
 isn't, and it depends on me never moving a released tag.
 
 **9. It is alpha, and you are the first.** Distribution is by git spec, not npm. The
-approve-to-PR path has been exercised on my demo repository, not yet on anyone else's.
+approve-to-PR path has been exercised on my demo repository, not yet on anyone else's, and the
+last time was with an earlier release's Action (v0.5.7-alpha). This release changes the Action: a
+run whose every retiring id was held for review now says so instead of reporting the repository
+clean, and the one-click migrate workflow never closes a Mendr pull request. What this release
+changed in the Action has run only against test stubs so far. On my demo repository the new Action
+has only checked for approvals, found none and stopped. `migrate` still does not read configuration
+files, so read `audit` before you trust a clean `migrate` result.
 
 ---
 
