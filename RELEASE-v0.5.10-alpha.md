@@ -557,4 +557,5 @@ stamp) on 2026-10-11 UTC. The v0.5.9-alpha build was made in a separate director
   `sha256:e0464cc70ab44d9d`) or passed with `MENDR_REGISTRY_FILE`.
 - **App deploy:** the `app-deploy` run for #56's merge (38103952500) passed its smoke check. That
   check waits until the deployed commit answers on `mendr-app.onrender.com`.
-- {{EVIDENCE}}
+- **Tests:** the full suite on the stamped tree passes 2087 tests in 117 files; the App suite passes 235 tests in 18 files, and its typecheck is clean.
+- **Review:** one agent drafted these notes from the code and probes, and three independent checks compared every claim with the release build, the registry and v0.5.9-alpha. All 36 of their corrections are applied.
