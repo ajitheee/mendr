@@ -448,11 +448,45 @@ describe('the shipped registry, against the curated table', () => {
       'text-davinci-002',
       'gemini-2.0-flash-lite',
       'gemini-2.0-flash-lite-001',
+      // Added 2026-10-10: the third id of OpenAI's "gpt-5 or gpt-4.1" row, and Google's retired
+      // Veo 3.0 and 2.0 ids, whose named Veo 3.1 previews themselves retire on 2026-10-22.
+      'gpt-4-turbo-preview-completions',
+      'veo-3.0-generate-001',
+      'veo-3.0-fast-generate-001',
+      'veo-2.0-generate-001',
+      'veo-3.0-generate-preview',
+      'veo-3.0-fast-generate-preview',
     ]) {
       const record = shipped.find((e) => e.deprecated === id);
       expect(record, id).toBeTruthy();
       expect(record!.verification?.autoApplyAllowed, id).toBe(false);
       expect(classifyEntry(record!, generous).status, id).toBe('unverified');
+    }
+  });
+
+  it('never auto-applies a text-to-speech, transcription or audio retirement, even with every replacement live', () => {
+    // OpenAI's 2027 audio wave: text-to-speech models move to a Realtime API model, and the four
+    // transcription models get "gpt-live-transcribe or gpt-transcribe". The class rule holds
+    // them first; the curated two-target rows hold the transcription ones if it ever changes.
+    for (const id of [
+      'tts-1',
+      'tts-1-hd',
+      'gpt-4o-mini-tts-2025-03-20',
+      'gpt-4o-mini-tts-2025-12-15',
+      'whisper-1',
+      'gpt-4o-transcribe',
+      'gpt-4o-mini-transcribe',
+      'gpt-4o-transcribe-diarize',
+      'gpt-4o-audio',
+      'gpt-4o-mini-audio',
+    ]) {
+      const record = shipped.find((e) => e.deprecated === id);
+      expect(record, id).toBeTruthy();
+      expect(record!.verification?.autoApplyAllowed, id).toBe(false);
+      expect(classifyEntry(record!, generous).status, id).toBe('unverifiable');
+    }
+    for (const id of ['whisper-1', 'gpt-4o-transcribe', 'gpt-4o-mini-transcribe', 'gpt-4o-transcribe-diarize']) {
+      expect(officialRecommendations().get(id), id).toBe('gpt-live-transcribe or gpt-transcribe');
     }
   });
 });

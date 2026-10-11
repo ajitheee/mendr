@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Project } from 'ts-morph';
 import type { LlmRegistry } from '../types.js';
-import { autoApplyVerification } from './llmRegistry.js';
+import { autoApplyVerification, loadLlmRegistry, resolveRegistryPath } from './llmRegistry.js';
 import { findModelIdLiterals } from './scanLiterals.js';
 import { classifyOccurrenceTier } from '../report/classifyOccurrence.js';
 import {
@@ -559,5 +559,112 @@ describe('paramRulesStartingAt', () => {
     const reason = TS_PARAM_BEHAVIOUR_REASON('gpt-3.5-turbo', 'gpt-5.6-terra', [rename]);
     const t = classifyOccurrenceTier({ position: 'surface_capped', deprecation: REG[0] as never, reason });
     expect(t).toEqual({ tier: 'B', reason: 'param_behaviour_change' });
+  });
+});
+
+// prompt_cache_retention. OpenAI's latest-model guide (read 2026-10-10, snapshot 14d2ce97ad60)
+// tells a GPT-5.6 migration to "replace prompt_cache_retention with prompt_cache_options.ttl".
+// No rule can make that edit, so a call that passes the field and would be swapped onto a
+// constrained family is held, and nothing else changes.
+describe('prompt_cache_retention on a swap', () => {
+  const CODEX: LlmRegistry[number] = {
+    provider: 'openai',
+    kind: 'model_id',
+    deprecated: 'gpt-5-codex',
+    replacement: 'gpt-5.6-sol',
+    status: 'deprecated',
+    shutdownDate: '2026-07-23',
+    verification: autoApplyVerification(),
+  };
+  const REG_CODEX: LlmRegistry = [...REG, CODEX];
+
+  function codexVerdict(model: string, extra: string) {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      'src/codex.ts',
+      [
+        "import OpenAI from 'openai';",
+        'const openai = new OpenAI();',
+        'export async function run(input: string) {',
+        `  return openai.responses.create({ model: '${model}', input${extra} });`,
+        '}',
+      ].join('\n'),
+    );
+    const m = findModelIdLiterals(project, REG_CODEX).find((x) => x.value === model);
+    if (!m) return undefined;
+    return { ...classifyOccurrenceTier({ position: m.position, deprecation: m.deprecation, reason: m.reason }), why: m.reason };
+  }
+
+  it('holds a call that passes it when the replacement is gpt-5.6, and names the field', () => {
+    const v = codexVerdict('gpt-5-codex', ", prompt_cache_retention: '24h'");
+    expect(v?.tier).toBe('B');
+    expect(v?.reason).toBe('coupled_param_unverified');
+    expect(v?.why).toBe(TS_COUPLED_PARAM_REASON('gpt-5.6-sol', ['prompt_cache_retention']));
+  });
+
+  it('still swaps the same call when it does not pass the field', () => {
+    expect(codexVerdict('gpt-5-codex', '')?.tier).toBe('A');
+  });
+
+  it('says nothing when the replacement is in no constrained family', () => {
+    // gpt-4-0613 -> gpt-4o-mini: no rule names gpt-4o, so nothing is known to change there.
+    expect(codexVerdict('gpt-4-0613', ", prompt_cache_retention: '24h'")?.tier).toBe('A');
+  });
+
+  it('reports nothing for a current model that passes the field', () => {
+    // The guard only qualifies a finding. A call on a model nobody is retiring is not one.
+    expect(codexVerdict('gpt-5.6-sol', ", prompt_cache_retention: '24h'")).toBeUndefined();
+  });
+
+  it('holds the same call when its model comes through a const or a shorthand, and swaps it without the field', () => {
+    // The parameter checks read every request a declaration reaches, so the field holds a const
+    // or `{ model }` call exactly as it holds the inline one. Without the field, both stay Tier A.
+    function declVerdict(modelProp: string, extra: string) {
+      const project = new Project({ useInMemoryFileSystem: true });
+      project.createSourceFile(
+        'src/codex.ts',
+        [
+          "import OpenAI from 'openai';",
+          'const openai = new OpenAI();',
+          "const model = 'gpt-5-codex';",
+          'export async function run(input: string) {',
+          `  return openai.responses.create({ ${modelProp}, input${extra} });`,
+          '}',
+        ].join('\n'),
+      );
+      const m = findModelIdLiterals(project, REG_CODEX).find((x) => x.value === 'gpt-5-codex');
+      if (!m) return undefined;
+      return { ...classifyOccurrenceTier({ position: m.position, deprecation: m.deprecation, reason: m.reason }), why: m.reason };
+    }
+    for (const shape of ['model: model', 'model']) {
+      const held = declVerdict(shape, ", prompt_cache_retention: '24h'");
+      expect(held?.tier, shape).toBe('B');
+      expect(held?.reason, shape).toBe('coupled_param_unverified');
+      expect(held?.why, shape).toBe(TS_COUPLED_PARAM_REASON('gpt-5.6-sol', ['prompt_cache_retention']));
+      expect(declVerdict(shape, '')?.tier, shape).toBe('A');
+    }
+  });
+
+  it('holds the shipped codex records that pass it, and swaps none of them with the field kept', () => {
+    // The shipped registry. gpt-5-codex -> gpt-5.6-sol is verified, so only the guard holds a
+    // call that passes the field. gpt-5.3-codex -> gpt-6-sol is quarantined: no rule names the
+    // GPT-6 family, so the guard cannot reach that swap and the record holds every call.
+    const shipped = loadLlmRegistry(resolveRegistryPath());
+    function shippedVerdict(model: string, extra: string) {
+      const project = new Project({ useInMemoryFileSystem: true });
+      project.createSourceFile(
+        'src/codex.ts',
+        [
+          "import OpenAI from 'openai';",
+          'const openai = new OpenAI();',
+          `export const run = (input: string) => openai.responses.create({ model: '${model}', input${extra} });`,
+        ].join('\n'),
+      );
+      const [m] = findModelIdLiterals(project, shipped).filter((x) => x.value === model);
+      return classifyOccurrenceTier({ position: m.position, deprecation: m.deprecation, reason: m.reason });
+    }
+    expect(shippedVerdict('gpt-5-codex', ", prompt_cache_retention: '24h'")).toEqual({ tier: 'B', reason: 'coupled_param_unverified' });
+    expect(shippedVerdict('gpt-5-codex', '')).toEqual({ tier: 'A' });
+    expect(shippedVerdict('gpt-5.3-codex', ", prompt_cache_retention: '24h'")).toEqual({ tier: 'B', reason: 'replacement_unverified' });
   });
 });

@@ -1,14 +1,15 @@
-import { createHmac } from 'node:crypto';
+import { createHmac, generateKeyPairSync } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT, type JWTPayload } from 'jose';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { buildManifest, createApp } from './app.js';
 import { sealSession, SESSION_COOKIE } from './auth/session.js';
 import { loadConfig, type AppConfig } from './config.js';
 import type { CheckRunPayload } from './ingest/checkRun.js';
 import { sampleReport } from '../test/sampleReport.js';
-import { GitHubApiError, type GitHubApi } from './github/api.js';
+import { createGitHubApi, GitHubApiError, type GitHubApi } from './github/api.js';
+import { FAILED_LOOKUP_TTL_MS, REFUSAL_TTL_MS, USER_RECOVERY_INTERVAL_MS } from './github/installRecovery.js';
 import { createActionsVerifier } from './github/oidc.js';
 import { MemoryStore } from './store/memory.js';
 
@@ -53,10 +54,54 @@ async function actionsToken(extra: Partial<JWTPayload> = {}): Promise<string> {
     .sign(privateKey);
 }
 
+/** An installation of the App as GitHub holds it, for the install-recovery lookups. */
+interface WorldInstallation {
+  id: number;
+  account: { login: string; type: 'User' | 'Organization' };
+  suspended_at: string | null;
+  /** The repository ids its selection covers. */
+  repositoryIds: number[];
+  /** Listed by `GET /user/installations` for the signed-in user. */
+  userCanAccess?: boolean;
+}
+
 function fakeGitHub(userRepos: Record<string, number> = {}) {
   const checkRuns: { installationId: number; fullName: string; repoId: number; payload: CheckRunPayload }[] = [];
   const dispatches: { installationId: number; fullName: string; repoId: number; workflowFile: string; ref: string; inputs: Record<string, string> }[] = [];
+  // GitHub's own state, which the webhooks normally copy into the store: which repositories
+  // exist and which installation of the App covers which repository ids. Empty by default, so
+  // GitHub, like the store, knows of no installation until a test says so.
+  const world = { repos: {} as Record<string, { id: number; private: boolean }>, installations: [] as WorldInstallation[] };
+  const lookups = { repoInstallation: [] as string[], repoAsInstallation: [] as { installationId: number; fullName: string; repoId: number }[], userInstallations: 0, userInstallationRepos: [] as number[] };
+  const asInstallation = (i: WorldInstallation) => ({ id: i.id, accountLogin: i.account.login, accountType: i.account.type, suspended: i.suspended_at !== null });
   const api: GitHubApi = {
+    // GET /repos/{owner}/{repo}/installation with the App JWT: 404 (null) unless an installation covers it.
+    async getRepoInstallation(fullName) {
+      lookups.repoInstallation.push(fullName);
+      const repo = world.repos[fullName];
+      const inst = repo ? world.installations.find((i) => i.repositoryIds.includes(repo.id)) : undefined;
+      return inst ? asInstallation(inst) : null;
+    },
+    // A token limited to repoId (refused, null, when the installation does not cover it), then
+    // GET /repos/{owner}/{repo}, which answers with whatever repository has that name.
+    async getRepoAsInstallation(installationId, fullName, repoId) {
+      lookups.repoAsInstallation.push({ installationId, fullName, repoId });
+      const inst = world.installations.find((i) => i.id === installationId);
+      if (!inst || !inst.repositoryIds.includes(repoId)) return null;
+      const repo = world.repos[fullName];
+      return repo ? { id: repo.id, fullName, private: repo.private } : null;
+    },
+    async listUserInstallations() {
+      lookups.userInstallations++;
+      return world.installations.filter((i) => i.userCanAccess).map(asInstallation);
+    },
+    async listUserInstallationRepos(_token, installationId) {
+      lookups.userInstallationRepos.push(installationId);
+      const inst = world.installations.find((i) => i.id === installationId);
+      return Object.entries(world.repos)
+        .filter(([, r]) => inst?.repositoryIds.includes(r.id))
+        .map(([fullName, r]) => ({ id: r.id, fullName, private: r.private }));
+    },
     async dispatchWorkflow(installationId, fullName, repoId, workflowFile, ref, inputs) {
       dispatches.push({ installationId, fullName, repoId, workflowFile, ref, inputs });
     },
@@ -78,10 +123,17 @@ function fakeGitHub(userRepos: Record<string, number> = {}) {
       return id ? { id, fullName, private: true, defaultBranch: 'main' } : null;
     },
   };
-  return { api, checkRuns, dispatches };
+  return { api, checkRuns, dispatches, world, lookups };
 }
 
-function harness(userRepos: Record<string, number> = {}, over: Partial<AppConfig> = {}) {
+interface HarnessOptions {
+  /** Use this GitHub client instead of the recording fake (gh.api), e.g. the real createGitHubApi over a stubbed fetch. */
+  github?: (config: AppConfig) => GitHubApi;
+  /** The upload's install-lookup deadline; 40 ms unless a test needs the real client's crypto to fit. */
+  installLookupTimeoutMs?: number;
+}
+
+function harness(userRepos: Record<string, number> = {}, over: Partial<AppConfig> = {}, opts: HarnessOptions = {}) {
   const config: AppConfig = {
     ...loadConfig({}),
     appUrl: 'https://app.example',
@@ -100,10 +152,14 @@ function harness(userRepos: Record<string, number> = {}, over: Partial<AppConfig
   // The full records too, not only the message. Half this suite's point is that an early exit
   // now says WHICH repository and WHY, and a string[] cannot assert that.
   const logEvents: { message: string; extra?: Record<string, unknown> }[] = [];
+  // The App's clock runs with the real one plus whatever a test skips ahead (h.advance), so the
+  // install-recovery cache can be expired without waiting. OIDC tokens keep the real clock.
+  let skewMs = 0;
   const app = createApp({
     config,
     store,
-    github: gh.api,
+    github: opts.github ? opts.github(config) : gh.api,
+    now: () => new Date(Date.now() + skewMs),
     verifyActionsToken: verify,
     log: (m, extra) => {
       logs.push(m);
@@ -111,6 +167,8 @@ function harness(userRepos: Record<string, number> = {}, over: Partial<AppConfig
     },
     // Real value is 8s; asserting the deadline should not cost the suite eight seconds.
     interactiveTimeoutMs: 40,
+    // Real value is 20s, for the same reason.
+    installLookupTimeoutMs: opts.installLookupTimeoutMs ?? 40,
   });
   const webhook = (event: string, payload: unknown) => {
     const body = JSON.stringify(payload);
@@ -126,7 +184,10 @@ function harness(userRepos: Record<string, number> = {}, over: Partial<AppConfig
   const migrations = (token: string, body: unknown, headers: Record<string, string> = {}) =>
     app.request('/api/migrations', { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body) });
   const sessionCookie = async () => `${SESSION_COOKIE}=${await sealSession({ userId: 7, login: 'octocat', token: 'user-token', exp: Math.floor(Date.now() / 1000) + 3600 }, config.sessionSecret)}`;
-  return { app, store, gh, config, logs, logEvents, webhook, install, ingest, migrations, sessionCookie };
+  const advance = (ms: number) => {
+    skewMs += ms;
+  };
+  return { app, store, gh, config, logs, logEvents, webhook, install, ingest, migrations, sessionCookie, advance };
 }
 
 /** What mendr-action would send after a verified migration of the sample report's gpt-4 finding — with a diff the App must drop. */
@@ -848,6 +909,437 @@ describe('approvals: decided in Mendr, carried out by the customer\'s own CI', (
       const res = await post(h, '/r/acme/api/approve', { ...finding, mode: 'pr' });
       expect(res.status).toBe(302); // still the signed-out redirect, not a 500
     });
+  });
+});
+
+// INSTALL RECOVERY. The App moved to a new, empty database. It learns installations only from
+// GitHub's installation webhooks, which GitHub never sends again, so every existing install was
+// refused until its account reinstalled the App. Each test here starts in that state: GitHub
+// knows the installation (h.gh.world), the store does not.
+describe('install recovery: an upload the database cannot place is checked with GitHub before it is refused', () => {
+  const NOT_INSTALLED = { error: 'the Mendr GitHub App is not installed on acme/api', install: 'https://github.com/apps/mendr-test/installations/new' };
+
+  /** GitHub has the App installed on acme/api (installation 42); the store has never heard of it. */
+  const installedOnGitHub = (h: ReturnType<typeof harness>, over: Partial<WorldInstallation> = {}) => {
+    h.gh.world.repos[REPO.full_name] = { id: REPO.id, private: true };
+    h.gh.world.installations.push({ id: INSTALLATION.id, account: { login: 'acme', type: 'Organization' }, suspended_at: null, repositoryIds: [REPO.id], ...over });
+  };
+  const refusal = (h: ReturnType<typeof harness>) => h.logEvents.filter((l) => l.message === 'install recovery refused' || l.message === 'install recovery failed').map((l) => l.extra?.outcome);
+  const recoveredEvents = async (h: ReturnType<typeof harness>) => (await h.store.listAuditLog()).filter((e) => e.event === 'installation_recovered');
+
+  it('accepts an upload from an installed repository the store does not know, stores it, and records it in the audit log', async () => {
+    const h = harness();
+    installedOnGitHub(h);
+    // The body names another repository; only the OIDC token's claims are used.
+    const res = await h.ingest(await actionsToken(), sampleReport({ repo: 'evil/other' }));
+    expect(res.status).toBe(200);
+    expect(await h.store.getRepo(REPO.id)).toMatchObject({ fullName: 'acme/api', installationId: 42, private: true, removedAt: null });
+    expect(await h.store.getInstallation(42)).toMatchObject({ accountLogin: 'acme', accountType: 'Organization', suspended: false, deletedAt: null });
+    expect(h.gh.checkRuns[0]).toMatchObject({ installationId: 42, fullName: 'acme/api', repoId: REPO.id });
+    expect(h.gh.lookups.repoInstallation).toEqual(['acme/api']);
+    expect(h.gh.lookups.repoAsInstallation).toEqual([{ installationId: 42, fullName: 'acme/api', repoId: REPO.id }]);
+    const events = await recoveredEvents(h);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ installationId: 42, repo: 'acme/api', actor: 'octocat', detail: { via: 'ci_upload', repositoryId: REPO.id, account: 'acme', installationKnown: false, repositories: 1 } });
+    // Known now: the next upload goes through the store, not GitHub.
+    expect((await h.ingest(await actionsToken({ run_id: '100' }), sampleReport())).status).toBe(200);
+    expect(h.gh.lookups.repoInstallation).toHaveLength(1);
+    expect(await recoveredEvents(h)).toHaveLength(1);
+  });
+
+  it('refuses a repository GitHub says is not installed exactly as before, and does not ask GitHub again for a few minutes', async () => {
+    const h = harness();
+    h.gh.world.repos[REPO.full_name] = { id: REPO.id, private: true }; // exists on GitHub, App not installed
+    const first = await h.ingest(await actionsToken(), sampleReport());
+    expect(first.status).toBe(403);
+    expect(await first.json()).toEqual(NOT_INSTALLED);
+    expect(refusal(h)).toEqual(['not_installed']);
+    // curl's retries, the next scans and the migration report all meet the cached answer.
+    for (const run of ['100', '101', '102']) expect((await h.ingest(await actionsToken({ run_id: run }), sampleReport())).status).toBe(403);
+    const mig = await h.migrations(await actionsToken(), sampleMigration());
+    expect(mig.status).toBe(403);
+    expect(await mig.json()).toEqual(NOT_INSTALLED);
+    expect(h.gh.lookups.repoInstallation).toHaveLength(1);
+    expect(h.gh.lookups.repoAsInstallation).toHaveLength(0);
+    expect(await h.store.getRepo(REPO.id)).toBeNull();
+    expect(await h.store.getInstallation(42)).toBeNull();
+    expect(await recoveredEvents(h)).toEqual([]);
+    expect(h.gh.checkRuns).toHaveLength(0);
+
+    // Installed on GitHub meanwhile with its webhook lost: the cached answer holds until it expires.
+    installedOnGitHub(h);
+    expect((await h.ingest(await actionsToken({ run_id: '103' }), sampleReport())).status).toBe(403);
+    expect(h.gh.lookups.repoInstallation).toHaveLength(1);
+    h.advance(REFUSAL_TTL_MS + 1);
+    expect((await h.ingest(await actionsToken({ run_id: '104' }), sampleReport())).status).toBe(200);
+    expect(h.gh.lookups.repoInstallation).toHaveLength(2);
+  });
+
+  it('a cached refusal never delays an install GitHub announced by webhook', async () => {
+    const h = harness();
+    expect((await h.ingest(await actionsToken(), sampleReport())).status).toBe(403);
+    await h.install();
+    expect((await h.ingest(await actionsToken({ run_id: '100' }), sampleReport())).status).toBe(200);
+    expect(h.gh.lookups.repoInstallation).toHaveLength(1);
+  });
+
+  it("refuses when GitHub's id for the named repository is not the token's repository_id", async () => {
+    const h = harness();
+    // The installation covers both ids, so GitHub mints the token for 9999; but acme/api is 1234.
+    h.gh.world.repos['acme/api'] = { id: REPO.id, private: true };
+    h.gh.world.repos['acme/other'] = { id: 9999, private: true };
+    h.gh.world.installations.push({ id: 42, account: { login: 'acme', type: 'Organization' }, suspended_at: null, repositoryIds: [REPO.id, 9999] });
+    const res = await h.ingest(await actionsToken({ repository_id: '9999' }), sampleReport());
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual(NOT_INSTALLED);
+    expect(refusal(h)).toEqual(['repository_id_mismatch']);
+    expect(await h.store.getRepo(9999)).toBeNull();
+    expect(await h.store.getRepo(REPO.id)).toBeNull();
+    expect(await h.store.getInstallation(42)).toBeNull();
+    expect(await recoveredEvents(h)).toEqual([]);
+    // Cached like any other refusal.
+    expect((await h.ingest(await actionsToken({ repository_id: '9999', run_id: '100' }), sampleReport())).status).toBe(403);
+    expect(h.gh.lookups.repoInstallation).toHaveLength(1);
+  });
+
+  it("refuses when the installation that covers the name does not cover the token's repository id", async () => {
+    const h = harness();
+    installedOnGitHub(h); // covers 1234 only
+    const res = await h.ingest(await actionsToken({ repository_id: '9999' }), sampleReport());
+    expect(res.status).toBe(403);
+    expect(refusal(h)).toEqual(['repository_not_covered']);
+    expect(h.gh.lookups.repoAsInstallation).toEqual([{ installationId: 42, fullName: 'acme/api', repoId: 9999 }]);
+    expect(await h.store.getRepo(9999)).toBeNull();
+    expect(await h.store.getInstallation(42)).toBeNull();
+  });
+
+  // This fake has no token cache and applies the coverage check on every call. The real client
+  // is driven through the same path, twice, under "install recovery against the real GitHub
+  // client" below.
+  it('does not rely on the installation lookup alone: a repository outside the selection is refused at the token', async () => {
+    const h = harness();
+    h.gh.world.repos[REPO.full_name] = { id: REPO.id, private: true };
+    h.gh.world.installations.push({ id: 42, account: { login: 'acme', type: 'Organization' }, suspended_at: null, repositoryIds: [5678] });
+    // Suppose GitHub named the account's installation for a repository its selection leaves out.
+    h.gh.api.getRepoInstallation = async () => ({ id: 42, accountLogin: 'acme', accountType: 'Organization', suspended: false });
+    const res = await h.ingest(await actionsToken(), sampleReport());
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual(NOT_INSTALLED);
+    expect(refusal(h)).toEqual(['repository_not_covered']);
+    expect(await h.store.getInstallation(42)).toBeNull();
+    expect(await h.store.getRepo(REPO.id)).toBeNull();
+  });
+
+  it('stores nothing for an installation GitHub reports suspended', async () => {
+    const h = harness();
+    installedOnGitHub(h, { suspended_at: '2026-10-01T00:00:00Z' });
+    const res = await h.ingest(await actionsToken(), sampleReport());
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual(NOT_INSTALLED);
+    expect(refusal(h)).toEqual(['installation_suspended']);
+    expect(h.gh.lookups.repoAsInstallation).toHaveLength(0);
+    expect(await h.store.getInstallation(42)).toBeNull();
+    expect(await h.store.getRepo(REPO.id)).toBeNull();
+  });
+
+  it('never brings back an installation the store holds as uninstalled', async () => {
+    const h = harness();
+    await h.install();
+    await h.webhook('installation', { action: 'deleted', installation: INSTALLATION });
+    installedOnGitHub(h); // GitHub still answering with installation 42
+    const res = await h.ingest(await actionsToken(), sampleReport());
+    expect(res.status).toBe(403);
+    expect(refusal(h)).toEqual(['installation_deleted']);
+    expect((await h.store.getInstallation(42))?.deletedAt).toBeTruthy();
+    expect(await h.store.getRepo(REPO.id)).toBeNull();
+  });
+
+  it('adds a repository the store lacks to an installation it knows, without rewriting the installation', async () => {
+    const h = harness();
+    await h.install(); // installation 42 and acme/api, from the webhook
+    h.gh.world.repos['acme/web'] = { id: 5678, private: false };
+    h.gh.world.installations.push({ id: 42, account: { login: 'acme-renamed', type: 'Organization' }, suspended_at: null, repositoryIds: [REPO.id, 5678] });
+    const res = await h.ingest(await actionsToken({ repository: 'acme/web', repository_id: '5678' }), sampleReport());
+    expect(res.status).toBe(200);
+    expect(await h.store.getRepo(5678)).toMatchObject({ fullName: 'acme/web', installationId: 42, private: false });
+    expect((await h.store.getInstallation(42))?.accountLogin).toBe('acme');
+    expect((await recoveredEvents(h))[0]?.detail).toMatchObject({ via: 'ci_upload', installationKnown: true });
+  });
+
+  it('a known installation that is suspended still refuses the upload', async () => {
+    const h = harness();
+    await h.install();
+    await h.webhook('installation', { action: 'suspend', installation: INSTALLATION });
+    h.gh.world.repos['acme/web'] = { id: 5678, private: false };
+    h.gh.world.installations.push({ id: 42, account: { login: 'acme', type: 'Organization' }, suspended_at: null, repositoryIds: [REPO.id, 5678] });
+    const res = await h.ingest(await actionsToken({ repository: 'acme/web', repository_id: '5678' }), sampleReport());
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: string }).error).toBe('the installation covering this repository is suspended');
+    expect((await h.store.getInstallation(42))?.suspended).toBe(true);
+    expect(await h.store.listRuns(5678, 10)).toEqual([]);
+  });
+
+  it("recovers on the migration report and on the migration workflow's approvals check too", async () => {
+    const h = harness();
+    installedOnGitHub(h);
+    expect((await h.migrations(await actionsToken(), sampleMigration())).status).toBe(200);
+    expect(await h.store.getRepo(REPO.id)).toMatchObject({ installationId: 42 });
+
+    const h2 = harness();
+    installedOnGitHub(h2);
+    const res = await h2.app.request('/api/approvals', { headers: { authorization: `Bearer ${await actionsToken()}` } });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, approvals: [] });
+    expect(await h2.store.getRepo(REPO.id)).toMatchObject({ installationId: 42 });
+
+    const h3 = harness(); // not installed: the approvals check answers as before
+    const refused = await h3.app.request('/api/approvals', { headers: { authorization: `Bearer ${await actionsToken()}` } });
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toEqual({ error: 'the Mendr GitHub App is not installed on acme/api' });
+  });
+
+  it('a GitHub failure is answered as before and asked again after a minute, not five', async () => {
+    const h = harness();
+    installedOnGitHub(h);
+    const real = h.gh.api.getRepoInstallation;
+    h.gh.api.getRepoInstallation = async () => {
+      throw new GitHubApiError(502, 'GitHub 502 for GET /repos/acme/api/installation: Bad Gateway');
+    };
+    const res = await h.ingest(await actionsToken(), sampleReport());
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual(NOT_INSTALLED);
+    expect(refusal(h)).toEqual(['lookup_failed']);
+    expect(await h.store.getRepo(REPO.id)).toBeNull();
+    h.gh.api.getRepoInstallation = real;
+    expect((await h.ingest(await actionsToken({ run_id: '100' }), sampleReport())).status).toBe(403); // still remembered
+    h.advance(FAILED_LOOKUP_TTL_MS + 1);
+    expect((await h.ingest(await actionsToken({ run_id: '101' }), sampleReport())).status).toBe(200);
+  });
+
+  it('a GitHub that never answers does not hold the upload past the lookup deadline, and a late answer is not applied', async () => {
+    const h = harness();
+    installedOnGitHub(h);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const real = h.gh.api.getRepoInstallation;
+    h.gh.api.getRepoInstallation = async (name) => {
+      await gate;
+      return real(name);
+    };
+    const res = await h.ingest(await actionsToken(), sampleReport());
+    expect(res.status).toBe(403);
+    expect(refusal(h)).toEqual(['lookup_failed']);
+    release();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(await h.store.getRepo(REPO.id)).toBeNull();
+    expect(await h.store.getInstallation(42)).toBeNull();
+  });
+
+  it('concurrent uploads for one unknown repository share one lookup', async () => {
+    const h = harness();
+    installedOnGitHub(h);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const real = h.gh.api.getRepoInstallation;
+    h.gh.api.getRepoInstallation = async (name) => {
+      const answer = await real(name);
+      await gate;
+      return answer;
+    };
+    const [t1, t2] = await Promise.all([actionsToken({ run_id: '1' }), actionsToken({ run_id: '2' })]);
+    const pending = Promise.all([h.ingest(t1, sampleReport()), h.ingest(t2, sampleReport())]);
+    await new Promise((r) => setTimeout(r, 10));
+    release();
+    const [a, b] = await pending;
+    expect([a.status, b.status]).toEqual([200, 200]);
+    expect(h.gh.lookups.repoInstallation).toHaveLength(1);
+    expect(await recoveredEvents(h)).toHaveLength(1);
+  });
+
+  it('does not ask GitHub at all without the App id and private key', async () => {
+    const h = harness({}, { githubAppId: null, githubPrivateKey: null });
+    installedOnGitHub(h);
+    expect((await h.ingest(await actionsToken(), sampleReport())).status).toBe(403);
+    expect(h.gh.lookups.repoInstallation).toHaveLength(0);
+  });
+
+  it('asks for no new permission: the manifest is unchanged', () => {
+    const { config } = harness();
+    expect(buildManifest(config).default_permissions).toEqual({ checks: 'write', metadata: 'read' });
+  });
+});
+
+// The fake above has no token cache. The real client does (for check runs), so these tests run
+// install recovery through createGitHubApi itself, on a GitHub-shaped fetch, and recover twice on
+// one client. acme/api is public here: GET /repos/acme/api answers any token, so step 3 proves
+// nothing about coverage. And GET /repos/acme/api/installation answers installation 42 whatever its
+// selection holds: the case step 2, the token mint, exists for.
+describe('install recovery against the real GitHub client: coverage is asked on every lookup', () => {
+  const API = 'https://api.github.test';
+  const { privateKey: appKey } = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** GitHub as seen through fetch. `covered` is installation 42's selection; `mints` records each token request and GitHub's answer. */
+  function githubOverFetch() {
+    const covered = new Set<number>([REPO.id]);
+    const mints: { permissions: Record<string, string>; status: number }[] = [];
+    let n = 0;
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit = {}) => {
+      const path = new URL(url).pathname;
+      const method = init.method ?? 'GET';
+      const answer = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+      if (method === 'GET' && path === '/repos/acme/api/installation') return answer(200, { id: 42, account: { login: 'acme', type: 'Organization' }, suspended_at: null });
+      if (method === 'POST' && path === '/app/installations/42/access_tokens') {
+        const body = JSON.parse(String(init.body)) as { repository_ids: number[]; permissions: Record<string, string> };
+        const ok = body.repository_ids.every((id) => covered.has(id));
+        mints.push({ permissions: body.permissions, status: ok ? 201 : 422 });
+        return ok
+          ? answer(201, { token: `ghs_${++n}`, expires_at: new Date(Date.now() + 3_600_000).toISOString() })
+          : answer(422, { message: 'There is at least one repository that does not exist or is not accessible to the parent installation.' });
+      }
+      if (method === 'GET' && path === '/repos/acme/api') return answer(200, { id: REPO.id, full_name: REPO.full_name, private: false });
+      if (method === 'POST' && path === '/repos/acme/api/check-runs') return answer(201, { id: 1, html_url: 'https://github.test/acme/api/runs/1' });
+      return answer(404, { message: 'Not Found' });
+    });
+    const metadataMints = () => mints.filter((m) => m.permissions.metadata === 'read').map((m) => m.status);
+    return { covered, mints, metadataMints };
+  }
+
+  const realHarness = () =>
+    harness({}, { githubApiUrl: API, githubPrivateKey: appKey }, { github: (config) => createGitHubApi(config), installLookupTimeoutMs: 10_000 });
+  const outcomes = (h: ReturnType<typeof harness>) => h.logEvents.filter((l) => l.message === 'install recovery refused' || l.message === 'install recovery failed').map((l) => l.extra?.outcome);
+  const recovered = async (h: ReturnType<typeof harness>) => (await h.store.listAuditLog()).filter((e) => e.event === 'installation_recovered');
+
+  it('a public repository taken out of the selection within the hour is refused, not stored again', async () => {
+    const gh = githubOverFetch();
+    const h = realHarness();
+    // (1) Recovered on a CI upload.
+    expect((await h.ingest(await actionsToken(), sampleReport())).status).toBe(200);
+    expect(await h.store.getRepo(REPO.id)).toMatchObject({ installationId: 42, private: false });
+    // (2) The owner removes acme/api from the App's selection; the webhook hard-deletes the row.
+    gh.covered.delete(REPO.id);
+    await h.webhook('installation_repositories', { action: 'removed', installation: INSTALLATION, repositories_added: [], repositories_removed: [REPO] });
+    expect(await h.store.getRepo(REPO.id)).toBeNull();
+    // (3) Within the hour the repository's own workflow uploads again, and step 1 still names 42.
+    const res = await h.ingest(await actionsToken({ run_id: '100' }), sampleReport());
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: string }).error).toBe('the Mendr GitHub App is not installed on acme/api');
+    expect(outcomes(h)).toEqual(['repository_not_covered']);
+    expect(await h.store.getRepo(REPO.id)).toBeNull();
+    expect(await h.store.listRuns(REPO.id, 10)).toEqual([]);
+    // GitHub was asked to mint a token for the second lookup too, and refused it.
+    expect(gh.metadataMints()).toEqual([201, 422]);
+    expect(await recovered(h)).toHaveLength(1);
+  });
+
+  it('a repository GitHub still covers is recovered again with a new token, not refused', async () => {
+    const gh = githubOverFetch();
+    const h = realHarness();
+    expect((await h.ingest(await actionsToken(), sampleReport())).status).toBe(200);
+    // The database loses the row again; GitHub's selection still holds acme/api.
+    await h.store.deleteRepoData(REPO.id);
+    expect(await h.store.getRepo(REPO.id)).toBeNull();
+    expect((await h.ingest(await actionsToken({ run_id: '100' }), sampleReport())).status).toBe(200);
+    expect(await h.store.getRepo(REPO.id)).toMatchObject({ installationId: 42 });
+    expect(outcomes(h)).toEqual([]);
+    expect(gh.metadataMints()).toEqual([201, 201]);
+    expect(await recovered(h)).toHaveLength(2);
+  });
+});
+
+describe("install recovery: a signed-in overview with nothing to show checks the user's own installations", () => {
+  const userInstalled = (h: ReturnType<typeof harness>, over: Partial<WorldInstallation> = {}) => {
+    h.gh.world.repos[REPO.full_name] = { id: REPO.id, private: true };
+    h.gh.world.installations.push({ id: INSTALLATION.id, account: { login: 'acme', type: 'Organization' }, suspended_at: null, repositoryIds: [REPO.id], userCanAccess: true, ...over });
+  };
+
+  it('adds the installations and repositories GitHub says the user can access, and lists them', async () => {
+    const h = harness({ 'acme/api': REPO.id });
+    userInstalled(h);
+    const cookie = await h.sessionCookie();
+    const page = await (await h.app.request('/', { headers: { cookie } })).text();
+    expect(page).toContain('Set up the audit');
+    expect(page).toContain('github.com/acme/api/new/main?filename=');
+    expect(await h.store.getRepo(REPO.id)).toMatchObject({ fullName: 'acme/api', installationId: 42 });
+    expect(await h.store.getInstallation(42)).toMatchObject({ accountLogin: 'acme', suspended: false, deletedAt: null });
+    const events = (await h.store.listAuditLog()).filter((e) => e.event === 'installation_recovered');
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ installationId: 42, repo: null, actor: 'octocat', detail: { via: 'sign_in', installationKnown: false, repositories: 1 } });
+    // The repository page works too, and a CI upload needs no lookup now.
+    expect((await h.app.request('/r/acme/api', { headers: { cookie } })).status).toBe(200);
+    expect((await h.ingest(await actionsToken(), sampleReport())).status).toBe(200);
+    expect(h.gh.lookups.repoInstallation).toHaveLength(0);
+  });
+
+  it('a user who already sees a repository costs no extra GitHub call', async () => {
+    const h = harness({ 'acme/api': REPO.id });
+    await h.install();
+    userInstalled(h);
+    await h.app.request('/', { headers: { cookie: await h.sessionCookie() } });
+    expect(h.gh.lookups.userInstallations).toBe(0);
+  });
+
+  it("reads a user's installations at most once every ten minutes", async () => {
+    const h = harness({});
+    const cookie = await h.sessionCookie();
+    await h.app.request('/', { headers: { cookie } });
+    await h.app.request('/', { headers: { cookie } });
+    expect(h.gh.lookups.userInstallations).toBe(1);
+    h.advance(USER_RECOVERY_INTERVAL_MS + 1);
+    await h.app.request('/', { headers: { cookie } });
+    expect(h.gh.lookups.userInstallations).toBe(2);
+  });
+
+  it('skips suspended installations and ones the store holds as uninstalled, and leaves known repositories alone', async () => {
+    // The user can see acme/api and beta/app on GitHub, not gamma/svc, so the overview starts empty.
+    const h = harness({ 'acme/api': REPO.id, 'beta/app': 77 });
+    // The store: installation 42 uninstalled (acme/api purged); gamma/svc known under installation 50.
+    await h.install();
+    await h.webhook('installation', { action: 'deleted', installation: INSTALLATION });
+    await h.webhook('installation', { action: 'created', installation: { id: 50, account: { login: 'gamma', type: 'Organization' } }, repositories: [{ id: 88, full_name: 'gamma/svc', private: true }] });
+    // GitHub: 42 still listed, 43 suspended, 44 covering the gamma/svc the store already knows.
+    h.gh.world.repos['acme/api'] = { id: REPO.id, private: true };
+    h.gh.world.repos['beta/app'] = { id: 77, private: true };
+    h.gh.world.repos['gamma/svc'] = { id: 88, private: true };
+    h.gh.world.installations.push(
+      { id: 42, account: { login: 'acme', type: 'Organization' }, suspended_at: null, repositoryIds: [REPO.id], userCanAccess: true },
+      { id: 43, account: { login: 'beta', type: 'User' }, suspended_at: '2026-10-01T00:00:00Z', repositoryIds: [77], userCanAccess: true },
+      { id: 44, account: { login: 'gamma', type: 'Organization' }, suspended_at: null, repositoryIds: [88], userCanAccess: true },
+    );
+    const page = await (await h.app.request('/', { headers: { cookie: await h.sessionCookie() } })).text();
+    expect(page).not.toContain('acme/api');
+    expect(page).not.toContain('beta/app');
+    expect(h.gh.lookups.userInstallations).toBe(1);
+    expect(h.gh.lookups.userInstallationRepos).toEqual([42, 44]); // 43 is suspended: not even read
+    expect(await h.store.getRepo(REPO.id)).toBeNull();
+    expect((await h.store.getInstallation(42))?.deletedAt).toBeTruthy();
+    expect(await h.store.getRepo(77)).toBeNull();
+    expect(await h.store.getInstallation(43)).toBeNull();
+    // gamma/svc stays under installation 50, where its webhook put it, and 44 is not created for nothing.
+    expect(await h.store.getRepo(88)).toMatchObject({ installationId: 50 });
+    expect(await h.store.getInstallation(44)).toBeNull();
+    expect((await h.store.listAuditLog()).filter((e) => e.event === 'installation_recovered')).toEqual([]);
+  });
+
+  it('a GitHub that never answers still renders the overview, and nothing is written', async () => {
+    const h = harness({ 'acme/api': REPO.id });
+    userInstalled(h);
+    h.gh.api.listUserInstallations = () => new Promise(() => {}); // never settles
+    const res = await h.app.request('/', { headers: { cookie: await h.sessionCookie() } });
+    expect(res.status).toBe(200);
+    expect(await h.store.getRepo(REPO.id)).toBeNull();
+    expect(h.logs).toContain('install recovery from sign-in incomplete');
   });
 });
 

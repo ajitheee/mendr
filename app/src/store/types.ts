@@ -267,6 +267,12 @@ export type AuditEvent =
   | 'installation_connected'
   | 'installation_suspended'
   | 'installation_removed'
+  /**
+   * The database did not know an installation or repository, and GitHub confirmed it: a CI
+   * upload's verified OIDC token (`detail.via = 'ci_upload'`) or a signed-in user's own
+   * installations (`detail.via = 'sign_in'`). See src/github/installRecovery.ts.
+   */
+  | 'installation_recovered'
   | 'repos_added'
   | 'repos_removed'
   | 'audit_received'
