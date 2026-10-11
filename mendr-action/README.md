@@ -24,15 +24,15 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
-      - uses: ajitheee/mendr/mendr-action@v0.5.10-alpha
+      - uses: ajitheee/mendr/mendr-action@v0.5.11-alpha
         with:
           # pin the CLI the action runs to the same release as the action itself
-          mendr-spec: github:ajitheee/mendr#v0.5.10-alpha
+          mendr-spec: github:ajitheee/mendr#v0.5.11-alpha
 ```
 
 That's the whole setup. It runs every Monday and whenever you trigger it by hand from the Actions tab.
 
-Want the read-only version first? `npx github:ajitheee/mendr#v0.5.10-alpha audit . --install` scaffolds a workflow that keeps one tracking issue current and changes no code — `contents: read`, `issues: write`, nothing else. This action is the step after that: it opens the verified migration as a PR.
+Want the read-only version first? `npx github:ajitheee/mendr#v0.5.11-alpha audit . --install` scaffolds a workflow that keeps one tracking issue current and changes no code — `contents: read`, `issues: write`, nothing else. This action is the step after that: it opens the verified migration as a PR.
 
 ## approvals from your Mendr App
 
@@ -56,7 +56,7 @@ your token; the App only records the decision and what your CI reports.
    - **held for review** (`outcome: held-for-review`): every retiring id it found was held for a person (a parameter the replacement treats differently, a fine-tune, an example tree, an untraced setting, an unverified replacement, and the other Tier B reasons). The repository is not clean. The job summary says how many places need a person and lists each one with its file, line, reason code and reason; the log carries a warning with the count. It opens no PR. An open Mendr PR stays open, and the run comments on it that Mendr no longer verifies it: that PR came from an earlier run whose body still says its swap was verified, and the current release may hold the same call. The comment is posted once for each held count and scope, not on every run.
    - **not verified** (`outcome: not-verified`): a migration existed but did not verify. It applies nothing, opens no PR, and leaves any existing PR untouched.
 
-   On `v0.5.10-alpha` and earlier, a held-for-review run was reported as clean and closed an open Mendr PR with "no deprecated model ids remain". The change is on `main` and reaches a workflow pinned to a release only from the next tag.
+   On `v0.5.10-alpha` and earlier, a held-for-review run was reported as clean and closed an open Mendr PR with "no deprecated model ids remain". The change ships in `v0.5.11-alpha`; a workflow pinned to an earlier release keeps the old behaviour until its ref moves.
 
 Re-running never stacks new PRs. It keeps the one branch current, and it never merges — a human approves.
 
@@ -65,7 +65,7 @@ Re-running never stacks new PRs. It keeps the one branch current, and it never m
 | input | default | purpose |
 | --- | --- | --- |
 | `working-directory` | `.` | where your code lives, if not the repo root |
-| `mendr-spec` | `github:ajitheee/mendr#v0.5.10-alpha` | the CLI that runs in your CI (npm spec once published) |
+| `mendr-spec` | `github:ajitheee/mendr#v0.5.11-alpha` | the CLI that runs in your CI (npm spec once published) |
 | `app-url` | (empty) | your Mendr App URL; when set, the result — outcome, PR url, verdict, gate statuses, swaps and file paths, how many calls were held for review (a count, not the list), and the diff of the swap itself (see `send-diff`), **never whole files** — is reported there, proven by the run's OIDC token. Grant `id-token: write` in the job; without it nothing is sent and the job still succeeds |
 | `send-diff` | `true` | include the unified diff of the model-id swap in the report, so the person who approved sees the change on the finding without opening GitHub (the App redacts secrets and caps it). `false` = everything except the diff |
 | `approval-gated` | `false` | `true` = carry out only the migrations a person approved in your Mendr App (needs `app-url` and `id-token: write`): ask the App, claim them, migrate exactly those models (`mendr migrate --only`), stream each step back to the finding, and enable GitHub's auto-merge only when the approval asked for it. Nothing approved = nothing done, in seconds, before any dependency install |

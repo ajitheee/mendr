@@ -9,7 +9,7 @@ One command scans TypeScript, TSX, JavaScript, Python and config files, joins a 
 **Beta partner?** Start with [BETA-ONBOARDING.md](BETA-ONBOARDING.md): connect in five minutes, what you will see, what leaves your CI, troubleshooting.
 
 ```sh
-npx github:ajitheee/mendr#v0.5.10-alpha audit .
+npx github:ajitheee/mendr#v0.5.11-alpha audit .
 ```
 
 (`npx mendr audit .` once the package lands on the npm registry.)
@@ -43,7 +43,7 @@ Every output carries the coverage matrix, so a skipped surface can never read as
 ## keep it watched
 
 ```sh
-npx github:ajitheee/mendr#v0.5.10-alpha audit . --install
+npx github:ajitheee/mendr#v0.5.11-alpha audit . --install
 ```
 
 scaffolds a GitHub workflow that keeps **one issue per repository** current: new, continuing and resolved findings, the exact commit scanned, and the coverage matrix. It asks for `contents: read` and `issues: write`, never touches your default branch, and never merges anything.
@@ -53,25 +53,25 @@ scaffolds a GitHub workflow that keeps **one issue per repository** current: new
 `fix-llm` goes one step further: it writes the exact diff for a retired id at a verified call site and proves it against your type-check and tests before anything is applied. Print-only by default — read the patch, and if it's right, apply it:
 
 ```sh
-npx github:ajitheee/mendr#v0.5.10-alpha fix-llm .
+npx github:ajitheee/mendr#v0.5.11-alpha fix-llm .
 ```
 
 You can also point it straight at a GitHub link. mendr clones a throwaway copy and scans that, so the real repo is never touched:
 
 ```sh
-npx github:ajitheee/mendr#v0.5.10-alpha fix-llm https://github.com/someone/their-repo
+npx github:ajitheee/mendr#v0.5.11-alpha fix-llm https://github.com/someone/their-repo
 ```
 
 It never writes to your working tree on its own. The default is print-only. When you're ready to apply:
 
 ```sh
-npx github:ajitheee/mendr#v0.5.10-alpha fix-llm . --write
+npx github:ajitheee/mendr#v0.5.11-alpha fix-llm . --write
 ```
 
 `--write` only applies a fix that passed the gates (type-check, plus your tests when they can run). Anything it can't verify is shown for review and left alone. You can also pipe the diff straight into git, since it's a standard patch:
 
 ```sh
-npx github:ajitheee/mendr#v0.5.10-alpha fix-llm . -o mendr.patch && git apply mendr.patch
+npx github:ajitheee/mendr#v0.5.11-alpha fix-llm . -o mendr.patch && git apply mendr.patch
 ```
 
 ### keep watching a repo
@@ -79,7 +79,7 @@ npx github:ajitheee/mendr#v0.5.10-alpha fix-llm . -o mendr.patch && git apply me
 `fix-llm` is one-shot. `mendr watch` is the resident version — it scans in your own GitHub Actions and keeps one issue listing every deprecated model id you use, grouped by risk and deadline, so you find out before a model retires. Run it once to see your exposure, or `--install` to make it resident:
 
 ```sh
-npx github:ajitheee/mendr#v0.5.10-alpha watch .
+npx github:ajitheee/mendr#v0.5.11-alpha watch .
 ```
 
 See [standing watch](#standing-watch) for the details and [WATCH-SCHEMA.md](WATCH-SCHEMA.md) for the JSON.
@@ -93,7 +93,7 @@ Nothing, unless you pass `--write`. By default mendr loads your code in memory, 
 Nothing, by default. The audit reads the repository, the bundled registry and your local `git rev-parse`, and prints a report. That is enforced in code, not just written here: the test suite runs the audit under a preload that makes every network primitive throw, and the audit must still pass. You can enforce it yourself:
 
 ```bash
-npx github:ajitheee/mendr#v0.5.10-alpha audit . --offline
+npx github:ajitheee/mendr#v0.5.11-alpha audit . --offline
 ```
 
 The optional network uses are: the **registry refresh** (`--refresh-registry`, or `MENDR_REGISTRY_REFRESH=on`, which the generated workflows set) — one GET of three public, signed files so the audit uses current retirement knowledge, verified against a key built into the release before use, sending nothing; the provider usage read you ask for by name with your own read-only key; and a shallow `git clone` when you pass a GitHub URL instead of a path. The [Mendr GitHub App](app/README.md) is the one hosted piece: your workflow posts the audit JSON to it, proven by the run's OIDC token, and it writes a check run back; it has no `contents` permission and cannot read code. [TRUST.md](TRUST.md) has the per-command table, the data-flow diagram, the threat model, the permissions each surface needs, and the known gaps. [SECURITY.md](SECURITY.md) is how to report a problem with any of it.
@@ -224,7 +224,7 @@ Mendr Watch continuously rescans your repository inside your own GitHub Actions 
 Run it once to see your exposure (a local path, or a GitHub URL to scan a read-only copy):
 
 ```sh
-npx github:ajitheee/mendr#v0.5.10-alpha watch .
+npx github:ajitheee/mendr#v0.5.11-alpha watch .
 ```
 
 ```
@@ -246,7 +246,7 @@ Every occurrence carries the same A/B/C tier `fix-llm` uses, so the two tools al
 Then make it resident:
 
 ```sh
-npx github:ajitheee/mendr#v0.5.10-alpha watch --install
+npx github:ajitheee/mendr#v0.5.11-alpha watch --install
 ```
 
 That scaffolds `.github/workflows/mendr-watch.yml` — a workflow that runs in **your own CI** (no server, nothing on our infrastructure) and maintains **one** GitHub issue: your deprecated model ids, each mapped to its retirement date, sorted by the nearest deadline. It's the [Renovate dashboard](https://docs.renovatebot.com/key-concepts/dashboard/) mechanic — the issue is found by a hidden marker and edited in place forever, never re-posted, so it re-surfaces itself without ever spamming you. It asks for `issues: write` and `contents: read` and nothing else: it opens no pull requests, runs none of your tests, and pushes no commits. It's pinned to an immutable Mendr release (overridable via a `MENDR_SPEC` repo variable), so a future upstream change can't run in your CI without you choosing it.
@@ -325,9 +325,9 @@ Two further codes, `dynamic_model_value` and `insufficient_dataflow`, exist in t
 - a nested request reached by indexing, a property read, a callback, or a call inside the arguments (`.filter(Boolean)`, `.map(…)`);
 - a request built in a variable whose model is not a literal written in that object (`const req = { model: MODEL, … }`), or spread in from one. A request object whose retiring id IS written in it (`const req = { model: 'gpt-4', … }` passed to `client.chat.completions.create(req)`) is judged like an inline argument, and when that call is held, its own parameters are skipped too.
 
-**Python calls are held for their parameters too** (on `main` after `v0.5.9-alpha`; that tag swaps them). A Python call that passes a parameter a registry rule changes on the replacement, or, when the replacement is in a family some rule constrains, a model-dependent parameter (`temperature`, `top_p`, `top_k`, `max_tokens`, `n`, …) that no rule covers for it, is held with the reason code TypeScript gives the same call, `param_behaviour_change` or `coupled_param_unverified`, in `audit`, `watch` and `fix-llm` alike. Both languages ask one function, so the rules are not kept twice. `client.chat.completions.create(model="gpt-3.5-turbo", max_tokens=20)` is held, not swapped to `gpt-5.6-terra` with `max_tokens` kept, and so is a Claude Opus 4.1 call passing `max_tokens` or `temperature`. A call whose replacement is in no rule's family is still patched: `claude-3-5-sonnet-20241022` with `max_tokens` and `temperature` moves to `claude-sonnet-4-6`.
+**Python calls are held for their parameters too** (since `v0.5.10-alpha`; `v0.5.9-alpha` and earlier swap them). A Python call that passes a parameter a registry rule changes on the replacement, or, when the replacement is in a family some rule constrains, a model-dependent parameter (`temperature`, `top_p`, `top_k`, `max_tokens`, `n`, …) that no rule covers for it, is held with the reason code TypeScript gives the same call, `param_behaviour_change` or `coupled_param_unverified`, in `audit`, `watch` and `fix-llm` alike. Both languages ask one function, so the rules are not kept twice. `client.chat.completions.create(model="gpt-3.5-turbo", max_tokens=20)` is held, not swapped to `gpt-5.6-terra` with `max_tokens` kept, and so is a Claude Opus 4.1 call passing `max_tokens` or `temperature`. A call whose replacement is in no rule's family is still patched: `claude-3-5-sonnet-20241022` with `max_tokens` and `temperature` moves to `claude-sonnet-4-6`.
 
-**What `migrate` and the Action do with held calls** (on `main` after `v0.5.10-alpha`; that tag and earlier do not list them). `migrate` leaves a held call unswapped, in either language, and lists it under *Held for review* (`skipped` in `--json`): file and line, the id as written, the replacement on record, the reason code and the scanner's sentence. The list is every Tier B occurrence `fix-llm` reports, with the same codes, from a scan that covers every file `fix-llm` reads: every source file whose text names a retiring id, including files the repository's `tsconfig.json` does not compile (outside its `include`, or `.js` files without `allowJs`), which `migrate` used to miss. So `audit`, `fix-llm` and `migrate` name the same calls in source code. A Python call that `v0.5.9-alpha` swapped and this guard holds is therefore no longer migrated, and is listed. `audit` also reads configuration files and lists a model set in one (`model: gpt-4-0613` in a YAML file) as a Tier B config selector; `fix-llm` and `migrate` do not read configuration files, so `migrate`'s `NO MIGRATION` and the Action's `clean` speak for the source code only, and say so. When a repository's only findings are held calls, `migrate` reports `HELD FOR REVIEW` (verdict `held_for_review`), not `NO MIGRATION`, and the Action reports `outcome: held-for-review`: it says in the job summary how many places need a person, lists them, and leaves an open Mendr pull request open, with a comment on it saying Mendr no longer verifies it (that pull request came from an earlier run, and its body still says its swap was verified). Only a run that found nothing to migrate and held nothing (`no_migration`, with an empty list) is clean, and only such a run that was not restricted to approved models closes an open Mendr pull request. With `v0.5.10-alpha` and earlier, such a repository read `NO MIGRATION`, and the Action reported it clean and closed the pull request; run `audit` there to see every held call.
+**What `migrate` and the Action do with held calls** (since `v0.5.11-alpha`; `v0.5.10-alpha` and earlier do not list them). `migrate` leaves a held call unswapped, in either language, and lists it under *Held for review* (`skipped` in `--json`): file and line, the id as written, the replacement on record, the reason code and the scanner's sentence. The list is every Tier B occurrence `fix-llm` reports, with the same codes, from a scan that covers every file `fix-llm` reads: every source file whose text names a retiring id, including files the repository's `tsconfig.json` does not compile (outside its `include`, or `.js` files without `allowJs`), which `migrate` used to miss. So `audit`, `fix-llm` and `migrate` name the same calls in source code. A Python call that `v0.5.9-alpha` swapped and this guard holds is therefore no longer migrated, and is listed. `audit` also reads configuration files and lists a model set in one (`model: gpt-4-0613` in a YAML file) as a Tier B config selector; `fix-llm` and `migrate` do not read configuration files, so `migrate`'s `NO MIGRATION` and the Action's `clean` speak for the source code only, and say so. When a repository's only findings are held calls, `migrate` reports `HELD FOR REVIEW` (verdict `held_for_review`), not `NO MIGRATION`, and the Action reports `outcome: held-for-review`: it says in the job summary how many places need a person, lists them, and leaves an open Mendr pull request open, with a comment on it saying Mendr no longer verifies it (that pull request came from an earlier run, and its body still says its swap was verified). Only a run that found nothing to migrate and held nothing (`no_migration`, with an empty list) is clean, and only such a run that was not restricted to approved models closes an open Mendr pull request. With `v0.5.10-alpha` and earlier, such a repository read `NO MIGRATION`, and the Action reported it clean and closed the pull request; run `audit` there to see every held call.
 
 The parameters read are:
 
@@ -455,7 +455,7 @@ The collapsed Tier C line carries line numbers for the same reason:
 ### gating CI on a tier
 
 ```sh
-npx github:ajitheee/mendr#v0.5.10-alpha fix-llm . --fail-on tierB
+npx github:ajitheee/mendr#v0.5.11-alpha fix-llm . --fail-on tierB
 ```
 
 `--fail-on` takes `tierA`, `tierB`, or `none` (the default). `blocked` still works as a **deprecated alias for `tierB`** and prints a notice on stderr — note that it now covers every review-required finding, not just unverified replacements.
@@ -464,7 +464,7 @@ Since `v0.5.9-alpha` that includes the TypeScript/JavaScript calls mendr holds a
 
 Since `v0.5.10-alpha`, the gate can move again for one more set of calls. A call whose model id comes through a `const`, a `{ model }` shorthand, a cast, a fallback or a ternary, with a parameter beside it that holds the same call written inline, moves from Tier A to Tier B. So `--fail-on tierB` can fail where `v0.5.9-alpha` passed, and `--fail-on tierA` can pass where it failed. See *Which requests the parameter checks read* above.
 
-Python calls the parameter guard holds (see *Held calls* above; on `main` after `v0.5.9-alpha`) move the same way. A call `v0.5.9-alpha` reported as a Tier A swap is now Tier B, so `--fail-on tierB` can fail where it passed, and `--fail-on tierA` can pass where it failed. A Python call whose replacement is unverified and that passes such a parameter changes reason code, from `replacement_unverified` to `param_behaviour_change` or `coupled_param_unverified`, as the same TypeScript call already does; it stays Tier B. A committed `.mendr/exposure.json` changes once for these calls on the first run after the upgrade.
+Python calls the parameter guard holds (see *Held calls* above; since `v0.5.10-alpha`) move the same way. A call `v0.5.9-alpha` reported as a Tier A swap is now Tier B, so `--fail-on tierB` can fail where it passed, and `--fail-on tierA` can pass where it failed. A Python call whose replacement is unverified and that passes such a parameter changes reason code, from `replacement_unverified` to `param_behaviour_change` or `coupled_param_unverified`, as the same TypeScript call already does; it stays Tier B. A committed `.mendr/exposure.json` changes once for these calls on the first run after the upgrade.
 
 `--fail-on tierA` can also fail where `v0.5.9-alpha` passed. The parameter fix now reads a request whose model comes through a `{ model }` shorthand, parentheses, `as string`, `as const` or `!`, or whose parameter key is quoted or computed. A parameter edit there counts in Tier A even when no model id in the repository is retiring: `const model = 'gpt-5.6-sol'; create({ model, max_tokens: 256 })` gets `max_tokens` renamed to `max_completion_tokens`. An object that is not a request does not (see above).
 
