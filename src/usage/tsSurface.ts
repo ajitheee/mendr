@@ -1,5 +1,15 @@
 import { Node, SyntaxKind, VariableDeclarationKind } from 'ts-morph';
-import type { CallExpression, Expression, Identifier, NewExpression, SourceFile } from 'ts-morph';
+import type {
+  AsExpression,
+  CallExpression,
+  Expression,
+  Identifier,
+  NewExpression,
+  NonNullExpression,
+  ParenthesizedExpression,
+  SatisfiesExpression,
+  SourceFile,
+} from 'ts-morph';
 import { CATALOG_SIBLING_KEYS, isDefaultContainerName, isModelLikeName } from './sharedRules.js';
 
 // The TypeScript spelling of the Python guards G1–G5 (src/python/sinks.ts).
@@ -581,6 +591,442 @@ export function collectTsSinks(sf: SourceFile): TsSinkMap {
   return sinks;
 }
 
+// --- request parameter keys ---------------------------------------------------------
+//
+// The parameter guards (coupledParams.ts) judge a swap by the keys of the request its model
+// reaches. Three things have to agree for that to be honest: which key a property names, which
+// wrappers a model value can sit in and still be that property's value, and which requests a
+// declaration's model reaches. They live here, beside the sink rule, so the scanner and the
+// parameter pass read keys one way.
+
+/**
+ * The key a property names, unquoted: `max_tokens`, `"max_tokens"` and `'max_tokens'` are one
+ * key. A computed key (`[k]`) is returned as written, because its name is not known here.
+ */
+export function propertyKeyName(nameNode: Node): string {
+  if (Node.isStringLiteral(nameNode) || Node.isNoSubstitutionTemplateLiteral(nameNode)) {
+    return nameNode.getLiteralValue();
+  }
+  return nameNode.getText();
+}
+
+/**
+ * The key a request property is sent under: {@link propertyKeyName}, and also the string inside a
+ * computed key, so `["max_tokens"]: 5` is `max_tokens` to the provider, to the parameter checks
+ * and to the param pass. It used to read as `["max_tokens"]`, which no rule names, so
+ * `{ model: 'gpt-4-0613', ["max_tokens"]: 5 }` was swapped while its plain-key twin was held.
+ * (classifyByEnclosure keeps {@link propertyKeyName}: its model test is a pattern over the key's
+ * text, which a computed `["model"]` already matched, so no position changes.)
+ */
+export function requestKeyName(nameNode: Node): string {
+  if (Node.isComputedPropertyName(nameNode)) {
+    const expr = nameNode.getExpression();
+    if (Node.isStringLiteral(expr) || Node.isNoSubstitutionTemplateLiteral(expr)) return expr.getLiteralValue();
+  }
+  return propertyKeyName(nameNode);
+}
+
+/** The keys of a request object, unquoted: the parameters the call passes beside its model. */
+export function requestParamKeys(obj: Node): string[] {
+  if (!Node.isObjectLiteralExpression(obj)) return [];
+  const keys: string[] = [];
+  for (const p of obj.getProperties()) {
+    if (Node.isPropertyAssignment(p) || Node.isShorthandPropertyAssignment(p)) {
+      const name = requestKeyName(p.getNameNode());
+      if (name) keys.push(name);
+    }
+  }
+  return keys;
+}
+
+/**
+ * Wrappers that change neither a value nor where it goes: parentheses, `as`, `satisfies`, `!`.
+ * A `||`, `??` or ternary is NOT one of them: it can hand the property a different value.
+ * (`satisfies` is listed so the rule is complete, but no parameter check meets one today:
+ * classifyLiteral does not see through it and collectTsSinks does not unwrap it, so a model id
+ * behind `satisfies` never earns `model_arg`.)
+ */
+export function isValueWrapper(
+  node: Node,
+): node is ParenthesizedExpression | AsExpression | SatisfiesExpression | NonNullExpression {
+  return (
+    Node.isParenthesizedExpression(node) ||
+    Node.isAsExpression(node) ||
+    Node.isSatisfiesExpression(node) ||
+    Node.isNonNullExpression(node)
+  );
+}
+
+/** `expr` with its value wrappers ({@link isValueWrapper}) taken off. */
+export function unwrapValueWrappers(expr: Node): Node {
+  let n = expr;
+  while (isValueWrapper(n)) n = n.getExpression();
+  return n;
+}
+
+/**
+ * The parameter keys of each request in `call` whose model is `name`, read the way an inline
+ * literal's keys are read: an object-literal argument whose model-like property is `{ name }`, or
+ * a value one of whose leaves is `name` (through value wrappers, `||`, `??` and a ternary's
+ * branches, as collectTsSinks finds it). A model reached through a fallback (`x || name`) is this
+ * request's model whenever that branch is taken, and its inline twin (`x || '…'`) is judged by the
+ * same keys (requestKeySets in scanLiterals.ts). A factory consumer (`openai(name)`) carries no
+ * request keys of its own, like its inline twin.
+ *
+ * With `decl`, a request whose `name` provably reads ANOTHER binding adds nothing either (see
+ * {@link consumerReadsDeclaration}). The sink map files consumers by name, which is right for the
+ * surface rule it was built for, but read as parameter keys it held a declaration for a call that
+ * never sees it: `const model = 'gpt-4-0613'` beside `function b(model: string) { create({ model,
+ * max_tokens }) }` was held for b's `max_tokens`. (Review of 402c1e4, 2026-10-07.)
+ */
+export function consumerRequestKeys(call: CallExpression, name: string, decl?: Node): string[][] {
+  const out: string[][] = [];
+  for (const arg of call.getArguments()) {
+    if (!Node.isObjectLiteralExpression(arg)) continue;
+    const carries = arg.getProperties().some((prop) => {
+      if (Node.isShorthandPropertyAssignment(prop)) {
+        return (
+          prop.getName() === name &&
+          isModelLikeName(name) &&
+          (!decl || consumerReadsDeclaration(prop.getNameNode(), decl, name))
+        );
+      }
+      if (!Node.isPropertyAssignment(prop) || !isModelLikeName(prop.getName())) return false;
+      const init = prop.getInitializer();
+      if (!init) return false;
+      return leavesOf(init).some((leaf) => {
+        const value = unwrapValueWrappers(leaf);
+        return traceableName(value) === name && (!decl || consumerReadsDeclaration(value, decl, name));
+      });
+    });
+    if (carries) out.push(requestParamKeys(arg));
+  }
+  return out;
+}
+
+// --- which binding a consumer's model reads ----------------------------------------
+//
+// Syntactic, like declarationsOf: `getSymbol()` would force a full semantic program (see there).
+// The question is narrow — can the `model` a consumer passes be shown to be some OTHER binding
+// than the declaration — so the rules below only ever DROP a consumer on a positive answer:
+//   - it resolves to a different variable, parameter or destructured binding that is not fed the
+//     declaration (by its initializer or default, by destructuring, or, for a parameter of a named
+//     function or class, by an argument at one of its calls in this file, or by a call it is
+//     handed to beside the value). Feeding is followed through other bindings: `const m = MODEL;
+//     ask(m)` feeds ask's parameter, and so does `new Bot(MODEL)` a field the constructor assigns
+//     from its own parameter;
+//   - it reads `this.<name>` while the declaration is a plain variable, and no member of that
+//     class is initialised or assigned from the declaration;
+//   - it is a plain name while the declaration writes a property of another object
+//     (`config.model = '…'`), and the binding that name resolves to is not fed a `.model` read.
+// Anything unresolved, and every kind of declaration not listed here, keeps the consumer: the
+// conservative direction (hold) is the one name matching already took.
+
+/**
+ * What reading a declaration looks like: a variable binding, `this.<name>`, a property of an object
+ * other than `this` (`config.model = '…'`, read back only through a `.model` read), or not known.
+ */
+type DeclarationTarget =
+  | { kind: 'variable'; binding: Node }
+  | { kind: 'member' }
+  | { kind: 'property' }
+  | { kind: 'unknown' };
+
+function declarationTarget(decl: Node): DeclarationTarget {
+  if (Node.isVariableDeclaration(decl)) return { kind: 'variable', binding: decl };
+  if (Node.isPropertyDeclaration(decl) || isThisAssignment(decl)) return { kind: 'member' };
+  if (Node.isBinaryExpression(decl)) {
+    // `model = '…'`: the binding it writes is the variable its consumers read.
+    const left = decl.getLeft();
+    const binding = Node.isIdentifier(left) ? lexicalBindingOf(left, left.getText()) : undefined;
+    if (binding) return { kind: 'variable', binding };
+    // `config.model = '…'`: only a `.model` read can give the value back. (Review of 947967d,
+    // 2026-10-10: it was 'unknown', so a function's own `model` parameter, which can never read
+    // config.model, held the declaration with its own `max_tokens`.)
+    if (Node.isPropertyAccessExpression(left)) return { kind: 'property' };
+  }
+  return { kind: 'unknown' };
+}
+
+/**
+ * Does the `model` a consumer passes — `value` is the identifier, the shorthand's name, or the
+ * `this.<name>` read the sink map filed under `name` — read `decl`, or can that not be ruled out?
+ */
+export function consumerReadsDeclaration(value: Node, decl: Node, name: string): boolean {
+  const target = declarationTarget(decl);
+  if (target.kind === 'unknown') return true;
+  const seen = new Set<Node>();
+  if (Node.isPropertyAccessExpression(value)) {
+    // `this.<name>`: the member itself, or a member a plain variable feeds. For `config.model = …`,
+    // `this` may be that object, so it counts.
+    return target.kind !== 'variable' || memberFedBy(value, target, name, seen);
+  }
+  const binding = lexicalBindingOf(value, name);
+  if (!binding) return true;
+  if (target.kind === 'variable' && binding === target.binding) return true;
+  return bindingFedBy(binding, target, name, seen);
+}
+
+/** Is `n` a read of `this.<name>`? */
+function isThisRead(n: Node, name: string): boolean {
+  return Node.isPropertyAccessExpression(n) && Node.isThisExpression(n.getExpression()) && n.getName() === name;
+}
+
+/**
+ * Does `expr` hand on the declaration's value: one of its leaves, through wrappers and fallbacks,
+ * reads it, or names another binding that is fed it (`const m = MODEL; ask(m)`)? `seen` holds the
+ * bindings already asked about in this query, so a recursive function ends the walk.
+ */
+function readsDeclaration(expr: Node, target: DeclarationTarget, name: string, seen: Set<Node>): boolean {
+  return leavesOf(expr).some((leaf) => {
+    const l = unwrapValueWrappers(leaf);
+    if (Node.isPropertyAccessExpression(l)) {
+      if (target.kind === 'member') return isThisRead(l, name);
+      // `x.model` on any object: it may be the object `config.model = …` wrote.
+      return target.kind === 'property' && l.getName() === name;
+    }
+    if (!Node.isIdentifier(l)) return false;
+    const b = lexicalBindingOf(l, l.getText());
+    // A name nothing in the file binds is a global, and may be the declaration (never `this.<name>`).
+    if (b === undefined) return target.kind !== 'member' && l.getText() === name;
+    if (target.kind === 'variable' && b === target.binding) return true;
+    return bindingFedBy(b, target, name, seen);
+  });
+}
+
+/**
+ * Is a binding other than the declaration fed the declaration's value? By its initializer or
+ * default (`const m = MODEL`, `chat(model = this.model)`), by destructuring (`const { model } =
+ * this`), or, for a parameter, by an argument at a call of its function.
+ */
+function bindingFedBy(binding: Node, target: DeclarationTarget, name: string, seen: Set<Node>): boolean {
+  if (seen.has(binding)) return false;
+  seen.add(binding);
+  if (Node.isVariableDeclaration(binding) || Node.isParameterDeclaration(binding) || Node.isBindingElement(binding)) {
+    const init = binding.getInitializer();
+    if (init && readsDeclaration(init, target, name, seen)) return true;
+  }
+  if (Node.isParameterDeclaration(binding)) return parameterFedBy(binding, target, name, seen);
+  if (Node.isBindingElement(binding)) return destructuredFrom(binding, target, name);
+  return false;
+}
+
+/**
+ * `const { model } = this` (or `{ model: m }`) reads the member `model`. For `config.model = …`,
+ * destructuring `model` out of any object, a parameter's pattern included, may read it back.
+ */
+function destructuredFrom(el: Node, target: DeclarationTarget, name: string): boolean {
+  if (!Node.isBindingElement(el)) return false;
+  const key = el.getPropertyNameNode()?.getText() ?? el.getName();
+  if (key !== name) return false;
+  if (target.kind === 'property') return true;
+  if (target.kind !== 'member') return false;
+  const pattern = el.getParent();
+  const owner = pattern?.getParent();
+  if (!owner || !Node.isVariableDeclaration(owner)) return false;
+  const init = owner.getInitializer();
+  return !!init && Node.isThisExpression(unwrapValueWrappers(init));
+}
+
+/** The name a function is called by in this file, if it has one: its own, its variable's, its method's, its class's. */
+function calleeNameOf(fn: Node): string | undefined {
+  if (Node.isFunctionDeclaration(fn) || Node.isMethodDeclaration(fn)) return fn.getName();
+  if (Node.isConstructorDeclaration(fn)) {
+    const cls = fn.getParent();
+    if (Node.isClassDeclaration(cls)) return cls.getName();
+    // `const Bot = class { constructor(…) }`, or a named class expression.
+    return Node.isClassExpression(cls) ? (cls.getName() ?? holderName(cls)) : undefined;
+  }
+  if (Node.isArrowFunction(fn) || Node.isFunctionExpression(fn)) return holderName(fn);
+  return undefined;
+}
+
+/** The name a value is bound to where it is written: `const ask = …`, `{ ask: … }`, a class field `ask = …`. */
+function holderName(value: Node): string | undefined {
+  let holder = value.getParent();
+  while (holder && isValueWrapper(holder)) holder = holder.getParent();
+  if (
+    holder &&
+    (Node.isVariableDeclaration(holder) || Node.isPropertyAssignment(holder) || Node.isPropertyDeclaration(holder))
+  ) {
+    const n = holder.getNameNode();
+    return Node.isIdentifier(n) ? n.getText() : undefined;
+  }
+  return undefined;
+}
+
+/** Is `arg` the function itself, handed on by name (`ask`, `this.ask`), not called? */
+function isFunctionReference(arg: Node, callee: string): boolean {
+  const a = unwrapValueWrappers(arg);
+  if (Node.isIdentifier(a)) return a.getText() === callee;
+  return Node.isPropertyAccessExpression(a) && Node.isThisExpression(a.getExpression()) && a.getName() === callee;
+}
+
+/**
+ * A parameter of a named function is fed the declaration when a call of that function in this
+ * file passes it at the parameter's position: `function ask(model: string) { … }` then
+ * `ask(model)`, `ask(m)` with `const m = model`, or `new Bot(model)` for a constructor. A spread
+ * before that position hides which argument lands there, so it counts. So does handing the
+ * function to another call beside the value, `withRetry(ask, model)`: which argument that call
+ * passes on is not visible here. A destructured parameter, or a function with no name to call it
+ * by, is not traced. (Review of 947967d, 2026-10-10: the alias, the hand-off and a class
+ * expression's constructor were all read as unfed, and their declaration swapped with
+ * `max_tokens` kept.)
+ */
+function parameterFedBy(param: Node, target: DeclarationTarget, name: string, seen: Set<Node>): boolean {
+  if (!Node.isParameterDeclaration(param) || !Node.isIdentifier(param.getNameNode())) return false;
+  const fn = param.getParent();
+  if (!fn || !(Node.isFunctionLikeDeclaration(fn) || Node.isFunctionExpression(fn))) return false;
+  const callee = calleeNameOf(fn);
+  if (!callee) return false;
+  const index = fn.getParameters().indexOf(param);
+  for (const call of callsAndNewsOf(param.getSourceFile())) {
+    const callee2 = call.getExpression();
+    const called = Node.isIdentifier(callee2)
+      ? callee2.getText()
+      : Node.isPropertyAccessExpression(callee2)
+        ? callee2.getName()
+        : undefined;
+    const args = call.getArguments();
+    if (called !== callee) {
+      const handedOn = args.some((a) => isFunctionReference(a, callee));
+      if (handedOn && args.some((a) => !isFunctionReference(a, callee) && readsDeclaration(a, target, name, seen))) {
+        return true;
+      }
+      continue;
+    }
+    if (args.slice(0, index + 1).some((a) => Node.isSpreadElement(a))) return true;
+    const arg = args[index];
+    if (arg && readsDeclaration(arg, target, name, seen)) return true;
+  }
+  return false;
+}
+
+/**
+ * Every call and `new` in a file, built once per parse of the file (keyed like IDENTIFIER_INDEX).
+ * {@link parameterFedBy} runs for each consumer whose model is a parameter, and walking the whole
+ * file each time would make a file with many such consumers quadratic.
+ */
+const CALL_INDEX = new WeakMap<SourceFile, { compiler: unknown; calls: Array<CallExpression | NewExpression> }>();
+
+function callsAndNewsOf(sf: SourceFile): Array<CallExpression | NewExpression> {
+  let entry = CALL_INDEX.get(sf);
+  if (!entry || entry.compiler !== sf.compilerNode) {
+    entry = {
+      compiler: sf.compilerNode,
+      calls: [...sf.getDescendantsOfKind(SyntaxKind.CallExpression), ...sf.getDescendantsOfKind(SyntaxKind.NewExpression)],
+    };
+    CALL_INDEX.set(sf, entry);
+  }
+  return entry.calls;
+}
+
+/**
+ * A plain variable reaches `this.<name>` only through the class: a property initialised from it
+ * (`model = MODEL`), an assignment `this.model = MODEL`, or a parameter property fed it. The
+ * assignment may go through the constructor's own parameter, `constructor(model: string) {
+ * this.model = model }` fed by `new Bot(MODEL)`, as the parameter property is. `this` outside a
+ * class cannot be resolved, so it counts.
+ */
+function memberFedBy(read: Node, target: DeclarationTarget, name: string, seen: Set<Node>): boolean {
+  const cls = enclosingClass(read);
+  if (!cls || !(Node.isClassDeclaration(cls) || Node.isClassExpression(cls))) return true;
+  for (const member of cls.getMembers()) {
+    if (Node.isPropertyDeclaration(member) && member.getName() === name) {
+      const init = member.getInitializer();
+      if (init && readsDeclaration(init, target, name, seen)) return true;
+    }
+    if (Node.isConstructorDeclaration(member)) {
+      for (const p of member.getParameters()) {
+        if (p.isParameterProperty() && p.getName() === name && bindingFedBy(p, target, name, seen)) return true;
+      }
+    }
+  }
+  for (const assign of cls.getDescendantsOfKind(SyntaxKind.BinaryExpression)) {
+    if (
+      isThisAssignment(assign) &&
+      isThisRead(assign.getLeft(), name) &&
+      readsDeclaration(assign.getRight(), target, name, seen)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * The binding `name` resolves to where `from` sits, found syntactically by walking out through
+ * the scopes: a function's parameters, a block's (or the file's, or a `switch`'s) declarations, a
+ * `for` or `catch` binding, then the file's imports. The innermost wins, as in the language.
+ * Returns the VariableDeclaration, ParameterDeclaration or BindingElement (or a function, class
+ * or import) that binds it, or undefined when nothing in the file does.
+ */
+export function lexicalBindingOf(from: Node, name: string): Node | undefined {
+  for (let scope = from.getParent(); scope; scope = scope.getParent()) {
+    const found = bindingIn(scope, name);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+function bindingIn(scope: Node, name: string): Node | undefined {
+  if (Node.isFunctionLikeDeclaration(scope) || Node.isFunctionExpression(scope)) {
+    for (const p of scope.getParameters()) {
+      const hit = boundBy(p, name);
+      if (hit) return hit;
+    }
+    return undefined;
+  }
+  if (Node.isCatchClause(scope)) {
+    const v = scope.getVariableDeclaration();
+    return v ? boundBy(v, name) : undefined;
+  }
+  if (Node.isForStatement(scope) || Node.isForOfStatement(scope) || Node.isForInStatement(scope)) {
+    const init = scope.getInitializer();
+    if (init && Node.isVariableDeclarationList(init)) {
+      for (const d of init.getDeclarations()) {
+        const hit = boundBy(d, name);
+        if (hit) return hit;
+      }
+    }
+    return undefined;
+  }
+  const statements: Node[] = Node.isCaseBlock(scope)
+    ? scope.getClauses().flatMap((c) => c.getStatements())
+    : Node.isBlock(scope) || Node.isSourceFile(scope) || Node.isModuleBlock(scope)
+      ? scope.getStatements()
+      : [];
+  for (const st of statements) {
+    if (Node.isVariableStatement(st)) {
+      for (const d of st.getDeclarations()) {
+        const hit = boundBy(d, name);
+        if (hit) return hit;
+      }
+    } else if ((Node.isFunctionDeclaration(st) || Node.isClassDeclaration(st)) && st.getName() === name) {
+      return st;
+    } else if (Node.isImportDeclaration(st)) {
+      if (st.getDefaultImport()?.getText() === name) return st;
+      if (st.getNamespaceImport()?.getText() === name) return st;
+      for (const spec of st.getNamedImports()) {
+        if ((spec.getAliasNode()?.getText() ?? spec.getName()) === name) return spec;
+      }
+    }
+  }
+  return undefined;
+}
+
+/** The declaration, parameter or destructured element under `owner` that binds `name`. */
+function boundBy(owner: Node, name: string): Node | undefined {
+  if (!(Node.isVariableDeclaration(owner) || Node.isParameterDeclaration(owner))) return undefined;
+  const n = owner.getNameNode();
+  if (Node.isIdentifier(n)) return n.getText() === name ? owner : undefined;
+  for (const el of n.getDescendantsOfKind(SyntaxKind.BindingElement)) {
+    const en = el.getNameNode();
+    if (Node.isIdentifier(en) && en.getText() === name) return el;
+  }
+  return undefined;
+}
+
 /** The identifier leaves of a value expression through `||` / `??` / parens / ternaries. */
 function leavesOf(expr: Node): Node[] {
   if (Node.isParenthesizedExpression(expr) || Node.isAsExpression(expr) || Node.isNonNullExpression(expr)) {
@@ -623,13 +1069,18 @@ function sinkInScope(decl: Node, call: CallExpression): boolean {
   return false;
 }
 
+/** The calls that consume `name` and can see `decl`: the consumers the declaration is judged by. */
+export function inScopeSinks(decl: Node, name: string, sinks: TsSinkMap | undefined): CallExpression[] {
+  return (sinks?.get(name) ?? []).filter((c) => sinkInScope(decl, c));
+}
+
 /**
  * Rule (b), the sink rule: a model-named declaration is swap-eligible only when
  * every in-scope consumer is a resolved first-party request inside a function.
  * No consumer → `usage_unverified` (review). Any capped consumer → the cap wins.
  */
 export function judgeDeclarationSinks(decl: Node, name: string, sinks: TsSinkMap | undefined): SurfaceClassification {
-  const calls = (sinks?.get(name) ?? []).filter((c) => sinkInScope(decl, c));
+  const calls = inScopeSinks(decl, name, sinks);
   if (calls.length === 0) return { position: 'usage_unverified', reason: TS_DEFAULT_UNTRACED_REASON };
   for (const call of calls) {
     const v = classifyCallSurface(call);
@@ -691,11 +1142,12 @@ export interface RequestObjectFlow {
  * runs for each matched literal in a standalone object, and walking the whole file each time was
  * quadratic: 800 module-level model objects in one 4,800-line file took 327 s. Keyed on the
  * compiler node, which ts-morph replaces whenever the file is edited, so an index is never read
- * across an edit (its wrappers would be forgotten nodes by then).
+ * across an edit (its wrappers would be forgotten nodes by then). The param pass reads it too, to
+ * find the writes to a `let` (paramFix.ts, neverReassigned).
  */
 const IDENTIFIER_INDEX = new WeakMap<SourceFile, { compiler: unknown; byName: Map<string, Identifier[]> }>();
 
-function identifiersNamed(sf: SourceFile, name: string): Identifier[] {
+export function identifiersNamed(sf: SourceFile, name: string): Identifier[] {
   let entry = IDENTIFIER_INDEX.get(sf);
   if (!entry || entry.compiler !== sf.compilerNode) {
     const byName = new Map<string, Identifier[]>();

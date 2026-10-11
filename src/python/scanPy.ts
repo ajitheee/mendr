@@ -5,6 +5,7 @@ import { Language, Parser, type Node as PyNode, type Tree } from 'web-tree-sitte
 import type { LlmModelIdDeprecation, LlmRegistry, SourceLocation } from '../types.js';
 import { effectiveVerificationState, isVerified, modelIdEntries } from '../usage/llmRegistry.js';
 import { fineTuneHoldReason, resolveSourceFineTune } from '../usage/fineTune.js';
+import { paramHoldReason } from '../usage/coupledParams.js';
 import {
   CATALOG_SIBLING_KEYS,
   isDefaultContainerName,
@@ -435,15 +436,21 @@ export interface PySinkTarget {
   call: PyNode;
   /** The keyword it arrives under, when it is a keyword argument. */
   kwName?: string;
+  /**
+   * The expression the call takes as its model (`MODEL`, `model`, `self.model`, `self.judge.model`).
+   * Targets are keyed by the last name only, so a reader that must know the call takes THIS value
+   * compares it with the binding (see samePyReference).
+   */
+  value: PyNode;
 }
 
 /** Every traced name mapped to the call(s) it reaches. */
 export function collectPySinkTargets(tree: Tree): Map<string, PySinkTarget[]> {
   const out = new Map<string, PySinkTarget[]>();
-  const add = (name: string, call: PyNode | null, kwName?: string): void => {
+  const add = (name: string, value: PyNode, call: PyNode | null, kwName?: string): void => {
     if (!call) return;
     const list = out.get(name) ?? [];
-    list.push({ call, kwName });
+    list.push({ call, kwName, value });
     out.set(name, list);
   };
   for (const kw of tree.rootNode.descendantsOfType('keyword_argument')) {
@@ -452,7 +459,7 @@ export function collectPySinkTargets(tree: Tree): Map<string, PySinkTarget[]> {
     const value = kw.childForFieldName('value');
     if (!name || !value || !isModelLikeName(name.text)) continue;
     const traced = traceableName(value);
-    if (traced) add(traced, enclosingCall(value), name.text);
+    if (traced) add(traced, value, enclosingCall(value), name.text);
   }
   for (const call of tree.rootNode.descendantsOfType('call')) {
     if (!call) continue;
@@ -463,7 +470,7 @@ export function collectPySinkTargets(tree: Tree): Map<string, PySinkTarget[]> {
     for (const arg of args.namedChildren) {
       if (!arg) continue;
       const traced = traceableName(arg);
-      if (traced) add(traced, call);
+      if (traced) add(traced, arg, call);
     }
   }
   for (const pair of tree.rootNode.descendantsOfType('pair')) {
@@ -473,7 +480,7 @@ export function collectPySinkTargets(tree: Tree): Map<string, PySinkTarget[]> {
     if (!key || !value || !isModelLikeStringKey(key)) continue;
     if (!isEnclosingDictACallArgument(pair)) continue;
     const traced = traceableName(value);
-    if (traced) add(traced, enclosingCall(value));
+    if (traced) add(traced, value, enclosingCall(value));
   }
   return out;
 }
@@ -931,17 +938,7 @@ export function applyPyGuards(
   // bypasses G2, G4 and G5 entirely. Every reachable sink must qualify; the
   // strictest verdict wins, and an unresolvable one caps.
   if (!call) {
-    const traced = tracedNameOf(literal);
-    // SCOPE-AWARE. Sink names are collected file-globally, so an unrelated local
-    // `model = "gpt-4"` matched a sink fed by a same-named parameter in ANOTHER
-    // function — and fix-llm rewrote that unrelated assignment. A local binding
-    // is only trusted against a sink in the same function.
-    const reachable = traced ? ctx?.sinkTargets?.get(traced) ?? [] : [];
-    // `traceableName` returns the ATTRIBUTE name for `self.model`, so detect the
-    // self-attribute case from the AST instead of the traced string.
-    const left = literal.parent?.type === 'assignment' ? literal.parent.childForFieldName('left') : null;
-    const isSelfAttr = left?.type === 'attribute';
-    const targets = reachable.filter((t) => sinkIsInScope(literal, t.call, isSelfAttr));
+    const targets = inScopeSinkTargets(literal, ctx);
     if (targets.length === 0) {
       // No in-scope consumer. A same-named sink elsewhere in the file made the
       // positional rule say model_arg, but inside a pricing / tokenizer / logging /
@@ -958,6 +955,25 @@ export function applyPyGuards(
   }
 
   return null;
+}
+
+/**
+ * The calls a model value bound to a name (`MODEL = "…"`, `self.model = "…"`, a parameter
+ * default) is traced into, limited to the ones in its scope.
+ *
+ * SCOPE-AWARE. Sink names are collected file-globally, so an unrelated local
+ * `model = "gpt-4"` matched a sink fed by a same-named parameter in ANOTHER
+ * function — and fix-llm rewrote that unrelated assignment. A local binding
+ * is only trusted against a sink in the same function.
+ */
+function inScopeSinkTargets(literal: PyNode, ctx?: PyGuardContext): PySinkTarget[] {
+  const traced = tracedNameOf(literal);
+  const reachable = traced ? ctx?.sinkTargets?.get(traced) ?? [] : [];
+  // `traceableName` returns the ATTRIBUTE name for `self.model`, so detect the
+  // self-attribute case from the AST instead of the traced string.
+  const left = literal.parent?.type === 'assignment' ? literal.parent.childForFieldName('left') : null;
+  const isSelfAttr = left?.type === 'attribute';
+  return reachable.filter((t) => sinkIsInScope(literal, t.call, isSelfAttr));
 }
 
 /**
@@ -1286,6 +1302,463 @@ export function classifyPyLiteralPosition(
   return classifyPyLiteral(literal, sinkNames).position;
 }
 
+// --- The parameter guard -----------------------------------------------------
+//
+// THE PYTHON HALF OF src/usage/coupledParams.ts. A verified replacement is not yet a safe patch:
+// the registry record says which id to put there and nothing about the request around it. Until
+// this guard, `client.chat.completions.create(model="gpt-3.5-turbo", max_tokens=20)` was a Tier A
+// swap to gpt-5.6-terra with `max_tokens` kept, and a Claude Opus 4.1 call passing `temperature`
+// was a Tier A swap to claude-opus-4-8 with `temperature` kept, although the registry's own rules
+// say each replacement rejects that request. TypeScript held both for review. Python has no
+// parameter pass either, so nothing edited the request after the swap.
+//
+// This scanner only COLLECTS the parameter names a request passes. Whether they hold the call,
+// and the sentence that says why, come from paramHoldReason, which the TypeScript scanner calls
+// too, so the two languages give one call the same reason code. The names are:
+//
+//   - the keyword arguments of the call the model is written in (`max_tokens=20`);
+//   - the keys of a dict unpacked into that call with `**name`, where `name` is bound in a scope
+//     the call can see: `name = {…}` or `name = dict(…)`, plus keys added by `name["k"] = …`,
+//     `name.update(…)` or `name.setdefault("k", …)` there or beside the call; and the keys of a
+//     `**{…}` or `**dict(…)` written in the call itself;
+//   - for a `**kwargs` (or any other) function parameter, only the keys added to it in that way,
+//     because those are sent whatever the caller passed;
+//   - for a model value inside a dict passed to a call, that dict's own keys, as TypeScript reads
+//     the object literal that holds `model`;
+//   - for a model bound to a name the scanner traced into a call (`MODEL = "…"`, then
+//     `create(model=MODEL, …)`), the keyword arguments of each call in scope whose model is that
+//     same reference (see samePyReference).
+//
+// A dict mendr cannot see adds nothing of its own: the caller's keys in a function parameter
+// (`**kwargs`), an attribute, a call result. The guard never invents a parameter, the same way a
+// spread adds none in TypeScript.
+
+/** The parameter names one request passes, and the call's line when the model reaches it through a name. */
+interface PyRequestParams {
+  names: string[];
+  /** 1-based line of the call, set only when the model value is written somewhere else. */
+  callLine?: number;
+}
+
+/** The scope a binding at `node` lives in: the nearest function, lambda or class body. Null is the module. */
+function pyScopeOf(node: PyNode): PyNode | null {
+  for (let n = node.parent; n; n = n.parent) {
+    if (n.type === 'function_definition' || n.type === 'lambda' || n.type === 'class_definition') return n;
+  }
+  return null;
+}
+
+/** Does this function or lambda take `name` as a parameter (`params`, `params: dict`, `params=None`, `**params`, `**params: Any`)? */
+function declaresPyParameter(scope: PyNode, name: string): boolean {
+  const params = scope.childForFieldName('parameters');
+  if (!params) return false;
+  for (const p of params.namedChildren) {
+    if (!p) continue;
+    let id: PyNode | null | undefined = p.type === 'identifier' ? p : p.childForFieldName('name');
+    if (!id) {
+      // `params: dict` puts the name first; `*args: int` and `**kw: dict` wrap it in a splat pattern.
+      const first = p.namedChildren[0];
+      id =
+        first?.type === 'list_splat_pattern' || first?.type === 'dictionary_splat_pattern'
+          ? first.namedChildren.find((c) => c?.type === 'identifier')
+          : first?.type === 'identifier'
+            ? first
+            : undefined;
+    }
+    if (id?.text === name) return true;
+  }
+  return false;
+}
+
+const PY_COMPREHENSIONS = new Set(['list_comprehension', 'set_comprehension', 'dictionary_comprehension', 'generator_expression']);
+
+/** Does a `for … in` clause of this comprehension bind `name` (`for model in …`, `for _, model in …`)? */
+function comprehensionBinds(comprehension: PyNode, name: string): boolean {
+  const binds = (target: PyNode): boolean => {
+    if (target.type === 'identifier') return target.text === name;
+    if (target.type === 'attribute' || target.type === 'subscript') return false;
+    return target.namedChildren.some((c) => c !== null && binds(c));
+  };
+  return comprehension.namedChildren.some((c) => {
+    const left = c?.type === 'for_in_clause' ? c.childForFieldName('left') : null;
+    return left !== null && binds(left);
+  });
+}
+
+/**
+ * The scope whose binding of the identifier `id` Python reads there: the innermost scope that
+ * assigns, imports or defines the name or takes it as a parameter, looked up outward, with a class
+ * body visible only to code written directly in it. Null is the module. A comprehension that binds
+ * the name in its own `for` clause is returned as its own scope. Undefined when nothing in this file
+ * binds the name, so no value can be tied to it.
+ */
+function pyBindingScopeOf(id: PyNode): PyNode | null | undefined {
+  const name = id.text;
+  const index = pyNameIndex(id.tree);
+  let first = true;
+  for (let n = id.parent; n; n = n.parent) {
+    if (PY_COMPREHENSIONS.has(n.type)) {
+      if (comprehensionBinds(n, name)) return n;
+      continue;
+    }
+    if (n.type !== 'function_definition' && n.type !== 'lambda' && n.type !== 'class_definition') continue;
+    // A class body is not visible from the functions defined inside it.
+    if (n.type === 'class_definition' && !first) continue;
+    first = false;
+    if (index.bindings.has(pyNameKey(name, n))) return n;
+    if (n.type !== 'class_definition' && declaresPyParameter(n, name)) return n;
+  }
+  return index.bindings.has(pyNameKey(name, null)) ? null : undefined;
+}
+
+/** The two scopes are the same one (null is the module). */
+function samePyScope(a: PyNode | null, b: PyNode | null): boolean {
+  return a === null || b === null ? a === b : a.equals(b);
+}
+
+/** The node a model value bound to a name is bound through: the assignment's target, or the parameter's name. */
+function pyBindingTargetOf(literal: PyNode): PyNode | null {
+  const p = literal.parent;
+  if (p?.type === 'assignment') return p.childForFieldName('left');
+  if (p?.type === 'default_parameter' || p?.type === 'typed_default_parameter') return p.childForFieldName('name');
+  return null;
+}
+
+/**
+ * Does `use` read the value bound through `binding`? The sink trace keys a call by the last name
+ * only, so `self.judge.model`, another function's own `model` parameter and `args.model` all reach a
+ * `self.model = "…"` or a module `model = "…"`. Only the same reference counts:
+ *
+ *   - a plain name: the same identifier, resolved to the same binding (not a parameter, local,
+ *     import or comprehension variable that shadows it);
+ *   - a class attribute (`model = "…"` in a class body): also `self.model`, `cls.model` or
+ *     `Bot.model` inside that class;
+ *   - an attribute (`self.model = "…"`): the same attribute path; `self` is the same instance within
+ *     one class, any other root must resolve to the same binding.
+ */
+function samePyReference(binding: PyNode, use: PyNode): boolean {
+  if (binding.type === 'identifier') {
+    if (use.type === 'identifier') {
+      if (use.text !== binding.text) return false;
+      const declared = pyBindingScopeOf(binding);
+      const read = pyBindingScopeOf(use);
+      return declared !== undefined && read !== undefined && samePyScope(declared, read);
+    }
+    const cls = pyBindingScopeOf(binding);
+    if (use.type !== 'attribute' || !cls || cls.type !== 'class_definition') return false;
+    const obj = use.childForFieldName('object');
+    const receivers = ['self', 'cls', cls.childForFieldName('name')?.text];
+    return (
+      use.childForFieldName('attribute')?.text === binding.text &&
+      obj?.type === 'identifier' &&
+      receivers.includes(obj.text) &&
+      enclosingClass(use)?.equals(cls) === true
+    );
+  }
+  if (binding.type !== 'attribute' || use.type !== 'attribute') return false;
+  if (binding.childForFieldName('attribute')?.text !== use.childForFieldName('attribute')?.text) return false;
+  const declaredObj = binding.childForFieldName('object');
+  const readObj = use.childForFieldName('object');
+  if (!declaredObj || !readObj) return false;
+  if (declaredObj.type === 'identifier' && declaredObj.text === 'self') {
+    if (readObj.type !== 'identifier' || readObj.text !== 'self') return false;
+    const declaredClass = enclosingClass(declaredObj);
+    const readClass = enclosingClass(readObj);
+    return declaredClass !== null && readClass !== null && declaredClass.equals(readClass);
+  }
+  return samePyReference(declaredObj, readObj);
+}
+
+/**
+ * Every binding of every plain name in a parse, keyed by name AND scope (see {@link pyNameKey}),
+ * built once per tree like SPLAT_INDEX, so resolving a name is one lookup per scope rather than a
+ * walk over every binding of that name in the file.
+ */
+interface PyNameIndex {
+  /**
+   * Name-in-scope keys that are bound: assignments, `for` targets, `with … as` aliases, `:=`,
+   * augmented assignments, imports, and the names of `def` and `class` statements.
+   */
+  bindings: Set<string>;
+  /** The right-hand side of each `name = …` with the name alone on the left. */
+  values: Map<string, PyNode[]>;
+  /** Keys added to the dict after it is built, and any expression whose keys are added with them. */
+  added: Map<string, Array<{ keys: string[]; from: PyNode[] }>>;
+}
+
+const NAME_INDEX = new WeakMap<Tree, PyNameIndex>();
+
+/** The index key for `name` bound in `scope` (null is the module). Node ids are unique within a tree. */
+function pyNameKey(name: string, scope: PyNode | null): string {
+  return `${scope ? scope.id : -1}:${name}`;
+}
+
+function pyNameIndex(tree: Tree): PyNameIndex {
+  const cached = NAME_INDEX.get(tree);
+  if (cached) return cached;
+  const index: PyNameIndex = { bindings: new Set(), values: new Map(), added: new Map() };
+  const push = <T>(map: Map<string, T[]>, key: string, value: T): void => {
+    const list = map.get(key);
+    if (list) list.push(value);
+    else map.set(key, [value]);
+  };
+  const bind = (name: string, at: PyNode): void => {
+    index.bindings.add(pyNameKey(name, pyScopeOf(at)));
+  };
+  // `a, b = …`, `for k, v in …`, `with … as (x, y)`: every name in the target is bound, value unknown.
+  const bindTargets = (target: PyNode, at: PyNode): void => {
+    if (target.type === 'identifier') {
+      bind(target.text, at);
+      return;
+    }
+    if (target.type === 'attribute' || target.type === 'subscript') return;
+    for (const c of target.namedChildren) if (c) bindTargets(c, at);
+  };
+  for (const a of tree.rootNode.descendantsOfType('assignment')) {
+    const left = a?.childForFieldName('left');
+    if (!a || !left) continue;
+    if (left.type === 'identifier') {
+      bind(left.text, a);
+      const right = a.childForFieldName('right');
+      if (right) push(index.values, pyNameKey(left.text, pyScopeOf(a)), right);
+    } else if (left.type === 'subscript') {
+      // `params["max_tokens"] = 20` adds a key to the dict `params` already names.
+      const obj = left.childForFieldName('value');
+      const key = left.childForFieldName('subscript');
+      const content = key ? plainStringContent(key) : undefined;
+      if (obj?.type === 'identifier' && content) {
+        push(index.added, pyNameKey(obj.text, pyScopeOf(a)), { keys: [content.value], from: [] });
+      }
+    } else {
+      bindTargets(left, a);
+    }
+  }
+  for (const a of tree.rootNode.descendantsOfType('augmented_assignment')) {
+    const left = a?.childForFieldName('left');
+    if (!a || left?.type !== 'identifier') continue;
+    bind(left.text, a);
+    // `params |= {"temperature": 0}` adds that dict's keys.
+    const right = a.childForFieldName('right');
+    if (a.childForFieldName('operator')?.text === '|=' && right) {
+      push(index.added, pyNameKey(left.text, pyScopeOf(a)), { keys: [], from: [right] });
+    }
+  }
+  for (const f of tree.rootNode.descendantsOfType('for_statement')) {
+    const left = f?.childForFieldName('left');
+    if (f && left) bindTargets(left, f);
+  }
+  for (const t of tree.rootNode.descendantsOfType('as_pattern_target')) {
+    if (t) bindTargets(t, t);
+  }
+  for (const w of tree.rootNode.descendantsOfType('named_expression')) {
+    const name = w?.childForFieldName('name');
+    if (w && name?.type === 'identifier') bind(name.text, w);
+  }
+  // `import a.b` binds `a`; `import c as d` and `from x import z as d` bind `d`; `from x import y` binds `y`.
+  for (const imp of tree.rootNode.descendantsOfType(['import_statement', 'import_from_statement'])) {
+    if (!imp) continue;
+    for (const n of imp.childrenForFieldName('name')) {
+      const bound = n?.type === 'aliased_import' ? n.childForFieldName('alias') : n?.type === 'dotted_name' ? n.namedChildren[0] : null;
+      if (bound?.type === 'identifier') bind(bound.text, imp);
+    }
+  }
+  // `def model(…)` and `class Model` bind their names in the scope around them.
+  for (const d of tree.rootNode.descendantsOfType(['function_definition', 'class_definition'])) {
+    const name = d?.childForFieldName('name');
+    if (d && name?.type === 'identifier') bind(name.text, d);
+  }
+  for (const call of tree.rootNode.descendantsOfType('call')) {
+    const fn = call?.childForFieldName('function');
+    const obj = fn?.type === 'attribute' ? fn.childForFieldName('object') : null;
+    const method = fn?.type === 'attribute' ? fn.childForFieldName('attribute')?.text : undefined;
+    const args = call?.childForFieldName('arguments');
+    if (!call || obj?.type !== 'identifier' || !args || args.type !== 'argument_list') continue;
+    if (method === 'update') {
+      // `params.update(temperature=0)`, `params.update({"top_p": 1})`, `params.update(**extra)`.
+      const keys: string[] = [];
+      const from: PyNode[] = [];
+      for (const arg of args.namedChildren) {
+        if (!arg) continue;
+        if (arg.type === 'keyword_argument') {
+          const n = arg.childForFieldName('name');
+          if (n) keys.push(n.text);
+        } else if (arg.type === 'dictionary_splat') {
+          if (arg.namedChildren[0]) from.push(arg.namedChildren[0]);
+        } else {
+          from.push(arg);
+        }
+      }
+      push(index.added, pyNameKey(obj.text, pyScopeOf(call)), { keys, from });
+    } else if (method === 'setdefault') {
+      const first = args.namedChildren[0];
+      const content = first ? plainStringContent(first) : undefined;
+      if (content) push(index.added, pyNameKey(obj.text, pyScopeOf(call)), { keys: [content.value], from: [] });
+    }
+  }
+  NAME_INDEX.set(tree, index);
+  return index;
+}
+
+/**
+ * The keys a dict-valued expression is known to carry: a dict display, a `dict(…)` call, a name
+ * bound to one of those, and `or`, conditional and `|` combinations of them. Anything else is not
+ * visible here and adds nothing. `seen` stops a self-reference (`params = {**params, …}`).
+ */
+function pyDictKeys(expr: PyNode, seen: Set<number>, depth = 0): string[] {
+  if (depth > 8 || seen.has(expr.id)) return [];
+  seen.add(expr.id);
+  const next = (n: PyNode | null | undefined): string[] => (n ? pyDictKeys(n, seen, depth + 1) : []);
+  switch (expr.type) {
+    case 'dictionary': {
+      const keys: string[] = [];
+      for (const c of expr.namedChildren) {
+        if (c?.type === 'pair') {
+          const key = c.childForFieldName('key');
+          const content = key ? plainStringContent(key) : undefined;
+          if (content) keys.push(content.value);
+        } else if (c?.type === 'dictionary_splat') {
+          keys.push(...next(c.namedChildren[0]));
+        }
+      }
+      return keys;
+    }
+    case 'call': {
+      if (dottedCallee(expr) !== 'dict') return [];
+      const args = expr.childForFieldName('arguments');
+      if (!args || args.type !== 'argument_list') return [];
+      const keys: string[] = [];
+      for (const a of args.namedChildren) {
+        if (!a) continue;
+        if (a.type === 'keyword_argument') {
+          const n = a.childForFieldName('name');
+          if (n) keys.push(n.text);
+        } else if (a.type === 'dictionary_splat') {
+          keys.push(...next(a.namedChildren[0]));
+        } else {
+          keys.push(...next(a));
+        }
+      }
+      return keys;
+    }
+    case 'identifier':
+      return pyNameKeys(expr.text, expr, seen, depth + 1);
+    case 'parenthesized_expression':
+      return next(expr.namedChildren[0]);
+    case 'boolean_operator':
+      return expr.childForFieldName('operator')?.type === 'or'
+        ? [...next(expr.childForFieldName('left')), ...next(expr.childForFieldName('right'))]
+        : [];
+    case 'binary_operator':
+      return expr.childForFieldName('operator')?.type === '|'
+        ? [...next(expr.childForFieldName('left')), ...next(expr.childForFieldName('right'))]
+        : [];
+    case 'conditional_expression': {
+      const named = expr.namedChildren;
+      return [...next(named[0]), ...next(named[named.length - 1])];
+    }
+    case 'assignment': // `a = b = {…}`
+      return next(expr.childForFieldName('right'));
+    default:
+      return [];
+  }
+}
+
+/**
+ * The keys of the dict `name` refers to where it is used. The innermost scope that binds the name
+ * decides, as in Python: its `name = …` values, plus keys added in that scope or beside the use.
+ *
+ * A function parameter (`**kwargs`, `params`) carries keys mendr cannot see, so it adds none of
+ * its own. A key added to it there or beside the use (`kwargs.setdefault("max_tokens", 512)`,
+ * `kwargs["temperature"] = 0`, `kwargs.update(top_p=1)`) is sent whatever the caller passed, so it
+ * is read like a key added to any other dict.
+ */
+function pyNameKeys(name: string, use: PyNode, seen: Set<number>, depth: number): string[] {
+  const index = pyNameIndex(use.tree);
+  const scope = pyBindingScopeOf(use);
+  // Nothing in this file binds it, or a comprehension variable does: no dict mendr can see.
+  if (scope === undefined || (scope !== null && PY_COMPREHENSIONS.has(scope.type))) return [];
+  const key = pyNameKey(name, scope);
+  const useKey = pyNameKey(name, pyScopeOf(use));
+  const keys: string[] = [];
+  // A parameter that is never reassigned has no `name = …` value here.
+  for (const value of index.values.get(key) ?? []) keys.push(...pyDictKeys(value, seen, depth));
+  // Keys added where the dict is bound, and beside the call that unpacks it.
+  for (const addKey of key === useKey ? [key] : [key, useKey]) {
+    for (const add of index.added.get(addKey) ?? []) {
+      keys.push(...add.keys);
+      for (const f of add.from) keys.push(...pyDictKeys(f, seen, depth));
+    }
+  }
+  return keys;
+}
+
+/** The parameter names a call passes: its keyword arguments, and the keys of each dict unpacked into it. */
+function pyCallParamNames(call: PyNode): string[] {
+  const args = call.childForFieldName('arguments');
+  if (!args || args.type !== 'argument_list') return [];
+  const names: string[] = [];
+  const seen = new Set<number>();
+  for (const a of args.namedChildren) {
+    if (a?.type === 'keyword_argument') {
+      const n = a.childForFieldName('name');
+      if (n) names.push(n.text);
+    } else if (a?.type === 'dictionary_splat' && a.namedChildren[0]) {
+      names.push(...pyDictKeys(a.namedChildren[0], seen));
+    }
+  }
+  return [...new Set(names)];
+}
+
+/** The requests a `model_arg` literal is the model of, each with the parameter names it passes. */
+function pyRequestParams(literal: PyNode, ctx: PyGuardContext): PyRequestParams[] {
+  let node: PyNode = literal;
+  let parent = node.parent;
+  while (parent && isValueTransparent(parent, node)) {
+    node = parent;
+    parent = node.parent;
+  }
+  if (!parent) return [];
+  // Written in the call: `create(model="…", max_tokens=20)`, or a factory's positional argument.
+  if (parent.type === 'keyword_argument' && parent.parent?.type === 'argument_list' && parent.parent.parent?.type === 'call') {
+    return [{ names: pyCallParamNames(parent.parent.parent) }];
+  }
+  if (parent.type === 'argument_list' && parent.parent?.type === 'call') return [{ names: pyCallParamNames(parent.parent) }];
+  // Written in a dict passed to a call: the dict's own keys.
+  if (parent.type === 'pair' && parent.parent?.type === 'dictionary') {
+    return [{ names: [...new Set(pyDictKeys(parent.parent, new Set()))] }];
+  }
+  // Bound to a name the scanner traced into one or more calls. The trace keys a call by the last
+  // name only and lets a module binding reach every function, so read only the calls whose model
+  // is this same reference: `model=self.judge.model`, another function's own `model` parameter or
+  // `args.model` does not take this value, and holding it there names the wrong call.
+  const binding = pyBindingTargetOf(literal);
+  if (!binding) return [];
+  return inScopeSinkTargets(literal, ctx)
+    .filter((t) => samePyReference(binding, t.value))
+    .map((t) => ({
+      names: pyCallParamNames(t.call),
+      callLine: t.call.startPosition.row + 1,
+    }));
+}
+
+/**
+ * paramHoldReason over each request the model reaches, one request at a time; the first that holds
+ * the call decides, so the sentence can name that call's line.
+ */
+function pyParamHoldReason(
+  requests: readonly PyRequestParams[],
+  deprecation: LlmModelIdDeprecation,
+  registry: LlmRegistry,
+): string | undefined {
+  for (const r of requests) {
+    const held = paramHoldReason([r.names], deprecation, registry);
+    if (!held) continue;
+    // The finding sits on the line the value is written on, so say where the call is.
+    return r.callLine === undefined ? held : `the call on line ${r.callLine} of this file takes this value as its model; ${held}`;
+  }
+  return undefined;
+}
+
 // --- Scan --------------------------------------------------------------------
 
 /**
@@ -1331,6 +1804,7 @@ export async function findPyModelIdLiterals(
       const sinkTargets = collectPySinkTargets(tree);
       // G4: the provider surface, resolved once per file, caps every tier below.
       const { surface, via: surfaceVia } = explainPySurface(source.path, source.text);
+      const guardCtx: PyGuardContext = { surface, surfaceVia, sinkTargets };
       // An examples/samples/demos/docs tree is informational by rule (C3).
       const example = isExamplePath(source.path);
       for (const node of tree.rootNode.descendantsOfType('string')) {
@@ -1365,7 +1839,7 @@ export async function findPyModelIdLiterals(
         // Position/purpose belong to the CST node, not the registry entry, so
         // classify once and emit one match per matching record (multimap).
         let classification: { position: LiteralPosition; purpose?: DataPurpose; reason?: string } =
-          classifyPyLiteral(node, sinkNames, { surface, surfaceVia, sinkTargets });
+          classifyPyLiteral(node, sinkNames, guardCtx);
         // Rule C3, narrowed 2026-09-28 — the PYTHON half of the same change made in
         // scanLiterals.ts. An example tree is informational BY DEFAULT, and everything the
         // parser reads as data there still is. But a sample that actually reaches a provider
@@ -1396,21 +1870,31 @@ export async function findPyModelIdLiterals(
         ) {
           classification = { position: 'data', purpose: 'generic', reason: PY_NON_SELECTOR_FUNCTION_REASON };
         }
+        // THE PARAMETER GUARD, last, on a call every other rule left swap-eligible, as in
+        // scanLiterals.ts. The request is read once per literal; whether it holds the call depends
+        // on each record's replacement, so it is judged per record. A fine-tune is held for its own
+        // reason below, before any parameter is read, as in the TypeScript scan.
+        const requests =
+          classification.position === 'model_arg' && fineTuneOf === undefined ? pyRequestParams(node, guardCtx) : [];
         const line = node.startPosition.row + 1;
         const column = node.startPosition.column + 1;
         for (const deprecation of deprecations) {
           // A fine-tune is never swapped, whatever its record says: every replacement is a base
           // model, and swapping one in drops the customer's training. Wherever a plain id would be
           // a live or reviewable selector it is held for review with that sentence; in a data
-          // position it stays data. The same rule as the TypeScript scan.
-          const held =
+          // position it stays data. The same rule as the TypeScript scan. Any other call is held
+          // when the parameter guard holds it.
+          const paramHeld = requests.length > 0 ? pyParamHoldReason(requests, deprecation, registry) : undefined;
+          const held: { position: LiteralPosition; purpose?: DataPurpose; reason?: string } =
             fineTuneOf !== undefined && classification.position !== 'data'
               ? {
-                  position: 'surface_capped' as const,
+                  position: 'surface_capped',
                   purpose: undefined,
                   reason: fineTuneHoldReason(content.value, fineTuneOf, deprecation.replacement),
                 }
-              : classification;
+              : paramHeld !== undefined
+                ? { position: 'surface_capped', purpose: undefined, reason: paramHeld }
+                : classification;
           out.push({
             file: source.path,
             value: content.value,

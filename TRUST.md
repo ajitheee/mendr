@@ -48,7 +48,7 @@ exist yet and is listed so the boundary is stated before it is built.
 | `mendr verify-registry`, `registry-discover` (maintainer commands) | The registry files in this repository. | Registry files, a PR in this repository. | Provider documentation pages and model-list endpoints. These run in Mendr's own CI against Mendr's own repository, never against yours. |
 | Scaffolded audit workflow (`--install`) | Your repository at the checked-out SHA, inside your GitHub Actions runner. | One tracking issue in your repository (created, updated, closed), nothing else. | The Node download from `npm`/GitHub to install Mendr, and the GitHub API calls the workflow makes to your own repository with `GITHUB_TOKEN`. The scan itself makes none. |
 | `mendr-action` (fix PRs) | Same. | A branch and a pull request in your repository containing the gated diff. | Same as above. Plus — only when you set `app-url` and grant `id-token: write` — **one POST of the migration result to your Mendr App** (outcome, PR url, verdict, gate statuses, the swaps and the file paths they touch, the branch name, the registry provenance, and — unless `send-diff` is off — the redacted unified diff of the swap itself, capped at 100 000 characters, so the finding can show what changes; **never whole files**), proven by the run's OIDC token. A failed POST is a warning, never a failed job. With `approval-gated`, also to your App: one GET (what a person approved), one POST (claim it) and one short POST per stage of progress (a stage name and a redacted line such as the files a swap touches or a PR number — never code). |
-| Mendr GitHub App (`app/`, hosted by Mendr on Render) | The JSON your workflow posts and the claims of the run's OIDC token. Installation webhooks from GitHub. | Installations, repository ids and names, the sanitized evidence per run, migration reports, acknowledgements, approvals and an audit log in its Postgres. One check run on the commit. | Inbound from GitHub (webhooks) and from your CI (the POST). Outbound only to the GitHub API: an installation token limited to that repository and `checks: write`, the check run, the signed-in user's repository access for the read side, and — only with the optional `actions: write`, only when a person clicks Approve — one workflow-dispatch of your migration workflow. |
+| Mendr GitHub App (`app/`, hosted by Mendr on Render) | The JSON your workflow posts and the claims of the run's OIDC token. Installation webhooks from GitHub. | Installations, repository ids and names, the sanitized evidence per run, migration reports, acknowledgements, approvals and an audit log in its Postgres. One check run on the commit. | Inbound from GitHub (webhooks) and from your CI (the POST). Outbound only to the GitHub API: an installation token limited to that repository and `checks: write`, the check run, the signed-in user's repository access for the read side, and — only with the optional `actions: write`, only when a person clicks Approve — one workflow-dispatch of your migration workflow. When a CI call whose OIDC token verified names a repository the App's database does not know: one `GET /repos/{owner}/{repo}/installation` with the App's own JWT, for the repository the token names, then a token limited to that repository id and `metadata: read` and one `GET /repos/{owner}/{repo}` to confirm the id (*Install recovery*, section 7). When a signed-in overview would be empty: `GET /user/installations` and each installation's repository list, with the signed-in user's own token. |
 
 The audit itself **never** sends: file contents, file names, model ids, findings,
 paths, hashes, the repository URL, your git identity, environment variables,
@@ -337,6 +337,8 @@ The App keeps an append-only `audit_log` of the security-relevant events, so an
 operator can reconstruct what happened during an incident:
 
 - installation connected, suspended, removed;
+- an installation or repository the database did not know, recovered after GitHub confirmed it
+  (`installation_recovered`; `via` says whether a CI upload or a sign-in found it);
 - repositories added or removed;
 - an audit received (with its conclusion and counts);
 - data deleted (self-service or on uninstall);
@@ -528,6 +530,39 @@ OAuth flow and your token stays in an encrypted cookie, never in the database.
 You can see a repository's evidence only if the App is installed on it and
 GitHub confirms you can access it. If a scope is ever added, this section and
 the changelog will say which and why.
+
+**Install recovery.** The App learns which installation covers which repository
+from GitHub's installation webhooks, and GitHub sends each one once. If the
+App's database loses them (a move to a new database), a CI call whose OIDC token
+verified, for a repository the database does not know, makes the App ask GitHub
+before refusing it:
+
+1. `GET /repos/{owner}/{repo}/installation` with the App's own JWT, for the
+   owner/repo named in the OIDC token, never a name from the request body. This
+   needs no installation permission. A 404 is read as "not installed".
+2. An installation token limited to the repository id in the OIDC token and to
+   `metadata: read`, which every GitHub App holds. GitHub refuses to mint it
+   when the installation does not cover that id. The App asks for a new token
+   on every lookup and never reuses one, so a repository removed from the
+   installation's selection is refused here even when it is public.
+3. `GET /repos/{owner}/{repo}` with that token. GitHub's id for the repository
+   must equal the OIDC token's `repository_id`.
+
+Only then are the installation and that one repository stored, with an
+`installation_recovered` audit-log entry, and the upload goes ahead. Any other
+answer gets the same 403 as before, and the App remembers it for that repository
+id for five minutes (one minute when GitHub or the database did not answer), so
+refused uploads cannot make it call GitHub on every request. An installation
+GitHub reports suspended is not stored, and one the database holds as
+uninstalled is never brought back. An installation the database already knows
+is not rewritten: only the missing repository is added.
+
+When a signed-in user's overview would otherwise be empty, the App also asks
+GitHub, with that user's own token, which installations of this App they can
+access (`GET /user/installations`, then each installation's repositories), and
+adds the repositories the database lacks. That happens at most once every ten
+minutes per user, and the page waits at most eight seconds for GitHub's answers.
+Neither path asks for a new permission or reads repository contents.
 
 **Approving a migration** happens in the App, on the finding; the work happens
 in your CI. A second workflow file (`.github/workflows/mendr-migrate.yml`,

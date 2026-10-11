@@ -110,7 +110,7 @@ export function applyLlmFixesToProject(
   const swapped = applyModelIdFixes(project, registry, literalMatches);
   const modelIdSites = swapped.length;
   const heldCalls = literalMatches.filter((m) => m.position === 'surface_capped');
-  const paramSites = withoutHeldCalls(findParamSites(project, registry), heldCalls);
+  const paramSites = withoutHeldCalls(findParamSites(project, registry), heldCalls, registry);
   const paramEdits = applyParamFixes(
     project,
     registry,

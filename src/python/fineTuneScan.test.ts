@@ -85,6 +85,25 @@ describe('a fine-tuned model id in a live Python call', () => {
     expect(result.patchedFiles[0]!.newText).toContain('"ft:gpt-4o-2024-05-13:acme::w1"');
   }, 60_000);
 
+  it('keeps the training sentence when its call also passes a parameter the guard would hold', async () => {
+    // Shipped registry: gpt-4o-2024-05-13 -> gpt-5.6-sol is verified, and max_tokens is renamed
+    // from gpt-5.6 on, so the parameter guard holds the base model's call (param_behaviour_change).
+    // The fine-tune is held for its training first, as in the TypeScript scan, so its finding
+    // never reads as a parameter hold a person could clear by renaming max_tokens.
+    const text =
+      `${CLIENT}def run(messages):\n` +
+      '    a = client.chat.completions.create(model="ft:gpt-4o-2024-05-13:acme::w1", messages=messages, max_tokens=20)\n' +
+      '    b = client.chat.completions.create(model="gpt-4o-2024-05-13", messages=messages, max_tokens=20)\n' +
+      '    return a, b\n';
+    const found = await scan(text);
+    expect(found.map((f) => [f.value, f.tier, f.position, f.code])).toEqual([
+      ['ft:gpt-4o-2024-05-13:acme::w1', 'B', 'surface_capped', 'surface_capped'],
+      ['gpt-4o-2024-05-13', 'B', 'surface_capped', 'param_behaviour_change'],
+    ]);
+    expect(found[0]!.reason).toContain("would drop the customer's training");
+    expect(found[1]!.reason).toContain('`max_tokens` becomes `max_completion_tokens`');
+  }, 60_000);
+
   it('is held through a module constant, an untraced constant, a gateway prefix and a sample tree', async () => {
     const viaConst = await scan(
       `${CLIENT}FT_MODEL = "ft:gpt-3.5-turbo-0125:acme::9abc"\n\ndef run(messages):\n    return client.chat.completions.create(model=FT_MODEL, messages=messages)\n`,

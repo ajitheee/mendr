@@ -63,12 +63,14 @@ never touches the database (see step 2), and restarting the App cannot bring a
 lost database back.
 
 > **Moving an existing deployment off Render's Postgres: copy the data first.**
-> The App learns about an installation and its repositories only from GitHub's
+> The App learns about an installation and its repositories from GitHub's
 > installation webhooks, which GitHub does not send again. Pointed at an empty
-> database, the App refuses every existing install's CI upload (`403 the Mendr
-> GitHub App is not installed on <repo>`) until that account uninstalls and
-> reinstalls it, and every approval, acknowledgement and audit-log entry is
-> gone. So, in this order:
+> database, it recovers each installation from GitHub instead: on that
+> repository's next CI upload, or when a signed-in user's overview would
+> otherwise be empty ([Install recovery](README.md#install-recovery)). Nobody
+> has to reinstall. Everything else the database held is gone: stored runs and
+> migration reports, approvals, acknowledgements and the audit log. So, in this
+> order:
 >
 > 1. **Make `mendr-db` reachable.** An expired free database cannot be reached
 >    until it is upgraded to a paid instance type, and Render deletes it 14
@@ -87,20 +89,23 @@ lost database back.
 >    save (that redeploys). Leave `MENDR_DATA_KEY` as it is: sealed reports open
 >    only with the key that sealed them. Anything the App wrote to `mendr-db`
 >    between the dump and the redeploy is not in the copy (a CI upload comes
->    back with that repository's next scan; an install made then must be
->    redone). Then check that `/healthz` says `"db":"ok"` and a `"decrypt"`
+>    back with that repository's next scan, and an install made then is
+>    recovered by that scan). Then check that `/healthz` says `"db":"ok"` and a `"decrypt"`
 >    other than `"failed"`, that the overview lists your installed
 >    repositories, and that the service's **Health Check Path** setting reads
 >    `/livez`.
 > 4. **Delete `mendr-db`** in the dashboard. Removing it from `render.yaml`
 >    does not: Render never deletes a resource because it left the Blueprint.
 >
-> If Render has already deleted `mendr-db`, there is nothing to copy. The
-> approvals, acknowledgements and audit log are lost, and every account that
-> installed the App must uninstall and reinstall it (GitHub → Settings →
-> Applications → Installed GitHub Apps) before its CI uploads are accepted
-> again. Tell them before switching `DATABASE_URL`, so that a refused upload is
-> not how they find out.
+> If Render has already deleted `mendr-db`, there is nothing to copy. The stored
+> runs, migration reports, approvals, acknowledgements and audit log are lost.
+> The installations are not: each repository's next CI upload is checked with
+> GitHub and accepted, with no reinstall. An upload GitHub does not confirm (the
+> App is not installed on that repository, the installation is suspended, or the
+> repository is outside the installation's selection) gets the same `403 the
+> Mendr GitHub App is not installed on <repo>` as before. Tell the accounts that
+> installed the App before switching `DATABASE_URL`, so that an empty run
+> history and missing approvals are not how they find out.
 
 > **Other hosts.** Any container platform works — the image is a standard
 > Dockerfile. **Fly.io:** `fly launch --dockerfile app/Dockerfile` (build context

@@ -127,6 +127,32 @@ describe('runMigration --only edits nothing outside the approved swaps', { timeo
   });
 });
 
+// The Python parameter guard reaches migrate too: approving a model does not swap a Python call the
+// guard holds for its parameters, because Python has no parameter pass to fix the request after.
+describe('runMigration does not swap a Python call held for its parameters', { timeout: 30_000 }, () => {
+  const PY_PARAM_REG: LlmRegistry = [
+    { provider: 'openai', kind: 'model_id', deprecated: 'gpt-3.5-turbo', replacement: 'gpt-5.6-terra', status: 'deprecated', shutdownDate: '2026-10-23', verification: autoApplyVerification() },
+    { provider: 'openai', kind: 'param_rename', param: 'max_tokens', replacement: 'max_completion_tokens', on_models: ['o1', 'o3', 'gpt-5.6'] },
+  ];
+  const PY = [
+    'from openai import OpenAI',
+    'client = OpenAI()',
+    '',
+    'def title(p):',
+    '    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, max_tokens=20)',
+    '',
+    'def plain(p):',
+    '    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p)',
+    '',
+  ].join('\n');
+
+  it('approving gpt-3.5-turbo moves the plain call and leaves the held one as written', async () => {
+    const r = await runMigration(repo({ 'app.py': PY }), PY_PARAM_REG, { skipVerify: true, only: ['gpt-3.5-turbo'] });
+    expect(r.diff).toContain('+    return client.chat.completions.create(model="gpt-5.6-terra", messages=p)');
+    expect(r.diff).not.toContain('model="gpt-5.6-terra", messages=p, max_tokens=20');
+  });
+});
+
 describe('runMigration — sandbox verification with real build/test scripts', () => {
   // The passing test script PRINTS A PARSEABLE SUMMARY ("1 passed") on purpose,
   // and that is now load-bearing: a command that merely exits 0 proves nothing

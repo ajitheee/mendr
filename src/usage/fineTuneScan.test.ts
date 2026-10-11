@@ -109,6 +109,33 @@ describe('a fine-tuned model id in a live TypeScript call', { timeout: 60_000 },
     expect(p.getSourceFiles()[0]!.getFullText()).toContain("'ft:gpt-4o-2024-05-13:acme::w1'");
   });
 
+  it('keeps the training sentence when its call also passes a parameter the guard would hold', () => {
+    // Shipped registry: gpt-4o-2024-05-13 -> gpt-5.6-sol is verified, and max_tokens is renamed
+    // from gpt-5.6 on, so the parameter guard holds the base model's call (param_behaviour_change),
+    // written inline or read through a const. The fine-tune is held for its training first, so
+    // its finding never reads as a parameter hold a person could clear by renaming max_tokens.
+    const inline =
+      `${OPENAI}export const run = (messages: any[]) => Promise.all([\n` +
+      "  client.chat.completions.create({ model: 'ft:gpt-4o-2024-05-13:acme::w1', messages, max_tokens: 20 }),\n" +
+      "  client.chat.completions.create({ model: 'gpt-4o-2024-05-13', messages, max_tokens: 20 }),\n" +
+      ']);\n';
+    const viaConst =
+      `${OPENAI}const FT_MODEL = 'ft:gpt-4o-2024-05-13:acme::w1';\nconst BASE_MODEL = 'gpt-4o-2024-05-13';\n` +
+      'export const run = (messages: any[]) => Promise.all([\n' +
+      '  client.chat.completions.create({ model: FT_MODEL, messages, max_tokens: 20 }),\n' +
+      '  client.chat.completions.create({ model: BASE_MODEL, messages, max_tokens: 20 }),\n' +
+      ']);\n';
+    for (const [name, source] of [['inline', inline], ['through a const', viaConst]] as const) {
+      const found = scan(source);
+      expect(found.map((f) => [f.value, f.tier, f.position, f.code]), name).toEqual([
+        ['ft:gpt-4o-2024-05-13:acme::w1', 'B', 'surface_capped', 'surface_capped'],
+        ['gpt-4o-2024-05-13', 'B', 'surface_capped', 'param_behaviour_change'],
+      ]);
+      expect(found[0]!.reason, name).toContain("would drop the customer's training");
+      expect(found[1]!.reason, name).toContain('`max_tokens` becomes `max_completion_tokens`');
+    }
+  });
+
   it('joins its base model record, held, when the registry has no ft- row at all', () => {
     const noFineTuneRows: LlmRegistry = [
       { provider: 'openai', kind: 'model_id', deprecated: 'gpt-4-0613', replacement: 'gpt-5.6-sol', status: 'deprecated', shutdownDate: '2026-10-23', verification: withheldVerification('unverified') },

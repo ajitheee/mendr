@@ -188,9 +188,17 @@ describe('the SHIPPED registry footer', () => {
     // review-only, unverified by the gate's own curated rows: 3 whose OpenAI row names two
     // targets ("gpt-5 or gpt-4.1*"), and 6 that carry the end of a chain instead of the target
     // the provider names (gpt-3.5-turbo-0301, -16k-0613, text-davinci-003, -002,
-    // gemini-2.0-flash-lite, -001).
-    expect(lines[0]).toBe('registry: 193 records');
+    // gemini-2.0-flash-lite, -001). Then 20 dated retirements the providers announce: gpt-5.3-codex
+    // auto-fixes to gpt-6-sol; gpt-5.1 and gpt-5.4-nano are quarantined (GPT-6 Sol and Luna default
+    // to a different reasoning effort); 4 TTS, 4 transcription and 2 audio ids are unverifiable by
+    // class; gpt-4o-mini-realtime, gpt-4-turbo-preview-completions and 5 retired Veo ids are
+    // unverified. Then gpt-5.3-codex is quarantined too (OpenAI's GPT-6 guide changes
+    // prompt_cache_retention, which mendr does not check), and 6 dated snapshots with no
+    // provider-stated date are added: gpt-5.1's and gpt-5.4-nano's (quarantined like their
+    // aliases), three audio snapshots (unverifiable by class) and gpt-4o-mini-realtime's
+    // (quarantined until OpenAI states its date).
+    expect(lines[0]).toBe('registry: 219 records');
     expect(lines[1]).toBe('auto-fix eligible: 135');
-    expect(lines[2]).toBe('review-only: 58 (quarantined 16, unverified 23, unverifiable 19)');
+    expect(lines[2]).toBe('review-only: 84 (quarantined 22, unverified 30, unverifiable 32)');
   });
 });
