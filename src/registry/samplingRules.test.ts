@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { Project } from 'ts-morph';
-import type { LlmParamDeprecation } from '../types.js';
+import type { LlmParamDeprecation, LlmRegistry } from '../types.js';
 import { applyParamFixes } from '../fix/paramFix.js';
 import { classifyOccurrenceTier } from '../report/classifyOccurrence.js';
 import { loadLlmRegistry, modelMatches, paramEntries, resolveRegistryPath } from '../usage/llmRegistry.js';
@@ -161,22 +161,68 @@ describe('the parameter pass with the shipped registry', () => {
 });
 
 describe('the swap guard with the shipped registry', () => {
-  function tierOf(model: string) {
+  const SONNET_4_5 = 'claude-sonnet-4-5-20250929';
+
+  function matchOf(model: string, params: string, reg: LlmRegistry = registry) {
     const source = [
       "import Anthropic from '@anthropic-ai/sdk';",
       'const anthropic = new Anthropic();',
       'export async function run(messages: any) {',
-      `  return anthropic.messages.create({ model: '${model}', temperature: 0.7, max_tokens: 1024, messages });`,
+      `  return anthropic.messages.create({ model: '${model}', ${params}messages });`,
       '}',
     ].join('\n');
-    const matches = findModelIdLiterals(project(source), registry).filter((m) => m.value === model);
+    const matches = findModelIdLiterals(project(source), reg).filter((m) => m.value === model);
     expect(matches, model).toHaveLength(1);
-    const [m] = matches;
+    return matches[0];
+  }
+
+  function tierOf(model: string, params = 'temperature: 0.7, max_tokens: 1024, ', reg: LlmRegistry = registry) {
+    const m = matchOf(model, params, reg);
     return classifyOccurrenceTier({ position: m.position, deprecation: m.deprecation, reason: m.reason });
   }
 
-  it('holds a Sonnet 4.5 call that passes temperature, whose replacement Sonnet 5.5 rejects it', () => {
-    expect(tierOf('claude-sonnet-4-5-20250929').tier).toBe('B');
+  /** The shipped registry with Claude Sonnet 5 and 5.5 taken out of every sampling rule, as before 2026-10-10. */
+  function withoutSonnet5Rules(): LlmRegistry {
+    return registry.map((e) =>
+      e.kind === 'param_removal' && e.provider === 'anthropic'
+        ? { ...e, on_models: e.on_models.filter((m) => m !== 'claude-sonnet-5' && m !== 'claude-sonnet-5-5') }
+        : e,
+    );
+  }
+
+  // The Sonnet 4.5 record is quarantined, so every call on it is Tier B whatever the rules say. The
+  // tier alone therefore cannot show that the rules reach Sonnet 5.5; the reason can.
+
+  it('holds a Sonnet 4.5 call that passes temperature and max_tokens for max_tokens, which no Sonnet 5.5 rule covers', () => {
+    expect(tierOf(SONNET_4_5)).toEqual({ tier: 'B', reason: 'coupled_param_unverified' });
+    const reason = matchOf(SONNET_4_5, 'temperature: 0.7, max_tokens: 1024, ').reason ?? '';
+    expect(reason).toContain('claude-sonnet-5-5');
+    expect(reason).toContain('`max_tokens`');
+    expect(reason).not.toContain('`temperature`');
+  });
+
+  it('holds a Sonnet 4.5 call that passes only temperature because Sonnet 5.5 drops it', () => {
+    expect(tierOf(SONNET_4_5, 'temperature: 0.7, ')).toEqual({ tier: 'B', reason: 'param_behaviour_change' });
+    const reason = matchOf(SONNET_4_5, 'temperature: 0.7, ').reason ?? '';
+    expect(reason).toContain(`moving from ${SONNET_4_5} to claude-sonnet-5-5`);
+    expect(reason).toContain('`temperature` is removed');
+  });
+
+  it('holds a Sonnet 4.5 call that passes no sampling or length value only for its quarantine', () => {
+    // Negative case: nothing in the request is model-dependent, so the guard says nothing and the
+    // record's own quarantine is the reason.
+    expect(tierOf(SONNET_4_5, '')).toEqual({ tier: 'B', reason: 'replacement_unverified' });
+  });
+
+  it('reads replacement_unverified for both request shapes when no sampling rule names Sonnet 5.5', () => {
+    // What the shipped registry gave before 2026-10-10. If the rules stop reaching Sonnet 5.5, the
+    // two tests above fail instead of passing on the quarantine.
+    const before = withoutSonnet5Rules();
+    expect(tierOf(SONNET_4_5, 'temperature: 0.7, max_tokens: 1024, ', before)).toEqual({
+      tier: 'B',
+      reason: 'replacement_unverified',
+    });
+    expect(tierOf(SONNET_4_5, 'temperature: 0.7, ', before)).toEqual({ tier: 'B', reason: 'replacement_unverified' });
   });
 
   it('still patches a retired Sonnet 3.7 call that passes temperature: its replacement, Sonnet 4.6, accepts it', () => {
