@@ -578,6 +578,7 @@ program
     const paramMatches = withoutHeldCalls(
       findParamSites(scanProject, registry),
       modelMatches.filter((m) => m.position === 'surface_capped'),
+      registry,
     );
 
     // Python pass: scan + swap + syntax gate, all in memory (see fixPy.ts).

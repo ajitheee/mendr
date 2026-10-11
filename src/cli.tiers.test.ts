@@ -755,6 +755,442 @@ const SHARED_CONST_SOURCE = [
   '',
 ].join('\n');
 
+/**
+ * A repo where a retiring id reaches a request that passes `max_tokens` by every route the
+ * parameter guards used to miss, each beside its inline twin (which was always held: the bundled
+ * max_tokens rule starts at gpt-5.6, so the swap changes what the call asks for). Measured on
+ * 0df2dce, 2026-10-07: every shape below was a Tier A swap, and the declaration's max_tokens was
+ * renamed unattended.
+ */
+const CLIENT = ['import OpenAI from "openai";', 'const client = new OpenAI();'];
+const create = (args: string) => `  return client.chat.completions.create({ ${args}, messages: [] });`;
+const BYPASS_SHAPES: Record<string, string> = {
+  'src/shorthand.ts': [
+    ...CLIENT,
+    'export async function viaShorthand() {',
+    "  const model = 'gpt-4-0613';",
+    create('model, max_tokens: 13'),
+    '}',
+    'export async function inlineTwin() {',
+    create("model: 'gpt-4-0613', max_tokens: 13"),
+    '}',
+    '',
+  ].join('\n'),
+  'src/declaration.ts': [
+    ...CLIENT,
+    "const GPT4_MODEL = 'gpt-4-0613';",
+    'export async function viaConst() {',
+    create('model: GPT4_MODEL, max_tokens: 7'),
+    '}',
+    'export async function inlineTwin() {',
+    create("model: 'gpt-4-0613', max_tokens: 7"),
+    '}',
+    '',
+  ].join('\n'),
+  'src/cast.ts': [
+    ...CLIENT,
+    'export async function viaCast() {',
+    create("model: 'gpt-4-0613' as string, max_tokens: 1"),
+    '}',
+    'export async function inlineTwin() {',
+    create("model: 'gpt-4-0613', max_tokens: 1"),
+    '}',
+    '',
+  ].join('\n'),
+  'src/quoted.ts': [
+    ...CLIENT,
+    'export async function quotedParam() {',
+    create(`model: 'gpt-4-0613', "max_tokens": 2`),
+    '}',
+    'export async function quotedBoth() {',
+    create(`"model": "gpt-4-0613", "max_tokens": 2`),
+    '}',
+    'export async function inlineTwin() {',
+    create("model: 'gpt-4-0613', max_tokens: 2"),
+    '}',
+    '',
+  ].join('\n'),
+  // Control: one consumer held for its parameters, one free. Any held consumer holds the const.
+  'src/mixed.ts': [
+    ...CLIENT,
+    "const GPT4_MODEL = 'gpt-4-0613';",
+    'export async function held() {',
+    create('model: GPT4_MODEL, max_tokens: 7'),
+    '}',
+    'export async function free() {',
+    create('model: GPT4_MODEL'),
+    '}',
+    '',
+  ].join('\n'),
+  // A class field read through a parameter default: `chat`'s `model` IS the field.
+  'src/paramDefault.ts': [
+    ...CLIENT,
+    'export class Bot {',
+    "  model = 'gpt-4-0613';",
+    '  async ask() {',
+    create('model: this.model'),
+    '  }',
+    '  async chat(model = this.model) {',
+    create('model, max_tokens: 5'),
+    '  }',
+    '}',
+    '',
+  ].join('\n'),
+  // A computed string key is the same parameter to the provider.
+  'src/computed.ts': [
+    ...CLIENT,
+    'export async function viaComputed() {',
+    create(`model: 'gpt-4-0613', ["max_tokens"]: 3`),
+    '}',
+    'export async function inlineTwin() {',
+    create("model: 'gpt-4-0613', max_tokens: 3"),
+    '}',
+    '',
+  ].join('\n'),
+  // A fallback or a ternary branch is the request's model whenever it is taken, and the param pass
+  // cannot follow a swap there. Measured on main after #55, 2026-10-10: all three were Tier A, and
+  // `max_tokens` stayed beside gpt-5.6-sol.
+  'src/fallback.ts': [
+    ...CLIENT,
+    "const GPT4_MODEL = 'gpt-4-0613';",
+    'export async function viaFallback() {',
+    create("model: process.env.MODEL || 'gpt-4-0613', max_tokens: 4"),
+    '}',
+    'export async function viaConstFallback() {',
+    create('model: process.env.MODEL ?? GPT4_MODEL, max_tokens: 4'),
+    '}',
+    'export async function viaTernary(fast: boolean) {',
+    create("model: fast ? 'gpt-4.1' : 'gpt-4-0613', max_tokens: 4"),
+    '}',
+    '',
+  ].join('\n'),
+  // The field is assigned from the constructor's own parameter, and `new Bot(model)` feeds it. Review
+  // of 947967d (2026-10-10): this was Tier A, while its `constructor(private model: string)` twin
+  // was held.
+  'src/ctorAssigned.ts': [
+    ...CLIENT,
+    "const model = 'gpt-4-0613';",
+    'export class Bot {',
+    '  private model: string;',
+    '  constructor(model: string) {',
+    '    this.model = model;',
+    '  }',
+    '  async ask() {',
+    create('model: this.model, max_tokens: 5'),
+    '  }',
+    '}',
+    'export const bot = new Bot(model);',
+    '',
+  ].join('\n'),
+};
+/**
+ * Controls that stay Tier A because the call passing `max_tokens` reads a DIFFERENT binding of the
+ * same name: a parameter, a local, a destructured parameter, a nested arrow's parameter, a method's
+ * own parameter or local beside a class field, another class's member. Each was Tier A on 0df2dce
+ * and held on 402c1e4, whose parameter check read the keys of every call filed under the name.
+ */
+const SHADOW_CONTROLS: Record<string, string> = {
+  'src/shadowParam.ts': [
+    ...CLIENT,
+    "const model = 'gpt-4-0613';",
+    'export async function usesConst() {',
+    create('model'),
+    '}',
+    'export async function usesParam(model: string) {',
+    create('model, max_tokens: 5'),
+    '}',
+    '',
+  ].join('\n'),
+  'src/shadowLocal.ts': [
+    ...CLIENT,
+    "const GPT4_MODEL = 'gpt-4-0613';",
+    'export async function usesConst() {',
+    create('model: GPT4_MODEL'),
+    '}',
+    'export async function usesLocal() {',
+    "  const GPT4_MODEL = 'gpt-4.1';",
+    create('model: GPT4_MODEL, max_tokens: 5'),
+    '}',
+    '',
+  ].join('\n'),
+  'src/shadowDestructured.ts': [
+    ...CLIENT,
+    "const model = 'gpt-4-0613';",
+    'export async function usesConst() {',
+    create('model'),
+    '}',
+    'export async function ask({ model }: { model: string }) {',
+    create('model, max_tokens: 5'),
+    '}',
+    '',
+  ].join('\n'),
+  'src/shadowNested.ts': [
+    ...CLIENT,
+    'export async function a() {',
+    "  const model = 'gpt-4-0613';",
+    '  await client.chat.completions.create({ model, messages: [] });',
+    '  const inner = async (model: string) => client.chat.completions.create({ model, max_tokens: 5, messages: [] });',
+    "  return inner('gpt-4.1');",
+    '}',
+    '',
+  ].join('\n'),
+  'src/shadowClass.ts': [
+    ...CLIENT,
+    'export class Bot {',
+    "  model = 'gpt-4-0613';",
+    '  async ask() {',
+    create('model: this.model'),
+    '  }',
+    '  async other(model: string) {',
+    create('model, max_tokens: 5'),
+    '  }',
+    '  async summarize() {',
+    "    const model = 'gpt-4.1';",
+    create('model, max_tokens: 200'),
+    '  }',
+    '}',
+    '',
+  ].join('\n'),
+  'src/shadowOtherClass.ts': [
+    ...CLIENT,
+    "const model = 'gpt-4-0613';",
+    'export async function usesConst() {',
+    create('model'),
+    '}',
+    'export class Other {',
+    '  constructor(private model: string) {}',
+    '  async ask() {',
+    create('model: this.model, max_tokens: 5'),
+    '  }',
+    '}',
+    '',
+  ].join('\n'),
+  // `config.model = …` is read back only as `config.model`; b's own parameter is never passed it.
+  // Review of 947967d (2026-10-10): this was held with b's `max_tokens`.
+  'src/shadowConfig.ts': [
+    ...CLIENT,
+    'const config: { model?: string } = {};',
+    "config.model = 'gpt-4-0613';",
+    'export async function a() {',
+    create('model: config.model!'),
+    '}',
+    'export async function b(model: string) {',
+    create('model, max_tokens: 5'),
+    '}',
+    '',
+  ].join('\n'),
+};
+/** Controls that stay Tier A: no consumer passes a model-dependent parameter; quoted keys on o3. */
+const BYPASS_CONTROLS: Record<string, string> = {
+  'src/free.ts': [
+    ...CLIENT,
+    "const GPT4_MODEL = 'gpt-4-0613';",
+    'export async function a() {',
+    create('model: GPT4_MODEL'),
+    '}',
+    'export async function b() {',
+    create('model: GPT4_MODEL, stream: false'),
+    '}',
+    '',
+  ].join('\n'),
+  // o3-mini -> gpt-5.6-sol: the rule covers both, so the inline twin is a swap plus a rename.
+  'src/quotedO3.ts': [
+    ...CLIENT,
+    'export async function quotedParam() {',
+    create(`model: 'o3-mini', "max_tokens": 2`),
+    '}',
+    'export async function quotedBoth() {',
+    create(`"model": "o3-mini", "max_tokens": 2`),
+    '}',
+    '',
+  ].join('\n'),
+  // A fallback with no model-dependent parameter beside it is swapped, as before.
+  'src/fallbackFree.ts': [
+    ...CLIENT,
+    'export async function viaFallback() {',
+    create("model: process.env.MODEL || 'gpt-4-0613'"),
+    '}',
+    '',
+  ].join('\n'),
+  // `O3_MODEL!` is read as `O3_MODEL` by the sink rule and the param pass alike: swap plus rename.
+  'src/nonNullO3.ts': [
+    ...CLIENT,
+    "const O3_MODEL = 'o3-mini';",
+    'export async function viaNonNull() {',
+    create('model: O3_MODEL!, max_tokens: 6'),
+    '}',
+    '',
+  ].join('\n'),
+  // A model table written with quoted keys is data: no swap, and its keys are not renamed.
+  'src/quotedCatalog.ts': [
+    'export const MODELS = [{ "model": "o3-mini", "max_tokens": 100000, "label": "o3 mini" }];',
+    '',
+  ].join('\n'),
+};
+/**
+ * Objects that are not requests, whose model the param pass can read only through a shape 0.5.9
+ * did not read: a `{ model }` shorthand, a cast, `!`. Nothing is swapped in them, so their keys
+ * stay as written. Review of 947967d (2026-10-10): each was renamed or lost `temperature`, and
+ * `maxFor()` then read `undefined`. 0.5.9 made no edit.
+ */
+const CATALOG_CONTROLS: Record<string, string> = {
+  'src/presets.js': [
+    "const model = 'gpt-5.6-sol';",
+    "export const PRESETS = [{ name: 'Short answer', model, max_tokens: 256 }, { name: 'Long', model, max_tokens: 4096 }];",
+    'export function maxFor(i) { return PRESETS[i].max_tokens; }',
+    '',
+  ].join('\n'),
+  'src/settings.ts': [
+    "const model = 'claude-opus-4-8';",
+    "export const settings = { model, temperature: 0.7, label: 'Opus' };",
+    '',
+  ].join('\n'),
+  'src/castCatalog.ts': [
+    "const SOL = 'gpt-5.6-sol';",
+    "export const ROWS = [{ model: 'o3-mini' as string, max_tokens: 100000, label: 'o3' }];",
+    "export const BANG = [{ model: SOL!, max_tokens: 4096, label: 'sol' }];",
+    '',
+  ].join('\n'),
+};
+
+function makeBypassRepo(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'mendr-bypass-'));
+  created.push(dir);
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'bypass-fixture' }, null, 2));
+  mkdirSync(join(dir, 'src'));
+  const files = { ...BYPASS_SHAPES, ...BYPASS_CONTROLS, ...SHADOW_CONTROLS, ...CATALOG_CONTROLS };
+  for (const [file, text] of Object.entries(files)) {
+    writeFileSync(join(dir, file), text);
+  }
+  return dir;
+}
+
+async function runMendr(command: string, args: string[]): Promise<{ exitCode: number; stdout: string }> {
+  const result = await execa('tsx', ['src/cli.ts', command, ...args], {
+    cwd: MENDR_ROOT,
+    preferLocal: true,
+    reject: false,
+    env: { ...process.env, MENDR_REGISTRY_MAX_AGE_DAYS: '100000' },
+  });
+  return { exitCode: result.exitCode ?? 0, stdout: result.stdout };
+}
+
+describe('a model id read through a const, a shorthand, a cast, quoted keys or a fallback', () => {
+  const HELD = 'param_behaviour_change';
+  /** file -> the held lines: each shape, then its inline twin. */
+  const EXPECTED_HELD: Record<string, number[]> = {
+    'src/shorthand.ts': [4, 8],
+    'src/declaration.ts': [3, 8],
+    'src/cast.ts': [4, 7],
+    'src/quoted.ts': [4, 7, 10],
+    'src/mixed.ts': [3],
+    'src/paramDefault.ts': [4],
+    'src/computed.ts': [4, 7],
+    'src/fallback.ts': [3, 5, 11],
+    'src/ctorAssigned.ts': [3],
+  };
+
+  it('is Tier B with its inline twin\'s reason, and fix-llm, watch and audit agree', async () => {
+    const repo = makeBypassRepo();
+    const { stdout } = await runFixLlm([repo, '--skip-gates', '--json']);
+    const report = JSON.parse(stdout) as JsonReport & { tierA: { file: string; from: string; to: string }[] };
+    const heldAt = (file: string) => report.tierB.filter((f) => f.file === file).map((f) => [f.line, f.reason]);
+    for (const [file, lines] of Object.entries(EXPECTED_HELD)) {
+      expect(heldAt(file), file).toEqual(lines.map((l) => [l, HELD]));
+    }
+    expect(report.tierB).toHaveLength(17);
+    // The controls stay automatic: the const nobody passes a parameter beside, the quoted o3
+    // calls (swapped and renamed, like their twin), a fallback with no parameter beside it, a
+    // const read through `!` (swapped and renamed), and every declaration whose only call with
+    // `max_tokens` reads another binding of the same name. The quoted model table is data.
+    expect(report.tierA.map((a) => [a.file, a.from, a.to]).sort()).toEqual(
+      [
+        ['src/free.ts', 'gpt-4-0613', 'gpt-5.6-sol'],
+        ['src/quotedO3.ts', 'o3-mini', 'gpt-5.6-sol'],
+        ['src/quotedO3.ts', 'o3-mini', 'gpt-5.6-sol'],
+        ['src/quotedO3.ts', 'max_tokens', 'max_completion_tokens'],
+        ['src/quotedO3.ts', 'max_tokens', 'max_completion_tokens'],
+        ['src/fallbackFree.ts', 'gpt-4-0613', 'gpt-5.6-sol'],
+        ['src/nonNullO3.ts', 'o3-mini', 'gpt-5.6-sol'],
+        ['src/nonNullO3.ts', 'max_tokens', 'max_completion_tokens'],
+        ...Object.keys(SHADOW_CONTROLS).map((file) => [file, 'gpt-4-0613', 'gpt-5.6-sol']),
+      ].sort(),
+    );
+    expect(report.tierB.some((f) => f.file === 'src/quotedCatalog.ts')).toBe(false);
+    // An object that is not a request gets no param transform, and holds nothing.
+    expect(report.tierA.filter((a) => a.file in CATALOG_CONTROLS)).toEqual([]);
+    expect(report.tierB.filter((f) => f.file in CATALOG_CONTROLS)).toEqual([]);
+
+    // The human report gives each shape the scanner's own sentence, the same as its twin's.
+    const human = await runFixLlm([repo, '--skip-gates']);
+    const sentences = new Map<string, string>();
+    for (const block of human.stdout.split(/\n(?=src\/\S+:\d+:\d+\n)/)) {
+      const at = /^src\/\S+:\d+:\d+/.exec(block);
+      const sentence = /\n\s+- (moving from .*)\n/.exec(block);
+      if (at && sentence) sentences.set(at[0], sentence[1]);
+    }
+    expect([...sentences.keys()].sort()).toEqual(report.tierB.map((f) => `${f.file}:${f.line}:${f.column}`).sort());
+    const distinct = [...new Set(sentences.values())];
+    expect(distinct).toHaveLength(1);
+    expect(distinct[0]).toContain('moving from gpt-4-0613 to gpt-5.6-sol changes what this call asks for');
+
+    // watch and audit read the same scan through the same classifier.
+    const watch = JSON.parse((await runMendr('watch', [repo, '--json', '--no-exposure-file'])).stdout) as {
+      models: { locations: { file: string; line: number; tier: string; reason?: string }[] }[];
+    };
+    const watched = watch.models.flatMap((m) => m.locations).filter((l) => l.file in EXPECTED_HELD);
+    expect(watched.map((l) => `${l.file}:${l.line} ${l.tier} ${l.reason}`).sort()).toEqual(
+      report.tierB.map((f) => `${f.file}:${f.line} B ${f.reason}`).sort(),
+    );
+    const audit = JSON.parse((await runMendr('audit', [repo, '--json'])).stdout) as {
+      investigations: { locations: { selectors: { file: string; line: number; tier: string }[] } }[];
+    };
+    const audited = audit.investigations.flatMap((i) => i.locations.selectors).filter((s) => s.file in EXPECTED_HELD);
+    expect(audited.map((s) => `${s.file}:${s.line} ${s.tier}`).sort()).toEqual(
+      report.tierB.map((f) => `${f.file}:${f.line} B`).sort(),
+    );
+    // ...and agree that each shadow control's declaration is Tier A.
+    const shadowA = Object.keys(SHADOW_CONTROLS).map((file) => `${file} A`).sort();
+    expect(watch.models.flatMap((m) => m.locations).filter((l) => l.file in SHADOW_CONTROLS).map((l) => `${l.file} ${l.tier}`).sort()).toEqual(shadowA);
+    expect(audit.investigations.flatMap((i) => i.locations.selectors).filter((s) => s.file in SHADOW_CONTROLS).map((s) => `${s.file} ${s.tier}`).sort()).toEqual(shadowA);
+  }, 240_000);
+
+  it('under --write, leaves every held shape untouched and still applies the controls', async () => {
+    const repo = makeBypassRepo();
+    writeFileSync(
+      join(repo, 'mendr.config.json'),
+      JSON.stringify({ gates: { typecheck: { required: false }, tests: { required: false } } }),
+    );
+    const { stdout } = await runFixLlm([repo, '--write']);
+    for (const [file, text] of Object.entries(BYPASS_SHAPES)) {
+      expect(readFileSync(join(repo, file), 'utf8'), file).toBe(text);
+    }
+    expect(readFileSync(join(repo, 'src', 'free.ts'), 'utf8')).toBe(
+      BYPASS_CONTROLS['src/free.ts'].replace("'gpt-4-0613'", "'gpt-5.6-sol'"),
+    );
+    const quoted = readFileSync(join(repo, 'src', 'quotedO3.ts'), 'utf8');
+    expect(quoted).toContain(`create({ model: 'gpt-5.6-sol', "max_completion_tokens": 2, messages: [] })`);
+    expect(quoted).toContain(`create({ "model": "gpt-5.6-sol", "max_completion_tokens": 2, messages: [] })`);
+    expect(readFileSync(join(repo, 'src', 'fallbackFree.ts'), 'utf8')).toBe(
+      BYPASS_CONTROLS['src/fallbackFree.ts'].replace("'gpt-4-0613'", "'gpt-5.6-sol'"),
+    );
+    expect(readFileSync(join(repo, 'src', 'nonNullO3.ts'), 'utf8')).toBe(
+      BYPASS_CONTROLS['src/nonNullO3.ts']
+        .replace("'o3-mini'", "'gpt-5.6-sol'")
+        .replace('max_tokens: 6', 'max_completion_tokens: 6'),
+    );
+    expect(readFileSync(join(repo, 'src', 'quotedCatalog.ts'), 'utf8')).toBe(BYPASS_CONTROLS['src/quotedCatalog.ts']);
+    for (const [file, text] of Object.entries(CATALOG_CONTROLS)) {
+      expect(readFileSync(join(repo, file), 'utf8'), file).toBe(text);
+    }
+    // A shadow control's declaration is swapped, and the other binding's call is left as written.
+    for (const [file, text] of Object.entries(SHADOW_CONTROLS)) {
+      expect(readFileSync(join(repo, file), 'utf8'), file).toBe(text.replace("'gpt-4-0613'", "'gpt-5.6-sol'"));
+    }
+    expect(stdout).toContain(`files modified: ${4 + Object.keys(SHADOW_CONTROLS).length}`);
+  }, 180_000);
+});
+
 describe('fix-llm --fail-on', () => {
   it('gates on tierB', async () => {
     const repo = makeRepo();
