@@ -4,9 +4,9 @@ import { basename, join, relative } from 'node:path';
 import type { LlmModelIdDeprecation, LlmRegistry } from '../types.js';
 import { loadProject } from '../usage/scanRepo.js';
 import { applyLlmFixesToProject } from '../fix/llmFix.js';
-import { findModelIdLiterals } from '../usage/scanLiterals.js';
+import { findModelIdLiterals, type LiteralMatch } from '../usage/scanLiterals.js';
 import { isVerified } from '../usage/llmRegistry.js';
-import { normalizePath } from '../audit/fingerprint.js';
+import { heldCallsOf, tierBStreams, type HeldCall } from '../report/heldCalls.js';
 import { collectPythonFiles, readPythonSources } from '../python/scanPy.js';
 import { applyPyModelIdFixesToSources } from '../python/fixPy.js';
 import { checkTypes, NO_TYPE_CHECK, unresolvedScopeNote } from '../gates/typecheck.js';
@@ -82,7 +82,13 @@ export interface GateOutcome {
   command?: string;
 }
 
-export type MigrationVerdict = 'verified' | 'failed' | 'inconclusive' | 'no_migration';
+/**
+ * `no_migration` and `held_for_review` both mean nothing was migrated and no gate ran. They differ
+ * in what is left: `no_migration` is a repository with no retiring id in a live or reviewable
+ * position, and `held_for_review` is one where every such id was held for a person (`skipped`
+ * lists them). Only `no_migration` may be read as clean.
+ */
+export type MigrationVerdict = 'verified' | 'failed' | 'inconclusive' | 'no_migration' | 'held_for_review';
 
 export interface MigrationVerification {
   /** Baseline-relative in-memory type-check (TS/JS). */
@@ -127,11 +133,14 @@ export interface MigrationResult {
    */
   paramTransforms: string[];
   /**
-   * What this migration deliberately did NOT touch, and why.
+   * What this migration deliberately did NOT touch, and why: every Tier B occurrence, with the
+   * reason code `fix-llm` and `audit` give it (report/heldCalls.ts).
    *
    * The most dangerous thing a migration PR can imply is completeness. A repo can have a verified
    * swap in one file and four retiring ids nobody may auto-rewrite in others, and a body that
-   * lists only the swap reads as "that was all of it".
+   * lists only the swap reads as "that was all of it". Until this listed every held call, a
+   * repository whose only findings were held calls read "NO MIGRATION" with this list empty, and
+   * the Action reported it clean.
    */
   skipped: SkippedItem[];
   changedFiles: string[];
@@ -184,14 +193,11 @@ export function restrictRegistry(registry: LlmRegistry, only: string[] | undefin
   return registry.filter((e) => e.kind !== 'model_id' || wanted.has(`${e.provider}/${e.deprecated}`.toLowerCase()) || wanted.has(e.deprecated.toLowerCase()));
 }
 
-/** One thing the migration saw and left alone, with the reason a reviewer needs. */
-export interface SkippedItem {
-  file: string;
-  line: number;
-  model: string;
-  /** Why it was not rewritten, in the reader's terms. */
-  reason: string;
-}
+/**
+ * One thing the migration saw and left alone, with the reason a reviewer needs: file, line, the id
+ * as written, the Tier B reason `code`, and `reason`, the scanner's sentence (see HeldCall).
+ */
+export type SkippedItem = HeldCall;
 
 interface PlannedMigration {
   patchedFiles: PatchedFile[];
@@ -218,10 +224,10 @@ interface PlannedMigration {
   patchedProject: ReturnType<typeof loadProject>;
 }
 
-function tsMigrations(baselineProject: ReturnType<typeof loadProject>, registry: LlmRegistry, repoPath: string, now: Date): ModelMigration[] {
+function tsMigrations(baselineMatches: LiteralMatch[], repoPath: string, now: Date): ModelMigration[] {
   // The SAME predicate the codemod uses (fix/modelId.ts): only model_arg
   // positions with a verified successor and a real change.
-  const swaps = findModelIdLiterals(baselineProject, registry, repoPath).filter(
+  const swaps = baselineMatches.filter(
     (m) => m.position === 'model_arg' && isVerified(m.deprecation) && m.value !== m.deprecation.replacement,
   );
   return groupMigrations(
@@ -303,7 +309,10 @@ async function plan(
     originalText: baselineProject.getSourceFileOrThrow(absPath).getFullText(),
   }));
   const tsPatchedFiles: PatchedFile[] = tsWrites.map(({ absPath, newText }) => ({ absPath, newText }));
-  const migrations = tsMigrations(baselineProject, registry, repoPath, now);
+  // One scan of the unpatched baseline feeds both the swap list and the held list, as one scan
+  // feeds fix-llm's tiers.
+  const baselineMatches = findModelIdLiterals(baselineProject, registry, repoPath);
+  const migrations = tsMigrations(baselineMatches, repoPath, now);
 
   // Python: read sources and apply the same verified-only swap set.
   const pySources = readPythonSources(collectPythonFiles(repoPath));
@@ -330,25 +339,12 @@ async function plan(
   const writes = [...tsWrites, ...pyWrites];
   const changedFiles = patchedFiles.map((f) => relative(repoPath, f.absPath).replace(/\\/g, '/'));
   const diff = [tsResult.diff, pyApplies ? pyResult.diff : ''].filter(Boolean).join('\n');
-  // Everything the codemod saw and left alone, in the reader's terms. `blockedMatches` are live
-  // model-arg positions whose replacement the registry will not vouch for; `azureMatches` are
-  // deployment aliases that are never safe to rewrite blind.
-  const skipped: SkippedItem[] = [
-    ...tsResult.blockedMatches.map((b) => ({
-      file: normalizePath(relative(repoPath, b.location.file)),
-      line: b.location.line,
-      model: b.value,
-      reason:
-        `the registry will not vouch for "${b.replacement}" as its replacement ` +
-        `(${b.status}) — human review, never an automatic rewrite`,
-    })),
-    ...tsResult.azureMatches.map((a) => ({
-      file: normalizePath(relative(repoPath, a.location.file)),
-      line: a.location.line,
-      model: a.value,
-      reason: "an Azure deployment alias - the name is yours, not the provider's, so it is never rewritten",
-    })),
-  ];
+  // Everything the codemod saw and left alone, in the reader's terms: every Tier B occurrence in
+  // both languages, from the same streams fix-llm reports (report/heldCalls.ts). This used to be
+  // the TypeScript blocked replacements and Azure aliases only, so a held call (a parameter the
+  // replacement treats differently, a fine-tune, an example tree, an untraced const) and every
+  // Python finding were left out, and a run whose only findings were held calls read as clean.
+  const skipped: SkippedItem[] = heldCallsOf(tierBStreams(baselineMatches, pyResult), repoPath);
   return {
     patchedFiles,
     tsPatchedFiles,
@@ -409,6 +405,9 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
   const planned = await plan(repoPath, restrictRegistry(registry, only), now, only.length > 0);
 
   if (planned.patchedFiles.length === 0) {
+    // Nothing to migrate is only clean when nothing was held either. A run whose retiring ids
+    // were all held for a person gets its own verdict, so no consumer can read it as clean.
+    const held = planned.skipped.length;
     return {
       ...base,
       migrated: false,
@@ -423,10 +422,16 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
         tests: outcome('not_run'),
         eval: outcome('not_run'),
         behavioralTested: false,
-        verdict: 'no_migration',
+        verdict: held > 0 ? 'held_for_review' : 'no_migration',
       },
       prReady: false,
-      notes: [...onlyNote, 'No verified Tier-A migration was found. Nothing to apply and nothing to verify.', ...registryNotes],
+      notes: [
+        ...onlyNote,
+        held > 0
+          ? `Nothing could be migrated automatically: ${heldCountPhrase(held)} a retiring model id that Mendr held for a person to review (listed under "Held for review"). Nothing was applied and nothing was verified.`
+          : 'No verified Tier-A migration was found. Nothing to apply and nothing to verify.',
+        ...registryNotes,
+      ],
     };
   }
 
@@ -602,6 +607,11 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
     notes,
     ...(applied !== undefined ? { applied } : {}),
   };
+}
+
+/** "1 place in the code uses" / "3 places in the code use": the subject of every held sentence. */
+export function heldCountPhrase(n: number): string {
+  return n === 1 ? '1 place in the code uses' : `${n} places in the code use`;
 }
 
 function relativeSafe(root: string, abs: string): string {

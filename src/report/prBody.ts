@@ -99,12 +99,24 @@ function gateLines(v: MigrationResult['verification']): string[] {
   ];
 }
 
+/**
+ * How many held items the body lists one by one. GitHub refuses a pull request body over 65,536
+ * characters, and the action puts the full report (which lists every one) under it as well.
+ */
+export const PR_BODY_MAX_SKIPPED = 50;
+
+// Every Tier B occurrence, not only the two kinds this used to carry: a held call (a parameter the
+// replacement treats differently, a fine-tune, an example tree, an untraced const) is the kind a
+// reviewer most needs to see, because merging this pull request does not resolve it.
 function skippedLines(skipped: readonly SkippedItem[]): string[] {
   if (skipped.length === 0) return [];
+  const shown = skipped.slice(0, PR_BODY_MAX_SKIPPED);
+  const more = skipped.length - shown.length;
   return [
     '',
-    `**Left alone (${skipped.length})** — retiring ids Mendr found and did **not** rewrite:`,
-    ...skipped.map((s) => `- \`${s.file}:${s.line}\` \`${s.model}\` — ${s.reason}`),
+    `**Left alone (${skipped.length})** — retiring ids Mendr found and did **not** rewrite. Each needs a person; merging this pull request does not resolve them:`,
+    ...shown.map((s) => `- \`${s.file}:${s.line}\` \`${s.model}\`${s.code ? ` (\`${s.code}\`)` : ''} — ${s.reason}`),
+    ...(more > 0 ? [`- … and ${more} more, each listed under *Held for review* in the full report below and in the job summary.`] : []),
   ];
 }
 

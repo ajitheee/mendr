@@ -145,6 +145,29 @@ describe('what else changed, and what was left?', () => {
     expect(out).toContain('gemini-2.0-flash');
     expect(out).toContain('quarantined');
   });
+
+  // Every held call is in `skipped` now, so a large repository can hold many. GitHub refuses a
+  // body over 65,536 characters; the body names the first ones and says where the rest are.
+  it('names a held call with its reason code, and bounds a long list with a pointer to the rest', () => {
+    const held = (i: number) => ({
+      file: `src/f${i}.ts`,
+      line: i,
+      column: 1,
+      model: 'gpt-4-0613',
+      replacement: 'gpt-5.6-sol',
+      code: 'param_behaviour_change' as const,
+      reason: 'the max_tokens rule changes what this call asks for',
+      language: 'ts' as const,
+    });
+    const one = render({ skipped: [held(1)] });
+    expect(one).toContain('- `src/f1.ts:1` `gpt-4-0613` (`param_behaviour_change`) — the max_tokens rule changes what this call asks for');
+
+    const many = render({ skipped: Array.from({ length: 120 }, (_, i) => held(i + 1)) });
+    expect(many).toContain('**Left alone (120)**');
+    expect(many).toContain('src/f50.ts:50');
+    expect(many).not.toContain('src/f51.ts:51');
+    expect(many).toContain('… and 70 more, each listed under *Held for review* in the full report below and in the job summary.');
+  });
 });
 
 describe('verification is reported in the reviewer\'s words', () => {

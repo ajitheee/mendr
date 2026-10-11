@@ -1,10 +1,10 @@
 import { CHECK_LABEL, CHECK_MARK, type CheckStatus } from '../gates/status.js';
 import { sanitize, secretValuesFromEnv } from '../redact/sanitize.js';
-import type { GateOutcome, MigrationResult, MigrationVerdict } from './migrate.js';
+import type { GateOutcome, MigrationResult, MigrationVerdict, SkippedItem } from './migrate.js';
 
 // The human view of a migration result. Verdict first (a reader must see
 // "verified" or "failed" before the diff), then the swaps, then each gate's
-// outcome, the honest caveats, and finally the diff.
+// outcome, the honest caveats, what was held for a person, and finally the diff.
 
 const MARK: Record<CheckStatus, string> = CHECK_MARK;
 
@@ -12,8 +12,27 @@ const VERDICT_LINE: Record<MigrationVerdict, string> = {
   verified: 'VERIFIED — a build and/or the existing tests passed in the sandbox and no gate rejected the migration. Ready to open as a reviewed PR (never auto-merged).',
   failed: 'FAILED — a gate rejected the migration. It is shown for inspection only; do not apply it.',
   inconclusive: 'INCONCLUSIVE — no build, test or eval actually ran in the sandbox, so nothing executable was proven. The diff is shown for review only.',
-  no_migration: 'NO MIGRATION — no verified Tier-A swap was found. Nothing to apply.',
+  no_migration: 'NO MIGRATION — no verified Tier-A swap was found, and nothing was held for review. Nothing to apply.',
+  held_for_review: 'HELD FOR REVIEW — nothing was migrated, and this repository is not clean: every retiring model id found needs a person (listed below).',
 };
+
+/**
+ * The calls a person has to decide on, one per line, with the reason code and the scanner's own
+ * sentence. Printed whether or not a migration happened: a report that lists only what it changed
+ * implies that was all there was.
+ */
+function heldLines(held: readonly SkippedItem[]): string[] {
+  if (held.length === 0) return [];
+  const out = ['', `Held for review (${held.length}) — retiring model ids Mendr found and did not change, because a person has to decide:`];
+  for (const h of held) {
+    const code = h.code ? `  [${h.code}]` : '';
+    const to = h.replacement ? ` (replacement on record: ${h.replacement})` : '';
+    out.push(`  ${h.file}:${h.line}  ${h.model}${to}${code}`);
+    out.push(`    ${h.reason}`);
+  }
+  out.push('Run `mendr fix-llm` or `mendr audit` on this repository for the evidence behind each one.');
+  return out;
+}
 
 function gateRow(label: string, g: GateOutcome): string {
   const status = CHECK_LABEL[g.status];
@@ -32,9 +51,13 @@ export function renderMigrationReport(r: MigrationResult): string[] {
   }
 
   if (!r.migrated) {
-    lines.push(VERDICT_LINE.no_migration);
+    const held = r.skipped ?? [];
+    // An artifact from before held_for_review existed can still say no_migration over a
+    // non-empty list; the list decides, so it never prints as clean.
+    lines.push(held.length > 0 ? VERDICT_LINE.held_for_review : VERDICT_LINE.no_migration);
     for (const note of r.notes) lines.push(`  ${note}`);
-    return lines;
+    lines.push(...heldLines(held));
+    return published(lines);
   }
 
   lines.push(`Migration: ${r.migrations.length} model${r.migrations.length === 1 ? '' : 's'} across ${r.changedFiles.length} file${r.changedFiles.length === 1 ? '' : 's'}`);
@@ -51,6 +74,7 @@ export function renderMigrationReport(r: MigrationResult): string[] {
   lines.push(`Verdict: ${VERDICT_LINE[r.verification.verdict]}`);
   lines.push(`PR-ready: ${r.prReady ? 'yes' : 'no'}`);
   for (const note of r.notes) lines.push(`note: ${note}`);
+  lines.push(...heldLines(r.skipped ?? []));
 
   if (r.diff) {
     lines.push('');
@@ -58,17 +82,25 @@ export function renderMigrationReport(r: MigrationResult): string[] {
     lines.push('');
     for (const l of r.diff.split('\n')) lines.push(l);
   }
-  // ONE CHOKEPOINT, and the last thing this function does.
-  //
-  // What this report becomes: mendr-action writes it to a file, then publishes
-  // that same file to the Actions log, the job summary AND the body of a public
-  // pull request. So everything above — the diff's verbatim source lines and
-  // their three lines of context, each gate's captured command output, every
-  // note — is published. Sanitizing at the render boundary covers all of it at
-  // once, including fields added later by someone who never read this comment.
-  //
-  // Safe here precisely because this is the HUMAN rendering. The machine copies
-  // are untouched: `--patch` and the `--write` path use `r.diff` directly, and
-  // a redacted diff would not apply.
+  return published(lines);
+}
+
+/**
+ * ONE CHOKEPOINT, and every return of renderMigrationReport goes through it.
+ *
+ * What this report becomes: mendr-action writes it to a file, then publishes
+ * that same file to the Actions log, the job summary AND the body of a public
+ * pull request. So everything in it — the diff's verbatim source lines and
+ * their three lines of context, each gate's captured command output, every
+ * note, every held call's sentence — is published. Sanitizing at the render
+ * boundary covers all of it at once, including fields added later by someone
+ * who never read this comment. (The no-migration report used to return before
+ * reaching it; it carried no source text then, and now it lists held calls.)
+ *
+ * Safe here precisely because this is the HUMAN rendering. The machine copies
+ * are untouched: `--patch` and the `--write` path use `r.diff` directly, and
+ * a redacted diff would not apply.
+ */
+function published(lines: string[]): string[] {
   return sanitize(lines.join('\n'), secretValuesFromEnv(process.env)).split('\n');
 }
