@@ -864,6 +864,24 @@ const BYPASS_SHAPES: Record<string, string> = {
     '}',
     '',
   ].join('\n'),
+  // The field is assigned from the constructor's own parameter, and `new Bot(model)` feeds it. Review
+  // of 947967d (2026-10-10): this was Tier A, while its `constructor(private model: string)` twin
+  // was held.
+  'src/ctorAssigned.ts': [
+    ...CLIENT,
+    "const model = 'gpt-4-0613';",
+    'export class Bot {',
+    '  private model: string;',
+    '  constructor(model: string) {',
+    '    this.model = model;',
+    '  }',
+    '  async ask() {',
+    create('model: this.model, max_tokens: 5'),
+    '  }',
+    '}',
+    'export const bot = new Bot(model);',
+    '',
+  ].join('\n'),
 };
 /**
  * Controls that stay Tier A because the call passing `max_tokens` reads a DIFFERENT binding of the
@@ -944,6 +962,20 @@ const SHADOW_CONTROLS: Record<string, string> = {
     '  async ask() {',
     create('model: this.model, max_tokens: 5'),
     '  }',
+    '}',
+    '',
+  ].join('\n'),
+  // `config.model = …` is read back only as `config.model`; b's own parameter is never passed it.
+  // Review of 947967d (2026-10-10): this was held with b's `max_tokens`.
+  'src/shadowConfig.ts': [
+    ...CLIENT,
+    'const config: { model?: string } = {};',
+    "config.model = 'gpt-4-0613';",
+    'export async function a() {',
+    create('model: config.model!'),
+    '}',
+    'export async function b(model: string) {',
+    create('model, max_tokens: 5'),
     '}',
     '',
   ].join('\n'),
@@ -1055,6 +1087,7 @@ describe('a model id read through a const, a shorthand, a cast, quoted keys or a
     'src/paramDefault.ts': [4],
     'src/computed.ts': [4, 7],
     'src/fallback.ts': [3, 5, 11],
+    'src/ctorAssigned.ts': [3],
   };
 
   it('is Tier B with its inline twin\'s reason, and fix-llm, watch and audit agree', async () => {
@@ -1065,7 +1098,7 @@ describe('a model id read through a const, a shorthand, a cast, quoted keys or a
     for (const [file, lines] of Object.entries(EXPECTED_HELD)) {
       expect(heldAt(file), file).toEqual(lines.map((l) => [l, HELD]));
     }
-    expect(report.tierB).toHaveLength(16);
+    expect(report.tierB).toHaveLength(17);
     // The controls stay automatic: the const nobody passes a parameter beside, the quoted o3
     // calls (swapped and renamed, like their twin), a fallback with no parameter beside it, a
     // const read through `!` (swapped and renamed), and every declaration whose only call with

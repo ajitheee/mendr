@@ -710,15 +710,27 @@ export function consumerRequestKeys(call: CallExpression, name: string, decl?: N
 // The question is narrow — can the `model` a consumer passes be shown to be some OTHER binding
 // than the declaration — so the rules below only ever DROP a consumer on a positive answer:
 //   - it resolves to a different variable, parameter or destructured binding that is not fed the
-//     declaration (by its initializer or default, by `this` destructuring, or, for a parameter of
-//     a named function, by an argument at one of that function's calls in this file);
+//     declaration (by its initializer or default, by destructuring, or, for a parameter of a named
+//     function or class, by an argument at one of its calls in this file, or by a call it is
+//     handed to beside the value). Feeding is followed through other bindings: `const m = MODEL;
+//     ask(m)` feeds ask's parameter, and so does `new Bot(MODEL)` a field the constructor assigns
+//     from its own parameter;
 //   - it reads `this.<name>` while the declaration is a plain variable, and no member of that
-//     class is initialised or assigned from the declaration.
+//     class is initialised or assigned from the declaration;
+//   - it is a plain name while the declaration writes a property of another object
+//     (`config.model = '…'`), and the binding that name resolves to is not fed a `.model` read.
 // Anything unresolved, and every kind of declaration not listed here, keeps the consumer: the
 // conservative direction (hold) is the one name matching already took.
 
-/** What reading a declaration looks like: a variable binding, `this.<name>`, or not known. */
-type DeclarationTarget = { kind: 'variable'; binding: Node } | { kind: 'member' } | { kind: 'unknown' };
+/**
+ * What reading a declaration looks like: a variable binding, `this.<name>`, a property of an object
+ * other than `this` (`config.model = '…'`, read back only through a `.model` read), or not known.
+ */
+type DeclarationTarget =
+  | { kind: 'variable'; binding: Node }
+  | { kind: 'member' }
+  | { kind: 'property' }
+  | { kind: 'unknown' };
 
 function declarationTarget(decl: Node): DeclarationTarget {
   if (Node.isVariableDeclaration(decl)) return { kind: 'variable', binding: decl };
@@ -728,6 +740,10 @@ function declarationTarget(decl: Node): DeclarationTarget {
     const left = decl.getLeft();
     const binding = Node.isIdentifier(left) ? lexicalBindingOf(left, left.getText()) : undefined;
     if (binding) return { kind: 'variable', binding };
+    // `config.model = '…'`: only a `.model` read can give the value back. (Review of 947967d,
+    // 2026-10-10: it was 'unknown', so a function's own `model` parameter, which can never read
+    // config.model, held the declaration with its own `max_tokens`.)
+    if (Node.isPropertyAccessExpression(left)) return { kind: 'property' };
   }
   return { kind: 'unknown' };
 }
@@ -739,14 +755,16 @@ function declarationTarget(decl: Node): DeclarationTarget {
 export function consumerReadsDeclaration(value: Node, decl: Node, name: string): boolean {
   const target = declarationTarget(decl);
   if (target.kind === 'unknown') return true;
+  const seen = new Set<Node>();
   if (Node.isPropertyAccessExpression(value)) {
-    // `this.<name>`: the member itself, or a member a plain variable feeds.
-    return target.kind === 'member' || memberFedBy(value, target, name);
+    // `this.<name>`: the member itself, or a member a plain variable feeds. For `config.model = …`,
+    // `this` may be that object, so it counts.
+    return target.kind !== 'variable' || memberFedBy(value, target, name, seen);
   }
   const binding = lexicalBindingOf(value, name);
   if (!binding) return true;
   if (target.kind === 'variable' && binding === target.binding) return true;
-  return bindingFedBy(binding, target, name);
+  return bindingFedBy(binding, target, name, seen);
 }
 
 /** Is `n` a read of `this.<name>`? */
@@ -754,39 +772,58 @@ function isThisRead(n: Node, name: string): boolean {
   return Node.isPropertyAccessExpression(n) && Node.isThisExpression(n.getExpression()) && n.getName() === name;
 }
 
-/** Does `expr` hand on the declaration's value: one of its leaves, through wrappers and fallbacks, reads it? */
-function readsDeclaration(expr: Node, target: DeclarationTarget, name: string): boolean {
+/**
+ * Does `expr` hand on the declaration's value: one of its leaves, through wrappers and fallbacks,
+ * reads it, or names another binding that is fed it (`const m = MODEL; ask(m)`)? `seen` holds the
+ * bindings already asked about in this query, so a recursive function ends the walk.
+ */
+function readsDeclaration(expr: Node, target: DeclarationTarget, name: string, seen: Set<Node>): boolean {
   return leavesOf(expr).some((leaf) => {
     const l = unwrapValueWrappers(leaf);
-    if (target.kind === 'member') return isThisRead(l, name);
-    if (target.kind !== 'variable' || !Node.isIdentifier(l)) return false;
+    if (Node.isPropertyAccessExpression(l)) {
+      if (target.kind === 'member') return isThisRead(l, name);
+      // `x.model` on any object: it may be the object `config.model = …` wrote.
+      return target.kind === 'property' && l.getName() === name;
+    }
+    if (!Node.isIdentifier(l)) return false;
     const b = lexicalBindingOf(l, l.getText());
-    return b === target.binding || (b === undefined && l.getText() === name);
+    // A name nothing in the file binds is a global, and may be the declaration (never `this.<name>`).
+    if (b === undefined) return target.kind !== 'member' && l.getText() === name;
+    if (target.kind === 'variable' && b === target.binding) return true;
+    return bindingFedBy(b, target, name, seen);
   });
 }
 
 /**
  * Is a binding other than the declaration fed the declaration's value? By its initializer or
- * default (`const m = MODEL`, `chat(model = this.model)`), by destructuring `this`
- * (`const { model } = this`), or, for a parameter, by an argument at a call of its function.
+ * default (`const m = MODEL`, `chat(model = this.model)`), by destructuring (`const { model } =
+ * this`), or, for a parameter, by an argument at a call of its function.
  */
-function bindingFedBy(binding: Node, target: DeclarationTarget, name: string): boolean {
+function bindingFedBy(binding: Node, target: DeclarationTarget, name: string, seen: Set<Node>): boolean {
+  if (seen.has(binding)) return false;
+  seen.add(binding);
   if (Node.isVariableDeclaration(binding) || Node.isParameterDeclaration(binding) || Node.isBindingElement(binding)) {
     const init = binding.getInitializer();
-    if (init && readsDeclaration(init, target, name)) return true;
+    if (init && readsDeclaration(init, target, name, seen)) return true;
   }
-  if (Node.isParameterDeclaration(binding)) return parameterFedBy(binding, target, name);
-  if (Node.isBindingElement(binding)) return destructuredFromThis(binding, target, name);
+  if (Node.isParameterDeclaration(binding)) return parameterFedBy(binding, target, name, seen);
+  if (Node.isBindingElement(binding)) return destructuredFrom(binding, target, name);
   return false;
 }
 
-/** `const { model } = this` (or `{ model: m }`) reads the member `model`. */
-function destructuredFromThis(el: Node, target: DeclarationTarget, name: string): boolean {
-  if (target.kind !== 'member' || !Node.isBindingElement(el)) return false;
+/**
+ * `const { model } = this` (or `{ model: m }`) reads the member `model`. For `config.model = …`,
+ * destructuring `model` out of any object, a parameter's pattern included, may read it back.
+ */
+function destructuredFrom(el: Node, target: DeclarationTarget, name: string): boolean {
+  if (!Node.isBindingElement(el)) return false;
   const key = el.getPropertyNameNode()?.getText() ?? el.getName();
+  if (key !== name) return false;
+  if (target.kind === 'property') return true;
+  if (target.kind !== 'member') return false;
   const pattern = el.getParent();
   const owner = pattern?.getParent();
-  if (key !== name || !owner || !Node.isVariableDeclaration(owner)) return false;
+  if (!owner || !Node.isVariableDeclaration(owner)) return false;
   const init = owner.getInitializer();
   return !!init && Node.isThisExpression(unwrapValueWrappers(init));
 }
@@ -796,29 +833,47 @@ function calleeNameOf(fn: Node): string | undefined {
   if (Node.isFunctionDeclaration(fn) || Node.isMethodDeclaration(fn)) return fn.getName();
   if (Node.isConstructorDeclaration(fn)) {
     const cls = fn.getParent();
-    return Node.isClassDeclaration(cls) ? cls.getName() : undefined;
+    if (Node.isClassDeclaration(cls)) return cls.getName();
+    // `const Bot = class { constructor(…) }`, or a named class expression.
+    return Node.isClassExpression(cls) ? (cls.getName() ?? holderName(cls)) : undefined;
   }
-  if (Node.isArrowFunction(fn) || Node.isFunctionExpression(fn)) {
-    let holder = fn.getParent();
-    while (holder && isValueWrapper(holder)) holder = holder.getParent();
-    if (
-      holder &&
-      (Node.isVariableDeclaration(holder) || Node.isPropertyAssignment(holder) || Node.isPropertyDeclaration(holder))
-    ) {
-      const n = holder.getNameNode();
-      return Node.isIdentifier(n) ? n.getText() : undefined;
-    }
+  if (Node.isArrowFunction(fn) || Node.isFunctionExpression(fn)) return holderName(fn);
+  return undefined;
+}
+
+/** The name a value is bound to where it is written: `const ask = …`, `{ ask: … }`, a class field `ask = …`. */
+function holderName(value: Node): string | undefined {
+  let holder = value.getParent();
+  while (holder && isValueWrapper(holder)) holder = holder.getParent();
+  if (
+    holder &&
+    (Node.isVariableDeclaration(holder) || Node.isPropertyAssignment(holder) || Node.isPropertyDeclaration(holder))
+  ) {
+    const n = holder.getNameNode();
+    return Node.isIdentifier(n) ? n.getText() : undefined;
   }
   return undefined;
+}
+
+/** Is `arg` the function itself, handed on by name (`ask`, `this.ask`), not called? */
+function isFunctionReference(arg: Node, callee: string): boolean {
+  const a = unwrapValueWrappers(arg);
+  if (Node.isIdentifier(a)) return a.getText() === callee;
+  return Node.isPropertyAccessExpression(a) && Node.isThisExpression(a.getExpression()) && a.getName() === callee;
 }
 
 /**
  * A parameter of a named function is fed the declaration when a call of that function in this
  * file passes it at the parameter's position: `function ask(model: string) { … }` then
- * `ask(model)`. A spread before that position hides which argument lands there, so it counts.
- * A destructured parameter, or a function with no name to call it by, is not traced.
+ * `ask(model)`, `ask(m)` with `const m = model`, or `new Bot(model)` for a constructor. A spread
+ * before that position hides which argument lands there, so it counts. So does handing the
+ * function to another call beside the value, `withRetry(ask, model)`: which argument that call
+ * passes on is not visible here. A destructured parameter, or a function with no name to call it
+ * by, is not traced. (Review of 947967d, 2026-10-10: the alias, the hand-off and a class
+ * expression's constructor were all read as unfed, and their declaration swapped with
+ * `max_tokens` kept.)
  */
-function parameterFedBy(param: Node, target: DeclarationTarget, name: string): boolean {
+function parameterFedBy(param: Node, target: DeclarationTarget, name: string, seen: Set<Node>): boolean {
   if (!Node.isParameterDeclaration(param) || !Node.isIdentifier(param.getNameNode())) return false;
   const fn = param.getParent();
   if (!fn || !(Node.isFunctionLikeDeclaration(fn) || Node.isFunctionExpression(fn))) return false;
@@ -832,11 +887,17 @@ function parameterFedBy(param: Node, target: DeclarationTarget, name: string): b
       : Node.isPropertyAccessExpression(callee2)
         ? callee2.getName()
         : undefined;
-    if (called !== callee) continue;
     const args = call.getArguments();
+    if (called !== callee) {
+      const handedOn = args.some((a) => isFunctionReference(a, callee));
+      if (handedOn && args.some((a) => !isFunctionReference(a, callee) && readsDeclaration(a, target, name, seen))) {
+        return true;
+      }
+      continue;
+    }
     if (args.slice(0, index + 1).some((a) => Node.isSpreadElement(a))) return true;
     const arg = args[index];
-    if (arg && readsDeclaration(arg, target, name)) return true;
+    if (arg && readsDeclaration(arg, target, name, seen)) return true;
   }
   return false;
 }
@@ -862,25 +923,31 @@ function callsAndNewsOf(sf: SourceFile): Array<CallExpression | NewExpression> {
 
 /**
  * A plain variable reaches `this.<name>` only through the class: a property initialised from it
- * (`model = MODEL`), an assignment `this.model = MODEL`, or a parameter property fed it. `this`
- * outside a class cannot be resolved, so it counts.
+ * (`model = MODEL`), an assignment `this.model = MODEL`, or a parameter property fed it. The
+ * assignment may go through the constructor's own parameter, `constructor(model: string) {
+ * this.model = model }` fed by `new Bot(MODEL)`, as the parameter property is. `this` outside a
+ * class cannot be resolved, so it counts.
  */
-function memberFedBy(read: Node, target: DeclarationTarget, name: string): boolean {
+function memberFedBy(read: Node, target: DeclarationTarget, name: string, seen: Set<Node>): boolean {
   const cls = enclosingClass(read);
   if (!cls || !(Node.isClassDeclaration(cls) || Node.isClassExpression(cls))) return true;
   for (const member of cls.getMembers()) {
     if (Node.isPropertyDeclaration(member) && member.getName() === name) {
       const init = member.getInitializer();
-      if (init && readsDeclaration(init, target, name)) return true;
+      if (init && readsDeclaration(init, target, name, seen)) return true;
     }
     if (Node.isConstructorDeclaration(member)) {
       for (const p of member.getParameters()) {
-        if (p.isParameterProperty() && p.getName() === name && bindingFedBy(p, target, name)) return true;
+        if (p.isParameterProperty() && p.getName() === name && bindingFedBy(p, target, name, seen)) return true;
       }
     }
   }
   for (const assign of cls.getDescendantsOfKind(SyntaxKind.BinaryExpression)) {
-    if (isThisAssignment(assign) && isThisRead(assign.getLeft(), name) && readsDeclaration(assign.getRight(), target, name)) {
+    if (
+      isThisAssignment(assign) &&
+      isThisRead(assign.getLeft(), name) &&
+      readsDeclaration(assign.getRight(), target, name, seen)
+    ) {
       return true;
     }
   }

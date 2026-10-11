@@ -377,6 +377,30 @@ describe('a same-named binding that is not the declaration does not hold it', ()
   const fn = (name: string, params: string, body: string[]) => [`export async function ${name}(${params}) {`, ...body.map((l) => `  ${l}`), '}'];
   const twin = () => verdict([...HEAD, ...fn('t', '', [`return ${create("model: 'gpt-3.5-turbo', max_tokens: 5")};`])].join('\n'), 'gpt-3.5-turbo');
   const FREE = fn('usesConst', '', [`return ${create('model')};`]);
+  /** A class whose constructor assigns the field from its own parameter, and a request that reads the field. */
+  const CTOR_ASSIGNED = [
+    'export class Bot {',
+    '  private model: string;',
+    '  constructor(model: string) { this.model = model; }',
+    `  async ask() { return ${create('model: this.model, max_tokens: 5')}; }`,
+    '}',
+  ];
+  /** The parameter-property form, written as a class expression. */
+  const CLASS_EXPRESSION = [
+    'export const Bot = class {',
+    '  constructor(private model: string) {}',
+    `  async ask() { return ${create('model: this.model, max_tokens: 5')}; }`,
+    '};',
+  ];
+  /** A function whose own `model` parameter reaches a request with `max_tokens`. */
+  const ASK = fn('ask', 'model: string', [`return ${create('model, max_tokens: 5')};`]);
+  const WITH_RETRY = 'declare function withRetry(f: (m: string) => Promise<unknown>, m: string): Promise<unknown>;';
+  /** The declaration is a property of another object, read back as `config.model`. */
+  const CONFIG = [
+    'const config: { model?: string } = {};',
+    "config.model = 'gpt-3.5-turbo';",
+    ...fn('a', '', [`return ${create('model: config.model!')};`]),
+  ];
 
   const controls: Array<[string, string[]]> = [
     ['a parameter of the same name', ["const model = 'gpt-3.5-turbo';", ...FREE, ...fn('usesParam', 'model: string', [`return ${create('model, max_tokens: 5')};`])]],
@@ -416,6 +440,32 @@ describe('a same-named binding that is not the declaration does not hold it', ()
       'a method local beside a class property',
       ['export class Bot {', "  private readonly model = 'gpt-3.5-turbo';", `  async ask() { return ${create('model: this.model')}; }`, "  async summarize() { const model = 'gpt-4.1'; return " + create('model, max_tokens: 200') + '; }', '}'],
     ],
+    // Review of 947967d (2026-10-10): the twins of the fed shapes in `keeps` below, fed another model.
+    [
+      'a constructor parameter assigned to the field, constructed with another model',
+      ["const model = 'gpt-3.5-turbo';", ...FREE, ...CTOR_ASSIGNED, "export const bot = new Bot('gpt-4.1');"],
+    ],
+    ['a constructor parameter assigned to the field, never constructed in the file', ["const model = 'gpt-3.5-turbo';", ...FREE, ...CTOR_ASSIGNED]],
+    [
+      'a class expression constructed with another model',
+      ["const model = 'gpt-3.5-turbo';", ...FREE, ...CLASS_EXPRESSION, "export const bot = new Bot('gpt-4.1');"],
+    ],
+    ['a parameter passed a local set to another model', ["const model = 'gpt-3.5-turbo';", ...FREE, ...ASK, ...fn('run', '', ["const m = 'gpt-4.1';", 'return ask(m);'])]],
+    [
+      'a function handed to another call beside another model',
+      ["const model = 'gpt-3.5-turbo';", ...FREE, ...ASK, WITH_RETRY, ...fn('run', '', ["return withRetry(ask, 'gpt-4.1');"])],
+    ],
+    [
+      'the const handed to a call beside a different function',
+      ["const model = 'gpt-3.5-turbo';", ...FREE, ...ASK, WITH_RETRY, ...fn('other', 'm: string', ['return m;']), ...fn('run', '', ['return withRetry(other, model);'])],
+    ],
+    [
+      'a recursive function that only calls itself',
+      ["const model = 'gpt-3.5-turbo';", ...FREE, ...fn('ask', 'model: string, n: number', ['if (n > 0) return ask(model, n - 1);', `return ${create('model, max_tokens: 5')};`])],
+    ],
+    // `config.model = …` can be read back only through a `.model` read: a function's own parameter,
+    // never passed one, cannot read it. (It was held with b's `max_tokens`.)
+    ['a parameter beside a property assignment `config.model = …`', [...CONFIG, ...fn('b', 'model: string', [`return ${create('model, max_tokens: 5')};`])]],
   ];
   for (const [name, body] of controls) {
     it(`${name}: stays Tier A`, () => {
@@ -438,6 +488,16 @@ describe('a same-named binding that is not the declaration does not hold it', ()
     ['a local initialised from `this.model`', ['export class Bot {', "  model = 'gpt-3.5-turbo';", '  async ask() {', '    const model = this.model ?? "x";', `    return ${create('model, max_tokens: 5')};`, '  }', '}']],
     ['a closure over the const', fn('a', '', ["const model = 'gpt-3.5-turbo';", `const run = async () => ${create('model, max_tokens: 5')};`, 'return run();'])],
     ['an unresolved name in a class method', ['export class Bot {', "  model = 'gpt-3.5-turbo';", `  async ask() { return ${create('model, max_tokens: 5')}; }`, '}']],
+    // Review of 947967d (2026-10-10): each of these was read as unfed, and the const swapped to
+    // gpt-5.6 with `max_tokens` kept. `constructor(private model: string)` was held; its plain twin
+    // that assigns the field was not.
+    ['a constructor parameter assigned to the field, passed the const', ["const model = 'gpt-3.5-turbo';", ...CTOR_ASSIGNED, 'export const bot = new Bot(model);']],
+    ['a class expression\'s parameter property passed the const', ["const model = 'gpt-3.5-turbo';", ...CLASS_EXPRESSION, 'export const bot = new Bot(model);']],
+    ['a parameter passed a local alias of the const', ["const model = 'gpt-3.5-turbo';", ...ASK, ...fn('run', '', ['const m = model;', 'return ask(m);'])]],
+    ['a function handed to another call beside the const', ["const model = 'gpt-3.5-turbo';", ...ASK, WITH_RETRY, ...fn('run', '', ['return withRetry(ask, model);'])]],
+    ['a parameter passed `config.model`', [...CONFIG, ...fn('b', 'model: string', [`return ${create('model, max_tokens: 5')};`]), 'export const go = () => b(config.model!);']],
+    ['a local destructured from `config`', [...CONFIG, ...fn('c', '', ['const { model } = config;', `return ${create('model, max_tokens: 5')};`])]],
+    ['a local initialised from `config.model`', [...CONFIG, ...fn('c', '', ['const model = config.model!;', `return ${create('model, max_tokens: 5')};`])]],
   ];
   for (const [name, body] of keeps) {
     it(`${name}: is held with the inline twin's sentence`, () => {
