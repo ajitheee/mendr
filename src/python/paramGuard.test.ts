@@ -197,6 +197,42 @@ describe('a dict unpacked into the call with **name is read', () => {
     expect(call).toMatchObject({ tier: 'B', reason: 'coupled_param_unverified' });
   }, 60_000);
 
+  // The most common wrapper: a **kwargs parameter whose own keys mendr cannot see, but a key added
+  // to it beside the call is always sent.
+  it('keys added to a **kwargs parameter with setdefault, a subscript or update', async () => {
+    const setdefault = await py(
+      `${OPENAI}\ndef chat(messages, **kwargs):\n    kwargs.setdefault("max_tokens", 512)\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=messages, **kwargs)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(setdefault).toMatchObject({ tier: 'B', reason: 'param_behaviour_change' });
+    expect(setdefault?.sentence).toContain('`max_tokens` becomes `max_completion_tokens`');
+    const subscript = await py(
+      `${OPENAI}\ndef chat(messages, **kwargs):\n    kwargs["temperature"] = 0\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=messages, **kwargs)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(subscript).toMatchObject({ tier: 'B', reason: 'coupled_param_unverified' });
+    expect(subscript?.sentence).toContain('`temperature`');
+    const updated = await py(
+      `${OPENAI}\ndef chat(messages, **kwargs):\n    kwargs.update(top_p=1)\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=messages, **kwargs)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(updated).toMatchObject({ tier: 'B', reason: 'coupled_param_unverified' });
+    expect(updated?.sentence).toContain('`top_p`');
+  }, 60_000);
+
+  it('a key read from or removed from **kwargs, or added to another function\'s kwargs, adds nothing', async () => {
+    const popped = await py(
+      `${OPENAI}\ndef chat(messages, **kwargs):\n    limit = kwargs.pop("max_tokens", None)\n    kwargs.get("temperature")\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=messages, **kwargs)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(popped).toMatchObject({ tier: 'A', position: 'model_arg' });
+    const elsewhere = await py(
+      `${OPENAI}\ndef other(**kwargs):\n    kwargs["max_tokens"] = 5\n    return kwargs\n\ndef chat(messages, **kwargs):\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=messages, **kwargs)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(elsewhere).toMatchObject({ tier: 'A', position: 'model_arg' });
+  }, 60_000);
+
   it('a dict built from another dict (`{**base, ...}`) and one that refers to itself', async () => {
     const v = await py(
       `${OPENAI}\nBASE = {"max_tokens": 20}\n\ndef title(p):\n    params = {**BASE, "stream": False}\n    params = {**params, "user": "u"}\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, **params)\n`,
@@ -240,6 +276,104 @@ describe('a model bound to a name the scanner traces into the call', () => {
       'gpt-3.5-turbo',
     );
     expect(v).toMatchObject({ tier: 'A', position: 'model_arg' });
+  }, 60_000);
+
+  it('a class attribute read as self.model in a method of that class', async () => {
+    const v = await py(
+      `${OPENAI}\nclass Bot:\n    model = "gpt-3.5-turbo"\n\n    def run(self, p):\n        return client.chat.completions.create(model=self.model, messages=p, max_tokens=20)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'B', reason: 'param_behaviour_change' });
+    expect(v?.sentence).toContain('the call on line 8 of this file');
+  }, 60_000);
+});
+
+// Review finding on this guard: the sink trace keys calls by the last name only (`model` for both
+// `model` and `self.judge.model`), and a module binding is in scope everywhere. Reading every such
+// call held a value at a call that never takes it, and the sentence named that call. Only a call
+// whose model is the same reference (the same binding of the name, or `self.<name>` in the same
+// class) is read. Each shape that held wrongly sits next to the shape that still holds.
+describe('a traced model holds only the calls that take that same value', () => {
+  // Line numbers in the sentences count from the two OPENAI lines.
+  const BOT = (runParams: string) =>
+    `${OPENAI}\nclass Bot:\n    def __init__(self, judge):\n        self.model = "gpt-3.5-turbo"\n        self.judge = judge\n\n` +
+    `    def run(self, p):\n        return client.chat.completions.create(model=self.model, messages=p${runParams})\n\n` +
+    `    def grade(self, p):\n        return client.chat.completions.create(model=self.judge.model, messages=p, temperature=0)\n`;
+
+  it('self.model is not held by a call on self.judge.model (it was a Tier A swap in v0.5.9-alpha)', async () => {
+    const v = await py(BOT(''), 'gpt-3.5-turbo');
+    expect(v).toMatchObject({ tier: 'A', position: 'model_arg' });
+  }, 60_000);
+
+  it('self.model is held by its own call, and the sentence names that call, not the self.judge.model one', async () => {
+    const v = await py(BOT(', max_tokens=20'), 'gpt-3.5-turbo');
+    expect(v).toMatchObject({ tier: 'B', reason: 'param_behaviour_change' });
+    expect(v?.sentence).toMatch(/^the call on line 10 of this file takes this value as its model; /);
+    expect(v?.sentence).not.toContain('temperature');
+  }, 60_000);
+
+  const MODULE = (other: string) =>
+    `${OPENAI}model = "gpt-3.5-turbo"\n\ndef title(p):\n    return client.chat.completions.create(model=model, messages=p)\n\n${other}`;
+
+  it('a module binding is not held by a call on another function\'s own `model` parameter', async () => {
+    const v = await py(
+      MODULE('def judge(p, model):\n    return client.chat.completions.create(model=model, messages=p, max_tokens=20)\n'),
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'A', position: 'model_arg' });
+  }, 60_000);
+
+  it('a module binding is not held by a call on `args.model`', async () => {
+    const v = await py(
+      MODULE('def main(args, p):\n    return client.chat.completions.create(model=args.model, messages=p, max_tokens=20)\n'),
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'A', position: 'model_arg' });
+  }, 60_000);
+
+  it('a module binding is not held by a call on a local that shadows it, an import, or a comprehension variable', async () => {
+    const local = await py(
+      MODULE('def judge(p, pick):\n    model = pick()\n    return client.chat.completions.create(model=model, messages=p, max_tokens=20)\n'),
+      'gpt-3.5-turbo',
+    );
+    expect(local).toMatchObject({ tier: 'A', position: 'model_arg' });
+    const imported = await py(
+      MODULE('def judge(p):\n    from settings import model\n    return client.chat.completions.create(model=model, messages=p, max_tokens=20)\n'),
+      'gpt-3.5-turbo',
+    );
+    expect(imported).toMatchObject({ tier: 'A', position: 'model_arg' });
+    const comprehension = await py(
+      MODULE('def sweep(p, models):\n    return [client.chat.completions.create(model=model, messages=p, max_tokens=20) for model in models]\n'),
+      'gpt-3.5-turbo',
+    );
+    expect(comprehension).toMatchObject({ tier: 'A', position: 'model_arg' });
+  }, 60_000);
+
+  it('a module constant is not held by a function whose MODEL parameter default shadows it', async () => {
+    const v = await py(
+      `${OPENAI}MODEL = "gpt-3.5-turbo"\n\ndef title(p):\n    return client.chat.completions.create(model=MODEL, messages=p)\n\n` +
+        `def judge(p, MODEL="gpt-4o"):\n    return client.chat.completions.create(model=MODEL, messages=p, max_tokens=20)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'A', position: 'model_arg' });
+  }, 60_000);
+
+  it('a typed parameter default is held by its own function\'s call', async () => {
+    const v = await py(
+      `${OPENAI}\ndef ask(p, model: str = "gpt-3.5-turbo"):\n    return client.chat.completions.create(model=model, messages=p, max_tokens=20)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'B', reason: 'param_behaviour_change' });
+    expect(v?.sentence).toContain('the call on line 5 of this file');
+  }, 60_000);
+
+  it('a module binding is still held by a call in another function that reads it, and names that call', async () => {
+    const v = await py(
+      MODULE('def judge(p):\n    return client.chat.completions.create(model=model, messages=p, max_tokens=20)\n'),
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'B', reason: 'param_behaviour_change' });
+    expect(v?.sentence).toMatch(/^the call on line 9 of this file takes this value as its model; /);
   }, 60_000);
 });
 
@@ -288,7 +422,7 @@ describe('calls the guard leaves alone', () => {
     expect(v).toMatchObject({ tier: 'A' });
   }, 60_000);
 
-  it('**kwargs from a function parameter adds nothing: mendr cannot see its keys', async () => {
+  it('**kwargs from a function parameter adds none of the caller\'s keys: mendr cannot see them', async () => {
     const v = await py(
       `${OPENAI}\nparams = {"max_tokens": 20}\n\ndef ask(p, **params):\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, **params)\n`,
       'gpt-3.5-turbo',
@@ -299,6 +433,32 @@ describe('calls the guard leaves alone', () => {
       'gpt-3.5-turbo',
     );
     expect(named).toMatchObject({ tier: 'A' });
+    const typed = await py(
+      `${OPENAI}\nfrom typing import Any\nparams = {"max_tokens": 20}\n\ndef ask(p, **params: Any):\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, **params)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(typed).toMatchObject({ tier: 'A' });
+  }, 60_000);
+
+  it('a typed **kwargs: Any parameter still reads the keys added to it', async () => {
+    const v = await py(
+      `${OPENAI}\nfrom typing import Any\n\ndef chat(messages, **kwargs: Any):\n    kwargs.setdefault("max_tokens", 512)\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=messages, **kwargs)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(v).toMatchObject({ tier: 'B', reason: 'param_behaviour_change' });
+  }, 60_000);
+
+  it('a module dict shadowed by an import or a comprehension variable is not read', async () => {
+    const imported = await py(
+      `${OPENAI}\nparams = {"max_tokens": 20}\n\ndef ask(p):\n    from settings import params\n    return client.chat.completions.create(model="gpt-3.5-turbo", messages=p, **params)\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(imported).toMatchObject({ tier: 'A' });
+    const comprehension = await py(
+      `${OPENAI}\nparams = {"max_tokens": 20}\n\ndef sweep(p, variants):\n    return [client.chat.completions.create(model="gpt-3.5-turbo", messages=p, **params) for params in variants]\n`,
+      'gpt-3.5-turbo',
+    );
+    expect(comprehension).toMatchObject({ tier: 'A' });
   }, 60_000);
 
   it('a same-named dict in another function is not the one unpacked', async () => {

@@ -430,15 +430,21 @@ export interface PySinkTarget {
   call: PyNode;
   /** The keyword it arrives under, when it is a keyword argument. */
   kwName?: string;
+  /**
+   * The expression the call takes as its model (`MODEL`, `model`, `self.model`, `self.judge.model`).
+   * Targets are keyed by the last name only, so a reader that must know the call takes THIS value
+   * compares it with the binding (see samePyReference).
+   */
+  value: PyNode;
 }
 
 /** Every traced name mapped to the call(s) it reaches. */
 export function collectPySinkTargets(tree: Tree): Map<string, PySinkTarget[]> {
   const out = new Map<string, PySinkTarget[]>();
-  const add = (name: string, call: PyNode | null, kwName?: string): void => {
+  const add = (name: string, value: PyNode, call: PyNode | null, kwName?: string): void => {
     if (!call) return;
     const list = out.get(name) ?? [];
-    list.push({ call, kwName });
+    list.push({ call, kwName, value });
     out.set(name, list);
   };
   for (const kw of tree.rootNode.descendantsOfType('keyword_argument')) {
@@ -447,7 +453,7 @@ export function collectPySinkTargets(tree: Tree): Map<string, PySinkTarget[]> {
     const value = kw.childForFieldName('value');
     if (!name || !value || !isModelLikeName(name.text)) continue;
     const traced = traceableName(value);
-    if (traced) add(traced, enclosingCall(value), name.text);
+    if (traced) add(traced, value, enclosingCall(value), name.text);
   }
   for (const call of tree.rootNode.descendantsOfType('call')) {
     if (!call) continue;
@@ -458,7 +464,7 @@ export function collectPySinkTargets(tree: Tree): Map<string, PySinkTarget[]> {
     for (const arg of args.namedChildren) {
       if (!arg) continue;
       const traced = traceableName(arg);
-      if (traced) add(traced, call);
+      if (traced) add(traced, arg, call);
     }
   }
   for (const pair of tree.rootNode.descendantsOfType('pair')) {
@@ -468,7 +474,7 @@ export function collectPySinkTargets(tree: Tree): Map<string, PySinkTarget[]> {
     if (!key || !value || !isModelLikeStringKey(key)) continue;
     if (!isEnclosingDictACallArgument(pair)) continue;
     const traced = traceableName(value);
-    if (traced) add(traced, enclosingCall(value));
+    if (traced) add(traced, value, enclosingCall(value));
   }
   return out;
 }
@@ -1309,13 +1315,17 @@ export function classifyPyLiteralPosition(
 //     the call can see: `name = {…}` or `name = dict(…)`, plus keys added by `name["k"] = …`,
 //     `name.update(…)` or `name.setdefault("k", …)` there or beside the call; and the keys of a
 //     `**{…}` or `**dict(…)` written in the call itself;
+//   - for a `**kwargs` (or any other) function parameter, only the keys added to it in that way,
+//     because those are sent whatever the caller passed;
 //   - for a model value inside a dict passed to a call, that dict's own keys, as TypeScript reads
 //     the object literal that holds `model`;
 //   - for a model bound to a name the scanner traced into a call (`MODEL = "…"`, then
-//     `create(model=MODEL, …)`), the keyword arguments of each call in scope that it reaches.
+//     `create(model=MODEL, …)`), the keyword arguments of each call in scope whose model is that
+//     same reference (see samePyReference).
 //
-// A dict mendr cannot see adds nothing: a function parameter (`**kwargs`), an attribute, a call
-// result. The guard never invents a parameter, the same way a spread adds none in TypeScript.
+// A dict mendr cannot see adds nothing of its own: the caller's keys in a function parameter
+// (`**kwargs`), an attribute, a call result. The guard never invents a parameter, the same way a
+// spread adds none in TypeScript.
 
 /** The parameter names one request passes, and the call's line when the model reaches it through a name. */
 interface PyRequestParams {
@@ -1332,32 +1342,125 @@ function pyScopeOf(node: PyNode): PyNode | null {
   return null;
 }
 
-/**
- * The scopes a name used at `use` is looked up in, innermost first, ending with the module (null).
- * A class body is not visible from the functions defined inside it, as Python scopes it.
- */
-function pyLookupChain(use: PyNode): Array<PyNode | null> {
-  let scope = pyScopeOf(use);
-  const chain: Array<PyNode | null> = [scope];
-  while (scope) {
-    let next = pyScopeOf(scope);
-    while (next && next.type === 'class_definition') next = pyScopeOf(next);
-    chain.push(next);
-    scope = next;
-  }
-  return chain;
-}
-
-/** Does this function or lambda take `name` as a parameter (`params`, `params: dict`, `params=None`, `**params`)? */
+/** Does this function or lambda take `name` as a parameter (`params`, `params: dict`, `params=None`, `**params`, `**params: Any`)? */
 function declaresPyParameter(scope: PyNode, name: string): boolean {
   const params = scope.childForFieldName('parameters');
   if (!params) return false;
   for (const p of params.namedChildren) {
     if (!p) continue;
-    const id = p.type === 'identifier' ? p : (p.childForFieldName('name') ?? p.namedChildren.find((c) => c?.type === 'identifier'));
+    let id: PyNode | null | undefined = p.type === 'identifier' ? p : p.childForFieldName('name');
+    if (!id) {
+      // `params: dict` puts the name first; `*args: int` and `**kw: dict` wrap it in a splat pattern.
+      const first = p.namedChildren[0];
+      id =
+        first?.type === 'list_splat_pattern' || first?.type === 'dictionary_splat_pattern'
+          ? first.namedChildren.find((c) => c?.type === 'identifier')
+          : first?.type === 'identifier'
+            ? first
+            : undefined;
+    }
     if (id?.text === name) return true;
   }
   return false;
+}
+
+const PY_COMPREHENSIONS = new Set(['list_comprehension', 'set_comprehension', 'dictionary_comprehension', 'generator_expression']);
+
+/** Does a `for … in` clause of this comprehension bind `name` (`for model in …`, `for _, model in …`)? */
+function comprehensionBinds(comprehension: PyNode, name: string): boolean {
+  const binds = (target: PyNode): boolean => {
+    if (target.type === 'identifier') return target.text === name;
+    if (target.type === 'attribute' || target.type === 'subscript') return false;
+    return target.namedChildren.some((c) => c !== null && binds(c));
+  };
+  return comprehension.namedChildren.some((c) => {
+    const left = c?.type === 'for_in_clause' ? c.childForFieldName('left') : null;
+    return left !== null && binds(left);
+  });
+}
+
+/**
+ * The scope whose binding of the identifier `id` Python reads there: the innermost scope that
+ * assigns, imports or defines the name or takes it as a parameter, looked up outward, with a class
+ * body visible only to code written directly in it. Null is the module. A comprehension that binds
+ * the name in its own `for` clause is returned as its own scope. Undefined when nothing in this file
+ * binds the name, so no value can be tied to it.
+ */
+function pyBindingScopeOf(id: PyNode): PyNode | null | undefined {
+  const name = id.text;
+  const index = pyNameIndex(id.tree);
+  let first = true;
+  for (let n = id.parent; n; n = n.parent) {
+    if (PY_COMPREHENSIONS.has(n.type)) {
+      if (comprehensionBinds(n, name)) return n;
+      continue;
+    }
+    if (n.type !== 'function_definition' && n.type !== 'lambda' && n.type !== 'class_definition') continue;
+    // A class body is not visible from the functions defined inside it.
+    if (n.type === 'class_definition' && !first) continue;
+    first = false;
+    if (index.bindings.has(pyNameKey(name, n))) return n;
+    if (n.type !== 'class_definition' && declaresPyParameter(n, name)) return n;
+  }
+  return index.bindings.has(pyNameKey(name, null)) ? null : undefined;
+}
+
+/** The two scopes are the same one (null is the module). */
+function samePyScope(a: PyNode | null, b: PyNode | null): boolean {
+  return a === null || b === null ? a === b : a.equals(b);
+}
+
+/** The node a model value bound to a name is bound through: the assignment's target, or the parameter's name. */
+function pyBindingTargetOf(literal: PyNode): PyNode | null {
+  const p = literal.parent;
+  if (p?.type === 'assignment') return p.childForFieldName('left');
+  if (p?.type === 'default_parameter' || p?.type === 'typed_default_parameter') return p.childForFieldName('name');
+  return null;
+}
+
+/**
+ * Does `use` read the value bound through `binding`? The sink trace keys a call by the last name
+ * only, so `self.judge.model`, another function's own `model` parameter and `args.model` all reach a
+ * `self.model = "…"` or a module `model = "…"`. Only the same reference counts:
+ *
+ *   - a plain name: the same identifier, resolved to the same binding (not a parameter, local,
+ *     import or comprehension variable that shadows it);
+ *   - a class attribute (`model = "…"` in a class body): also `self.model`, `cls.model` or
+ *     `Bot.model` inside that class;
+ *   - an attribute (`self.model = "…"`): the same attribute path; `self` is the same instance within
+ *     one class, any other root must resolve to the same binding.
+ */
+function samePyReference(binding: PyNode, use: PyNode): boolean {
+  if (binding.type === 'identifier') {
+    if (use.type === 'identifier') {
+      if (use.text !== binding.text) return false;
+      const declared = pyBindingScopeOf(binding);
+      const read = pyBindingScopeOf(use);
+      return declared !== undefined && read !== undefined && samePyScope(declared, read);
+    }
+    const cls = pyBindingScopeOf(binding);
+    if (use.type !== 'attribute' || !cls || cls.type !== 'class_definition') return false;
+    const obj = use.childForFieldName('object');
+    const receivers = ['self', 'cls', cls.childForFieldName('name')?.text];
+    return (
+      use.childForFieldName('attribute')?.text === binding.text &&
+      obj?.type === 'identifier' &&
+      receivers.includes(obj.text) &&
+      enclosingClass(use)?.equals(cls) === true
+    );
+  }
+  if (binding.type !== 'attribute' || use.type !== 'attribute') return false;
+  if (binding.childForFieldName('attribute')?.text !== use.childForFieldName('attribute')?.text) return false;
+  const declaredObj = binding.childForFieldName('object');
+  const readObj = use.childForFieldName('object');
+  if (!declaredObj || !readObj) return false;
+  if (declaredObj.type === 'identifier' && declaredObj.text === 'self') {
+    if (readObj.type !== 'identifier' || readObj.text !== 'self') return false;
+    const declaredClass = enclosingClass(declaredObj);
+    const readClass = enclosingClass(readObj);
+    return declaredClass !== null && readClass !== null && declaredClass.equals(readClass);
+  }
+  return samePyReference(declaredObj, readObj);
 }
 
 /**
@@ -1366,7 +1469,10 @@ function declaresPyParameter(scope: PyNode, name: string): boolean {
  * walk over every binding of that name in the file.
  */
 interface PyNameIndex {
-  /** Name-in-scope keys that are bound: assignments, `for` targets, `with … as` aliases, `:=`, augmented assignments. */
+  /**
+   * Name-in-scope keys that are bound: assignments, `for` targets, `with … as` aliases, `:=`,
+   * augmented assignments, imports, and the names of `def` and `class` statements.
+   */
   bindings: Set<string>;
   /** The right-hand side of each `name = …` with the name alone on the left. */
   values: Map<string, PyNode[]>;
@@ -1441,6 +1547,19 @@ function pyNameIndex(tree: Tree): PyNameIndex {
   for (const w of tree.rootNode.descendantsOfType('named_expression')) {
     const name = w?.childForFieldName('name');
     if (w && name?.type === 'identifier') bind(name.text, w);
+  }
+  // `import a.b` binds `a`; `import c as d` and `from x import z as d` bind `d`; `from x import y` binds `y`.
+  for (const imp of tree.rootNode.descendantsOfType(['import_statement', 'import_from_statement'])) {
+    if (!imp) continue;
+    for (const n of imp.childrenForFieldName('name')) {
+      const bound = n?.type === 'aliased_import' ? n.childForFieldName('alias') : n?.type === 'dotted_name' ? n.namedChildren[0] : null;
+      if (bound?.type === 'identifier') bind(bound.text, imp);
+    }
+  }
+  // `def model(…)` and `class Model` bind their names in the scope around them.
+  for (const d of tree.rootNode.descendantsOfType(['function_definition', 'class_definition'])) {
+    const name = d?.childForFieldName('name');
+    if (d && name?.type === 'identifier') bind(name.text, d);
   }
   for (const call of tree.rootNode.descendantsOfType('call')) {
     const fn = call?.childForFieldName('function');
@@ -1540,30 +1659,31 @@ function pyDictKeys(expr: PyNode, seen: Set<number>, depth = 0): string[] {
 
 /**
  * The keys of the dict `name` refers to where it is used. The innermost scope that binds the name
- * decides, as in Python: its `name = …` values, plus keys added in that scope or beside the use. A
- * function parameter of that name that is never reassigned is a value mendr cannot see.
+ * decides, as in Python: its `name = …` values, plus keys added in that scope or beside the use.
+ *
+ * A function parameter (`**kwargs`, `params`) carries keys mendr cannot see, so it adds none of
+ * its own. A key added to it there or beside the use (`kwargs.setdefault("max_tokens", 512)`,
+ * `kwargs["temperature"] = 0`, `kwargs.update(top_p=1)`) is sent whatever the caller passed, so it
+ * is read like a key added to any other dict.
  */
 function pyNameKeys(name: string, use: PyNode, seen: Set<number>, depth: number): string[] {
   const index = pyNameIndex(use.tree);
+  const scope = pyBindingScopeOf(use);
+  // Nothing in this file binds it, or a comprehension variable does: no dict mendr can see.
+  if (scope === undefined || (scope !== null && PY_COMPREHENSIONS.has(scope.type))) return [];
+  const key = pyNameKey(name, scope);
   const useKey = pyNameKey(name, pyScopeOf(use));
-  for (const scope of pyLookupChain(use)) {
-    const key = pyNameKey(name, scope);
-    if (!index.bindings.has(key)) {
-      if (scope && scope.type !== 'class_definition' && declaresPyParameter(scope, name)) return [];
-      continue;
+  const keys: string[] = [];
+  // A parameter that is never reassigned has no `name = …` value here.
+  for (const value of index.values.get(key) ?? []) keys.push(...pyDictKeys(value, seen, depth));
+  // Keys added where the dict is bound, and beside the call that unpacks it.
+  for (const addKey of key === useKey ? [key] : [key, useKey]) {
+    for (const add of index.added.get(addKey) ?? []) {
+      keys.push(...add.keys);
+      for (const f of add.from) keys.push(...pyDictKeys(f, seen, depth));
     }
-    const keys: string[] = [];
-    for (const value of index.values.get(key) ?? []) keys.push(...pyDictKeys(value, seen, depth));
-    // Keys added where the dict is bound, and beside the call that unpacks it.
-    for (const addKey of key === useKey ? [key] : [key, useKey]) {
-      for (const add of index.added.get(addKey) ?? []) {
-        keys.push(...add.keys);
-        for (const f of add.from) keys.push(...pyDictKeys(f, seen, depth));
-      }
-    }
-    return keys;
   }
-  return [];
+  return keys;
 }
 
 /** The parameter names a call passes: its keyword arguments, and the keys of each dict unpacked into it. */
@@ -1601,11 +1721,18 @@ function pyRequestParams(literal: PyNode, ctx: PyGuardContext): PyRequestParams[
   if (parent.type === 'pair' && parent.parent?.type === 'dictionary') {
     return [{ names: [...new Set(pyDictKeys(parent.parent, new Set()))] }];
   }
-  // Bound to a name the scanner traced into one or more calls.
-  return inScopeSinkTargets(literal, ctx).map((t) => ({
-    names: pyCallParamNames(t.call),
-    callLine: t.call.startPosition.row + 1,
-  }));
+  // Bound to a name the scanner traced into one or more calls. The trace keys a call by the last
+  // name only and lets a module binding reach every function, so read only the calls whose model
+  // is this same reference: `model=self.judge.model`, another function's own `model` parameter or
+  // `args.model` does not take this value, and holding it there names the wrong call.
+  const binding = pyBindingTargetOf(literal);
+  if (!binding) return [];
+  return inScopeSinkTargets(literal, ctx)
+    .filter((t) => samePyReference(binding, t.value))
+    .map((t) => ({
+      names: pyCallParamNames(t.call),
+      callLine: t.call.startPosition.row + 1,
+    }));
 }
 
 /** paramHoldReason over each request the model reaches; the first that holds the call decides. */
