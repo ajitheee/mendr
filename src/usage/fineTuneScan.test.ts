@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { Project } from 'ts-morph';
-import type { LlmRegistry } from '../types.js';
-import { autoApplyVerification, loadLlmRegistry, withheldVerification } from './llmRegistry.js';
+import type { LlmModelIdDeprecation, LlmRegistry } from '../types.js';
+import { autoApplyVerification, isVerified, loadLlmRegistry, withheldVerification } from './llmRegistry.js';
 import { findModelIdLiterals, toHeldCallMatches } from './scanLiterals.js';
 import { classifyOccurrenceTier } from '../report/classifyOccurrence.js';
 import { applyModelIdFixesToProject } from '../fix/modelId.js';
+import { applyLlmFixesToProject } from '../fix/llmFix.js';
 
 // OPENAI FINE-TUNED MODEL IDS IN TYPESCRIPT AND JAVASCRIPT.
 //
@@ -61,16 +62,28 @@ describe('a fine-tuned model id in a live TypeScript call', { timeout: 60_000 },
     }
   });
 
-  it('is never swapped, and its request parameters are left alone', () => {
-    const p = project(
-      `${OPENAI}export const run = (messages: any[]) =>\n` +
-        "  client.chat.completions.create({ model: 'ft:gpt-3.5-turbo-0125:acme::9abc', messages, max_tokens: 20 });\n",
+  it('is never swapped by both fix passes on the shipped registry, while the base model beside it is', () => {
+    // The shipped ft- rows are quarantined, so a fine-tune that joins one is never swapped
+    // whatever the hold does. This fine-tune joins no ft- row (ft-gpt-4 does not cover gpt-4o):
+    // it joins its base model's shipped row, which is verified, so only the hold keeps it. The
+    // base model in the same call shape is the control. No parameter rule names an `ft:` id, so
+    // the parameter pass could reach this request only after a swap; neither call carries a
+    // parameter a rule applies at the replacement, which would hold the control for another reason.
+    const baseRow = SHIPPED.find(
+      (e): e is LlmModelIdDeprecation => e.kind === 'model_id' && e.deprecated === 'gpt-4o-2024-05-13',
     );
-    const before = p.getSourceFiles()[0]!.getFullText();
-    const result = applyModelIdFixesToProject(p, SHIPPED);
-    expect(result.siteCount).toBe(0);
-    expect(result.diff).toBe('');
-    expect(p.getSourceFiles()[0]!.getFullText()).toBe(before);
+    expect(baseRow !== undefined && isVerified(baseRow)).toBe(true);
+    const source =
+      `${OPENAI}export const run = (messages: any[]) => Promise.all([\n` +
+      "  client.chat.completions.create({ model: 'ft:gpt-4o-2024-05-13:acme::w1', messages }),\n" +
+      "  client.chat.completions.create({ model: 'gpt-4o-2024-05-13', messages }),\n" +
+      ']);\n';
+    const p = project(source);
+    const result = applyLlmFixesToProject(p, SHIPPED);
+    expect([result.modelIdSites, result.paramsRenamed, result.paramsRemoved]).toEqual([1, 0, 0]);
+    expect(p.getSourceFiles()[0]!.getFullText()).toBe(
+      source.replace("model: 'gpt-4o-2024-05-13'", `model: '${baseRow?.replacement}'`),
+    );
   });
 
   it('is held even when its base model has a verified row and no ft- row covers it', () => {

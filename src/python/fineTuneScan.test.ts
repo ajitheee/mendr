@@ -51,7 +51,9 @@ describe('a fine-tuned model id in a live Python call', () => {
     expect(found[0]!.reason).toContain("would drop the customer's training");
   }, 60_000);
 
-  it('is never swapped, and fix-llm lists it as a held call with its record', async () => {
+  it('produces no patch, and fix-llm lists it as a held call with its record', async () => {
+    // ft-babbage-002 is quarantined, so no patch here does not by itself prove the fine-tune hold.
+    // The next test does, against a verified base row with a control that is swapped.
     const text = `${CLIENT}def run(prompt):\n    return client.completions.create(model="ft:babbage-002:acme::9abc", prompt=prompt)\n`;
     const result = await applyPyModelIdFixesToSources([{ path: 'app/llm.py', text }], SHIPPED);
     expect(result.siteCount).toBe(0);

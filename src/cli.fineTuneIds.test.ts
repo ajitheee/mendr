@@ -11,10 +11,12 @@ import { tmpdir } from 'node:os';
 // exposure, and `fix-llm` printed "Nothing to fix", although OpenAI stops serving those
 // fine-tunes on 2026-10-23. The unit suites (usage/fineTuneScan.test.ts, python/fineTuneScan.test.ts)
 // pin the classification; this one pins that `fix-llm`, `audit` and `watch` report the same
-// thing about the same lines, and that nothing is ever swapped.
+// thing about the same lines, and that `fix-llm --write` swaps no fine-tune.
 //
 // Hermetic: temp-dir fixtures written for this suite, `fix-llm --skip-gates` (no type-check, no
-// tests, no network), `audit --offline`, `watch --no-exposure-file`, all run from source via tsx.
+// tests, no network) for the reports, `fix-llm --write` with the gates turned off in the
+// fixture's mendr.config.json for the write, `audit --offline`, `watch --no-exposure-file`, all
+// run from source via tsx.
 
 const MENDR_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const created: string[] = [];
@@ -70,6 +72,34 @@ const TUNE_PY = [
   '',
 ].join('\n');
 
+/**
+ * A fine-tune that NO ft- row covers (ft-gpt-4 does not cover gpt-4o), so it joins its base
+ * model's shipped row, which is verified: only the fine-tune hold keeps it from being swapped.
+ * Beside it, the base model itself in the same call shape, a Tier A control. Neither call
+ * carries a parameter a rule applies at the replacement, which would hold the control for a
+ * different reason.
+ */
+const FALLBACK_TS = [
+  "import OpenAI from 'openai';",
+  'const client = new OpenAI();',
+  'export async function run(messages: any[]) {',
+  "  await client.chat.completions.create({ model: 'ft:gpt-4o-2024-05-13:acme::w1', messages });",
+  "  await client.chat.completions.create({ model: 'gpt-4o-2024-05-13', messages });",
+  '}',
+  '',
+].join('\n');
+
+const FALLBACK_PY = [
+  'from openai import OpenAI',
+  'client = OpenAI()',
+  '',
+  'def run(messages):',
+  '    a = client.chat.completions.create(model="ft:gpt-4o-2024-05-13:acme::w1", messages=messages)',
+  '    b = client.chat.completions.create(model="gpt-4o-2024-05-13", messages=messages)',
+  '    return a, b',
+  '',
+].join('\n');
+
 interface TierBRow {
   file: string;
   line: number;
@@ -80,7 +110,7 @@ interface TierBRow {
 }
 
 describe('fine-tuned model ids in source code', () => {
-  it('fix-llm lists each one as held for review, with its own row, and swaps nothing', async () => {
+  it('fix-llm lists each one as held for review, with its own row, and proposes no patch', async () => {
     const dir = repo({ 'src/chat.ts': CHAT_TS, 'svc/tune.py': TUNE_PY });
 
     const { stdout } = await run('fix-llm', [dir, '--skip-gates', '--json']);
@@ -99,9 +129,49 @@ describe('fine-tuned model ids in source code', () => {
       "ft:gpt-3.5-turbo-0125:acme::9abc is a fine-tune of gpt-3.5-turbo-0125, so mendr never swaps it",
     );
     expect(human.stdout).toContain("would drop the customer's training");
+  }, 240_000);
 
-    // --write changes nothing: the ids stay, and the held call's own max_tokens is not renamed.
-    await run('fix-llm', [dir, '--skip-gates', '--write']);
+  it('fix-llm --write swaps the base model beside a fine-tune and leaves every fine-tune byte-identical', async () => {
+    // The three shapes above join quarantined ft- rows, so they would stay put even without the
+    // fine-tune hold. The fallback files' fine-tunes join a verified row, and each file has a
+    // Tier A control, so the write path runs and a slip in the hold shows up in the files.
+    const dir = repo({
+      'src/chat.ts': CHAT_TS,
+      'svc/tune.py': TUNE_PY,
+      'src/fallback.ts': FALLBACK_TS,
+      'svc/fallback.py': FALLBACK_PY,
+      // Gates off through the config, not --skip-gates, which never writes. A required gate in
+      // this dependency-less fixture would refuse the write, and the test would pass on no edit.
+      'mendr.config.json': JSON.stringify({ gates: { typecheck: { required: false }, tests: { required: false } } }),
+    });
+
+    const { stdout } = await run('fix-llm', [dir, '--write', '--json']);
+    const report = JSON.parse(stdout) as {
+      tierB: TierBRow[];
+      summary: { tierA: number; filesModified: number };
+      write: { attempted: boolean; applied: boolean; filesWritten: number };
+    };
+    // The precondition that makes the rest meaningful: each fallback fine-tune joins the base
+    // model's row, whose replacement is verified, so the swap gate alone would let it through.
+    expect(
+      report.tierB
+        .filter((f) => f.file.includes('fallback'))
+        .map((f) => [f.file, f.line, f.modelId, f.entryId, f.reason, f.replacementVerdict]),
+    ).toEqual([
+      ['src/fallback.ts', 4, 'ft:gpt-4o-2024-05-13:acme::w1', 'openai.gpt-4o-2024-05-13.retirement-2026-10-23', 'surface_capped', 'verified'],
+      ['svc/fallback.py', 5, 'ft:gpt-4o-2024-05-13:acme::w1', 'openai.gpt-4o-2024-05-13.retirement-2026-10-23', 'surface_capped', 'verified'],
+    ]);
+    expect(report.summary.tierA).toBe(2);
+    expect(report.write).toMatchObject({ attempted: true, applied: true, filesWritten: 2 });
+
+    // The controls are swapped; every fine-tune line, and every other byte, stays.
+    expect(readFileSync(join(dir, 'src/fallback.ts'), 'utf8')).toBe(
+      FALLBACK_TS.replace("model: 'gpt-4o-2024-05-13'", "model: 'gpt-5.6-sol'"),
+    );
+    expect(readFileSync(join(dir, 'svc/fallback.py'), 'utf8')).toBe(
+      FALLBACK_PY.replace('model="gpt-4o-2024-05-13"', 'model="gpt-5.6-sol"'),
+    );
+    // The files whose fine-tunes join quarantined ft- rows are not touched either.
     expect(readFileSync(join(dir, 'src/chat.ts'), 'utf8')).toBe(CHAT_TS);
     expect(readFileSync(join(dir, 'svc/tune.py'), 'utf8')).toBe(TUNE_PY);
   }, 240_000);
