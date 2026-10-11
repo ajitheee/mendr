@@ -13,13 +13,20 @@ import { toGateStatus, type GateStatus } from './gateStatus.js';
 // capped.
 
 export const MIGRATION_REPORT_SCHEMA = 'mendr-migration-report/v1';
-export const MIGRATION_OUTCOMES = ['clean', 'migration-proposed', 'pr-blocked', 'not-verified', 'error'] as const;
+/**
+ * `held-for-review`: nothing was migrated because every retiring id the run found was held for a
+ * person. It is NOT `clean` and must never be shown as resolved: before it existed, mendr-action
+ * reported such a run as `clean`.
+ */
+export const MIGRATION_OUTCOMES = ['clean', 'migration-proposed', 'pr-blocked', 'not-verified', 'held-for-review', 'error'] as const;
 export type MigrationOutcome = (typeof MIGRATION_OUTCOMES)[number];
-export const MIGRATION_VERDICTS = ['verified', 'failed', 'inconclusive', 'no_migration'] as const;
+export const MIGRATION_VERDICTS = ['verified', 'failed', 'inconclusive', 'no_migration', 'held_for_review'] as const;
 export type MigrationVerdict = (typeof MIGRATION_VERDICTS)[number];
 export { GATE_STATUSES, type GateStatus } from './gateStatus.js';
 
 export const MAX_MIGRATIONS = 100;
+/** A count, not a list; anything larger than this is not a count a run could produce. */
+export const MAX_HELD = 1_000_000;
 export const MAX_FILES = 200;
 export const MAX_NOTES = 20;
 export const MAX_TEXT_CHARS = 400;
@@ -67,6 +74,11 @@ export interface MigrationReport {
   behavioralTested: boolean;
   migrations: MigrationSwap[];
   changedFiles: string[];
+  /**
+   * How many retiring ids the run left for a person (held for review). A count only: the App has
+   * each held call from the audit. null when the action did not say (an older action).
+   */
+  heldForReview?: number | null;
   notes: string[];
   /**
    * The unified diff of the swap — the change itself, for display on the
@@ -141,8 +153,15 @@ export function validateMigrationReport(raw: string, maxBytes: number): Migratio
   }
   if (!isRecord(parsed)) return { ok: false, status: 400, message: 'body is not a JSON object' };
   if (parsed.schema !== MIGRATION_REPORT_SCHEMA) return { ok: false, status: 400, message: `schema must be ${MIGRATION_REPORT_SCHEMA}` };
-  const outcome = oneOf(parsed.outcome, MIGRATION_OUTCOMES);
-  if (!outcome) return { ok: false, status: 400, message: 'outcome is not a mendr-action outcome' };
+  const declared = oneOf(parsed.outcome, MIGRATION_OUTCOMES);
+  if (!declared) return { ok: false, status: 400, message: 'outcome is not a mendr-action outcome' };
+  const heldForReview =
+    Number.isInteger(parsed.heldForReview) && (parsed.heldForReview as number) >= 0 && (parsed.heldForReview as number) <= MAX_HELD
+      ? (parsed.heldForReview as number)
+      : null;
+  // A run that held calls for a person did not leave the repository clean, whatever word came
+  // with it: `clean` closes an approval as "nothing left to migrate". Read the count, not the word.
+  const outcome: MigrationOutcome = declared === 'clean' && heldForReview !== null && heldForReview > 0 ? 'held-for-review' : declared;
 
   const prUrlRaw = typeof parsed.prUrl === 'string' ? parsed.prUrl.trim() : null;
   if (prUrlRaw !== null && prUrlRaw !== '' && !PR_URL.test(prUrlRaw)) return { ok: false, status: 400, message: 'prUrl is not a pull request URL' };
@@ -196,11 +215,29 @@ export function validateMigrationReport(raw: string, maxBytes: number): Migratio
       behavioralTested: parsed.behavioralTested === true,
       migrations,
       changedFiles: texts(parsed.changedFiles, MAX_FILES),
+      heldForReview,
       notes: texts(parsed.notes, MAX_NOTES),
       diff: diffText(parsed.diff),
       registry: registryInfo(parsed.registry),
     },
   };
+}
+
+/**
+ * What is left after a held-for-review run, as a sentence. `n` is the report's heldForReview count
+ * (null when the action did not say).
+ */
+export function heldWhat(n: number | null): string {
+  return n === null
+    ? 'Retiring model ids in the code still need a person'
+    : n === 1
+      ? '1 place in the code still uses a retiring model id and needs a person'
+      : `${n} places in the code still use a retiring model id and need a person`;
+}
+
+/** The approval timeline's closing line for a held-for-review run. */
+export function heldDetail(n: number | null): string {
+  return `held for review: ${heldWhat(n)}. Nothing applied, no pull request, not resolved.`;
 }
 
 /** `#12` from a pull request URL, or '' when it does not parse. */

@@ -1,7 +1,7 @@
 import { isConfigured, type AppConfig } from '../config.js';
 import type { ManifestCredentials } from '../github/api.js';
 import { approvalVersion, type Acknowledgement, type Approval, type MigrationRecord, type Repo, type RunRecord, type RunSummary } from '../store/types.js';
-import { prNumber } from '../ingest/migrationReport.js';
+import { heldWhat, prNumber } from '../ingest/migrationReport.js';
 import { setupWorkflowUrl } from './workflowTemplate.js';
 import { registryFreshnessLine, registryFreshnessOf } from '../ingest/registry.js';
 import { migrationWorkflowPresent } from '../ingest/migration.js';
@@ -412,6 +412,9 @@ function migrationStatus(m: MigrationRecord, webUrl = 'https://github.com', repo
       const open = m.report.branch && repoFullName ? ` <a href="${esc(`${webUrl}/${repoFullName}/pull/new/${m.report.branch}`)}" target="_blank" rel="noopener">open the pull request yourself ↗</a>` : '';
       return `<span class="chip warn">verified and pushed — pull request blocked by a repository setting</span>${gates ? ` · ${gates}` : ''}${reg} · ${when}<div class="muted">GitHub does not let Actions open pull requests here. Enable <em>Settings → Actions → General → Allow GitHub Actions to create and approve pull requests</em> and approve again, or${open || ' open the pull request from the branch yourself'}.</div>`;
     }
+    case 'held-for-review':
+      // Never the green "nothing to migrate": retiring ids remain, and each needs a person.
+      return `<span class="chip warn">held for review — nothing applied, no PR, not resolved</span>${reg} · ${when}<div class="muted">${esc(heldWhat(m.report.heldForReview ?? null))}. Mendr held them instead of migrating them, because swapping the model id alone was not safe there. The job summary of this run in your CI lists each one with its reason.</div>`;
     case 'clean':
       return `<span class="chip ok">nothing to migrate</span> · ${when}`;
     default:
@@ -511,7 +514,10 @@ function approvalPart(inv: Inv, ctx: CardContext, approval: Approval | null, bac
         ? `<span class="chip warn">queued</span> <span class="muted">${approval.dispatchedAt ? 'workflow started — waiting for your CI to pick it up' : 'starts when your CI next runs its scheduled check — GitHub can delay that by hours'}</span>`
         : approval.status === 'running'
           ? `<span class="chip warn">running</span> <span class="muted">${esc(STAGE_LABEL[last?.stage ?? 'claimed'] ?? '')}</span>`
-          : `<span class="chip ok">done</span> <span class="muted">${esc(last?.detail ?? '')}</span>`;
+          : approval.outcome === 'held-for-review'
+            ? // Finished, but nothing was resolved: never the green chip.
+              `<span class="chip warn">held for review</span> <span class="muted">${esc(last?.detail ?? '')}</span>`
+            : `<span class="chip ok">done</span> <span class="muted">${esc(last?.detail ?? '')}</span>`;
     const events = approval.events
       .map((e) => `<li><span class="t">${esc(e.at.slice(11, 16))}</span>${esc(STAGE_LABEL[e.stage] ?? e.stage)}${e.detail ? ` <span class="muted">— ${esc(e.detail)}</span>` : ''}</li>`)
       .join('');
@@ -599,6 +605,9 @@ function nextActionForPatch(approval: Approval | null, migration: MigrationRecor
   }
   if (migration?.outcome === 'pr-blocked') {
     return 'Enable "Allow GitHub Actions to create and approve pull requests" in the repository settings and approve again, or open the pull request from the branch (link above).';
+  }
+  if (approval?.status === 'done' && approval.outcome === 'held-for-review') {
+    return 'Your CI held the calls to this model for review instead of migrating them: swapping the model id alone was not safe there. Change each call by hand (the job summary of that run lists them with the reason). The next completed scan confirms the resolution here.';
   }
   if (approval?.status === 'done' && migration?.prUrl && swap) {
     return `Review and merge ${prLink(migration)} on GitHub. The next completed scan confirms the resolution here — never the merge itself.`;
