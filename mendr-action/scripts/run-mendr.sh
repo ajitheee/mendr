@@ -19,6 +19,10 @@ set -euo pipefail
 
 # shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/outcome.sh"
+# What goes into a pull request body, bounded by GitHub's limit on its size.
+# shellcheck source=/dev/null
+. "$(dirname "${BASH_SOURCE[0]}")/pr-body.sh"
+RUN_URL="$(run_url)"
 
 REPORT="$(mktemp)"
 ARTIFACT="mendr-migration.json"
@@ -224,7 +228,8 @@ fi
 if git diff --quiet --exit-code; then
   # Nothing applied. Three honest cases (outcome.sh): nothing to migrate and
   # nothing held (clean: close a stale PR), every retiring id held for a person
-  # (held-for-review: NOT clean, leave the PR open), or a migration that was NOT
+  # (held-for-review: NOT clean, leave the PR open and say on it that Mendr no
+  # longer verifies it), or a migration that was NOT
   # verified (not-verified: leave everything as it is).
   NOTHING_APPLIED="$(nothing_applied_outcome "$VERDICT" "$HELD")"
   echo "outcome=$NOTHING_APPLIED" >> "$GITHUB_OUTPUT"
@@ -234,16 +239,34 @@ if git diff --quiet --exit-code; then
       if may_close_as_resolved "${MENDR_ONLY:-}"; then
         old=$(gh pr list --head "$MENDR_BRANCH" --state open --json number -q '.[0].number // empty' 2>/dev/null || true)
         if [ -n "${old:-}" ]; then
-          gh pr close "$old" --comment "Mendr: nothing is left to migrate or review. No call or model setting in the code uses a retiring model id; closing." --delete-branch || true
+          # Says what was checked and what was not: migrate reads source code, never
+          # configuration files, so a model set in one can remain (mendr audit lists it).
+          gh pr close "$old" --comment "Mendr: nothing in the source code Mendr migrates (TypeScript, JavaScript and Python) is left to migrate or held for review, so this pull request is no longer needed; closing. This check does not read configuration files: \`mendr audit\` lists a retiring model id set in one." --delete-branch || true
         fi
-        echo "Mendr: nothing to migrate and nothing held for review. No PR opened."
+        echo "Mendr: nothing to migrate and nothing held for review in the source code. No PR opened. Configuration files are not part of this check; mendr audit lists a retiring model id set in one."
       else
         echo "Mendr: nothing to migrate for the approved models (${MENDR_ONLY:-}), and nothing held for review. No PR opened. Any open Mendr PR is left as it is: this run looked only at the approved models, so it cannot say the repository is clean."
       fi
       report_to_app clean "" "$ARTIFACT"
       ;;
     held-for-review)
-      echo "$(held_sentence "$HELD") No PR opened; nothing applied. Any open Mendr PR is left as it is." >&2
+      echo "$(held_sentence "$HELD") No PR opened; nothing applied. Any open Mendr PR is left open." >&2
+      # An open Mendr PR came from an earlier run, and its body still says Mendr verified
+      # its swap. Say on the PR, where a reviewer acts, that this run held those calls and
+      # no longer verifies it (outcome.sh, held_pr_comment). Said once per count and scope.
+      old=$(gh pr list --head "$MENDR_BRANCH" --state open --json number -q '.[0].number // empty' 2>/dev/null || true)
+      if [ -n "${old:-}" ]; then
+        HELD_COMMENT="$(held_pr_comment "$HELD" "${MENDR_ONLY:-}" "$RUN_URL")"
+        HELD_KEY="${HELD_COMMENT%%$'\n'*}"
+        PR_COMMENTS="$(gh pr view "$old" --json comments -q '.comments[].body' 2>/dev/null || true)"
+        if already_commented "$HELD_KEY" "$PR_COMMENTS"; then
+          echo "Mendr: the open Mendr PR #$old already says Mendr no longer verifies it; not said again."
+        elif gh pr comment "$old" --body "$HELD_COMMENT" >/dev/null; then
+          echo "Mendr: said on the open Mendr PR #$old that this run held its calls for review and Mendr no longer verifies it. It is left open for a person to decide."
+        else
+          echo "::warning::Mendr: could not comment on the open Mendr PR #$old to say Mendr no longer verifies it. Check that pull request by hand before merging it."
+        fi
+      fi
       report_to_app held-for-review "" "$ARTIFACT"
       ;;
     *)
@@ -291,13 +314,12 @@ BODY="$(mktemp)"
   echo
   echo "Mendr updates this same branch on each run, so re-running keeps one PR current instead of stacking new ones."
   echo
-  echo '<details><summary>Full Mendr report</summary>'
-  echo
-  echo '```'
-  cat "$REPORT"
-  echo '```'
-  echo '</details>'
 } > "$BODY"
+# The full report last, cut to what fits under GitHub's limit on a body (pr-body.sh). It lists
+# every held call and the whole diff, so uncut it could push the body over 65,536 characters
+# and stop a verified migration from opening or updating its PR. The job summary keeps it whole.
+BODY_USED=$(($(wc -c < "$BODY")))
+embed_report "$REPORT" "$BODY_USED" "$RUN_URL" >> "$BODY"
 
 # Ensure labels exist (ignore "already exists"), then upsert exactly one PR keyed
 # by the head branch. Labels are trimmed; an empty list skips --label entirely.

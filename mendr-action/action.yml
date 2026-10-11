@@ -87,14 +87,16 @@ inputs:
 outputs:
   outcome:
     description: >-
-      clean (nothing to migrate and nothing held for review) | migration-proposed
+      clean (nothing to migrate and nothing held for review in the source code;
+      configuration files are not read, mendr audit lists them) | migration-proposed
       (a verified migration is in the PR) | pr-blocked (verified and pushed to the
       branch, but the repository does not allow Actions to create pull requests —
       enable it under Settings → Actions → General, or open the PR by hand; the
       job fails red) | not-verified (a migration exists but did not verify;
       nothing applied, no PR) | held-for-review (nothing migrated because every
       retiring id found was held for a person; NOT clean: the job summary lists
-      each one, and an open Mendr PR is left open) | error
+      each one, and an open Mendr PR is left open with a comment saying Mendr no
+      longer verifies it) | error
       (Mendr never completed a scan; the job fails red and no existing PR is
       touched) | empty when approval-gated and nothing was approved
     value: ${{ steps.mendr.outputs.outcome }}

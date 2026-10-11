@@ -166,7 +166,8 @@ describe('what else changed, and what was left?', () => {
     expect(many).toContain('**Left alone (120)**');
     expect(many).toContain('src/f50.ts:50');
     expect(many).not.toContain('src/f51.ts:51');
-    expect(many).toContain('… and 70 more, each listed under *Held for review* in the full report below and in the job summary.');
+    // The report embedded under the body is cut to fit, so only the job summary is named.
+    expect(many).toContain('… and 70 more, each listed under *Held for review* in the Mendr report in the job summary of the run that last updated this pull request.');
   });
 });
 

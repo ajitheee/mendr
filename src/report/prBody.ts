@@ -101,7 +101,8 @@ function gateLines(v: MigrationResult['verification']): string[] {
 
 /**
  * How many held items the body lists one by one. GitHub refuses a pull request body over 65,536
- * characters, and the action puts the full report (which lists every one) under it as well.
+ * characters, and the action puts the human report (which lists every one) under it as well, cut
+ * to what still fits (mendr-action/scripts/pr-body.sh). Only the job summary carries every one.
  */
 export const PR_BODY_MAX_SKIPPED = 50;
 
@@ -116,7 +117,7 @@ function skippedLines(skipped: readonly SkippedItem[]): string[] {
     '',
     `**Left alone (${skipped.length})** — retiring ids Mendr found and did **not** rewrite. Each needs a person; merging this pull request does not resolve them:`,
     ...shown.map((s) => `- \`${s.file}:${s.line}\` \`${s.model}\`${s.code ? ` (\`${s.code}\`)` : ''} — ${s.reason}`),
-    ...(more > 0 ? [`- … and ${more} more, each listed under *Held for review* in the full report below and in the job summary.`] : []),
+    ...(more > 0 ? [`- … and ${more} more, each listed under *Held for review* in the Mendr report in the job summary of the run that last updated this pull request.`] : []),
   ];
 }
 
