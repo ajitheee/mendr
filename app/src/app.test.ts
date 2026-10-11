@@ -793,6 +793,32 @@ describe('approvals: decided in Mendr, carried out by the customer\'s own CI', (
     expect(html).toContain('Approve migration to gpt-4.1</button>');
   });
 
+  // v0.5.10-alpha known issue: a run whose retiring ids were all held for review was reported as
+  // `clean`, so the approval closed as "nothing left to migrate" and the card read "nothing to
+  // migrate". It now arrives as `held-for-review` and reads as needing a person, never resolved.
+  it('a run that held every call for review closes the approval as held, and nothing reads as resolved', async () => {
+    const { h, cookie } = await approved();
+    const token = await actionsToken({ run_id: '704', workflow_ref: MIGRATE_REF });
+    await ci(h, '/api/approvals/claim', token, { ids: [1] });
+    const res = await h.migrations(
+      token,
+      sampleMigration({ outcome: 'held-for-review', verdict: 'held_for_review', prUrl: '', migrations: [], changedFiles: [], diff: '', heldForReview: 2, gates: { typeCheck: 'not_run', build: 'not_run', tests: 'not_run', eval: 'not_run' } }),
+    );
+    expect(res.status).toBe(200);
+    const approval = await h.store.getApproval(1);
+    expect(approval).toMatchObject({ status: 'done', outcome: 'held-for-review' });
+    const last = approval!.events[approval!.events.length - 1]!;
+    expect(last.detail).toBe('held for review: 2 places in the code still use a retiring model id and need a person. Nothing applied, no pull request, not resolved.');
+    expect(last.detail).not.toContain('nothing left to migrate');
+
+    const html = await (await h.app.request('/r/acme/api/runs/1', { headers: { cookie } })).text();
+    expect(html).toContain('held for review — nothing applied, no PR, not resolved');
+    expect(html).toContain('2 places in the code still use a retiring model id and need a person');
+    expect(html).toContain('<span class="chip warn">held for review</span>');
+    expect(html).not.toContain('nothing to migrate');
+    expect(html).toContain('Your CI held the calls to this model for review instead of migrating them');
+  });
+
   it('a queued or running approval can be cancelled (a stuck run must not block the finding), and approving twice keeps one in flight', async () => {
     const { h, cookie } = await approved();
     expect((await post(h, '/r/acme/api/approve', finding, cookie)).status).toBe(303);

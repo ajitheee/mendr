@@ -41,10 +41,50 @@ describe('validateMigrationReport', () => {
       behavioralTested: false,
       migrations: [{ provider: 'openai', from: 'gpt-4', to: 'gpt-5.6-sol', language: 'ts', sites: 2, files: ['src/ai.ts', 'src/summarize.ts'] }],
       changedFiles: ['src/ai.ts', 'src/summarize.ts'],
+      heldForReview: null,
       notes: ['Behavior was not verified.'],
       diff: null,
       registry: null,
     });
+  });
+
+  // v0.5.10-alpha known issue: a run whose only findings were held calls was reported as `clean`,
+  // and the App closed the approval as "nothing left to migrate". The action now reports
+  // `held-for-review` with a count, and the App takes the count over the word.
+  it('accepts a held-for-review run with its count, and never reads it as clean', () => {
+    const held = ok(
+      validateMigrationReport(
+        JSON.stringify(full({ outcome: 'held-for-review', verdict: 'held_for_review', prUrl: null, migrations: [], changedFiles: [], heldForReview: 3 })),
+        1_000_000,
+      ),
+    );
+    expect(held).toMatchObject({ outcome: 'held-for-review', verdict: 'held_for_review', heldForReview: 3, prUrl: null });
+
+    // A `clean` that carries held calls is not clean.
+    expect(ok(validateMigrationReport(JSON.stringify(full({ outcome: 'clean', verdict: 'no_migration', heldForReview: 2 })), 1_000_000)).outcome).toBe('held-for-review');
+    // A clean run with nothing held stays clean; an older action that sent no count stays as it said.
+    expect(ok(validateMigrationReport(JSON.stringify(full({ outcome: 'clean', verdict: 'no_migration', heldForReview: 0 })), 1_000_000)).outcome).toBe('clean');
+    expect(ok(validateMigrationReport(JSON.stringify(full({ outcome: 'clean', verdict: 'no_migration' })), 1_000_000))).toMatchObject({ outcome: 'clean', heldForReview: null });
+  });
+
+  it('keeps the held count only as a bounded whole number, never a list', () => {
+    const count = (v: unknown) => ok(validateMigrationReport(JSON.stringify(full({ heldForReview: v })), 1_000_000)).heldForReview;
+    expect(count(0)).toBe(0);
+    expect(count(12)).toBe(12);
+    expect(count(-1)).toBeNull();
+    expect(count(2.5)).toBeNull();
+    expect(count('4')).toBeNull();
+    expect(count(10_000_001)).toBeNull();
+    // The list itself is not part of the report: it carries file paths and the scanner's
+    // sentences, and the App has every held call from the audit already.
+    const r = ok(validateMigrationReport(JSON.stringify(full({ heldForReview: [{ file: 'src/a.ts', line: 3 }], skipped: [{ file: 'src/a.ts' }] })), 1_000_000));
+    expect(r.heldForReview).toBeNull();
+    expect(JSON.stringify(r)).not.toContain('src/a.ts');
+  });
+
+  it('still refuses an outcome it does not know', () => {
+    const v = validateMigrationReport(JSON.stringify(full({ outcome: 'held' })), 1_000_000);
+    expect(v.ok).toBe(false);
   });
 
   it('keeps the registry provenance field by field, and drops a malformed one whole', () => {

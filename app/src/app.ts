@@ -10,7 +10,7 @@ import type { ActionsTokenVerifier } from './github/oidc.js';
 import { applyWebhook, verifyWebhookSignature } from './github/webhook.js';
 import { buildCheckRun } from './ingest/checkRun.js';
 import { countDecisions, sanitizeReport, validateReport } from './ingest/validate.js';
-import { prNumber, validateMigrationReport } from './ingest/migrationReport.js';
+import { heldDetail, prNumber, validateMigrationReport } from './ingest/migrationReport.js';
 import { migrationWorkflowFile } from './ingest/migration.js';
 import { redactSecrets } from './redact.js';
 import { APPROVAL_STAGES, approvalVersion, type Approval, type ApprovalMode, type ApprovalOutcome, type ApprovalStage, type EncryptionStatus, type Repo, type Store } from './store/types.js';
@@ -482,7 +482,9 @@ export function createApp(deps: AppDeps): Hono {
     await store.pruneMigrations(repo.id, config.maxRunsPerRepo);
     if (config.retentionDays > 0) await store.pruneMigrationsByAge(config.retentionDays);
     // Close whatever approval this CI run carried out — from what it reported, never from an event.
-    const finished = report.outcome === 'migration-proposed' || report.outcome === 'clean';
+    // A held-for-review run finished: it did what it could, and approving again would hold the same
+    // calls again. Its detail says plainly that nothing was resolved.
+    const finished = report.outcome === 'migration-proposed' || report.outcome === 'clean' || report.outcome === 'held-for-review';
     const closed = await store.finishApprovals(repo.id, claims.runId, rec.id, report.outcome, {
       at: now().toISOString(),
       stage: finished ? 'done' : 'failed',
@@ -491,7 +493,9 @@ export function createApp(deps: AppDeps): Hono {
           ? `pull request ${report.prUrl ? prNumber(report.prUrl) : ''} open · ${report.verdict ?? 'verified'}`.replace(/\s+/g, ' ')
           : report.outcome === 'clean'
             ? 'nothing left to migrate'
-            : report.outcome === 'pr-blocked'
+            : report.outcome === 'held-for-review'
+              ? heldDetail(report.heldForReview ?? null)
+              : report.outcome === 'pr-blocked'
               ? `verified and pushed${report.branch ? ` to ${report.branch}` : ''}, but GitHub refused to open the pull request from Actions (repository setting) — enable "Allow GitHub Actions to create and approve pull requests" and approve again, or open it yourself`
               : report.outcome === 'not-verified'
               ? 'not verified — nothing applied, no pull request'

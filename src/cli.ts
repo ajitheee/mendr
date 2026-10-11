@@ -60,11 +60,7 @@ import { EvaluatedAtError, resolveEvaluationTime, type EvaluationTimeSource } fr
 import {
   findModelIdLiterals,
   scanProjectAnnotations,
-  toAzureDeploymentMatches,
-  toBlockedModelArgMatches,
-  toHeldCallMatches,
   toModelIdDataMatches,
-  toUntracedMatches,
   AZURE_DEPLOYMENT_REASON,
   TYPE_CAST_REASON,
   USAGE_UNVERIFIED_REASON,
@@ -104,7 +100,7 @@ import {
   type TierCounts,
   type TierOccurrence,
 } from './report/tiers.js';
-import { classifyOccurrenceTier } from './report/classifyOccurrence.js';
+import { heldReasonCode, tierBStreams } from './report/heldCalls.js';
 import {
   countUniqueOccurrences,
   formatRunFooterLines,
@@ -603,14 +599,17 @@ program
     // fixer edits them — so the Tier A count, the occurrence list, and the diff
     // all agree (a no-op on the shipped registry, which has no duplicate values).
     const swapMatches = dedupeSwapsByNode(modelArgMatches.filter((m) => isVerified(m.deprecation)));
-    const blockedAll = [...toBlockedModelArgMatches(modelMatches), ...pyResult.blockedMatches];
-    const azureAll = [...toAzureDeploymentMatches(modelMatches), ...pyResult.azureMatches];
+    // The Tier B streams come from report/heldCalls.ts, which `migrate` reads too, so the two
+    // commands cannot disagree about which occurrences are left for a person.
+    const streams = tierBStreams(modelMatches, pyResult);
+    const blockedAll = streams.blocked;
+    const azureAll = streams.azure;
     // Usage-unverified candidates, both languages: a model-named declaration or default no
     // provider request in the file is seen to use. Manual review only — never auto-applied.
     // The TypeScript half used to have no stream at all, so a default that audit listed as
     // "review required" was missing from fix-llm even under --verbose (see toUntracedMatches).
-    const usageUnverifiedAll = pyResult.usageUnverifiedMatches;
-    const untracedTs = toUntracedMatches(modelMatches);
+    const usageUnverifiedAll = streams.usageUnverifiedPy;
+    const untracedTs = streams.untracedTs;
     // Live calls the scanner CAPPED at review (position `surface_capped`), both languages: a
     // parameter rule that starts applying at the replacement, a model-dependent param no rule
     // covers, a call in an example tree, a gateway-prefixed id, a wrapper class or factory, a
@@ -619,11 +618,8 @@ program
     // call was found") beside a call that is one. One finding per call site, and none for a
     // site another stream already reports (see toHeldCallMatches), so no held occurrence lands
     // in two tiers.
-    const cappedAll = [...toHeldCallMatches(modelMatches), ...pyResult.heldMatches];
-    const allDataViews: DataFindingView[] = [
-      ...toModelIdDataMatches(modelMatches),
-      ...pyResult.dataMatches,
-    ].map((d) => ({
+    const cappedAll = streams.capped;
+    const dataView = (d: (typeof streams.castMasked)[number]): DataFindingView => ({
       file: rel(d.location.file),
       value: d.value,
       replacement: d.replacement,
@@ -631,14 +627,16 @@ program
       column: d.location.column,
       purpose: d.purpose,
       reason: d.reason,
-    }));
+    });
     // The cast guard's matches ride in the DATA stream (the classifier demotes
     // them there so the codemod cannot touch them), but they are not
     // informational: the id is in a live-looking position and only the repo's
     // own type union stands in the way. They are the one data-stream surface
-    // that graduates to Tier B; everything else stays Tier C.
-    const castMaskedViews = allDataViews.filter((d) => d.reason === TYPE_CAST_REASON);
-    const dataViews = allDataViews.filter((d) => d.reason !== TYPE_CAST_REASON);
+    // that graduates to Tier B (streams.castMasked); everything else stays Tier C.
+    const castMaskedViews = streams.castMasked.map(dataView);
+    const dataViews = [...toModelIdDataMatches(modelMatches), ...pyResult.dataMatches]
+      .filter((d) => d.reason !== TYPE_CAST_REASON)
+      .map(dataView);
     const dataGroups = groupDataFindingsByFile(dataViews);
 
     /**
@@ -804,7 +802,7 @@ program
             withheldSwitches: state === 'withheld' ? withheldSwitches(m.deprecation) : undefined,
             detail: [...heldBackDetail(state), ...(m.reason ? [m.reason] : [])],
           },
-          classifyOccurrenceTier(m).reason ?? 'usage_unverified',
+          heldReasonCode(m, 'usage_unverified'),
         );
       }),
       // The reason code is the one audit gives the same call (classifyOccurrenceTier), so the
@@ -827,7 +825,7 @@ program
             withheldSwitches: state === 'withheld' ? withheldSwitches(m.deprecation) : undefined,
             detail: [...heldBackDetail(state), ...(m.reason ? [m.reason] : [])],
           },
-          classifyOccurrenceTier(m).reason ?? 'surface_capped',
+          heldReasonCode(m, 'surface_capped'),
         );
       }),
       ...castMaskedViews.map((d) =>
@@ -4332,7 +4330,9 @@ program
       // left alone), and it is covered by tests. The action keeps its own scaffold and prints this.
       if (opts.prBody) {
         if (result.migrations.length > 0) {
-          writeFileSync(opts.prBody, `${renderPrBody(result)}
+          // Published as the body of a pull request, so it goes through the same sanitizer as the
+          // report: it now lists every held call with the scanner's sentence, not only swaps.
+          writeFileSync(opts.prBody, `${sanitize(renderPrBody(result), secretValuesFromEnv(process.env))}
 `, 'utf8');
         } else {
           console.error('mendr: nothing migrated — the pr-body file was not created.');

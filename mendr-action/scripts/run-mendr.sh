@@ -12,6 +12,17 @@ set -euo pipefail
 # for "was there a VERIFIED migration?". We never parse a diff to decide what to
 # apply, we never open a PR for an unverified change, and we never touch the
 # default branch or merge anything. A human reviews and merges.
+#
+# "Nothing changed" is not the same as "clean": a run can change nothing because
+# every retiring id it found was held for a person. What each case means, and
+# which one may close an open Mendr PR, is decided in outcome.sh.
+
+# shellcheck source=/dev/null
+. "$(dirname "${BASH_SOURCE[0]}")/outcome.sh"
+# What goes into a pull request body, bounded by GitHub's limit on its size.
+# shellcheck source=/dev/null
+. "$(dirname "${BASH_SOURCE[0]}")/pr-body.sh"
+RUN_URL="$(run_url)"
 
 REPORT="$(mktemp)"
 ARTIFACT="mendr-migration.json"
@@ -161,6 +172,10 @@ if [ "$REPORT_STATUS" -ne 0 ] || [ "$WRITE_STATUS" -ne 0 ] || [ ! -s "$ARTIFACT"
 fi
 
 VERDICT="$(jq -r '.verification.verdict' "$ARTIFACT")"
+# How many retiring ids the run left for a person (the artifact's `skipped` list:
+# every held call, with its reason code). Anything but a readable count is
+# `unknown`, and an unknown count is never read as zero (outcome.sh).
+HELD="$(held_count_or_unknown "$(jq -r 'if (.skipped | type) == "array" then (.skipped | length) else "unknown" end' "$ARTIFACT" 2>/dev/null || echo unknown)")"
 # The gate words go straight into the App's approval timeline, where a human
 # reads them. Spell them the way every other surface does (src/gates/status.ts
 # CHECK_LABEL) instead of posting the raw union member — `not_run`, underscore
@@ -192,29 +207,73 @@ if GATE_RAW="$(jq -r '.verification | "\(.typeCheck.status) \(.build.status) \(.
 fi
 case "$VERDICT" in
   verified) post_event verified "$GATES" ;;
-  no_migration) ;;
+  # Nothing was migrated, so nothing was verified or not verified. The report to
+  # the App below closes the approval and says which of the two it was.
+  no_migration | held_for_review) ;;
   *) post_event not-verified "$VERDICT · $GATES" ;;
 esac
 
+# Held calls, said plainly wherever the run reports, whatever else happened. The
+# list itself is in the sanitized report above (job summary and log); this is the
+# count and what it means, and it carries no text from the repository.
+if [ "$HELD" != "0" ]; then
+  echo "::warning::$(held_sentence "$HELD") Each one is listed in the job summary."
+  {
+    echo
+    echo "> **$(held_sentence "$HELD")** Each one is listed in the report above, under *Held for review*, with its reason. \`mendr audit\` and \`mendr fix-llm\` give the evidence."
+  } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+fi
+
 # Did the verified migration actually change a tracked file?
 if git diff --quiet --exit-code; then
-  # Nothing applied. Two honest cases: nothing to migrate (close any stale PR),
-  # or a migration exists but was NOT verified (leave everything as it is).
-  if [ "$VERDICT" = "no_migration" ]; then
-    echo "outcome=clean" >> "$GITHUB_OUTPUT"
-    echo "pr_url=" >> "$GITHUB_OUTPUT"
-    old=$(gh pr list --head "$MENDR_BRANCH" --state open --json number -q '.[0].number // empty' 2>/dev/null || true)
-    if [ -n "${old:-}" ]; then
-      gh pr close "$old" --comment "Mendr: no deprecated model ids remain; closing." --delete-branch || true
-    fi
-    echo "Mendr: nothing to migrate. No PR opened."
-    report_to_app clean "" "$ARTIFACT"
-  else
-    echo "outcome=not-verified" >> "$GITHUB_OUTPUT"
-    echo "pr_url=" >> "$GITHUB_OUTPUT"
-    echo "Mendr found a migration but could not verify it (verdict: $VERDICT). No PR opened; nothing applied. Any existing Mendr PR is left untouched." >&2
-    report_to_app not-verified "" "$ARTIFACT"
-  fi
+  # Nothing applied. Three honest cases (outcome.sh): nothing to migrate and
+  # nothing held (clean: close a stale PR), every retiring id held for a person
+  # (held-for-review: NOT clean, leave the PR open and say on it that Mendr no
+  # longer verifies it), or a migration that was NOT
+  # verified (not-verified: leave everything as it is).
+  NOTHING_APPLIED="$(nothing_applied_outcome "$VERDICT" "$HELD")"
+  echo "outcome=$NOTHING_APPLIED" >> "$GITHUB_OUTPUT"
+  echo "pr_url=" >> "$GITHUB_OUTPUT"
+  case "$NOTHING_APPLIED" in
+    clean)
+      if may_close_as_resolved "${MENDR_ONLY:-}"; then
+        old=$(gh pr list --head "$MENDR_BRANCH" --state open --json number -q '.[0].number // empty' 2>/dev/null || true)
+        if [ -n "${old:-}" ]; then
+          # Says what was checked and what was not: migrate reads source code, never
+          # configuration files, so a model set in one can remain (mendr audit lists it).
+          gh pr close "$old" --comment "Mendr: nothing in the source code Mendr migrates (TypeScript, JavaScript and Python) is left to migrate or held for review, so this pull request is no longer needed; closing. This check does not read configuration files: \`mendr audit\` lists a retiring model id set in one." --delete-branch || true
+        fi
+        echo "Mendr: nothing to migrate and nothing held for review in the source code. No PR opened. Configuration files are not part of this check; mendr audit lists a retiring model id set in one."
+      else
+        echo "Mendr: nothing to migrate for the approved models (${MENDR_ONLY:-}), and nothing held for review. No PR opened. Any open Mendr PR is left as it is: this run looked only at the approved models, so it cannot say the repository is clean."
+      fi
+      report_to_app clean "" "$ARTIFACT"
+      ;;
+    held-for-review)
+      echo "$(held_sentence "$HELD") No PR opened; nothing applied. Any open Mendr PR is left open." >&2
+      # An open Mendr PR came from an earlier run, and its body still says Mendr verified
+      # its swap. Say on the PR, where a reviewer acts, that this run held those calls and
+      # no longer verifies it (outcome.sh, held_pr_comment). Said once per count and scope.
+      old=$(gh pr list --head "$MENDR_BRANCH" --state open --json number -q '.[0].number // empty' 2>/dev/null || true)
+      if [ -n "${old:-}" ]; then
+        HELD_COMMENT="$(held_pr_comment "$HELD" "${MENDR_ONLY:-}" "$RUN_URL")"
+        HELD_KEY="${HELD_COMMENT%%$'\n'*}"
+        PR_COMMENTS="$(gh pr view "$old" --json comments -q '.comments[].body' 2>/dev/null || true)"
+        if already_commented "$HELD_KEY" "$PR_COMMENTS"; then
+          echo "Mendr: the open Mendr PR #$old already says Mendr no longer verifies it; not said again."
+        elif gh pr comment "$old" --body "$HELD_COMMENT" >/dev/null; then
+          echo "Mendr: said on the open Mendr PR #$old that this run held its calls for review and Mendr no longer verifies it. It is left open for a person to decide."
+        else
+          echo "::warning::Mendr: could not comment on the open Mendr PR #$old to say Mendr no longer verifies it. Check that pull request by hand before merging it."
+        fi
+      fi
+      report_to_app held-for-review "" "$ARTIFACT"
+      ;;
+    *)
+      echo "Mendr found a migration but could not verify it (verdict: $VERDICT). No PR opened; nothing applied. Any existing Mendr PR is left untouched." >&2
+      report_to_app not-verified "" "$ARTIFACT"
+      ;;
+  esac
   exit 0
 fi
 
@@ -255,13 +314,12 @@ BODY="$(mktemp)"
   echo
   echo "Mendr updates this same branch on each run, so re-running keeps one PR current instead of stacking new ones."
   echo
-  echo '<details><summary>Full Mendr report</summary>'
-  echo
-  echo '```'
-  cat "$REPORT"
-  echo '```'
-  echo '</details>'
 } > "$BODY"
+# The full report last, cut to what fits under GitHub's limit on a body (pr-body.sh). It lists
+# every held call and the whole diff, so uncut it could push the body over 65,536 characters
+# and stop a verified migration from opening or updating its PR. The job summary keeps it whole.
+BODY_USED=$(($(wc -c < "$BODY")))
+embed_report "$REPORT" "$BODY_USED" "$RUN_URL" >> "$BODY"
 
 # Ensure labels exist (ignore "already exists"), then upsert exactly one PR keyed
 # by the head branch. Labels are trimmed; an empty list skips --label entirely.

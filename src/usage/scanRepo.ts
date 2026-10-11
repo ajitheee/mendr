@@ -291,13 +291,15 @@ export interface PrefilteredScan {
 }
 
 /**
- * Build the fix-llm scan Project: walk the repo, keep only files whose TEXT
- * contains a registry token, and parse just those. The Stripe commands still
- * use {@link loadProject} — their locator is type-driven and needs the repo's
- * own tsconfig/module resolution; this pre-filter is value-driven like the
- * scan it feeds.
+ * The files in `files` whose text contains a registry token ({@link buildRegistryPrefilter}),
+ * and the ones that could not be read. The one text test behind fix-llm's scan project and
+ * behind the files `migrate` adds to its tsconfig-driven loads, so the two commands look at the
+ * same files.
  */
-function buildPrefiltered(files: readonly string[], prefilter: RegExp | undefined): PrefilteredScan {
+export function filesMatchingPrefilter(
+  files: readonly string[],
+  prefilter: RegExp | undefined,
+): { hits: string[]; unreadableFiles: string[] } {
   const hits: string[] = [];
   const unreadableFiles: string[] = [];
   if (prefilter) {
@@ -310,6 +312,18 @@ function buildPrefiltered(files: readonly string[], prefilter: RegExp | undefine
       }
     }
   }
+  return { hits, unreadableFiles };
+}
+
+/**
+ * Build the fix-llm scan Project: walk the repo, keep only files whose TEXT
+ * contains a registry token, and parse just those. The Stripe commands still
+ * use {@link loadProject} — their locator is type-driven and needs the repo's
+ * own tsconfig/module resolution; this pre-filter is value-driven like the
+ * scan it feeds.
+ */
+function buildPrefiltered(files: readonly string[], prefilter: RegExp | undefined): PrefilteredScan {
+  const { hits, unreadableFiles } = filesMatchingPrefilter(files, prefilter);
   // Same compiler options as the no-tsconfig fallback loader (allowJs included):
   // the literal + param locators are syntax-driven (no cross-file type
   // resolution), so the repo's own tsconfig adds nothing but load time here.
