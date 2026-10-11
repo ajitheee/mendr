@@ -113,9 +113,10 @@ isn't, and it depends on me never moving a released tag.
 approve-to-PR path has been exercised on my demo repository, not yet on anyone else's, and the
 last time was with an earlier release's Action (v0.5.7-alpha). This release changes the Action: a
 run whose every retiring id was held for review now says so instead of reporting the repository
-clean, and the one-click migrate workflow never closes a Mendr pull request. The new Action has run
-only against test stubs so far. `migrate` still does not read configuration files, so read `audit`
-before you trust a clean `migrate` result.
+clean, and the one-click migrate workflow never closes a Mendr pull request. What this release
+changed in the Action has run only against test stubs so far. On my demo repository the new Action
+has only checked for approvals, found none and stopped. `migrate` still does not read configuration
+files, so read `audit` before you trust a clean `migrate` result.
 
 ---
 
