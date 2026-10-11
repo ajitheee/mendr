@@ -80,6 +80,17 @@ const CURATED_OFFICIAL: Record<OracleProvider, Record<string, string>> = {
     'gpt-4-0314': 'gpt-5 or gpt-4.1',
     'gpt-4-0125-preview': 'gpt-5 or gpt-4.1',
     'gpt-4-turbo-preview': 'gpt-5 or gpt-4.1',
+    // The third id the same row names. Without its row here the classifier sees nothing to
+    // contradict, and the record would stamp verified.
+    'gpt-4-turbo-preview-completions': 'gpt-5 or gpt-4.1',
+    // Added 2026-10-10 from the deprecations page (snapshot 461d3951ff15): "Feb 26, 2027 |
+    // whisper-1 | gpt-live-transcribe or gpt-transcribe", and the same for the other three
+    // transcription models. These classify unverifiable by class first; the row keeps the
+    // two-target hold if that class rule ever changes.
+    'whisper-1': 'gpt-live-transcribe or gpt-transcribe',
+    'gpt-4o-transcribe': 'gpt-live-transcribe or gpt-transcribe',
+    'gpt-4o-mini-transcribe': 'gpt-live-transcribe or gpt-transcribe',
+    'gpt-4o-transcribe-diarize': 'gpt-live-transcribe or gpt-transcribe',
     // One hop, as the page names it. The registry carries the end of each chain instead
     // (gpt-3.5-turbo retires 2026-10-23 and gpt-3.5-turbo-instruct retired 2026-09-28, both to
     // gpt-5.6-terra), so these classify unverified, as gpt-3.5-turbo-0613 above always has.
@@ -97,6 +108,15 @@ const CURATED_OFFICIAL: Record<OracleProvider, Record<string, string>> = {
     // 2027-05-07.
     'gemini-2.0-flash-lite': 'gemini-3.1-flash-lite',
     'gemini-2.0-flash-lite-001': 'gemini-3.1-flash-lite',
+    // Added 2026-10-10 from the same page: "veo-3.0-generate-001 | September 9, 2025 | June 30,
+    // 2026 | veo-3.1-generate-preview or the GA models on the Gemini Enterprise Agent Platform",
+    // and the same for veo-3.0-fast-generate-001 and veo-2.0-generate-001. A choice, kept as the
+    // page writes it. (The named Veo 3.1 previews also retire, which the registry's own records
+    // already make the classifier refuse.)
+    'veo-3.0-generate-001': 'veo-3.1-generate-preview or the GA models on the Gemini Enterprise Agent Platform',
+    'veo-3.0-fast-generate-001':
+      'veo-3.1-fast-generate-preview or the GA models on the Gemini Enterprise Agent Platform',
+    'veo-2.0-generate-001': 'veo-3.1-generate-preview or the GA models on the Gemini Enterprise Agent Platform',
   },
 };
 
