@@ -3,7 +3,8 @@
 
 import type { LlmModelIdDeprecation, LlmRegistry } from '../types.js';
 import { displayEntryId } from '../registry/entryId.js';
-import { effectiveVerificationState, modelIdEntries, modelMatches } from '../usage/llmRegistry.js';
+import { effectiveVerificationState, modelIdEntries } from '../usage/llmRegistry.js';
+import { fineTuneRowId, reportedFineTuneBase } from '../usage/fineTune.js';
 import { daysUntil } from '../watch/exposure.js';
 import type { CostRegression, ExposureFinding, UsageAudit, UsageRow } from './types.js';
 
@@ -15,12 +16,8 @@ import type { CostRegression, ExposureFinding, UsageAudit, UsageRow } from './ty
  * call, not this function's.
  */
 export function normalizeModelId(raw: string): string {
-  const ft = /^ft:([^:]+):/.exec(raw);
-  return ft ? ft[1] : raw;
+  return reportedFineTuneBase(raw) ?? raw;
 }
-
-/** How OpenAI's deprecations page names a row that retires fine-tunes: `ft-<base>`. */
-const FINE_TUNE_ROW = 'ft-';
 
 /**
  * The registry id an observed model string joins on.
@@ -29,26 +26,18 @@ const FINE_TUNE_ROW = 'ft-';
  * that base in a row of their own. OpenAI does (`ft-babbage-002`, `ft-gpt-4`),
  * and not always on the base model's date: babbage-002 shut down 2026-09-28,
  * while its fine-tunes run until 2026-10-23. Joining the base reported a
- * working fine-tune as already dead. A row names a base model or a family of
- * snapshots, so `ft-gpt-3.5-turbo` covers `ft:gpt-3.5-turbo-1106:...`, by the
- * exact-segment rule parameter rules use ({@link modelMatches}); the most
- * specific row wins.
+ * working fine-tune as already dead. Which row covers which base is
+ * {@link fineTuneRowId}'s rule, shared with the TypeScript and Python
+ * scanners so a fine-tune in code and the same fine-tune in usage data join
+ * one row.
  */
 export function registryModelId(
   raw: string,
   provider: string,
   entries: readonly LlmModelIdDeprecation[],
 ): string {
-  const base = normalizeModelId(raw);
-  if (base === raw) return raw;
-  let row: string | undefined;
-  for (const e of entries) {
-    if (!e.deprecated.startsWith(FINE_TUNE_ROW)) continue;
-    if (e.provider !== provider && provider !== 'unknown') continue;
-    if (!modelMatches(base, [e.deprecated.slice(FINE_TUNE_ROW.length)])) continue;
-    if (row === undefined || e.deprecated.length > row.length) row = e.deprecated;
-  }
-  return row ?? base;
+  const base = reportedFineTuneBase(raw);
+  return base === undefined ? raw : fineTuneRowId(base, provider, entries);
 }
 
 /** Pick the registry entry for a model id: prefer the soonest-shutting (most urgent) wave. */

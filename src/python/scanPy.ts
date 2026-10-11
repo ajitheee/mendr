@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { Language, Parser, type Node as PyNode, type Tree } from 'web-tree-sitter';
 import type { LlmModelIdDeprecation, LlmRegistry, SourceLocation } from '../types.js';
 import { effectiveVerificationState, isVerified, modelIdEntries } from '../usage/llmRegistry.js';
+import { fineTuneHoldReason, resolveSourceFineTune } from '../usage/fineTune.js';
 import { paramHoldReason } from '../usage/coupledParams.js';
 import {
   CATALOG_SIBLING_KEYS,
@@ -114,6 +115,11 @@ export interface PyLiteralMatch {
   purpose?: DataPurpose;
   /** A per-match override of the generic review advice, when a guard fired. */
   reason?: string;
+  /**
+   * The base model when the literal is a fine-tuned model id (`ft:<base>:<org>:<suffix>:<id>`),
+   * matched through the registry's row for fine-tunes of that base. Never swapped.
+   */
+  fineTuneOf?: string;
 }
 
 // --- Parser bootstrap -------------------------------------------------------
@@ -1773,8 +1779,9 @@ export async function findPyModelIdLiterals(
   // dropping the second silently loses its retirement deadline downstream (the
   // `mendr watch` exposure most of all). One match is emitted per matching
   // record; the fixer collapses them back to one splice per literal.
+  const entries = modelIdEntries(registry);
   const byValue = new Map<string, LlmModelIdDeprecation[]>();
-  for (const dep of modelIdEntries(registry)) {
+  for (const dep of entries) {
     const list = byValue.get(dep.deprecated);
     if (list) list.push(dep);
     else byValue.set(dep.deprecated, [dep]);
@@ -1805,11 +1812,26 @@ export async function findPyModelIdLiterals(
         if (!content) continue; // f-string / prefixed / concatenation fragment
         let deprecations = byValue.get(content.value);
         let prefixed = false;
+        // `ft:gpt-4-0613:acme::abc123`: a fine-tuned model id, joined to the registry's row for
+        // fine-tunes of its base (or its base model's row) by the usage audit's rule. The WHOLE
+        // string must be a fine-tune id. The same rule as the TypeScript scan (scanLiterals.ts).
+        let fineTuneOf: string | undefined;
+        if (!deprecations) {
+          const ft = resolveSourceFineTune(content.value, byValue, entries);
+          deprecations = ft?.records;
+          fineTuneOf = ft?.base;
+        }
         if (!deprecations) {
           // `openai/gpt-5-nano` / `openai:gpt-5-mini`: a gateway or registry
           // selector carrying a registry id — real, never swap-eligible.
           const split = splitProviderPrefix(content.value);
           deprecations = split ? byValue.get(split.id) : undefined;
+          if (split && !deprecations) {
+            // `openai/ft:gpt-4-0613:acme::abc`: a fine-tune behind a gateway prefix.
+            const ft = resolveSourceFineTune(split.id, byValue, entries);
+            deprecations = ft?.records;
+            fineTuneOf = ft?.base;
+          }
           if (!deprecations) continue; // exact-value guard: no substring matching
           prefixed = true;
         }
@@ -1850,12 +1872,29 @@ export async function findPyModelIdLiterals(
         }
         // THE PARAMETER GUARD, last, on a call every other rule left swap-eligible, as in
         // scanLiterals.ts. The request is read once per literal; whether it holds the call depends
-        // on each record's replacement, so it is judged per record.
-        const requests = classification.position === 'model_arg' ? pyRequestParams(node, guardCtx) : [];
+        // on each record's replacement, so it is judged per record. A fine-tune is held for its own
+        // reason below, before any parameter is read, as in the TypeScript scan.
+        const requests =
+          classification.position === 'model_arg' && fineTuneOf === undefined ? pyRequestParams(node, guardCtx) : [];
         const line = node.startPosition.row + 1;
         const column = node.startPosition.column + 1;
         for (const deprecation of deprecations) {
-          const held = requests.length > 0 ? pyParamHoldReason(requests, deprecation, registry) : undefined;
+          // A fine-tune is never swapped, whatever its record says: every replacement is a base
+          // model, and swapping one in drops the customer's training. Wherever a plain id would be
+          // a live or reviewable selector it is held for review with that sentence; in a data
+          // position it stays data. The same rule as the TypeScript scan. Any other call is held
+          // when the parameter guard holds it.
+          const paramHeld = requests.length > 0 ? pyParamHoldReason(requests, deprecation, registry) : undefined;
+          const held: { position: LiteralPosition; purpose?: DataPurpose; reason?: string } =
+            fineTuneOf !== undefined && classification.position !== 'data'
+              ? {
+                  position: 'surface_capped',
+                  purpose: undefined,
+                  reason: fineTuneHoldReason(content.value, fineTuneOf, deprecation.replacement),
+                }
+              : paramHeld !== undefined
+                ? { position: 'surface_capped', purpose: undefined, reason: paramHeld }
+                : classification;
           out.push({
             file: source.path,
             value: content.value,
@@ -1863,9 +1902,10 @@ export async function findPyModelIdLiterals(
             contentEnd: content.end,
             location: { file: source.path, line, column },
             deprecation,
-            position: held ? 'surface_capped' : classification.position,
-            purpose: held ? undefined : classification.purpose,
-            reason: held ?? classification.reason,
+            position: held.position,
+            purpose: held.purpose,
+            reason: held.reason,
+            ...(fineTuneOf !== undefined ? { fineTuneOf } : {}),
           });
         }
       }

@@ -120,6 +120,10 @@ file path, line number, evidence type, tier, disposition (`patch` /
 snippet clipped to 160 characters per line, and a 16-character SHA-256 prefix of
 the trimmed reported line. The snippet is redacted (section 6). The hash lets a
 UI tell "same line, unchanged" from "line changed" without holding the line.
+An OpenAI fine-tuned model id in your code (`ft:gpt-3.5-turbo-0125:<org>::<job id>`)
+is reported under its registry row, so the finding's model id is `ft-gpt-3.5-turbo`
+and carries neither your organisation name nor the job id. The snippet shows the
+line as written, so both appear there, as any other text on that line does.
 The JSON contains no other file content. The *Provider SDKs* section, read from
 your root `package-lock.json`, is written only to your run's job summary after the
 JSON is complete, and is never in the JSON.

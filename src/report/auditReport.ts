@@ -20,6 +20,7 @@ import {
   type ModelInvestigation,
   analyzedIsMinority,
   countFixtureReferences,
+  isHeldFineTune,
   type AuditObservations,
 } from '../audit/investigation.js';
 import { redactSecrets } from '../audit/issueReport.js';
@@ -103,7 +104,9 @@ const locationPhrase = (l: LocationRef): string =>
       ? 'verified provider SDK call site; request parameters unverified for the replacement (review)'
       : l.reason === 'param_behaviour_change'
         ? 'verified provider SDK call site; a parameter rule changes what this request asks for on the replacement (review)'
-        : roleLabel(l.role)
+        : isHeldFineTune(l)
+          ? "fine-tuned model id, never swapped because a swap would drop the customer's training (review)"
+          : roleLabel(l.role)
   }${l.providerSurface ? ` (surface: ${l.providerSurface})` : ''}`;
 
 /** The "Production usage:" line — the honest default is "not measured". */
@@ -547,6 +550,12 @@ export function plainSummary(investigations: readonly ModelInvestigation[], cove
       return [
         'a verified direct provider call site (auto-fix available, nothing applied)',
         'verified direct provider call sites (auto-fix available, nothing applied)',
+      ];
+    }
+    if (inv.locations.selectors.some(isHeldFineTune)) {
+      return [
+        "a fine-tuned model that mendr never swaps, because a swap would drop the customer's training — review before changing",
+        "fine-tuned models that mendr never swaps, because a swap would drop the customer's training — review before changing",
       ];
     }
     if (inv.locations.selectors.some((s) => s.surface === 'code')) {

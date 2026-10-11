@@ -9,6 +9,7 @@ import {
 } from 'ts-morph';
 import type { LlmRegistry, UsageMap } from '../types.js';
 import { modelIdEntries, paramEntries } from './llmRegistry.js';
+import { fineTuneTextTokens } from './fineTune.js';
 import { isTestPath } from './scanLiterals.js';
 import { buildUsageMap } from './usageMap.js';
 
@@ -236,10 +237,17 @@ export function collectTsSourceFiles(repoPath: string): string[] {
  * `on_models` prefix (a param site requires a same-file model literal that
  * equals or starts with one of those). Plain substring alternation — false
  * positives only cost a parse. Returns undefined for a token-less registry.
+ *
+ * A row for fine-tunes (`ft-gpt-4`) also contributes `ft:gpt-4`: its own id never appears in
+ * the fine-tuned model id it matches (`ft:gpt-4-0613:acme::abc`), so without it a file whose
+ * only finding is a fine-tune would be parsed only when the registry happens to carry its base
+ * model as a row of its own as well.
  */
 export function buildRegistryPrefilter(registry: LlmRegistry): RegExp | undefined {
   const tokens = new Set<string>();
-  for (const dep of modelIdEntries(registry)) tokens.add(dep.deprecated);
+  const entries = modelIdEntries(registry);
+  for (const dep of entries) tokens.add(dep.deprecated);
+  for (const token of fineTuneTextTokens(entries)) tokens.add(token);
   for (const param of paramEntries(registry)) {
     for (const model of param.on_models) tokens.add(model);
   }
