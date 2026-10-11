@@ -21,7 +21,9 @@ import {
   enclosingCallOfObject,
   enclosingNewOfObject,
   hasCatalogSiblings,
+  identifiersNamed,
   requestKeyName,
+  requestObjectFlow,
   requestParamKeys,
   TS_EXAMPLE_CALL_REASON,
   TS_PREFIXED_REASON,
@@ -64,10 +66,12 @@ import {
 //     model = 'claude-sonnet-4-6'` resolved to Opus and lost `temperature` on
 //     the Sonnet path too. See neverReassigned.)
 //   - It edits any object literal with a `model` key and a rule's parameter,
-//     not only a request it can see reach a call: a standalone request body
-//     (`const body = { model, max_tokens }` posted with fetch) is one, and so
-//     is a catalog row, whose readers the rename breaks. Narrowing that is a
-//     separate, release-noted change.
+//     written as plain names, not only a request it can see reach a call: a
+//     standalone request body (`const body = { model, max_tokens }` posted
+//     with fetch) is one, and so is a catalog row, whose readers the rename
+//     breaks. Narrowing that is a separate, release-noted change. A key written
+//     quoted or computed (`"max_tokens"`, `["max_tokens"]`) is read only in a
+//     request (isRequestObject), so a quoted catalog row is left as it was.
 //   - A `param`/`model` supplied via a spread (`{ ...opts, temperature }`) is
 //     not seen unless the key is a direct own property of the object literal.
 
@@ -99,15 +103,21 @@ export interface ParamEdit {
 type ModelLiteral = StringLiteral | NoSubstitutionTemplateLiteral;
 
 /**
- * `expr` seen through the wrappers the model-id swap sees through: parentheses and a cast that
- * masks nothing (`as string`, `as const`; see isMaskingCast). The param pass has to read a model
- * exactly where pass 1 writes one, or a swap behind a cast is followed by no parameter fix:
- * `{ model: 'o3-mini' as string, max_tokens }` became `'gpt-5.6-sol' as string` with `max_tokens`
- * left on it, while the bare twin had it renamed.
+ * `expr` seen through the wrappers the model-id swap sees through: parentheses, a cast that masks
+ * nothing (`as string`, `as const`; see isMaskingCast) and a non-null `!`. The param pass has to
+ * read a model exactly where pass 1 writes one, or a swap behind a cast is followed by no parameter
+ * fix: `{ model: 'o3-mini' as string, max_tokens }` became `'gpt-5.6-sol' as string` with
+ * `max_tokens` left on it, while the bare twin had it renamed. The sink rule reads `MODEL!` as
+ * `MODEL` (collectTsSinks), so pass 1 swaps the const behind it, and `!` is read through here too.
  */
 function swapTransparent(expr: Node | undefined): Node | undefined {
   let n = expr;
-  while (n && (Node.isParenthesizedExpression(n) || (Node.isAsExpression(n) && !isMaskingCast(n)))) {
+  while (
+    n &&
+    (Node.isParenthesizedExpression(n) ||
+      Node.isNonNullExpression(n) ||
+      (Node.isAsExpression(n) && !isMaskingCast(n)))
+  ) {
     n = n.getExpression();
   }
   return n;
@@ -128,6 +138,29 @@ function swapTransparentLiteral(expr: Node | undefined): ModelLiteral | undefine
  */
 function propertyNamed(obj: ObjectLiteralExpression, name: string): ObjectLiteralElementLike | undefined {
   return obj.getProperties().find((p) => !Node.isSpreadAssignment(p) && requestKeyName(p.getNameNode()) === name);
+}
+
+/** Is this property's key written as a plain name (`max_tokens`, or a `{ model }` shorthand)? */
+function hasPlainKey(prop: Node): boolean {
+  return (
+    (Node.isPropertyAssignment(prop) || Node.isShorthandPropertyAssignment(prop)) &&
+    Node.isIdentifier(prop.getNameNode())
+  );
+}
+
+/**
+ * Is this object a request: passed to a call (through parentheses, casts or a fallback), or built
+ * in a variable and passed to a provider endpoint (requestObjectFlow)? Every object pass 1 can swap
+ * a model in, or reach through a const, is one of these.
+ *
+ * A quoted (`"max_tokens"`) or computed (`["max_tokens"]`) key is read as the same key as the
+ * plain one, so a swap is followed by its parameter fix however the request spells the key. That
+ * reading is used only in a request: quoted keys are how a JSON-shaped model table or catalog row
+ * is usually written, and renaming a key there breaks its readers while fixing no request. A plain
+ * key is renamed in any object with a `model`, as it always was (see the header).
+ */
+function isRequestObject(obj: ObjectLiteralExpression): boolean {
+  return enclosingCallOfObject(obj) !== undefined || requestObjectFlow(obj) !== undefined;
 }
 
 /** The literal a `model` property's own value is written as, or undefined when it is not one. */
@@ -187,8 +220,8 @@ function neverReassigned(decl: VariableDeclaration): boolean {
   const own = nameNode.getSymbol()?.compilerSymbol;
   if (!own) return false;
   const name = nameNode.getText();
-  for (const id of decl.getSourceFile().getDescendantsOfKind(SyntaxKind.Identifier)) {
-    if (id === nameNode || id.getText() !== name || !isWriteTarget(id)) continue;
+  for (const id of identifiersNamed(decl.getSourceFile(), name)) {
+    if (id === nameNode || !isWriteTarget(id)) continue;
     // `({ model } = next)`: the shorthand's own symbol is the property; the variable is its value symbol.
     const parent = id.getParent();
     const symbol =
@@ -269,12 +302,18 @@ export function findParamSites(project: Project, registry: LlmRegistry): ParamMa
       const model = resolveModel(modelProp);
       if (model === undefined) continue;
 
+      // A key written quoted or computed counts only in a request (see isRequestObject), read once.
+      let request: boolean | undefined;
       for (const entry of entries) {
         const paramProp = propertyNamed(object, entry.param);
         // We only transform a plain `key: value` property. A shorthand/spread/
         // method sharing the name is left untouched (we can't safely rewrite it).
         if (!paramProp || !Node.isPropertyAssignment(paramProp)) continue;
         if (!modelMatches(model, entry.on_models)) continue;
+        if (!hasPlainKey(modelProp) || !hasPlainKey(paramProp)) {
+          request ??= isRequestObject(object);
+          if (!request) continue;
+        }
 
         const { line, column } = sf.getLineAndColumnAtPos(paramProp.getStart());
         out.push({
@@ -429,7 +468,7 @@ function modelValueLeaves(modelProp: Node | undefined): ModelLeaf[] {
 
 function valueLeaves(expr: Node, viaDeclaration: boolean): ModelLeaf[] {
   if (Node.isStringLiteral(expr) || Node.isNoSubstitutionTemplateLiteral(expr)) return [{ node: expr, viaDeclaration }];
-  if (Node.isParenthesizedExpression(expr) || Node.isAsExpression(expr)) {
+  if (Node.isParenthesizedExpression(expr) || Node.isAsExpression(expr) || Node.isNonNullExpression(expr)) {
     return valueLeaves(expr.getExpression(), viaDeclaration);
   }
   if (Node.isConditionalExpression(expr)) {

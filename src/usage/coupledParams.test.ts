@@ -319,18 +319,50 @@ describe('an id read through a const, a shorthand or a cast is held exactly as i
     expect(verdict(src, 'gpt-3.5-turbo')).toMatchObject({ tier: 'A', position: 'model_arg' });
   });
 
-  it('a fallback is judged the same way inline and through a const (neither form is widened here)', () => {
-    const inline = verdict(call("model: process.env.M || 'gpt-3.5-turbo'", 'max_tokens: 20'), 'gpt-3.5-turbo');
-    const viaConst = verdict(
-      call('model: TITLE_MODEL', 'max_tokens: 20', ["const TITLE_MODEL = process.env.M || 'gpt-3.5-turbo';"]),
-      'gpt-3.5-turbo',
-    );
-    const viaConsumer = verdict(
-      call('model: process.env.M || TITLE_MODEL', 'max_tokens: 20', ["const TITLE_MODEL = 'gpt-3.5-turbo';"]),
-      'gpt-3.5-turbo',
-    );
-    expect(viaConst?.tier).toBe(inline?.tier);
-    expect(viaConsumer?.tier).toBe(inline?.tier);
+  // REGRESSION (2026-10-10, on main after #50 and #55): a fallback or a ternary branch skipped both
+  // checks, inline and through a const, so `model: process.env.MODEL || 'gpt-4-0613', max_tokens`
+  // was swapped to gpt-5.6-sol with `max_tokens` kept. The param pass resolves one concrete model and
+  // never a fallback, so nothing renamed it either: whenever the fallback was taken, the request was
+  // one the bundled rule says the replacement rejects.
+  const fallbackShapes: Array<[string, (params: string) => string]> = [
+    ['an inline `||` fallback', (p) => call("model: process.env.M || 'gpt-3.5-turbo'", p)],
+    ['an inline `??` fallback', (p) => call("model: process.env.M ?? 'gpt-3.5-turbo'", p)],
+    ['an inline ternary branch', (p) => call("model: fast ? 'gpt-4.1' : 'gpt-3.5-turbo'", p, ['const fast = Math.random() > 0.5;'])],
+    ['a const whose initializer is a fallback', (p) => call('model: TITLE_MODEL', p, ["const TITLE_MODEL = process.env.M || 'gpt-3.5-turbo';"])],
+    ['a const read through a fallback', (p) => call('model: process.env.M ?? TITLE_MODEL', p, ["const TITLE_MODEL = 'gpt-3.5-turbo';"])],
+    ['a shorthand-named const read in a ternary', (p) => call('model: fast ? model : "gpt-4.1"', p, ["const model = 'gpt-3.5-turbo';", 'const fast = Math.random() > 0.5;'])],
+  ];
+  for (const [name, shape] of fallbackShapes) {
+    it(`${name}: a rule that starts at the replacement holds it, with the inline twin's sentence`, () => {
+      expect(verdict(shape('max_tokens: 20'), 'gpt-3.5-turbo')).toEqual(inlineTwin('max_tokens: 20'));
+    });
+
+    it(`${name}: a parameter no rule covers holds it, with the inline twin's sentence`, () => {
+      expect(verdict(shape('temperature: 0.7, max_tokens: 20'), 'gpt-3.5-turbo')).toEqual(
+        inlineTwin('temperature: 0.7, max_tokens: 20'),
+      );
+    });
+
+    it(`${name}: no model-dependent parameter leaves it Tier A`, () => {
+      expect(verdict(shape('stream: false'), 'gpt-3.5-turbo')).toMatchObject({ tier: 'A', position: 'model_arg' });
+    });
+  }
+
+  it('a factory argument adds no request keys, inline or through a const', () => {
+    // `openai('…')` is the AI SDK's model handle; the call's options are the SDK's own spelling,
+    // which the SDK maps per model, so neither form is judged by them.
+    const head = ["import { openai } from '@ai-sdk/openai';", "import { generateText } from 'ai';"];
+    const inline = [
+      ...head,
+      "export const a = async () => generateText({ model: openai('gpt-3.5-turbo'), max_tokens: 20, prompt: 'x' });",
+    ].join('\n');
+    const viaConst = [
+      ...head,
+      "const TITLE_MODEL = 'gpt-3.5-turbo';",
+      "export const a = async () => generateText({ model: openai(TITLE_MODEL), max_tokens: 20, prompt: 'x' });",
+    ].join('\n');
+    expect(verdict(inline, 'gpt-3.5-turbo')).toMatchObject({ tier: 'A', position: 'model_arg' });
+    expect(verdict(viaConst, 'gpt-3.5-turbo')).toMatchObject({ tier: 'A', position: 'model_arg' });
   });
 });
 

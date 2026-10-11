@@ -847,6 +847,23 @@ const BYPASS_SHAPES: Record<string, string> = {
     '}',
     '',
   ].join('\n'),
+  // A fallback or a ternary branch is the request's model whenever it is taken, and the param pass
+  // cannot follow a swap there. Measured on main after #55, 2026-10-10: all three were Tier A, and
+  // `max_tokens` stayed beside gpt-5.6-sol.
+  'src/fallback.ts': [
+    ...CLIENT,
+    "const GPT4_MODEL = 'gpt-4-0613';",
+    'export async function viaFallback() {',
+    create("model: process.env.MODEL || 'gpt-4-0613', max_tokens: 4"),
+    '}',
+    'export async function viaConstFallback() {',
+    create('model: process.env.MODEL ?? GPT4_MODEL, max_tokens: 4'),
+    '}',
+    'export async function viaTernary(fast: boolean) {',
+    create("model: fast ? 'gpt-4.1' : 'gpt-4-0613', max_tokens: 4"),
+    '}',
+    '',
+  ].join('\n'),
 };
 /**
  * Controls that stay Tier A because the call passing `max_tokens` reads a DIFFERENT binding of the
@@ -955,6 +972,28 @@ const BYPASS_CONTROLS: Record<string, string> = {
     '}',
     '',
   ].join('\n'),
+  // A fallback with no model-dependent parameter beside it is swapped, as before.
+  'src/fallbackFree.ts': [
+    ...CLIENT,
+    'export async function viaFallback() {',
+    create("model: process.env.MODEL || 'gpt-4-0613'"),
+    '}',
+    '',
+  ].join('\n'),
+  // `O3_MODEL!` is read as `O3_MODEL` by the sink rule and the param pass alike: swap plus rename.
+  'src/nonNullO3.ts': [
+    ...CLIENT,
+    "const O3_MODEL = 'o3-mini';",
+    'export async function viaNonNull() {',
+    create('model: O3_MODEL!, max_tokens: 6'),
+    '}',
+    '',
+  ].join('\n'),
+  // A model table written with quoted keys is data: no swap, and its keys are not renamed.
+  'src/quotedCatalog.ts': [
+    'export const MODELS = [{ "model": "o3-mini", "max_tokens": 100000, "label": "o3 mini" }];',
+    '',
+  ].join('\n'),
 };
 
 function makeBypassRepo(): string {
@@ -978,7 +1017,7 @@ async function runMendr(command: string, args: string[]): Promise<{ exitCode: nu
   return { exitCode: result.exitCode ?? 0, stdout: result.stdout };
 }
 
-describe('a model id read through a const, a shorthand, a cast or quoted keys', () => {
+describe('a model id read through a const, a shorthand, a cast, quoted keys or a fallback', () => {
   const HELD = 'param_behaviour_change';
   /** file -> the held lines: each shape, then its inline twin. */
   const EXPECTED_HELD: Record<string, number[]> = {
@@ -989,6 +1028,7 @@ describe('a model id read through a const, a shorthand, a cast or quoted keys', 
     'src/mixed.ts': [3],
     'src/paramDefault.ts': [4],
     'src/computed.ts': [4, 7],
+    'src/fallback.ts': [3, 5, 11],
   };
 
   it('is Tier B with its inline twin\'s reason, and fix-llm, watch and audit agree', async () => {
@@ -999,10 +1039,11 @@ describe('a model id read through a const, a shorthand, a cast or quoted keys', 
     for (const [file, lines] of Object.entries(EXPECTED_HELD)) {
       expect(heldAt(file), file).toEqual(lines.map((l) => [l, HELD]));
     }
-    expect(report.tierB).toHaveLength(13);
+    expect(report.tierB).toHaveLength(16);
     // The controls stay automatic: the const nobody passes a parameter beside, the quoted o3
-    // calls (swapped and renamed, like their twin), and every declaration whose only call with
-    // `max_tokens` reads another binding of the same name.
+    // calls (swapped and renamed, like their twin), a fallback with no parameter beside it, a
+    // const read through `!` (swapped and renamed), and every declaration whose only call with
+    // `max_tokens` reads another binding of the same name. The quoted model table is data.
     expect(report.tierA.map((a) => [a.file, a.from, a.to]).sort()).toEqual(
       [
         ['src/free.ts', 'gpt-4-0613', 'gpt-5.6-sol'],
@@ -1010,9 +1051,13 @@ describe('a model id read through a const, a shorthand, a cast or quoted keys', 
         ['src/quotedO3.ts', 'o3-mini', 'gpt-5.6-sol'],
         ['src/quotedO3.ts', 'max_tokens', 'max_completion_tokens'],
         ['src/quotedO3.ts', 'max_tokens', 'max_completion_tokens'],
+        ['src/fallbackFree.ts', 'gpt-4-0613', 'gpt-5.6-sol'],
+        ['src/nonNullO3.ts', 'o3-mini', 'gpt-5.6-sol'],
+        ['src/nonNullO3.ts', 'max_tokens', 'max_completion_tokens'],
         ...Object.keys(SHADOW_CONTROLS).map((file) => [file, 'gpt-4-0613', 'gpt-5.6-sol']),
       ].sort(),
     );
+    expect(report.tierB.some((f) => f.file === 'src/quotedCatalog.ts')).toBe(false);
 
     // The human report gives each shape the scanner's own sentence, the same as its twin's.
     const human = await runFixLlm([repo, '--skip-gates']);
@@ -1064,11 +1109,20 @@ describe('a model id read through a const, a shorthand, a cast or quoted keys', 
     const quoted = readFileSync(join(repo, 'src', 'quotedO3.ts'), 'utf8');
     expect(quoted).toContain(`create({ model: 'gpt-5.6-sol', "max_completion_tokens": 2, messages: [] })`);
     expect(quoted).toContain(`create({ "model": "gpt-5.6-sol", "max_completion_tokens": 2, messages: [] })`);
+    expect(readFileSync(join(repo, 'src', 'fallbackFree.ts'), 'utf8')).toBe(
+      BYPASS_CONTROLS['src/fallbackFree.ts'].replace("'gpt-4-0613'", "'gpt-5.6-sol'"),
+    );
+    expect(readFileSync(join(repo, 'src', 'nonNullO3.ts'), 'utf8')).toBe(
+      BYPASS_CONTROLS['src/nonNullO3.ts']
+        .replace("'o3-mini'", "'gpt-5.6-sol'")
+        .replace('max_tokens: 6', 'max_completion_tokens: 6'),
+    );
+    expect(readFileSync(join(repo, 'src', 'quotedCatalog.ts'), 'utf8')).toBe(BYPASS_CONTROLS['src/quotedCatalog.ts']);
     // A shadow control's declaration is swapped, and the other binding's call is left as written.
     for (const [file, text] of Object.entries(SHADOW_CONTROLS)) {
       expect(readFileSync(join(repo, file), 'utf8'), file).toBe(text.replace("'gpt-4-0613'", "'gpt-5.6-sol'"));
     }
-    expect(stdout).toContain(`files modified: ${2 + Object.keys(SHADOW_CONTROLS).length}`);
+    expect(stdout).toContain(`files modified: ${4 + Object.keys(SHADOW_CONTROLS).length}`);
   }, 180_000);
 });
 

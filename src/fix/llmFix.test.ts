@@ -159,21 +159,28 @@ export async function run(messages: any) {
   const b = await client.chat.completions.create({ model: "o1" as string, max_tokens: 2, messages });
   const c = await client.chat.completions.create({ "model": "o1", "max_tokens": 3, messages });
   const d = await client.chat.completions.create({ model: "o1", ["max_tokens"]: 4, messages });
-  return { a, b, c, d };
+  const e = await client.chat.completions.create({ model: OTHER_MODEL!, max_tokens: 5, messages });
+  const req = { "model": "o1", "max_tokens": 6, messages };
+  const f = await client.chat.completions.create(req);
+  return { a, b, c, d, e, f };
 }
+const OTHER_MODEL = "o1";
 `.trimStart();
   for (const paramsOnSwappedCallsOnly of [false, true]) {
-    it(`follows a swap through a shorthand, a cast or quoted keys with its parameter fix, as inline (paramsOnSwappedCallsOnly: ${paramsOnSwappedCallsOnly})`, () => {
+    it(`follows a swap through a shorthand, a cast, \`!\`, quoted keys or a request variable with its parameter fix, as inline (paramsOnSwappedCallsOnly: ${paramsOnSwappedCallsOnly})`, () => {
       const project = inMemoryProject('src/r.ts', SWAP_FOLLOW_SOURCE);
       const result = applyLlmFixesToProject(project, REASONING_REGISTRY, undefined, { paramsOnSwappedCallsOnly });
-      expect(result.modelIdSites).toBe(4);
-      expect(result.paramsRenamed).toBe(4);
+      expect(result.modelIdSites).toBe(6);
+      expect(result.paramsRenamed).toBe(6);
       const text = project.getSourceFileOrThrow('src/r.ts').getFullText();
       expect(text).toContain('const model = "gpt-5.6-sol";');
       expect(text).toContain('{ model, max_completion_tokens: 1, messages }');
       expect(text).toContain('{ model: "gpt-5.6-sol" as string, max_completion_tokens: 2, messages }');
       expect(text).toContain('{ "model": "gpt-5.6-sol", "max_completion_tokens": 3, messages }');
       expect(text).toContain('{ model: "gpt-5.6-sol", ["max_completion_tokens"]: 4, messages }');
+      expect(text).toContain('{ model: OTHER_MODEL!, max_completion_tokens: 5, messages }');
+      expect(text).toContain('const OTHER_MODEL = "gpt-5.6-sol";');
+      expect(text).toContain('const req = { "model": "gpt-5.6-sol", "max_completion_tokens": 6, messages };');
     }, 30_000);
   }
 

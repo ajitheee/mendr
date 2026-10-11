@@ -431,20 +431,28 @@ export function isEnclosingObjectACallArgument(prop: Node): boolean {
  *     parentheses, `satisfies`, `!`) and still be that property's value. It used to have to be the
  *     property's direct child, so `model: 'gpt-4-0613' as string` was swapped while its bare twin
  *     was held.
+ *   - A fallback or a ternary branch, `model: process.env.MODEL || 'gpt-4-0613'`: the same keys.
+ *     When that branch is taken, the request carries this id and every sibling of `model:`, and the
+ *     param pass cannot follow a swap there (it resolves one concrete model, never a fallback), so
+ *     a swap the parameters would hold inline was shipped with `max_tokens` still beside
+ *     `gpt-5.6-sol`. The same holds for a declaration whose initializer is a fallback.
  *   - A declaration, `const MODEL = '…'` (also a class property or `x.model = '…'`): the keys of
  *     each request of each in-scope consumer the sink rule judged it by (collectTsSinks,
- *     inScopeSinks). It used to be none at all, so `create({ model: MODEL, max_tokens })` and
- *     `create({ model, max_tokens })` were swapped while the inline twin was held. A consumer
- *     whose `model` provably reads another binding of the same name (a parameter, a local, a
- *     different class's member) is not this declaration's request and adds no keys; the sink
- *     rule's own verdict still counts it (judgeDeclarationSinks is unchanged).
- *   - Anything else (a factory argument, a `||` fallback, a ternary branch): none, the honest
- *     answer when no request's siblings are this value's own. Unchanged.
+ *     inScopeSinks), including a consumer that reads it through a fallback or a ternary. It used to
+ *     be none at all, so `create({ model: MODEL, max_tokens })` and `create({ model, max_tokens })`
+ *     were swapped while the inline twin was held. A consumer whose `model` provably reads another
+ *     binding of the same name (a parameter, a local, a different class's member) is not this
+ *     declaration's request and adds no keys; the sink rule's own verdict still counts it
+ *     (judgeDeclarationSinks is unchanged).
+ *   - Anything else (a factory argument such as `openai('…')`, whose request keys are the SDK's
+ *     own spelling and are not the provider's): none. Unchanged.
  */
 function requestKeySets(literal: Node, sinks: TsSinkMap | undefined): string[][] {
+  // Climb to the position the literal is classified at (classifyLiteral), plus `satisfies` and
+  // `!`, which change neither the value nor where it goes.
   let top = literal;
   let parent = top.getParent();
-  while (parent && isValueWrapper(parent)) {
+  while (parent && (isValueWrapper(parent) || isValueTransparent(parent, top))) {
     top = parent;
     parent = top.getParent();
   }

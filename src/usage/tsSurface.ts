@@ -666,10 +666,12 @@ export function unwrapValueWrappers(expr: Node): Node {
 
 /**
  * The parameter keys of each request in `call` whose model is `name`, read the way an inline
- * literal's keys are read: an object-literal argument whose model-like property is `{ name }` or
- * `name` behind value wrappers only. A model reached through a fallback (`x || name`) is not this
- * request's model alone, and its inline twin is not judged by its keys either, so it adds nothing.
- * A factory consumer (`openai(name)`) carries no request keys of its own, like its inline twin.
+ * literal's keys are read: an object-literal argument whose model-like property is `{ name }`, or
+ * a value one of whose leaves is `name` (through value wrappers, `||`, `??` and a ternary's
+ * branches, as collectTsSinks finds it). A model reached through a fallback (`x || name`) is this
+ * request's model whenever that branch is taken, and its inline twin (`x || '…'`) is judged by the
+ * same keys (requestKeySets in scanLiterals.ts). A factory consumer (`openai(name)`) carries no
+ * request keys of its own, like its inline twin.
  *
  * With `decl`, a request whose `name` provably reads ANOTHER binding adds nothing either (see
  * {@link consumerReadsDeclaration}). The sink map files consumers by name, which is right for the
@@ -692,8 +694,10 @@ export function consumerRequestKeys(call: CallExpression, name: string, decl?: N
       if (!Node.isPropertyAssignment(prop) || !isModelLikeName(prop.getName())) return false;
       const init = prop.getInitializer();
       if (!init) return false;
-      const value = unwrapValueWrappers(init);
-      return traceableName(value) === name && (!decl || consumerReadsDeclaration(value, decl, name));
+      return leavesOf(init).some((leaf) => {
+        const value = unwrapValueWrappers(leaf);
+        return traceableName(value) === name && (!decl || consumerReadsDeclaration(value, decl, name));
+      });
     });
     if (carries) out.push(requestParamKeys(arg));
   }
@@ -821,12 +825,7 @@ function parameterFedBy(param: Node, target: DeclarationTarget, name: string): b
   const callee = calleeNameOf(fn);
   if (!callee) return false;
   const index = fn.getParameters().indexOf(param);
-  const sf = param.getSourceFile();
-  const calls: Array<CallExpression | NewExpression> = [
-    ...sf.getDescendantsOfKind(SyntaxKind.CallExpression),
-    ...sf.getDescendantsOfKind(SyntaxKind.NewExpression),
-  ];
-  for (const call of calls) {
+  for (const call of callsAndNewsOf(param.getSourceFile())) {
     const callee2 = call.getExpression();
     const called = Node.isIdentifier(callee2)
       ? callee2.getText()
@@ -840,6 +839,25 @@ function parameterFedBy(param: Node, target: DeclarationTarget, name: string): b
     if (arg && readsDeclaration(arg, target, name)) return true;
   }
   return false;
+}
+
+/**
+ * Every call and `new` in a file, built once per parse of the file (keyed like IDENTIFIER_INDEX).
+ * {@link parameterFedBy} runs for each consumer whose model is a parameter, and walking the whole
+ * file each time would make a file with many such consumers quadratic.
+ */
+const CALL_INDEX = new WeakMap<SourceFile, { compiler: unknown; calls: Array<CallExpression | NewExpression> }>();
+
+function callsAndNewsOf(sf: SourceFile): Array<CallExpression | NewExpression> {
+  let entry = CALL_INDEX.get(sf);
+  if (!entry || entry.compiler !== sf.compilerNode) {
+    entry = {
+      compiler: sf.compilerNode,
+      calls: [...sf.getDescendantsOfKind(SyntaxKind.CallExpression), ...sf.getDescendantsOfKind(SyntaxKind.NewExpression)],
+    };
+    CALL_INDEX.set(sf, entry);
+  }
+  return entry.calls;
 }
 
 /**
@@ -1057,11 +1075,12 @@ export interface RequestObjectFlow {
  * runs for each matched literal in a standalone object, and walking the whole file each time was
  * quadratic: 800 module-level model objects in one 4,800-line file took 327 s. Keyed on the
  * compiler node, which ts-morph replaces whenever the file is edited, so an index is never read
- * across an edit (its wrappers would be forgotten nodes by then).
+ * across an edit (its wrappers would be forgotten nodes by then). The param pass reads it too, to
+ * find the writes to a `let` (paramFix.ts, neverReassigned).
  */
 const IDENTIFIER_INDEX = new WeakMap<SourceFile, { compiler: unknown; byName: Map<string, Identifier[]> }>();
 
-function identifiersNamed(sf: SourceFile, name: string): Identifier[] {
+export function identifiersNamed(sf: SourceFile, name: string): Identifier[] {
   let entry = IDENTIFIER_INDEX.get(sf);
   if (!entry || entry.compiler !== sf.compilerNode) {
     const byName = new Map<string, Identifier[]>();

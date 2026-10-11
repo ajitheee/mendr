@@ -501,6 +501,39 @@ export async function run() {
     expect(keptSites(project)).toEqual(['o3-mini:2']);
   });
 
+  // REGRESSION (2026-10-10): the scan now holds a call whose model is a fallback or a ternary branch
+  // for its parameters, as it holds the bare literal. Its nested requests are skipped with it.
+  it('skips the nested requests of a call held for its parameters through a fallback, and keeps an unheld twin\'s', () => {
+    const project = inMemoryProject(
+      'src/fallback.ts',
+      `${HEADER}
+export async function run(opts: { model?: string }) {
+  await client.chat.completions.create({ model: opts.model || "o3-mini", temperature: 0, messages: [], fallbacks: [{ model: "o3-mini", max_tokens: 41 }] });
+  return client.chat.completions.create({ model: opts.model || "o3-mini", messages: [], fallbacks: [{ model: "o3-mini", max_tokens: 42 }] });
+}
+`,
+    );
+    const held = findModelIdLiterals(project, HELD_REGISTRY).filter((m) => m.position === 'surface_capped');
+    expect(held.map((m) => m.location.line)).toEqual([5]);
+    expect(keptSites(project)).toEqual(['o3-mini:42']);
+  });
+
+  // REGRESSION (2026-10-10): `MODEL!` hid a held call's model from the guard, so the nested request
+  // of a held proxy call was edited. The scan's sink rule has always read `MODEL!` as `MODEL`.
+  it('holds the nested requests of a held call whose model is read through `!`', () => {
+    const project = inMemoryProject(
+      'src/nonnull.ts',
+      `${HEADER}
+const MODEL = "o3-mini";
+export async function run() {
+  await proxy.chat.completions.create({ model: MODEL!, messages: [], fallbacks: [{ model: "o3-mini", max_tokens: 31 }] });
+  return client.chat.completions.create({ model: MODEL!, messages: [], fallbacks: [{ model: "o3-mini", max_tokens: 32 }] });
+}
+`,
+    );
+    expect(keptSites(project)).toEqual(['o3-mini:32']);
+  });
+
   it('keeps every site when nothing was held', () => {
     const project = inMemoryProject(
       'src/plain.ts',
@@ -567,6 +600,50 @@ export async function run(messages: any) {
     const text = project.getSourceFileOrThrow('src/quoted.ts').getFullText();
     expect(text).toContain('{ "model": "o1-mini", "max_completion_tokens": 1 }');
     expect(text).toContain("{ model: 'o1-mini', 'max_completion_tokens': 2 }");
+  });
+
+  // A quoted or computed key is how a JSON-shaped model table is usually written. Reading it as the
+  // plain key is for following a swap into its request; outside a request it would rename a
+  // catalog row's key, which breaks the row's readers and fixes no request.
+  it('reads a quoted or computed key only in a request: a call argument or a request variable', () => {
+    const project = inMemoryProject(
+      'src/tables.ts',
+      [
+        'export const CATALOG = [{ "model": "o1-mini", "max_tokens": 65536, "label": "o1 mini" }];',
+        'export const ROW = { ["model"]: "o1-mini", ["max_tokens"]: 7 };',
+        'export const MIXED = { model: "o1-mini", "max_tokens": 8 };',
+        'export const QUOTED_MODEL = { "model": "o1-mini", max_tokens: 9 };',
+        'export async function viaVariable(c: any) {',
+        '  const req = { "model": "o1-mini", "max_tokens": 10 };',
+        '  return c.chat.completions.create(req);',
+        '}',
+        'export const viaCall = (c: any) => c.chat.completions.create(({ "model": "o1-mini", ["max_tokens"]: 11 }));',
+        '',
+      ].join('\n'),
+    );
+    expect(applyParamFixes(project, REGISTRY)).toHaveLength(2);
+    const text = project.getSourceFileOrThrow('src/tables.ts').getFullText();
+    expect(text).toContain('[{ "model": "o1-mini", "max_tokens": 65536, "label": "o1 mini" }]');
+    expect(text).toContain('{ ["model"]: "o1-mini", ["max_tokens"]: 7 }');
+    expect(text).toContain('{ model: "o1-mini", "max_tokens": 8 }');
+    expect(text).toContain('{ "model": "o1-mini", max_tokens: 9 }');
+    expect(text).toContain('const req = { "model": "o1-mini", "max_completion_tokens": 10 };');
+    expect(text).toContain('({ "model": "o1-mini", ["max_completion_tokens"]: 11 })');
+  });
+
+  // The sink rule reads `MODEL!` as `MODEL`, so pass 1 swaps the const behind it; pass 2 has to
+  // read the request's model there too, or the swap ships without its parameter fix.
+  it('reads a model through a non-null `!`', () => {
+    const project = inMemoryProject(
+      'src/nonnull.ts',
+      'const M = "o1-mini";\nexport const a = (c: any) => c.chat.completions.create({ model: M!, max_tokens: 6 });\n',
+    );
+    expect(applyParamFixes(project, REGISTRY)).toEqual([
+      { kind: 'param_rename', param: 'max_tokens', replacement: 'max_completion_tokens', model: 'o1-mini' },
+    ]);
+    expect(project.getSourceFileOrThrow('src/nonnull.ts').getFullText()).toContain(
+      '{ model: M!, max_completion_tokens: 6 }',
+    );
   });
 
   it('reads a model through parentheses and a cast that masks nothing, never through one that does', () => {
