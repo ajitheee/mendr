@@ -66,12 +66,16 @@ import {
 //     model = 'claude-sonnet-4-6'` resolved to Opus and lost `temperature` on
 //     the Sonnet path too. See neverReassigned.)
 //   - It edits any object literal with a `model` key and a rule's parameter,
-//     written as plain names, not only a request it can see reach a call: a
-//     standalone request body (`const body = { model, max_tokens }` posted
-//     with fetch) is one, and so is a catalog row, whose readers the rename
-//     breaks. Narrowing that is a separate, release-noted change. A key written
-//     quoted or computed (`"max_tokens"`, `["max_tokens"]`) is read only in a
-//     request (isRequestObject), so a quoted catalog row is left as it was.
+//     written as plain names, with the model written `model: '…'` or
+//     `model: NAME` (NAME a variable initialised with a bare literal), not only
+//     a request it can see reach a call: a standalone request body
+//     (`const body = { model: MODEL, max_tokens }` posted with fetch) is one,
+//     and so is a catalog row, whose readers the rename breaks. Narrowing that
+//     is a separate, release-noted change. Every other shape is read only in a
+//     request (isRequestObject), so a catalog row written that way is left as
+//     it was: a key written quoted or computed (`"max_tokens"`,
+//     `["max_tokens"]`), and a model read through a `{ model }` shorthand,
+//     parentheses, `as string`, `as const` or `!` (isLegacyModelShape).
 //   - A `param`/`model` supplied via a spread (`{ ...opts, temperature }`) is
 //     not seen unless the key is a direct own property of the object literal.
 
@@ -149,6 +153,27 @@ function hasPlainKey(prop: Node): boolean {
 }
 
 /**
+ * Is this `model` property written in a shape `v0.5.9-alpha` read: `model: '…'` with the literal
+ * as the value itself, or `model: NAME` with NAME a variable initialised with a bare literal? Those
+ * are read in any object, as they always were (see the header). Every shape this pass learned to
+ * read since — a `{ model }` shorthand, parentheses, `as string`, `as const` or `!` on the value or
+ * on the variable's initializer — is read only in a request (isRequestObject), like a quoted key.
+ * (Review of 947967d, 2026-10-10: reading those shapes in any object renamed `max_tokens` in a
+ * presets table `[{ name, model, max_tokens }]` whose own code reads `.max_tokens`, and removed
+ * `temperature` from a settings object, where no swap had been made and 0.5.9 made no edit.)
+ */
+function isLegacyModelShape(modelProp: Node): boolean {
+  if (!Node.isPropertyAssignment(modelProp)) return false;
+  const value = modelProp.getInitializer();
+  if (!value) return false;
+  if (Node.isStringLiteral(value) || Node.isNoSubstitutionTemplateLiteral(value)) return true;
+  if (!Node.isIdentifier(value)) return false;
+  const decl = value.getSymbol()?.getValueDeclaration();
+  const init = decl && Node.isVariableDeclaration(decl) ? decl.getInitializer() : undefined;
+  return !!init && (Node.isStringLiteral(init) || Node.isNoSubstitutionTemplateLiteral(init));
+}
+
+/**
  * Is this object a request: passed to a call (through parentheses, casts or a fallback), or built
  * in a variable and passed to a provider endpoint (requestObjectFlow)? Every object pass 1 can swap
  * a model in, or reach through a const, is one of these.
@@ -156,8 +181,10 @@ function hasPlainKey(prop: Node): boolean {
  * A quoted (`"max_tokens"`) or computed (`["max_tokens"]`) key is read as the same key as the
  * plain one, so a swap is followed by its parameter fix however the request spells the key. That
  * reading is used only in a request: quoted keys are how a JSON-shaped model table or catalog row
- * is usually written, and renaming a key there breaks its readers while fixing no request. A plain
- * key is renamed in any object with a `model`, as it always was (see the header).
+ * is usually written, and renaming a key there breaks its readers while fixing no request. The
+ * model shapes this pass learned to read after 0.5.9 are read only in a request for the same
+ * reason (isLegacyModelShape). A plain key beside a model written as 0.5.9 read it is renamed in
+ * any object with a `model`, as it always was (see the header).
  */
 function isRequestObject(obj: ObjectLiteralExpression): boolean {
   return enclosingCallOfObject(obj) !== undefined || requestObjectFlow(obj) !== undefined;
@@ -302,7 +329,9 @@ export function findParamSites(project: Project, registry: LlmRegistry): ParamMa
       const model = resolveModel(modelProp);
       if (model === undefined) continue;
 
-      // A key written quoted or computed counts only in a request (see isRequestObject), read once.
+      // A key written quoted or computed, and a model read through a shape 0.5.9 did not read
+      // (isLegacyModelShape), count only in a request (see isRequestObject), read once.
+      const legacyModel = hasPlainKey(modelProp) && isLegacyModelShape(modelProp);
       let request: boolean | undefined;
       for (const entry of entries) {
         const paramProp = propertyNamed(object, entry.param);
@@ -310,7 +339,7 @@ export function findParamSites(project: Project, registry: LlmRegistry): ParamMa
         // method sharing the name is left untouched (we can't safely rewrite it).
         if (!paramProp || !Node.isPropertyAssignment(paramProp)) continue;
         if (!modelMatches(model, entry.on_models)) continue;
-        if (!hasPlainKey(modelProp) || !hasPlainKey(paramProp)) {
+        if (!legacyModel || !hasPlainKey(paramProp)) {
           request ??= isRequestObject(object);
           if (!request) continue;
         }

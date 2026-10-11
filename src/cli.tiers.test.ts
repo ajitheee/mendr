@@ -995,13 +995,39 @@ const BYPASS_CONTROLS: Record<string, string> = {
     '',
   ].join('\n'),
 };
+/**
+ * Objects that are not requests, whose model the param pass can read only through a shape 0.5.9
+ * did not read: a `{ model }` shorthand, a cast, `!`. Nothing is swapped in them, so their keys
+ * stay as written. Review of 947967d (2026-10-10): each was renamed or lost `temperature`, and
+ * `maxFor()` then read `undefined`. 0.5.9 made no edit.
+ */
+const CATALOG_CONTROLS: Record<string, string> = {
+  'src/presets.js': [
+    "const model = 'gpt-5.6-sol';",
+    "export const PRESETS = [{ name: 'Short answer', model, max_tokens: 256 }, { name: 'Long', model, max_tokens: 4096 }];",
+    'export function maxFor(i) { return PRESETS[i].max_tokens; }',
+    '',
+  ].join('\n'),
+  'src/settings.ts': [
+    "const model = 'claude-opus-4-8';",
+    "export const settings = { model, temperature: 0.7, label: 'Opus' };",
+    '',
+  ].join('\n'),
+  'src/castCatalog.ts': [
+    "const SOL = 'gpt-5.6-sol';",
+    "export const ROWS = [{ model: 'o3-mini' as string, max_tokens: 100000, label: 'o3' }];",
+    "export const BANG = [{ model: SOL!, max_tokens: 4096, label: 'sol' }];",
+    '',
+  ].join('\n'),
+};
 
 function makeBypassRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'mendr-bypass-'));
   created.push(dir);
   writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'bypass-fixture' }, null, 2));
   mkdirSync(join(dir, 'src'));
-  for (const [file, text] of Object.entries({ ...BYPASS_SHAPES, ...BYPASS_CONTROLS, ...SHADOW_CONTROLS })) {
+  const files = { ...BYPASS_SHAPES, ...BYPASS_CONTROLS, ...SHADOW_CONTROLS, ...CATALOG_CONTROLS };
+  for (const [file, text] of Object.entries(files)) {
     writeFileSync(join(dir, file), text);
   }
   return dir;
@@ -1058,6 +1084,9 @@ describe('a model id read through a const, a shorthand, a cast, quoted keys or a
       ].sort(),
     );
     expect(report.tierB.some((f) => f.file === 'src/quotedCatalog.ts')).toBe(false);
+    // An object that is not a request gets no param transform, and holds nothing.
+    expect(report.tierA.filter((a) => a.file in CATALOG_CONTROLS)).toEqual([]);
+    expect(report.tierB.filter((f) => f.file in CATALOG_CONTROLS)).toEqual([]);
 
     // The human report gives each shape the scanner's own sentence, the same as its twin's.
     const human = await runFixLlm([repo, '--skip-gates']);
@@ -1118,6 +1147,9 @@ describe('a model id read through a const, a shorthand, a cast, quoted keys or a
         .replace('max_tokens: 6', 'max_completion_tokens: 6'),
     );
     expect(readFileSync(join(repo, 'src', 'quotedCatalog.ts'), 'utf8')).toBe(BYPASS_CONTROLS['src/quotedCatalog.ts']);
+    for (const [file, text] of Object.entries(CATALOG_CONTROLS)) {
+      expect(readFileSync(join(repo, file), 'utf8'), file).toBe(text);
+    }
     // A shadow control's declaration is swapped, and the other binding's call is left as written.
     for (const [file, text] of Object.entries(SHADOW_CONTROLS)) {
       expect(readFileSync(join(repo, file), 'utf8'), file).toBe(text.replace("'gpt-4-0613'", "'gpt-5.6-sol'"));

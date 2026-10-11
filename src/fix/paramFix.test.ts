@@ -671,6 +671,57 @@ export async function run(messages: any) {
     expect(text).toContain('{ model: M as string, max_completion_tokens: 5 }');
   });
 
+  // REGRESSION (review of 947967d, 2026-10-10): the model shapes this pass learned to read after
+  // 0.5.9 (a `{ model }` shorthand, a cast, parentheses, `!`) were read in ANY object, so a presets
+  // table whose own code reads `.max_tokens`, and a settings object, lost `max_tokens` and
+  // `temperature` with no swap anywhere. 0.5.9 made no edit there. They are read only in a request
+  // now, as a quoted key is; a request written in those shapes is still followed.
+  it('reads a shorthand, cast, parenthesised or `!` model only in a request, never in a table', () => {
+    const project = inMemoryProject(
+      'src/presets.ts',
+      [
+        'const model = "o1-mini";',
+        'const opus = "claude-opus-5";',
+        'const C = "o1-mini" as const;',
+        "export const PRESETS = [{ name: 'Short', model, max_tokens: 256 }, { name: 'Long', model, max_tokens: 4096 }];",
+        'export function maxFor(i: number) { return PRESETS[i].max_tokens; }',
+        "export const SETTINGS = { model: opus as string, temperature: 0.7, label: 'Opus' };",
+        "export const ROWS = [{ model: 'o1-mini' as string, max_tokens: 1, label: 'a' }, { model: 'o1-mini' as const, max_tokens: 2 }];",
+        'export const BANG = { model: model!, max_tokens: 3 };',
+        "export const PARENS = { model: ('o1-mini'), max_tokens: 4 };",
+        'export const VIA_CAST_CONST = { model: C, max_tokens: 5 };',
+        // As in 0.5.9: a row written `model: '…'` or `model: NAME` is renamed (see the header).
+        "export const PLAIN = { model: 'o1-mini', max_tokens: 6 };",
+        // The same shapes in a request are followed.
+        'export const a = (c: any) => c.chat.completions.create({ model, max_tokens: 7 });',
+        'export const b = (c: any) => c.messages.create({ model: opus as string, temperature: 0.7 });',
+        'export const d = (c: any) => c.chat.completions.create({ model: model!, max_tokens: 8 });',
+        'export const e = (c: any) => c.chat.completions.create({ model: C, max_tokens: 9 });',
+        'export async function f(c: any) {',
+        '  const req = { model, max_tokens: 10 };',
+        '  return c.chat.completions.create(req);',
+        '}',
+        '',
+      ].join('\n'),
+    );
+    expect(findParamSites(project, REGISTRY).map((s) => s.location.line)).toEqual([11, 12, 13, 14, 15, 17]);
+    expect(applyParamFixes(project, REGISTRY)).toHaveLength(6);
+    const text = project.getSourceFileOrThrow('src/presets.ts').getFullText();
+    expect(text).toContain("[{ name: 'Short', model, max_tokens: 256 }, { name: 'Long', model, max_tokens: 4096 }]");
+    expect(text).toContain('return PRESETS[i].max_tokens;');
+    expect(text).toContain("{ model: opus as string, temperature: 0.7, label: 'Opus' }");
+    expect(text).toContain("[{ model: 'o1-mini' as string, max_tokens: 1, label: 'a' }, { model: 'o1-mini' as const, max_tokens: 2 }]");
+    expect(text).toContain('{ model: model!, max_tokens: 3 }');
+    expect(text).toContain("{ model: ('o1-mini'), max_tokens: 4 }");
+    expect(text).toContain('{ model: C, max_tokens: 5 }');
+    expect(text).toContain("{ model: 'o1-mini', max_completion_tokens: 6 }");
+    expect(text).toContain('create({ model, max_completion_tokens: 7 })');
+    expect(text).toContain('create({ model: opus as string })');
+    expect(text).toContain('create({ model: model!, max_completion_tokens: 8 })');
+    expect(text).toContain('create({ model: C, max_completion_tokens: 9 })');
+    expect(text).toContain('const req = { model, max_completion_tokens: 10 };');
+  });
+
   // REGRESSION (review of 402c1e4, 2026-10-07): a reassigned `let` is either model at run time, and
   // resolving it to its initializer removed `temperature` from a request that may go to Sonnet.
   // Written `{ model: model }` that was already so on 0df2dce; resolving the shorthand made
