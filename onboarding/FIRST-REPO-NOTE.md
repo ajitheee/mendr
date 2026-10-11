@@ -11,8 +11,11 @@ shutdown.** OpenAI retires `gpt-4`, `gpt-4-turbo`, `gpt-3.5-turbo`, `o3-mini` an
 2026-10-23. Code pinned to one of those keeps working until that date and then returns
 `model_not_found`. Most teams find out from a customer.
 
-It is not a linter, not a cost tool, not an eval harness, and it does not track API parameter
-changes — only model retirements.
+It is not a linter, not a cost tool, and not an eval harness. Besides model retirements it knows
+only a short list of parameter rules, each quoting a provider's own page (four in this release:
+OpenAI's `max_tokens` rename, and Anthropic's removal of `temperature`, `top_p` and `top_k` on the
+models that reject them). `fix-llm` can apply one of those to a call whose model is not retiring;
+`audit` does not report it.
 
 ## How it runs
 
@@ -30,8 +33,8 @@ commit SHA rather than a tag, because a tag can be moved and a moved tag is indi
 the original.
 
 ```yaml
-uses: ajitheee/mendr/.github/workflows/reusable-audit.yml@701225323ca70e0ef13826fa63f50bae486e6339
-uses: ajitheee/mendr/.github/workflows/reusable-migrate.yml@701225323ca70e0ef13826fa63f50bae486e6339
+uses: ajitheee/mendr/.github/workflows/reusable-audit.yml@072ee836b30f7c202c01643ee094998c0f41e634
+uses: ajitheee/mendr/.github/workflows/reusable-migrate.yml@072ee836b30f7c202c01643ee094998c0f41e634
 ```
 
 Set the repository variable `MENDR_SPEC` to the same SHA so the CLI it fetches is pinned too.
