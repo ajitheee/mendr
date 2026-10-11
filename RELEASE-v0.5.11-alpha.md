@@ -516,7 +516,7 @@ pins, the version and the stamp) on 2026-10-11 UTC, on Windows with Node 24.13.0
 build was made in a separate directory from `git archive v0.5.10-alpha`. Both built with
 `npm ci && npm run build`.
 
-{{EVIDENCE}}
+**Tests:** the full suite on the stamped tree passes 2126 tests in 120 files (run one file at a time, as CI runs it); the App suite passes 239 tests in 18 files, and its typecheck is clean. **Dates and rules against the live pages** (re-run on 2026-10-11): `mendr check-dates` reports 173 confirmed, 21 inferred, 0 failing and 25 not judged; `mendr check-rules` confirms 26 of 26 quoted sentences. **Review:** one agent drafted these notes from the code and probes, and two independent checks compared every claim with the release build and v0.5.10-alpha; all 9 of their corrections are applied.
 
 - **Version pins:** `node scripts/check-pins.mjs` reports OK, with the release pins at
   `v0.5.11-alpha` and the SHA pins still at `072ee83` (v0.5.10-alpha's commit; the RC roll moves
