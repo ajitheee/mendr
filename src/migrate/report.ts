@@ -12,7 +12,11 @@ const VERDICT_LINE: Record<MigrationVerdict, string> = {
   verified: 'VERIFIED — a build and/or the existing tests passed in the sandbox and no gate rejected the migration. Ready to open as a reviewed PR (never auto-merged).',
   failed: 'FAILED — a gate rejected the migration. It is shown for inspection only; do not apply it.',
   inconclusive: 'INCONCLUSIVE — no build, test or eval actually ran in the sandbox, so nothing executable was proven. The diff is shown for review only.',
-  no_migration: 'NO MIGRATION — no verified Tier-A swap was found, and nothing was held for review. Nothing to apply.',
+  // migrate reads source code (TypeScript, JavaScript, Python), never configuration files, while
+  // audit lists a model set in a YAML or .env file as a Tier B selector. So this line speaks for
+  // the source code only, and says where a configured model is reported.
+  no_migration:
+    'NO MIGRATION — no verified Tier-A swap was found in the source code, and nothing there was held for review. Nothing to apply. Configuration files are not read by migrate; `mendr audit` lists a retiring model id set in one.',
   held_for_review: 'HELD FOR REVIEW — nothing was migrated, and this repository is not clean: every retiring model id found needs a person (listed below).',
 };
 

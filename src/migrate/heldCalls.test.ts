@@ -115,7 +115,10 @@ describe('a repository with nothing held', { timeout: 60_000 }, () => {
     const r = await runMigration(repo({ 'package.json': '{"name":"t"}', 'a.ts': 'export const x = 1;\n' }), REG, { skipVerify: true });
     expect(r.verification.verdict).toBe('no_migration');
     expect(r.skipped).toEqual([]);
-    expect(renderMigrationReport(r).join('\n')).toContain('NO MIGRATION — no verified Tier-A swap was found, and nothing was held for review.');
+    const text = renderMigrationReport(r).join('\n');
+    expect(text).toContain('NO MIGRATION — no verified Tier-A swap was found in the source code, and nothing there was held for review.');
+    // migrate never reads configuration files, and the line says so rather than claiming the whole repository.
+    expect(text).toContain('Configuration files are not read by migrate; `mendr audit` lists a retiring model id set in one.');
   });
 
   it('with a retiring id only as data (a list of ids) is no_migration: Tier C is informational, not held', async () => {
@@ -140,6 +143,39 @@ describe('a migration that also holds calls', { timeout: 60_000 }, () => {
     expect(body).toContain('**Left alone (1)**');
     expect(body).toContain('merging this pull request does not resolve them');
     expect(body).toContain('- `src/ask.ts:3` `gpt-3.5-turbo` (`param_behaviour_change`) — ');
+  });
+});
+
+describe('a file the repository\'s tsconfig does not compile', { timeout: 60_000 }, () => {
+  // migrate used to read only the tsconfig program, while fix-llm and audit walk every source file.
+  // `include: ["src"]` leaves server/ out, and with no allowJs no .js file is in the program, so a
+  // held call there was never listed (the run read as clean) and a verified swap there was never
+  // made. Both now come from the same files fix-llm reads.
+  const TSCONFIG = JSON.stringify({ compilerOptions: { strict: true }, include: ['src'] });
+  const scoped = (files: Record<string, string>) =>
+    repo({ 'package.json': '{"name":"t"}', 'tsconfig.json': TSCONFIG, 'src/index.ts': 'export const ready = true;\n', ...files });
+
+  it('lists a held call outside the tsconfig include and in a .js file, and the run is held_for_review', async () => {
+    const r = await runMigration(scoped({ 'server/ask.ts': HELD_TS, 'src/ask.js': HELD_TS }), REG, { skipVerify: true });
+    expect(r.skipped.map((s) => [s.file, s.line, s.code])).toEqual([
+      ['server/ask.ts', 3, 'param_behaviour_change'],
+      ['src/ask.js', 3, 'param_behaviour_change'],
+    ]);
+    expect(r.verification.verdict).toBe('held_for_review');
+    expect(renderMigrationReport(r).join('\n')).not.toContain('NO MIGRATION');
+  });
+
+  it('makes a verified swap outside the tsconfig include and in a .js file', async () => {
+    const r = await runMigration(scoped({ 'server/go.ts': PLAIN_TS, 'src/go.js': PLAIN_TS }), REG, { skipVerify: true });
+    expect(r.migrated).toBe(true);
+    expect(r.migrations.map((m) => [m.from, m.to, [...m.files].sort()])).toEqual([['gpt-4', 'gpt-5.6-sol', ['server/go.ts', 'src/go.js']]]);
+    expect([...r.changedFiles].sort()).toEqual(['server/go.ts', 'src/go.js']);
+  });
+
+  it('holds and lists an approved model there too, under --only', async () => {
+    const r = await runMigration(scoped({ 'src/ask.js': HELD_TS }), REG, { skipVerify: true, only: ['gpt-3.5-turbo'] });
+    expect(r.verification.verdict).toBe('held_for_review');
+    expect(r.skipped.map((s) => s.file)).toEqual(['src/ask.js']);
   });
 });
 

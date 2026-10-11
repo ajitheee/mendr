@@ -5,7 +5,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 
-// HELD CALLS, END TO END: audit, fix-llm and migrate name the same calls, with the same codes.
+// HELD CALLS, END TO END: audit, fix-llm and migrate name the same calls in source code, with the
+// same codes. (audit also reads configuration files, which fix-llm and migrate do not.)
 //
 // v0.5.10-alpha's known issue: `migrate` listed only TypeScript blocked replacements and Azure
 // aliases under `skipped`, so a repository whose only findings were held calls read
@@ -135,6 +136,62 @@ describe('a repository whose only findings are held calls', () => {
 
     // Nothing was a swap, so nothing migrated, and the run is not the clean outcome.
     expect(fix.tierA).toEqual([]);
+    expect(migrate.migrated).toBe(false);
+    expect(migrate.verification.verdict).toBe('held_for_review');
+  }, 240_000);
+
+  // The repository's tsconfig is not the scan scope. `include: ["src"]` leaves `server/` out, and
+  // without `allowJs` no .js file is in the program. fix-llm and audit walk every source file, so
+  // they listed both calls below while migrate, which read only the tsconfig program, listed
+  // neither: "NO MIGRATION ... nothing was held for review", `skipped: []`, and the Action reported
+  // the repository clean.
+  it('lists a held call in a file the tsconfig leaves out, and in a .js file without allowJs, as audit and fix-llm do', async () => {
+    const opus = (typed: boolean) =>
+      [
+        "import Anthropic from '@anthropic-ai/sdk';", //                                   1
+        '', //                                                                              2
+        'const anthropic = new Anthropic();', //                                            3
+        "const MODEL = 'claude-opus-4-1-20250805';", //                                     4  coupled_param_unverified
+        '', //                                                                              5
+        `export async function ask(prompt${typed ? ': string' : ''}) {`, //                 6
+        "  return anthropic.messages.create({ model: MODEL, max_tokens: 1024, messages: [{ role: 'user', content: prompt }] });",
+        '}', //                                                                             8
+        '',
+      ].join('\n');
+    const dir = repo({
+      // No allowJs, and only src/ compiled: server/ask.ts is outside it, src/ask.js is a .js file.
+      'tsconfig.json': JSON.stringify({ compilerOptions: { strict: true, module: 'NodeNext', moduleResolution: 'NodeNext', target: 'ES2022' }, include: ['src'] }),
+      'src/index.ts': 'export const ready = true;\n',
+      'server/ask.ts': opus(true),
+      'src/ask.js': opus(false),
+    });
+    const scoped: [string, number, string][] = [
+      ['server/ask.ts', 4, 'coupled_param_unverified'],
+      ['src/ask.js', 4, 'coupled_param_unverified'],
+    ];
+
+    const fix = JSON.parse((await run('fix-llm', [dir, '--skip-gates', '--json'])).stdout) as {
+      tierB: { file: string; line: number; reason: string }[];
+    };
+    const migrate = JSON.parse((await run('migrate', [dir, '--skip-verify', '--json'])).stdout) as {
+      migrated: boolean;
+      verification: { verdict: string };
+      skipped: { file: string; line: number; code: string }[];
+    };
+    const audit = JSON.parse((await run('audit', [dir, '--offline', '--json'])).stdout) as {
+      investigations: { locations: { selectors: { file: string; line: number; tier: string; reason: string | null }[] } }[];
+    };
+
+    expect(sorted(fix.tierB.map((b): [string, number, string] => [b.file, b.line, b.reason]))).toEqual(scoped);
+    expect(sorted(migrate.skipped.map((s): [string, number, string] => [s.file, s.line, s.code]))).toEqual(scoped);
+    expect(
+      sorted(
+        audit.investigations
+          .flatMap((i) => i.locations.selectors)
+          .filter((l) => l.tier === 'B')
+          .map((l): [string, number, string] => [l.file, l.line, l.reason ?? '']),
+      ),
+    ).toEqual(scoped);
     expect(migrate.migrated).toBe(false);
     expect(migrate.verification.verdict).toBe('held_for_review');
   }, 240_000);

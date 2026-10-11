@@ -2,7 +2,13 @@ import type { CheckStatus } from '../gates/status.js';
 import { existsSync } from 'node:fs';
 import { basename, join, relative } from 'node:path';
 import type { LlmModelIdDeprecation, LlmRegistry } from '../types.js';
-import { loadProject } from '../usage/scanRepo.js';
+import {
+  buildRegistryPrefilter,
+  collectTsSourceFiles,
+  ensureFilesLoaded,
+  filesMatchingPrefilter,
+  loadProject,
+} from '../usage/scanRepo.js';
 import { applyLlmFixesToProject } from '../fix/llmFix.js';
 import { findModelIdLiterals, type LiteralMatch } from '../usage/scanLiterals.js';
 import { isVerified } from '../usage/llmRegistry.js';
@@ -297,6 +303,21 @@ async function plan(
   // TS/JS: a fresh baseline and a patched load (the type-check gate needs both).
   const baselineProject = loadProject(repoPath);
   const patchedProject = loadProject(repoPath);
+  // THE SAME FILES fix-llm AND audit LOOK AT, NOT ONLY THE ONES THE TSCONFIG COMPILES.
+  //
+  // loadProject reads the repository's own tsconfig, and a tsconfig routinely leaves real source
+  // out: `include: ["src"]` does not cover `server/`, and without `allowJs` no .js file is in the
+  // program at all. fix-llm and audit walk every source file on disk, so they listed a held call in
+  // such a file while migrate never saw it: `skipped` came back empty, the verdict was
+  // `no_migration`, and the Action reported the repository clean and closed an open Mendr pull
+  // request. A verified swap in such a file was missed the same way. Every source file whose text
+  // names a registry token (fix-llm's own walker and pre-filter) is added to BOTH loads, as fix-llm
+  // adds the files it located to its gated loads. The type-check gate stays sound because it is
+  // baseline-relative: a file the build never included brings the same diagnostics to both loads,
+  // so only an error the patch introduces can fail it.
+  const { hits: registryFiles } = filesMatchingPrefilter(collectTsSourceFiles(repoPath), buildRegistryPrefilter(registry));
+  ensureFilesLoaded(baselineProject, registryFiles);
+  ensureFilesLoaded(patchedProject, registryFiles);
   // Restricted (--only): parameter rules apply only at the calls this run swaps (LlmFixOptions).
   const tsResult = applyLlmFixesToProject(patchedProject, registry, repoPath, {
     paramsOnSwappedCallsOnly: restricted,
