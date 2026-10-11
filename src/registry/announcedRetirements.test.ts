@@ -55,9 +55,28 @@ describe('the dated retirements added on 2026-10-10', () => {
     }
   });
 
-  it('auto-fixes only gpt-5.3-codex, the one record the gate verified and nothing holds', () => {
+  it('auto-fixes none of them', () => {
+    // The gate verified gpt-5.1, gpt-5.3-codex and gpt-5.4-nano. All three are held (see below).
     const autoFixed = Object.keys(ADDED).filter((id) => isVerified(find(id)));
-    expect(autoFixed).toEqual(['gpt-5.3-codex']);
+    expect(autoFixed).toEqual([]);
+  });
+
+  it("holds gpt-5.3-codex for review: OpenAI's GPT-6 guide changes prompt_cache_retention, and nothing checks it", () => {
+    // The default-effort change that holds gpt-5.1 does not reach gpt-5.3-codex (low through
+    // xhigh, Responses only). This does: the guide tells a migration from GPT-5.5 or earlier to
+    // replace prompt_cache_retention with prompt_cache_options.ttl. No parameter rule names the
+    // GPT-6 family, so the TypeScript guard does not look at a swap to gpt-6-sol, and Python has
+    // no guard. Swapped as verified, `prompt_cache_retention="24h"` stayed in the request.
+    const record = find('gpt-5.3-codex');
+    expect(record.verification?.status).toBe('quarantined');
+    expect(record.verification?.autoApplyAllowed).toBe(false);
+    expect(record.verification?.replacementConfirmed).toBe(true);
+    expect(record.verification?.quarantineReason).toContain('prompt_cache_retention');
+    expect(record.verification?.quarantineReason).toContain('prompt_cache_options.ttl');
+    expect(record.evidence?.map((ref) => ref.excerpt)).toContain(
+      'When migrating from GPT-5.5 or earlier, replace prompt_cache_retention with prompt_cache_options.ttl set to "30m".',
+    );
+    expect(isVerified(record)).toBe(false);
   });
 
   it('holds gpt-5.1 and gpt-5.4-nano for review: GPT-6 Sol and Luna default to a different reasoning effort', () => {

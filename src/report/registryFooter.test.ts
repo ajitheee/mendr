@@ -192,9 +192,10 @@ describe('the SHIPPED registry footer', () => {
     // auto-fixes to gpt-6-sol; gpt-5.1 and gpt-5.4-nano are quarantined (GPT-6 Sol and Luna default
     // to a different reasoning effort); 4 TTS, 4 transcription and 2 audio ids are unverifiable by
     // class; gpt-4o-mini-realtime, gpt-4-turbo-preview-completions and 5 retired Veo ids are
-    // unverified.
+    // unverified. Then gpt-5.3-codex is quarantined too (OpenAI's GPT-6 guide changes
+    // prompt_cache_retention, which mendr does not check).
     expect(lines[0]).toBe('registry: 213 records');
-    expect(lines[1]).toBe('auto-fix eligible: 136');
-    expect(lines[2]).toBe('review-only: 77 (quarantined 18, unverified 30, unverifiable 29)');
+    expect(lines[1]).toBe('auto-fix eligible: 135');
+    expect(lines[2]).toBe('review-only: 78 (quarantined 19, unverified 30, unverifiable 29)');
   });
 });

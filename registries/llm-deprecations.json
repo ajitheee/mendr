@@ -6644,13 +6644,13 @@
     "status": "deprecated",
     "shutdownDate": "2027-04-01",
     "sourceUrl": "https://developers.openai.com/api/docs/deprecations",
-    "note": "discovered from the openai deprecation table; row read as: Apr 1, 2027 | gpt-5.3-codex | gpt-6-sol",
+    "note": "discovered from the openai deprecation table; row read as: Apr 1, 2027 | gpt-5.3-codex | gpt-6-sol. Detect-only: OpenAI's GPT-6 guide says a migration from GPT-5.5 or earlier must replace prompt_cache_retention with prompt_cache_options.ttl set to \"30m\", and mendr neither checks nor rewrites that field on a swap to gpt-6-sol. The reasoning-effort change that holds gpt-5.1 and gpt-5.4-nano does not reach this model, which takes low through xhigh and only the Responses API.",
     "verification": {
-      "status": "verified",
+      "status": "quarantined",
       "officialSourceConfirmed": true,
       "replacementConfirmed": true,
-      "autoApplyAllowed": true,
-      "quarantineReason": null,
+      "autoApplyAllowed": false,
+      "quarantineReason": "OpenAI's GPT-6 guide says a migration from GPT-5.5 or earlier must replace prompt_cache_retention with prompt_cache_options.ttl set to \"30m\", and mendr does not check or rewrite that field when it swaps an id to gpt-6-sol; the guide does not say whether gpt-6-sol rejects the old field, so a call that passes prompt_cache_retention could stop working after an automatic swap. A person should change the model and move any prompt_cache_retention setting to prompt_cache_options.ttl",
       "checkedAt": "2026-10-10",
       "sources": [
         "openrouter",
@@ -6660,7 +6660,9 @@
         "replacement \"gpt-6-sol\" is live in a public catalog",
         "the deprecation claim for \"gpt-5.3-codex\" is self-consistent (status \"deprecated\", shutdown 2027-04-01) and quote-backed by a stored snapshot; mendr did NOT independently confirm the provider retired it (no public oracle answers that)",
         "OpenAI deprecation page (read 2026-10-10 UTC, snapshot 461d3951ff15) states shutdown Apr 1, 2027 and recommended replacement gpt-6-sol",
-        "the gpt-5.3-codex model page (read 2026-10-10 UTC, snapshot 1d0a898facea) carries a Deprecated badge, says \"GPT-5.3-Codex supports low, medium, high, and xhigh reasoning effort settings.\", and lists the Responses API but not Chat Completions; gpt-6-sol accepts each of those effort levels, so the default-effort change that holds gpt-5.1 and gpt-5.4-nano for review does not reach a gpt-5.3-codex call"
+        "the gpt-5.3-codex model page (read 2026-10-10 UTC, snapshot 1d0a898facea) carries a Deprecated badge, says \"GPT-5.3-Codex supports low, medium, high, and xhigh reasoning effort settings.\", and lists the Responses API but not Chat Completions; gpt-6-sol accepts each of those effort levels, so the default-effort change that holds gpt-5.1 and gpt-5.4-nano for review does not reach a gpt-5.3-codex call",
+        "OpenAI's GPT-6 guide (read 2026-10-10 UTC, snapshot 14d2ce97ad60) says \"When migrating from GPT-5.5 or earlier, replace prompt_cache_retention with prompt_cache_options.ttl set to \"30m\".\" No parameter rule names the GPT-6 family, so mendr's TypeScript parameter guard does not look at a swap to gpt-6-sol, and Python has no parameter guard; the guide does not say whether the API rejects the old field",
+        "held review-only on 2026-10-10: the candidate gate stamped this record verified, which would have swapped the id in a call that passes prompt_cache_retention and kept the field"
       ]
     },
     "evidence": [
@@ -6681,6 +6683,12 @@
         "contentHash": "sha256:1d0a898facea9eaa85733dc8a438fd329cffa76e9c58545ff8629101c53a860d",
         "retrievedAt": "2026-10-10T20:59:49.114Z",
         "excerpt": "GPT-5.3-Codex supports low, medium, high, and xhigh reasoning effort settings."
+      },
+      {
+        "sourceUrl": "https://developers.openai.com/api/docs/guides/latest-model",
+        "contentHash": "sha256:14d2ce97ad602db06a1a0e70bfab41e573220cee89dbdfe88227777bf4223428",
+        "retrievedAt": "2026-10-10T20:58:45.852Z",
+        "excerpt": "When migrating from GPT-5.5 or earlier, replace prompt_cache_retention with prompt_cache_options.ttl set to \"30m\"."
       }
     ]
   },

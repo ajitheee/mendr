@@ -36,9 +36,19 @@ import type { LlmParamDeprecation, LlmRegistry } from '../types.js';
  * tool definition) is not model-dependent in a way that a model swap changes.
  *
  * Kept narrow and evidence-led on purpose. Every entry here is a parameter reported in the
- * wild as rejected or renamed on the gpt-5 / o-series families. Adding a key that is actually
- * portable would push real migrations into the review queue for no reason, which is the
- * failure mode on the other side of this guard.
+ * wild as rejected or renamed on the gpt-5 / o-series families, or one the provider's own
+ * migration guide says to change. Adding a key that is actually portable would push real
+ * migrations into the review queue for no reason, which is the failure mode on the other side
+ * of this guard.
+ *
+ * `prompt_cache_retention` is the second kind. OpenAI's latest-model guide (read 2026-10-10,
+ * snapshot 14d2ce97ad60) tells a GPT-5.6 migration to "replace prompt_cache_retention with
+ * prompt_cache_options.ttl", and a GPT-6 migration from GPT-5.5 or earlier to set that ttl to
+ * "30m". No registry rule can express the change (the value moves into a nested object and its
+ * allowed values differ), and the guide does not say whether the API rejects the old field. So a
+ * call that passes it is held for review rather than swapped with the field kept. Like every
+ * entry here, it holds a call only when the replacement is in a family some rule constrains
+ * (gpt-5.6 is; gpt-6 is not, which is why the gpt-5.3-codex record is quarantined instead).
  */
 export const MODEL_DEPENDENT_PARAMS: ReadonlySet<string> = new Set([
   'temperature',
@@ -51,6 +61,7 @@ export const MODEL_DEPENDENT_PARAMS: ReadonlySet<string> = new Set([
   'top_logprobs',
   'max_tokens',
   'n',
+  'prompt_cache_retention',
 ]);
 
 /**

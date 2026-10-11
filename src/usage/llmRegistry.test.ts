@@ -323,8 +323,9 @@ describe('the shipped registry', () => {
     // previews: Google's replacement is Gemini Omni Flash, another model family called through
     // another API, so an id swap is not the migration. Plus OpenAI's six fine-tune rows
     // (ft-babbage-002 ...): the replacement is a base model, and a swap drops the training.
-    // Plus gpt-5.1 and gpt-5.4-nano (see the GPT-6 test below).
-    expect(quarantined).toHaveLength(18);
+    // Plus gpt-5.1 and gpt-5.4-nano (see the GPT-6 test below). Plus gpt-5.3-codex: OpenAI's
+    // GPT-6 guide changes prompt_cache_retention, which no guard checks on a swap to gpt-6-sol.
+    expect(quarantined).toHaveLength(19);
     for (const entry of quarantined) {
       expect(isVerified(entry), entry.deprecated).toBe(false);
       // Every quarantine says what has to be resolved. A hold nobody can act
@@ -417,9 +418,11 @@ describe('the shipped registry', () => {
     // 4 TTS, 4 transcription and the gpt-4o-audio and gpt-4o-mini-audio family rows (+10
     // unverifiable), and gpt-4o-mini-realtime, gpt-4-turbo-preview-completions and 5 retired
     // Veo 3.0/2.0 ids (+7 unverified).
+    // Then gpt-5.3-codex is quarantined (-1 eligible, +1 quarantined): OpenAI's GPT-6 guide says
+    // to replace prompt_cache_retention, and no guard checks that field on a swap to gpt-6-sol.
     expect(provenance.activeEntries).toBe(213);
-    expect(provenance.autoFixEligible).toBe(136);
-    expect(provenance.reviewOnlyCounts.quarantined).toBe(18);
+    expect(provenance.autoFixEligible).toBe(135);
+    expect(provenance.reviewOnlyCounts.quarantined).toBe(19);
     expect(provenance.reviewOnlyCounts.unverified).toBe(30);
     expect(provenance.reviewOnlyCounts.unverifiable).toBe(29);
     // Nothing ships in the defence-in-depth state; the validator forbids it.
