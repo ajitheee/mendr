@@ -9,7 +9,7 @@ One command scans TypeScript, TSX, JavaScript, Python and config files, joins a 
 **Beta partner?** Start with [BETA-ONBOARDING.md](BETA-ONBOARDING.md): connect in five minutes, what you will see, what leaves your CI, troubleshooting.
 
 ```sh
-npx github:ajitheee/mendr#v0.5.9-alpha audit .
+npx github:ajitheee/mendr#v0.5.10-alpha audit .
 ```
 
 (`npx mendr audit .` once the package lands on the npm registry.)
@@ -43,7 +43,7 @@ Every output carries the coverage matrix, so a skipped surface can never read as
 ## keep it watched
 
 ```sh
-npx github:ajitheee/mendr#v0.5.9-alpha audit . --install
+npx github:ajitheee/mendr#v0.5.10-alpha audit . --install
 ```
 
 scaffolds a GitHub workflow that keeps **one issue per repository** current: new, continuing and resolved findings, the exact commit scanned, and the coverage matrix. It asks for `contents: read` and `issues: write`, never touches your default branch, and never merges anything.
@@ -53,25 +53,25 @@ scaffolds a GitHub workflow that keeps **one issue per repository** current: new
 `fix-llm` goes one step further: it writes the exact diff for a retired id at a verified call site and proves it against your type-check and tests before anything is applied. Print-only by default — read the patch, and if it's right, apply it:
 
 ```sh
-npx github:ajitheee/mendr#v0.5.9-alpha fix-llm .
+npx github:ajitheee/mendr#v0.5.10-alpha fix-llm .
 ```
 
 You can also point it straight at a GitHub link. mendr clones a throwaway copy and scans that, so the real repo is never touched:
 
 ```sh
-npx github:ajitheee/mendr#v0.5.9-alpha fix-llm https://github.com/someone/their-repo
+npx github:ajitheee/mendr#v0.5.10-alpha fix-llm https://github.com/someone/their-repo
 ```
 
 It never writes to your working tree on its own. The default is print-only. When you're ready to apply:
 
 ```sh
-npx github:ajitheee/mendr#v0.5.9-alpha fix-llm . --write
+npx github:ajitheee/mendr#v0.5.10-alpha fix-llm . --write
 ```
 
 `--write` only applies a fix that passed the gates (type-check, plus your tests when they can run). Anything it can't verify is shown for review and left alone. You can also pipe the diff straight into git, since it's a standard patch:
 
 ```sh
-npx github:ajitheee/mendr#v0.5.9-alpha fix-llm . -o mendr.patch && git apply mendr.patch
+npx github:ajitheee/mendr#v0.5.10-alpha fix-llm . -o mendr.patch && git apply mendr.patch
 ```
 
 ### keep watching a repo
@@ -79,7 +79,7 @@ npx github:ajitheee/mendr#v0.5.9-alpha fix-llm . -o mendr.patch && git apply men
 `fix-llm` is one-shot. `mendr watch` is the resident version — it scans in your own GitHub Actions and keeps one issue listing every deprecated model id you use, grouped by risk and deadline, so you find out before a model retires. Run it once to see your exposure, or `--install` to make it resident:
 
 ```sh
-npx github:ajitheee/mendr#v0.5.9-alpha watch .
+npx github:ajitheee/mendr#v0.5.10-alpha watch .
 ```
 
 See [standing watch](#standing-watch) for the details and [WATCH-SCHEMA.md](WATCH-SCHEMA.md) for the JSON.
@@ -93,7 +93,7 @@ Nothing, unless you pass `--write`. By default mendr loads your code in memory, 
 Nothing, by default. The audit reads the repository, the bundled registry and your local `git rev-parse`, and prints a report. That is enforced in code, not just written here: the test suite runs the audit under a preload that makes every network primitive throw, and the audit must still pass. You can enforce it yourself:
 
 ```bash
-npx github:ajitheee/mendr#v0.5.9-alpha audit . --offline
+npx github:ajitheee/mendr#v0.5.10-alpha audit . --offline
 ```
 
 The optional network uses are: the **registry refresh** (`--refresh-registry`, or `MENDR_REGISTRY_REFRESH=on`, which the generated workflows set) — one GET of three public, signed files so the audit uses current retirement knowledge, verified against a key built into the release before use, sending nothing; the provider usage read you ask for by name with your own read-only key; and a shallow `git clone` when you pass a GitHub URL instead of a path. The [Mendr GitHub App](app/README.md) is the one hosted piece: your workflow posts the audit JSON to it, proven by the run's OIDC token, and it writes a check run back; it has no `contents` permission and cannot read code. [TRUST.md](TRUST.md) has the per-command table, the data-flow diagram, the threat model, the permissions each surface needs, and the known gaps. [SECURITY.md](SECURITY.md) is how to report a problem with any of it.
@@ -224,7 +224,7 @@ Mendr Watch continuously rescans your repository inside your own GitHub Actions 
 Run it once to see your exposure (a local path, or a GitHub URL to scan a read-only copy):
 
 ```sh
-npx github:ajitheee/mendr#v0.5.9-alpha watch .
+npx github:ajitheee/mendr#v0.5.10-alpha watch .
 ```
 
 ```
@@ -246,7 +246,7 @@ Every occurrence carries the same A/B/C tier `fix-llm` uses, so the two tools al
 Then make it resident:
 
 ```sh
-npx github:ajitheee/mendr#v0.5.9-alpha watch --install
+npx github:ajitheee/mendr#v0.5.10-alpha watch --install
 ```
 
 That scaffolds `.github/workflows/mendr-watch.yml` — a workflow that runs in **your own CI** (no server, nothing on our infrastructure) and maintains **one** GitHub issue: your deprecated model ids, each mapped to its retirement date, sorted by the nearest deadline. It's the [Renovate dashboard](https://docs.renovatebot.com/key-concepts/dashboard/) mechanic — the issue is found by a hidden marker and edited in place forever, never re-posted, so it re-surfaces itself without ever spamming you. It asks for `issues: write` and `contents: read` and nothing else: it opens no pull requests, runs none of your tests, and pushes no commits. It's pinned to an immutable Mendr release (overridable via a `MENDR_SPEC` repo variable), so a future upstream change can't run in your CI without you choosing it.
@@ -257,9 +257,9 @@ Honest limits, up front: the countdown is day-granularity (GitHub cron drifts �
 
 mendr is call-site aware. It only swaps a model string when that string is actually an argument to a recognized LLM call, so it won't touch a model id sitting in a pricing table, a model-picker array, or a lookup map. For param fixes it traces the model at each call site and only removes or renames a param when that specific model requires it, so a `claude-sonnet-5-5` call can lose `temperature` while a sibling `claude-haiku-4-5-20251001` call keeps it.
 
-Anthropic’s sampling rules (`temperature`, `top_p`, `top_k`) cover every model Anthropic’s pages say rejects a non-default value: Claude Opus 4.7 and later, Claude Sonnet 5 and 5.5, Claude Haiku 5.5, Claude Fable 5 and 5.1, Claude Mythos 5 and 5.1, and Claude Mythos Preview. Claude Sonnet 4.6, Claude Haiku 4.5 and earlier models accept the parameters, so their calls keep them. Each rule quotes the Anthropic sentences it rests on, and `mendr check-rules` re-reads them on the live pages; a rule whose sentence has gone fails the check. In TypeScript and JavaScript, a call that migrates onto one of these models and passes a sampling value or `max_tokens` goes to review (`param_behaviour_change` or `coupled_param_unverified`) instead of being patched. On `main` (not yet in a tag), Python's parameter guard holds the same call with the same reason code, wherever it can read the parameter (see *Held calls: what is and is not protected*). Python has no parameter pass, so nothing drops a sampling value from a Python call; check by hand a Python call whose parameters the guard does not read, before a swap onto these models.
+Anthropic’s sampling rules (`temperature`, `top_p`, `top_k`) cover every model Anthropic’s pages say rejects a non-default value: Claude Opus 4.7 and later, Claude Sonnet 5 and 5.5, Claude Haiku 5.5, Claude Fable 5 and 5.1, Claude Mythos 5 and 5.1, and Claude Mythos Preview. Claude Sonnet 4.6, Claude Haiku 4.5 and earlier models accept the parameters, so their calls keep them. Each rule quotes the Anthropic sentences it rests on, and `mendr check-rules` re-reads them on the live pages; a rule whose sentence has gone fails the check. In TypeScript and JavaScript, a call that migrates onto one of these models and passes a sampling value or `max_tokens` goes to review (`param_behaviour_change` or `coupled_param_unverified`) instead of being patched. Since `v0.5.10-alpha`, Python's parameter guard holds the same call with the same reason code, wherever it can read the parameter (see *Held calls: what is and is not protected*). Python has no parameter pass, so nothing drops a sampling value from a Python call; check by hand a Python call whose parameters the guard does not read, before a swap onto these models.
 
-OpenAI’s migration guide tells a move to GPT-5.6 to replace `prompt_cache_retention` with `prompt_cache_options.ttl`, and a move to GPT-6 from GPT-5.5 or earlier to set that ttl to `"30m"`. No registry rule can make that edit, and the guide does not say whether the API rejects the old field. So in TypeScript and JavaScript, a call that passes `prompt_cache_retention` and would migrate onto a GPT-5.6 model goes to review (`coupled_param_unverified`) instead of being swapped with the field kept. The same guard cannot reach a GPT-6 replacement, because no parameter rule names that family, so `gpt-5.3-codex` → `gpt-6-sol`, the only GPT-6 migration nothing else held, is review-only for every call. On `main` (not yet in a tag), Python's parameter guard holds a Python call that passes `prompt_cache_retention` onto GPT-5.6 in the same way, wherever it can read the parameter; like the TypeScript guard, it cannot reach a GPT-6 replacement.
+OpenAI’s migration guide tells a move to GPT-5.6 to replace `prompt_cache_retention` with `prompt_cache_options.ttl`, and a move to GPT-6 from GPT-5.5 or earlier to set that ttl to `"30m"`. No registry rule can make that edit, and the guide does not say whether the API rejects the old field. So in TypeScript and JavaScript, a call that passes `prompt_cache_retention` and would migrate onto a GPT-5.6 model goes to review (`coupled_param_unverified`) instead of being swapped with the field kept. The same guard cannot reach a GPT-6 replacement, because no parameter rule names that family, so `gpt-5.3-codex` → `gpt-6-sol`, the only GPT-6 migration nothing else held, is review-only for every call. Since `v0.5.10-alpha`, Python's parameter guard holds a Python call that passes `prompt_cache_retention` onto GPT-5.6 in the same way, wherever it can read the parameter; like the TypeScript guard, it cannot reach a GPT-6 replacement.
 
 Replacements come from a deprecation registry that carries a per-entry verdict from a check against the live public model catalogs, so it isn't guessing from a blog post. Verification is **per entry, not registry-wide** — some entries carry a `verified` verdict, some carry `unverified`, and a few carry a recheck date with a note saying that id was not researched on that pass. The report footer prints the split rather than a blanket claim, and only a `verified` entry is ever auto-applied. If a replacement isn't verified, mendr locates the spot and refuses to auto-apply rather than risk a bad patch.
 
@@ -319,7 +319,7 @@ Tier B is the one worth reading. Each finding names *what is missing* with a mac
 
 Two further codes, `dynamic_model_value` and `insufficient_dataflow`, exist in the type for future detectors and are never emitted today.
 
-**Held calls: what is and is not protected.** The model id that put a call on hold at review (`surface_capped`, `coupled_param_unverified`, `param_behaviour_change`) is never swapped. `fix-llm --write` and `migrate` also skip parameter edits (such as renaming `max_tokens`) that they can tie to the held call. That covers its options object, and objects nested in it through objects, arrays, spreads, casts, ternaries, `||`, `??` or `&&`, when the call's model is a string literal, a `||` / `??` / ternary of literals, or a const declared in the same file. In `v0.5.9-alpha` that model also had to be written as `model: …` with a plain key and no `!`. On `main` (not yet in a tag), a `{ model }` shorthand, a quoted `"model"` or computed `["model"]` key, and `MODEL!` are tied to the held call too. Not covered yet, so a parameter rule can still edit a held call's request:
+**Held calls: what is and is not protected.** The model id that put a call on hold at review (`surface_capped`, `coupled_param_unverified`, `param_behaviour_change`) is never swapped. `fix-llm --write` and `migrate` also skip parameter edits (such as renaming `max_tokens`) that they can tie to the held call. That covers its options object, and objects nested in it through objects, arrays, spreads, casts, ternaries, `||`, `??` or `&&`, when the call's model is a string literal, a `||` / `??` / ternary of literals, or a const declared in the same file. In `v0.5.9-alpha` that model also had to be written as `model: …` with a plain key and no `!`. Since `v0.5.10-alpha`, a `{ model }` shorthand, a quoted `"model"` or computed `["model"]` key, and `MODEL!` are tied to the held call too. Not covered yet, so a parameter rule can still edit a held call's request:
 
 - the held call's model read as `this.model`, or the held id under any model-like key other than `model` (`modelName`, `modelId`, `model_name`, `fallbackModel`, …);
 - a nested request reached by indexing, a property read, a callback, or a call inside the arguments (`.filter(Boolean)`, `.map(…)`);
@@ -340,7 +340,7 @@ Not read, so such a call can still be swapped with the parameter as written: the
 
 A second model value inside a held call that is not itself held can still be swapped: the plain branch of `useGw ? 'openai/…' : '…'`, or a factory call such as `openai('…')` inside the request. A model value inside a held Python call can be swapped the same way. A call that no retiring id reaches is not held, so a sample or proxy call on a current model gets parameter rules like any other; so does a call mendr reports as Tier C, as an untraced const (`usage_unverified`), or in Tier B for an unverified replacement (`replacement_unverified`) or an `as` cast (`type_cast_masked`), even though that Tier B finding itself says no patch was generated for the model id.
 
-**Which requests the parameter checks read.** This covers TypeScript and JavaScript; the Python guard's reads are listed above. In `v0.5.9-alpha`, the checks behind `coupled_param_unverified` and `param_behaviour_change` ran only when the model id was a string literal written as the `model:` value itself. The same call was a Tier A swap when the id came through a `const`, a `{ model }` shorthand, an `as` cast, a `||` / `??` fallback or a ternary, and `max_tokens` could be left beside a replacement whose registry rule renames it. The release notes list this under Known issues. On `main` (not yet in a tag), the checks read every request the id reaches, the way they read the call written inline:
+**Which requests the parameter checks read.** This covers TypeScript and JavaScript; the Python guard's reads are listed above. In `v0.5.9-alpha`, the checks behind `coupled_param_unverified` and `param_behaviour_change` ran only when the model id was a string literal written as the `model:` value itself. The same call was a Tier A swap when the id came through a `const`, a `{ model }` shorthand, an `as` cast, a `||` / `??` fallback or a ternary, and `max_tokens` could be left beside a replacement whose registry rule renames it. The release notes list this under Known issues. Since `v0.5.10-alpha`, the checks read every request the id reaches, the way they read the call written inline:
 
 - the id written in the request, behind parentheses, `as string` or `as const`, or as one branch of a `||` / `??` fallback or a ternary;
 - a `const`, a class property or an assignment such as `this.model = …`, read by name in a request, including through `{ model }`, `!`, a fallback or a ternary. The declaration is held when any request that reads it would be held written inline, and the finding carries that request's reason. A request also reads it through another binding that the same file feeds it: a local set from it (`const m = MODEL`), a function's parameter at a call that passes it (`ask(MODEL)`, `ask(m)`, `new Bot(MODEL)`, or `withRetry(ask, MODEL)`, which hands the function on beside it), or a field the constructor sets from such a parameter (`constructor(model: string) { this.model = model }`). A request whose `model` is a different variable of the same name that nothing in the file feeds, such as a function's own parameter or a local, does not hold it. A property of another object, `config.model = …`, is read back only through a `.model` read, so a plain `model` variable that is never set from one does not hold it either. Calls in other files are not read: a parameter fed the declaration only from another file does not hold it, so check such a call by hand;
@@ -455,14 +455,14 @@ The collapsed Tier C line carries line numbers for the same reason:
 ### gating CI on a tier
 
 ```sh
-npx github:ajitheee/mendr#v0.5.9-alpha fix-llm . --fail-on tierB
+npx github:ajitheee/mendr#v0.5.10-alpha fix-llm . --fail-on tierB
 ```
 
 `--fail-on` takes `tierA`, `tierB`, or `none` (the default). `blocked` still works as a **deprecated alias for `tierB`** and prints a notice on stderr — note that it now covers every review-required finding, not just unverified replacements.
 
 Since `v0.5.9-alpha` that includes the TypeScript/JavaScript calls mendr holds at review (`coupled_param_unverified`, `param_behaviour_change`, `surface_capped` above). `audit` always listed them; `fix-llm` in `v0.5.8-alpha` and earlier left them out, printed "Nothing to fix" and exited 0, so a gate that passed on those versions can fail after the upgrade. That is the gate reporting calls it should always have reported. `--fail-on tierA` can move the other way: a parameter edit inside a held call's request used to be counted as Tier A, and a repository whose only Tier A was such an edit can now pass.
 
-On `main` (not yet in a tag), the gate can move again for one more set of calls. A call whose model id comes through a `const`, a `{ model }` shorthand, a cast, a fallback or a ternary, with a parameter beside it that holds the same call written inline, moves from Tier A to Tier B. So `--fail-on tierB` can fail where `v0.5.9-alpha` passed, and `--fail-on tierA` can pass where it failed. See *Which requests the parameter checks read* above.
+Since `v0.5.10-alpha`, the gate can move again for one more set of calls. A call whose model id comes through a `const`, a `{ model }` shorthand, a cast, a fallback or a ternary, with a parameter beside it that holds the same call written inline, moves from Tier A to Tier B. So `--fail-on tierB` can fail where `v0.5.9-alpha` passed, and `--fail-on tierA` can pass where it failed. See *Which requests the parameter checks read* above.
 
 Python calls the parameter guard holds (see *Held calls* above; on `main` after `v0.5.9-alpha`) move the same way. A call `v0.5.9-alpha` reported as a Tier A swap is now Tier B, so `--fail-on tierB` can fail where it passed, and `--fail-on tierA` can pass where it failed. A Python call whose replacement is unverified and that passes such a parameter changes reason code, from `replacement_unverified` to `param_behaviour_change` or `coupled_param_unverified`, as the same TypeScript call already does; it stays Tier B. A committed `.mendr/exposure.json` changes once for these calls on the first run after the upgrade.
 
