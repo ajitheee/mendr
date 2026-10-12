@@ -1,20 +1,20 @@
 {
   "schema": "mendr-model-catalog/v1",
-  "fetchedAt": "2026-10-05T14:23:01Z",
+  "fetchedAt": "2026-10-12T15:10:11Z",
   "sources": [
     {
       "url": "https://openrouter.ai/api/v1/models",
       "ok": true,
-      "sha256": "c6459c072e164c575c6fe4b125dcf96d2f313e98544f93c56537765147f4f1b7",
-      "contributed": 183,
-      "note": "466 models, 183 first-party"
+      "sha256": "d2f1e58a862cab0f0e81348a101f2538330e4653ed76fed6e55593c01524623d",
+      "contributed": 188,
+      "note": "458 models, 188 first-party"
     },
     {
       "url": "https://models.dev/api.json",
       "ok": true,
-      "sha256": "fd8d2257e0f461d65db7ac8c23b00fb13dce7c97f5f886304673a69ab489ef31",
-      "contributed": 108,
-      "note": "108 first-party models"
+      "sha256": "a6af79756a8a8efb5fd3144a83bd01f333e503043998d5f26f3c98bf9181d36c",
+      "contributed": 109,
+      "note": "109 first-party models"
     }
   ],
   "providers": {
@@ -23,6 +23,7 @@
       "claude-fable-5-1",
       "claude-haiku-4-5",
       "claude-haiku-4-5-20251001",
+      "claude-haiku-5-5",
       "claude-opus-4-5",
       "claude-opus-4-5-20251101",
       "claude-opus-4-6",
@@ -138,6 +139,7 @@
       "claude-fable-5.1",
       "claude-fable-latest",
       "claude-haiku-4.5",
+      "claude-haiku-5.5",
       "claude-haiku-latest",
       "claude-opus-4.1",
       "claude-opus-4.5",
@@ -154,6 +156,7 @@
     ],
     "google": [
       "gemini-2.5-pro-preview",
+      "gemini-nano-banana-2.1",
       "gemini-pro-latest",
       "gemma-2-27b-it",
       "gemma-3-12b-it",
@@ -195,5 +198,5 @@
       "o4-mini-high"
     ]
   },
-  "count": 108
+  "count": 109
 }
