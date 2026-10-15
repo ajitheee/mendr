@@ -103,6 +103,11 @@ export interface WorkflowConfig {
   signals?: WorkflowSignals;
   /** Fewest calls after the deploy for a verdict; fewer is inconclusive. Absent = the default. */
   minCalls?: number;
+  /**
+   * How to find this feature's calls in a telemetry export (`mendr rollout --from`): its service
+   * name, and any other fields that must match exactly (a route, an operation name).
+   */
+  telemetry?: { service?: string; match?: Record<string, string> };
 }
 
 /** The gates a repo may configure. Anything else under `gates` is an error. */
@@ -219,8 +224,8 @@ function parseWorkflows(value: unknown, path: string): WorkflowConfig[] {
     }
     const w = entry as Record<string, unknown>;
     for (const key of Object.keys(w)) {
-      if (!['name', 'paths', 'signals', 'minCalls'].includes(key)) {
-        throw new Error(`${at} has an unknown field "${key}" (allowed: name, paths, signals, minCalls)`);
+      if (!['name', 'paths', 'signals', 'minCalls', 'telemetry'].includes(key)) {
+        throw new Error(`${at} has an unknown field "${key}" (allowed: name, paths, signals, minCalls, telemetry)`);
       }
     }
     if (typeof w.name !== 'string' || w.name.trim().length === 0) {
@@ -238,6 +243,25 @@ function parseWorkflows(value: unknown, path: string): WorkflowConfig[] {
         throw new Error(`${at} ("${name}"): "minCalls" must be a whole number of calls, 1 or more, got ${JSON.stringify(w.minCalls)}`);
       }
       out.minCalls = w.minCalls;
+    }
+    if (w.telemetry !== undefined) {
+      const t = w.telemetry as Record<string, unknown>;
+      const bad = (): never => {
+        throw new Error(
+          `${at} ("${name}"): "telemetry" must look like { "service": "support-api", "match": { "http.route": "/answer" } }, with text values`,
+        );
+      };
+      if (typeof t !== 'object' || t === null || Array.isArray(t)) bad();
+      for (const k of Object.keys(t)) if (k !== 'service' && k !== 'match') bad();
+      if (t.service !== undefined && (typeof t.service !== 'string' || !t.service.trim())) bad();
+      if (t.match !== undefined) {
+        if (typeof t.match !== 'object' || t.match === null || Array.isArray(t.match)) bad();
+        if (Object.values(t.match as Record<string, unknown>).some((v) => typeof v !== 'string')) bad();
+      }
+      out.telemetry = {
+        ...(typeof t.service === 'string' ? { service: t.service.trim() } : {}),
+        ...(t.match ? { match: t.match as Record<string, string> } : {}),
+      };
     }
     if (w.signals !== undefined) {
       if (typeof w.signals !== 'object' || w.signals === null || Array.isArray(w.signals)) {

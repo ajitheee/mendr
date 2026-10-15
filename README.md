@@ -519,6 +519,39 @@ The command runs against a throwaway copy of your repo **with the fix already ap
 
 Only "no eval configured" lets a fix through on the code gates alone. Once you configure one, nothing short of exit 0 applies anything.
 
+### no eval of your own? write cases instead
+
+If you don't have an eval command, give mendr a cases file: requests your feature really sends, and what a good answer must look like.
+
+```json
+{ "gates": { "eval": { "cases": "mendr/eval-cases.json" } } }
+```
+
+```json
+{
+  "cases": [
+    {
+      "name": "refund window",
+      "messages": [{ "role": "user", "content": "How long do I have to ask for a refund?" }],
+      "params": { "max_tokens": 300 },
+      "expect": { "contains": ["30 days"], "notContains": ["I'm not sure"], "maxChars": 1200 }
+    }
+  ]
+}
+```
+
+mendr sends each case to the old model and to the new one, with your `OPENAI_API_KEY`, from your own CI. The new model's request gets the same parameter changes the migration makes (for example `max_tokens` becomes `max_completion_tokens`).
+
+| result | eval gate |
+| --- | --- |
+| a case passes on the old model and fails on the new one | **failed** |
+| the new model rejects the request (a 400) | **failed**: the parameter break a type-check can't see |
+| a case fails on both | reported, not blamed on the migration |
+| the old model has already shut down | the new answer is judged on its own |
+| no key, the new model unreachable, or no case passes anywhere | inconclusive |
+
+Expectations are `contains`, `notContains`, `matches` (a regular expression), `maxChars` and `json`. They are plain text checks: no model grades another model's answer. Only pass, fail and which expectation failed are reported, never the answer itself. A run sends at most 50 cases, twice each. The built-in runner covers OpenAI models; for other providers, use an eval command.
+
 `--json` carries the same fact: `summary.behavioralVerification` is `"not-tested"`, `"pass"`, or `"fail"`, with an `eval` object naming the command, exit code and `status` (`"pass"`, `"fail"` or `"inconclusive"`, plus a `reason` on the last) whenever the gate actually ran. An inconclusive run reports `behavioralVerification: "not-tested"` — nothing was verified — and applies nothing.
 
 ## which gates must pass
@@ -620,7 +653,20 @@ mendr rollout numbers.json --migration migration.json --record .mendr/outcomes.j
 | regression | a signal moved past its limit with enough calls behind it, or your quality check failed | 1 |
 | inconclusive | too few calls, no error rate, or a required quality check not reported | 3 |
 
-With `--migration`, it reprints the recovery plan as of today, because a revert that was safe when the pull request was opened is not safe after the shutdown date. `--record` appends one line per migration to a file you keep; mendr sends it nowhere. `rollout` reads numbers, nothing else: it does not deploy, roll back or connect to your monitoring.
+With `--migration`, it reprints the recovery plan as of today, because a revert that was safe when the pull request was opened is not safe after the shutdown date. `--record` appends one line per migration to a file you keep; mendr sends it nowhere.
+
+**Or let mendr read the numbers from your telemetry.** Export the feature's calls from wherever you keep them (OpenTelemetry spans, a gateway or application log, a usage export; as JSON, NDJSON or CSV) and pass the file:
+
+```sh
+mendr rollout --from spans.ndjson --deployed-at 2026-10-20T15:00:00Z --workflow "Answer a support question" --migration migration.json
+```
+
+mendr splits the calls at the deploy (7 days on each side by default; `--window-days` changes it) and computes the call count, error rate, p95 latency and cost per 1,000 calls itself. Which calls count:
+- the workflow's own filter, if you set one: `"telemetry": { "service": "support-api", "match": { "http.route": "/answer" } }`;
+- otherwise, with `--migration`, calls to the old model before the deploy and to the new model after it;
+- otherwise every call in the export, and the report says so.
+
+It reports what it left out, such as rows with no time, too few latency samples for a p95, or a cost on only some rows. Your quality check isn't in telemetry, so pass its result with `--quality passed` or `--quality failed`. `rollout` reads only the file you give it: it doesn't connect to your monitoring, deploy, or roll back.
 
 ## install for repeat use
 

@@ -276,30 +276,83 @@ function flattenAttributes(item: unknown): Row {
 }
 
 /**
- * Load runtime evidence from a customer-provided file (Option 2 / Option 1 export
- * / Option 4 log dump). No credentials involved — the customer produces the file.
- * Accepts JSON (array or envelope), NDJSON, or CSV.
+ * Read every row of a customer-provided telemetry file: JSON (an array or an envelope), NDJSON or
+ * CSV, with OTel attribute bags flattened. Shared by the audit's runtime evidence and the rollout
+ * monitor, so both read an export the same way.
  */
-export function loadRuntimeEvidenceFile(path: string, source: RuntimeSource = 'usage_export'): RuntimeEvidence {
+export function readTelemetryRows(path: string): Row[] {
   const text = readFileSync(path, 'utf8');
   const trimmed = text.trimStart();
-  let rows: Row[];
   if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
     try {
-      rows = extractRows(JSON.parse(text));
+      return extractRows(JSON.parse(text));
     } catch {
       // NDJSON: one JSON object per line.
-      rows = text
+      return text
         .split(/\r?\n/)
         .filter((l) => l.trim() !== '')
         .map((l) => {
           try { return flattenAttributes(JSON.parse(l)); } catch { return {}; }
         });
     }
-  } else {
-    rows = parseCsv(text);
   }
+  return parseCsv(text);
+}
 
+const LATENCY_MS_KEYS = ['latency_ms', 'latencyMs', 'duration_ms', 'durationMs', 'elapsed_ms', 'response_time_ms', 'responseTimeMs'];
+
+/** One call (or one pre-aggregated row) as the rollout monitor reads it. */
+export interface CallSample {
+  /** Epoch milliseconds, or null when the row carries no readable time. */
+  timeMs: number | null;
+  model: string | null;
+  service: string | null;
+  requests: number;
+  failures: number;
+  /** Per-call latency in milliseconds, when the row carries one. */
+  latencyMs: number | null;
+  costUsd: number | null;
+  /** Every field of the row, flattened, for attribute filters. */
+  fields: Row;
+}
+
+/**
+ * A telemetry row as a call sample. Time is read from the usual keys or an OTel span's
+ * `startTimeUnixNano`; latency from a `*_ms` field or the span's start and end. A plain
+ * `duration` is not read: nothing says whether it is seconds or milliseconds.
+ */
+export function toCallSample(row: Row): CallSample {
+  const nanos = (v: unknown): number | null => {
+    const s = asString(v);
+    if (!s || !/^\d+$/.test(s)) return null;
+    return Number(BigInt(s) / 1_000_000n);
+  };
+  const start = nanos(row.startTimeUnixNano);
+  const end = nanos(row.endTimeUnixNano);
+  const timeRaw = asString(pick(row, TIME_KEYS));
+  const parsed = timeRaw ? Date.parse(/^\d{10,13}$/.test(timeRaw) ? new Date(Number(timeRaw.length === 10 ? `${timeRaw}000` : timeRaw)).toISOString() : timeRaw) : NaN;
+  const latencyRaw = pick(row, LATENCY_MS_KEYS);
+  const requestsRaw = pick(row, REQUEST_KEYS);
+  const costRaw = pick(row, COST_KEYS);
+  return {
+    timeMs: start ?? (Number.isNaN(parsed) ? null : parsed),
+    model: asString(pick(row, MODEL_KEYS)),
+    service: asString(pick(row, SERVICE_KEYS)),
+    requests: requestsRaw === undefined ? 1 : asNumber(requestsRaw),
+    failures: failuresOf(row),
+    latencyMs: latencyRaw !== undefined ? asNumber(latencyRaw) : start !== null && end !== null && end >= start ? end - start : null,
+    costUsd: costRaw === undefined ? null : asNumber(costRaw),
+    fields: row,
+  };
+}
+
+/**
+ * Load runtime evidence from a customer-provided file (Option 2 / Option 1 export
+ * / Option 4 log dump). No credentials involved — the customer produces the file.
+ * Accepts JSON (array or envelope), NDJSON, or CSV.
+ */
+export function loadRuntimeEvidenceFile(path: string, source: RuntimeSource = 'usage_export'): RuntimeEvidence {
+  const rows = readTelemetryRows(path);
   const observations = foldObservations(rows.map(toObservation).filter((o): o is RuntimeObservation => o !== null));
   if (observations.length === 0) {
     throw new Error(

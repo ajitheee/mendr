@@ -213,6 +213,13 @@ describe('loadRepoConfig — workflows', () => {
     ]);
   });
 
+  it('reads how to find the workflow in telemetry, and refuses a malformed filter', () => {
+    const ok = makeRepo(JSON.stringify({ workflows: [{ name: 'a', paths: ['src'], telemetry: { service: 'support-api', match: { 'http.route': '/answer' } } }] }));
+    expect(loadRepoConfig(ok).workflows?.[0]?.telemetry).toEqual({ service: 'support-api', match: { 'http.route': '/answer' } });
+    const bad = makeRepo(JSON.stringify({ workflows: [{ name: 'a', paths: ['src'], telemetry: { match: { route: 3 } } }] }));
+    expect(() => loadRepoConfig(bad)).toThrow(/"telemetry" must look like \{ "service": "support-api"/);
+  });
+
   it('refuses a misspelled limit rather than quietly using the default', () => {
     const repo = makeRepo(JSON.stringify({ workflows: [{ name: 'a', paths: ['src'], signals: { latencyMaxPct: 30 } }] }));
     expect(() => loadRepoConfig(repo)).toThrow(/unknown signal "latencyMaxPct"/);

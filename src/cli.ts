@@ -196,7 +196,9 @@ import {
 } from './runtime/evidence.js';
 import { decisionLines, renderAuditReport, type AuditMeta } from './report/auditReport.js';
 import { renderPrBody } from './report/prBody.js';
-import { judgeRollout, parseRolloutInput, renderRollout } from './assurance/rollout.js';
+import { judgeRollout, parseRolloutInput, renderRollout, type RolloutInput } from './assurance/rollout.js';
+import { windowsFromTelemetry } from './assurance/telemetry.js';
+import { readTelemetryRows, toCallSample } from './runtime/evidence.js';
 import { recoveryPlan } from './assurance/recovery.js';
 import { appendOutcome, HUMAN_DECISIONS, outcomeRecord, type HumanDecision } from './assurance/outcome.js';
 import type { MigrationResult } from './migrate/migrate.js';
@@ -1902,7 +1904,8 @@ program
                 eval: {
                   required: policy.eval.required,
                   command: policy.eval.command ?? null,
-                  cases: policy.eval.cases ?? null,
+                  // Only when configured: the shape a run without cases emits is unchanged.
+                  ...(policy.eval.cases ? { cases: policy.eval.cases } : {}),
                 },
               },
               outcomes: gateOutcomes,
@@ -4411,7 +4414,7 @@ program
 
 program
   .command('rollout')
-  .argument('<numbers>', "a JSON file with the feature's numbers before and after the deploy (schema in the README)")
+  .argument('[numbers]', "a JSON file with the feature's numbers before and after the deploy (schema in the README); or use --from")
   .description('[preview] Judge whether a migrated feature stayed healthy after the deploy: verified, regression or inconclusive. Reads the numbers you give it; changes nothing.')
   .option('--repo <path>', 'the repository whose mendr.config.json names the workflow and its limits', '.')
   .option('--migration <file>', 'the mendr-migration/v1 JSON of the migration (from `migrate --json`), to recompute its recovery plan for today')
@@ -4419,8 +4422,19 @@ program
   .option('--decision <decision>', `what the person did with the pull request, for the record: ${HUMAN_DECISIONS.join(', ')}`)
   .option('--note <text>', 'anything to keep with the record, such as why the pull request was edited')
   .option('--json', 'emit the mendr-rollout/v1 result as JSON instead of the report')
+  .option('--from <export>', 'read the numbers from a telemetry export instead (OpenTelemetry spans, gateway or app logs, usage export; JSON, NDJSON or CSV)')
+  .option('--deployed-at <time>', 'with --from: when the migration was deployed, such as 2026-10-20T15:00:00Z')
+  .option('--workflow <name>', 'with --from: the workflow name from mendr.config.json')
+  .option('--window-days <n>', 'with --from: days on each side of the deploy to compare (default 7)')
+  .option('--quality <result>', "with --from: your own quality check's result since the deploy: passed or failed")
   .action(
-    (numbers: string, opts: { repo: string; migration?: string; record?: string; decision?: string; note?: string; json?: boolean }) => {
+    (
+      numbers: string | undefined,
+      opts: {
+        repo: string; migration?: string; record?: string; decision?: string; note?: string; json?: boolean;
+        from?: string; deployedAt?: string; workflow?: string; windowDays?: string; quality?: string;
+      },
+    ) => {
       const fail = (message: string): never => {
         console.error(`mendr: ${message}`);
         process.exit(2);
@@ -4435,11 +4449,8 @@ program
       if (opts.decision !== undefined && !(HUMAN_DECISIONS as readonly string[]).includes(opts.decision)) {
         fail(`--decision must be one of ${HUMAN_DECISIONS.join(', ')}, got "${opts.decision}"`);
       }
-      let input;
-      try {
-        input = parseRolloutInput(readJson(numbers, 'the numbers file'), numbers);
-      } catch (err) {
-        return fail(err instanceof Error ? err.message : String(err));
+      if ((numbers ? 1 : 0) + (opts.from ? 1 : 0) !== 1) {
+        fail('give either a numbers file or --from <telemetry export>, not both and not neither');
       }
       let config: RepoConfig = {};
       try {
@@ -4447,7 +4458,6 @@ program
       } catch (err) {
         return fail(err instanceof Error ? err.message : String(err));
       }
-      const workflow = config.workflows?.find((w) => w.name === input.workflow);
       let migration: MigrationResult | null = null;
       if (opts.migration) {
         migration = readJson(opts.migration, 'the migration file') as MigrationResult;
@@ -4455,6 +4465,40 @@ program
           fail(`${opts.migration} is not a mendr-migration/v1 file; write one with \`mendr migrate --json > migration.json\``);
         }
       }
+      let input: RolloutInput;
+      let telemetryNotes: string[] | undefined;
+      if (opts.from) {
+        if (!opts.workflow) fail('--from needs --workflow: the name of the feature, as written in mendr.config.json');
+        if (!opts.deployedAt || Number.isNaN(Date.parse(opts.deployedAt))) {
+          fail('--from needs --deployed-at: when the migration was deployed, such as 2026-10-20T15:00:00Z');
+        }
+        const windowDays = opts.windowDays === undefined ? undefined : Number(opts.windowDays);
+        if (windowDays !== undefined && (!Number.isInteger(windowDays) || windowDays < 1)) fail('--window-days must be a whole number of days, 1 or more');
+        if (opts.quality !== undefined && opts.quality !== 'passed' && opts.quality !== 'failed') fail('--quality must be "passed" or "failed"');
+        let samples;
+        try {
+          samples = readTelemetryRows(opts.from).map(toCallSample);
+        } catch (err) {
+          return fail(`could not read the telemetry export ${opts.from}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        const built = windowsFromTelemetry(samples, {
+          workflow: opts.workflow!,
+          config: config.workflows?.find((w) => w.name === opts.workflow),
+          deployedAt: new Date(opts.deployedAt!),
+          ...(windowDays !== undefined ? { windowDays } : {}),
+          ...(migration ? { swaps: migration.migrations.map((m) => ({ from: m.from, to: m.to })) } : {}),
+          ...(opts.quality ? { quality: opts.quality as 'passed' | 'failed' } : {}),
+        });
+        input = built.input;
+        telemetryNotes = built.notes;
+      } else {
+        try {
+          input = parseRolloutInput(readJson(numbers!, 'the numbers file'), numbers);
+        } catch (err) {
+          return fail(err instanceof Error ? err.message : String(err));
+        }
+      }
+      const workflow = config.workflows?.find((w) => w.name === input.workflow);
       // Today's plan, not the one in the artifact: a revert that was safe on the day the pull request
       // was planned is not safe once the old model's shutdown date has passed.
       const recovery = migration
@@ -4464,6 +4508,7 @@ program
           )
         : undefined;
       const result = judgeRollout(input, workflow, recovery);
+      if (telemetryNotes) result.notes = telemetryNotes;
       if (opts.record) {
         appendOutcome(opts.record, outcomeRecord(result, migration, (opts.decision as HumanDecision | undefined) ?? null, opts.note ?? null, new Date()));
       }
