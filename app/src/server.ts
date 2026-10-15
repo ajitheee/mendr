@@ -9,6 +9,7 @@ import { MemoryStore } from './store/memory.js';
 import { createPgStore } from './store/pg.js';
 import { loadKeyring } from './store/encryption.js';
 import type { Store } from './store/types.js';
+import { createSignupAlert } from './waitlistAlert.js';
 
 const config = loadConfig();
 
@@ -36,11 +37,20 @@ if (config.sessionGenerated) console.warn('SESSION_SECRET is not set: a random o
 const keys = config.oidcJwksFile ? createLocalJWKSet(JSON.parse(readFileSync(config.oidcJwksFile, 'utf8'))) : remoteActionsJwks(config.oidcIssuer);
 if (config.oidcJwksFile) console.warn(`OIDC_JWKS_FILE is set: accepting tokens signed by ${config.oidcJwksFile}, not GitHub. Development only.`);
 
+// Sign-up alerts: on with both settings, off with neither, and a half-set pair says which is missing.
+// The address itself is never printed: no email in a log line.
+const waitlistAlert = createSignupAlert({ apiKey: config.resendApiKey, to: config.waitlistAlertTo });
+if (waitlistAlert) console.log('waitlist sign-up alerts: on');
+else if (config.resendApiKey || config.waitlistAlertTo) {
+  console.warn(`waitlist sign-up alerts: off, because ${config.resendApiKey ? 'WAITLIST_ALERT_TO' : 'RESEND_API_KEY'} is not set. Set both to be emailed about each sign-up.`);
+}
+
 const app = createApp({
   config,
   store,
   github: createGitHubApi(config),
   verifyActionsToken: createActionsVerifier(keys, { issuer: config.oidcIssuer, audience: config.oidcAudience }),
+  waitlistAlert,
 });
 
 // Bind all interfaces so containerized hosts (Render, Fly, Railway, Docker)
