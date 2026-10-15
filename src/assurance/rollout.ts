@@ -73,6 +73,8 @@ export interface RolloutResult {
   signals: SignalResult[];
   /** The recovery plan, recomputed today, when the migration artifact was given. */
   recovery?: RecoveryPlan;
+  /** How the numbers were obtained, when mendr read them from telemetry: what was counted and what was not. */
+  notes?: string[];
 }
 
 /** Validate a rollout input file's contents, with errors that name the field. */
@@ -249,6 +251,10 @@ export function renderRollout(r: RolloutResult): string[] {
   const lines = [`mendr rollout · ${r.workflow}`, ''];
   if (!r.configured) {
     lines.push(`note: "${r.workflow}" is not in mendr.config.json, so the default limits were used.`, '');
+  }
+  if (r.notes?.length) {
+    for (const n of r.notes) lines.push(`from telemetry: ${n}`);
+    lines.push('');
   }
   lines.push(head[r.verdict], `  ${r.reason}`, '');
   for (const s of r.signals) lines.push(`  ${mark[s.state]} ${s.detail}`);

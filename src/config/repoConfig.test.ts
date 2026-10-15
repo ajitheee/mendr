@@ -191,6 +191,16 @@ describe('loadRepoConfig: the gates block', () => {
   });
 });
 
+describe('loadRepoConfig — eval cases', () => {
+  it('reads a cases file for the eval gate', () => {
+    expect(loadRepoConfig(makeRepo(JSON.stringify({ gates: { eval: { cases: ' mendr/cases.json ' } } }))).gates?.eval).toEqual({ cases: 'mendr/cases.json' });
+  });
+  it('refuses a command and a cases file together, rather than silently picking one', () => {
+    const repo = makeRepo(JSON.stringify({ gates: { eval: { command: 'npm run eval', cases: 'c.json' } } }));
+    expect(() => loadRepoConfig(repo)).toThrow(/sets both "command" and "cases" -- set one of them/);
+  });
+});
+
 describe('loadRepoConfig — workflows', () => {
   it('reads a workflow, its paths, its limits and its minimum traffic', () => {
     const repo = makeRepo(
@@ -201,6 +211,13 @@ describe('loadRepoConfig — workflows', () => {
     expect(loadRepoConfig(repo).workflows).toEqual([
       { name: 'Answer a support question', paths: ['src/support/**'], signals: { latencyP95MaxIncreasePct: 30, qualityRequired: true }, minCalls: 250 },
     ]);
+  });
+
+  it('reads how to find the workflow in telemetry, and refuses a malformed filter', () => {
+    const ok = makeRepo(JSON.stringify({ workflows: [{ name: 'a', paths: ['src'], telemetry: { service: 'support-api', match: { 'http.route': '/answer' } } }] }));
+    expect(loadRepoConfig(ok).workflows?.[0]?.telemetry).toEqual({ service: 'support-api', match: { 'http.route': '/answer' } });
+    const bad = makeRepo(JSON.stringify({ workflows: [{ name: 'a', paths: ['src'], telemetry: { match: { route: 3 } } }] }));
+    expect(() => loadRepoConfig(bad)).toThrow(/"telemetry" must look like \{ "service": "support-api"/);
   });
 
   it('refuses a misspelled limit rather than quietly using the default', () => {

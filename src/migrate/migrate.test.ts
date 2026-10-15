@@ -99,6 +99,25 @@ describe('runMigration — the second, independent check (verify twice)', { time
     expect(text).toContain('If this goes wrong (as of 2026-10-15)');
   });
 
+  it('runs the team’s eval cases as the eval gate, and counts a pass as behaviour tested', async () => {
+    const cases = { cases: [{ name: 'greeting', messages: [{ role: 'user', content: 'hi' }], expect: { contains: ['hello'] } }] };
+    const fetch: import('../gates/evalCases.js').FetchLike = async () => ({ status: 200, json: async () => ({ choices: [{ message: { content: 'Hello there' } }] }) });
+    const prior = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = 'sk-test-not-real';
+    try {
+      const r = await runMigration(repo({ 'client.ts': CALL, 'mendr/cases.json': JSON.stringify(cases) }), REG, {
+        evalCases: 'mendr/cases.json',
+        evalFetch: fetch,
+        now: new Date('2026-10-15T00:00:00Z'),
+      });
+      expect(r.verification.eval).toMatchObject({ status: 'passed', command: 'cases: mendr/cases.json' });
+      expect(r.verification.behavioralTested).toBe(true);
+    } finally {
+      if (prior === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = prior;
+    }
+  });
+
   it('says no revert is possible once the old model has shut down', async () => {
     const r = await runMigration(repo({ 'client.ts': CALL }), REG, { skipVerify: true, now: new Date('2026-10-24T00:00:00Z') });
     expect(r.recovery?.options[0]).toMatchObject({ kind: 'revert', available: false });

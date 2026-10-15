@@ -43,6 +43,11 @@ export interface EvalGateConfig extends GateConfig {
    * `evalCommand`, which maps onto this one.
    */
   command?: string;
+  /**
+   * A cases file (mendr-eval-cases/v1) that mendr runs itself, on the old and the new model, with
+   * the team's own API key (gates/evalCases.ts). The alternative to a command: set one or the other.
+   */
+  cases?: string;
 }
 
 /** The per-gate policy block: `{ "gates": { "tests": { "required": true } } }`. */
@@ -98,6 +103,11 @@ export interface WorkflowConfig {
   signals?: WorkflowSignals;
   /** Fewest calls after the deploy for a verdict; fewer is inconclusive. Absent = the default. */
   minCalls?: number;
+  /**
+   * How to find this feature's calls in a telemetry export (`mendr rollout --from`): its service
+   * name, and any other fields that must match exactly (a route, an operation name).
+   */
+  telemetry?: { service?: string; match?: Record<string, string> };
 }
 
 /** The gates a repo may configure. Anything else under `gates` is an error. */
@@ -214,8 +224,8 @@ function parseWorkflows(value: unknown, path: string): WorkflowConfig[] {
     }
     const w = entry as Record<string, unknown>;
     for (const key of Object.keys(w)) {
-      if (!['name', 'paths', 'signals', 'minCalls'].includes(key)) {
-        throw new Error(`${at} has an unknown field "${key}" (allowed: name, paths, signals, minCalls)`);
+      if (!['name', 'paths', 'signals', 'minCalls', 'telemetry'].includes(key)) {
+        throw new Error(`${at} has an unknown field "${key}" (allowed: name, paths, signals, minCalls, telemetry)`);
       }
     }
     if (typeof w.name !== 'string' || w.name.trim().length === 0) {
@@ -233,6 +243,25 @@ function parseWorkflows(value: unknown, path: string): WorkflowConfig[] {
         throw new Error(`${at} ("${name}"): "minCalls" must be a whole number of calls, 1 or more, got ${JSON.stringify(w.minCalls)}`);
       }
       out.minCalls = w.minCalls;
+    }
+    if (w.telemetry !== undefined) {
+      const t = w.telemetry as Record<string, unknown>;
+      const bad = (): never => {
+        throw new Error(
+          `${at} ("${name}"): "telemetry" must look like { "service": "support-api", "match": { "http.route": "/answer" } }, with text values`,
+        );
+      };
+      if (typeof t !== 'object' || t === null || Array.isArray(t)) bad();
+      for (const k of Object.keys(t)) if (k !== 'service' && k !== 'match') bad();
+      if (t.service !== undefined && (typeof t.service !== 'string' || !t.service.trim())) bad();
+      if (t.match !== undefined) {
+        if (typeof t.match !== 'object' || t.match === null || Array.isArray(t.match)) bad();
+        if (Object.values(t.match as Record<string, unknown>).some((v) => typeof v !== 'string')) bad();
+      }
+      out.telemetry = {
+        ...(typeof t.service === 'string' ? { service: t.service.trim() } : {}),
+        ...(t.match ? { match: t.match as Record<string, string> } : {}),
+      };
     }
     if (w.signals !== undefined) {
       if (typeof w.signals !== 'object' || w.signals === null || Array.isArray(w.signals)) {
@@ -311,12 +340,24 @@ function parseGates(value: unknown, path: string): GatesConfig {
           );
         }
         parsed.command = fieldValue.trim();
+      } else if (field === 'cases' && name === 'eval') {
+        if (typeof fieldValue !== 'string' || fieldValue.trim().length === 0) {
+          throw new Error(
+            `${path}: "gates.eval.cases" must be the path of your cases file, such as "mendr/eval-cases.json", got ${JSON.stringify(fieldValue)}`,
+          );
+        }
+        parsed.cases = fieldValue.trim();
       } else {
         throw new Error(
           `${path}: unknown field "gates.${name}.${field}" (allowed: ` +
-            `${name === 'eval' ? 'required, command' : 'required'})`,
+            `${name === 'eval' ? 'required, command, cases' : 'required'})`,
         );
       }
+    }
+    if (parsed.command && parsed.cases) {
+      throw new Error(
+        `${path}: "gates.eval" sets both "command" and "cases" -- set one of them (your own eval command, or a cases file mendr runs)`,
+      );
     }
     gates[name as GateName] = parsed;
   }

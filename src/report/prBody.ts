@@ -93,7 +93,9 @@ function gateLines(v: MigrationResult['verification']): string[] {
   const row = (label: string, g: { status: CheckStatus; detail?: string; command?: string }): string =>
     `- ${label}: **${GATE_WORD[g.status]}**` +
     (g.command ? ` (\`${g.command}\`)` : '') +
-    (g.detail && g.status !== 'passed' ? ` — ${g.detail}` : '');
+    // One list item per gate: a multi-line detail (build output, one line per eval case) would
+    // break the markdown list, so its lines are joined.
+    (g.detail && g.status !== 'passed' ? ` — ${g.detail.trim().replace(/\s*\n\s*/g, '; ')}` : '');
   return [
     row('type-check', v.typeCheck),
     row('build', v.build),

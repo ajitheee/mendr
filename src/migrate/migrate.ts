@@ -25,6 +25,7 @@ import type { WorkflowConfig } from '../config/repoConfig.js';
 import { linkWorkflows, type WorkflowLinks } from '../assurance/workflows.js';
 import { recoveryPlan, type RecoveryPlan, type RecoverySwap } from '../assurance/recovery.js';
 import { modelIdEntries } from '../usage/llmRegistry.js';
+import type { FetchLike } from '../gates/evalCases.js';
 import { writeAllOrNothing, type PendingWrite } from '../fix/atomicWrite.js';
 
 // THE MIGRATION SANDBOX.
@@ -208,6 +209,13 @@ export interface MigrateOptions {
   workflows?: WorkflowConfig[];
   /** The clock for date-dependent output (days until shutdown, the recovery plan). Tests pin it. */
   now?: Date;
+  /**
+   * The repository's eval cases file (`gates.eval.cases`), run on the old and the new model when no
+   * eval command is given (gates/evalCases.ts).
+   */
+  evalCases?: string;
+  /** Injected in tests: the provider call the cases runner makes. */
+  evalFetch?: FetchLike;
 }
 
 /** The swaps a recovery plan reads, with each old model's shutdown date from its evidence or the registry. */
@@ -602,7 +610,16 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
   const testResult = await runRepoTests(repoPath, planned.patchedFiles);
   const tests = outcome(testResult.status, testResult.note ?? testResult.output);
 
-  const evalResult = await runRepoEval(repoPath, planned.patchedFiles, { command: opts.evalCommand });
+  const evalSwaps = recoverySwaps(planned.migrations, planned.registry).map((s, i) => ({
+    provider: planned.migrations[i]!.provider,
+    from: s.from,
+    to: s.to,
+    oldRetired: s.shutdownDate !== null && s.shutdownDate.slice(0, 10) <= now.toISOString().slice(0, 10),
+  }));
+  const evalResult = await runRepoEval(repoPath, planned.patchedFiles, {
+    command: opts.evalCommand,
+    ...(opts.evalCases ? { cases: { file: opts.evalCases, swaps: evalSwaps, registry: planned.registry, ...(opts.evalFetch ? { fetch: opts.evalFetch } : {}) } } : {}),
+  });
   const evalOut = outcome(evalResult.status, evalResult.output, evalResult.command);
   const behavioralTested = evalResult.status === 'passed';
 

@@ -88,7 +88,7 @@ approves the merge, the deploy and any recovery.
 
 The unit of work is one external API change affecting one customer-facing feature, not a monitor on
 every PR. The components are workers under one controller; they do not chat freely. Status after
-branches `feat/verify-twice` (PR #67) and `feat/assurance`:
+PR #67 (verify twice), PR #70 (assurance) and `feat/check2-rollout`:
 
 | component | stops when | status |
 | --- | --- | --- |
@@ -99,9 +99,9 @@ branches `feat/verify-twice` (PR #67) and `feat/assurance`:
 | Coding | it needs secrets, broad edits or a business decision | **Built, deterministic.** An AI coding agent is **not built, by decision**: invariant 2. It waits for a migration the rules cannot handle, and even then would only draft. |
 | Check 1: code, build, tests | it fails or cannot run | **Built.** "Unavailable" is never "passed" (`gates/status.ts`). |
 | Check 2: independent re-check | an edit no rule names, a missed site, an unmet parameter rule | **Built** (P2-F, `gates/secondCheck.ts`). Structural, not behavioural. |
-| Check 3: behaviour on customer cases | the team has no eval | **Built as the eval gate**, running the team's own command. mendr does not write the cases. |
+| Check 3: behaviour on customer cases | the team has no eval | **Built.** The eval gate runs the team's own command, or a cases file (`gates.eval.cases`) that mendr sends to the old and the new model with the team's key: a case that passes on the old model and fails on the new one, or a request the new model rejects, fails the gate. Deterministic expectations only. **OpenAI only**; other providers need an eval command. mendr does not write the cases. |
 | Human approval | always | **Built.** mendr never merges or deploys. |
-| Rollout check | too little traffic or a missing signal: *inconclusive* | **Built, numbers supplied by the team.** `mendr rollout` returns *verified*, *regression* or *inconclusive* against the workflow's limits. **Telemetry adapters are not built**: they wait for a design partner's real stack. |
+| Rollout check | too little traffic or a missing signal: *inconclusive* | **Built.** `mendr rollout` returns *verified*, *regression* or *inconclusive* against the workflow's limits, from typed numbers or from a telemetry export (`--from`: OpenTelemetry spans, gateway or app logs, usage exports), split at the deploy and filtered to the workflow. **Live connections to a monitoring vendor's API are not built**: they wait for a design partner's real stack. |
 | Investigation | it cannot establish a likely cause: escalate | **Deterministic part built:** which signal moved, by how much, against which limit. Correlating deploys, errors and affected users across telemetry is **not built**: it needs telemetry. |
 | Recovery | always: a person authorises | **Built.** A dated plan: revert only while the old model still answers, fix forward after its shutdown. Never picks a substitute model. Recomputed on the day `rollout` runs. |
 | Learning | never promote a rule without review and repeatable tests | **Record built:** `rollout --record` appends `mendr-outcome/v1` lines (change, checks, decision, rollout verdict). **Learning and promotion are not built:** nothing to learn from until real migrations produce records. |

@@ -2,6 +2,7 @@ import type { CheckStatus } from './status.js';
 import { execa } from 'execa';
 import { DEFAULT_EVAL_TIMEOUT_MS } from '../config/repoConfig.js';
 import { gateEnv, truncateOutput, withPatchedSandbox, type PatchedFile } from './sandbox.js';
+import { runEvalCases, type EvalCasesOptions } from './evalCases.js';
 
 // The eval gate — the ONLY gate in mendr that can say anything about BEHAVIOR.
 //
@@ -105,6 +106,11 @@ export interface EvalGateOptions {
   command?: string;
   /** Wall-clock budget; defaults to DEFAULT_EVAL_TIMEOUT_MS (10 min). */
   timeoutMs?: number;
+  /**
+   * The team's cases file (`gates.eval.cases`), run by mendr itself on the old and the new model
+   * (gates/evalCases.ts). Used only when no command is configured: a repo names one or the other.
+   */
+  cases?: EvalCasesOptions;
 }
 
 /**
@@ -121,7 +127,7 @@ export async function runRepoEval(
   opts: EvalGateOptions,
 ): Promise<EvalGateResult> {
   const command = opts.command?.trim();
-  if (!command) return { status: 'not_run' };
+  if (!command) return opts.cases ? runEvalCases(repoPath, opts.cases) : { status: 'not_run' };
 
   const timeoutMs = opts.timeoutMs ?? DEFAULT_EVAL_TIMEOUT_MS;
   const sandbox = await withPatchedSandbox(repoPath, patchedFiles, (dir) =>
