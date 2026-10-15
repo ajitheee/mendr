@@ -59,7 +59,17 @@
   @media (max-width:720px){nav.links{display:none} header .right .gh{display:none}}
 
   /* Hero: centred, a struck-out model id, the deadline as a pill. */
-  .hero{text-align:center;padding-block:clamp(48px,9vw,104px) clamp(36px,6vw,64px)}
+  .hero{position:relative;isolation:isolate;overflow:hidden;text-align:center;padding-block:clamp(48px,9vw,104px) clamp(36px,6vw,64px)}
+
+  /* The dot field behind the hero and how-it-works. CSS dots are the resting state (touch, reduced
+     motion, no JavaScript); on a real pointer a canvas takes over and the dots answer the cursor. */
+  .hero::before{content:"";position:absolute;inset:0;z-index:-1;background-image:radial-gradient(var(--dot) 1px,transparent 1.2px);background-size:16px 16px;
+    -webkit-mask-image:radial-gradient(ellipse 75% 85% at 50% 40%,#000 35%,transparent 100%);mask-image:radial-gradient(ellipse 75% 85% at 50% 40%,#000 35%,transparent 100%)}
+  .field{position:absolute;inset:0;z-index:-1;width:100%;height:100%;pointer-events:none;display:none}
+  .live > .field{display:block}
+  .hero.live::before,.how.live{background-image:none}
+  .hero > .field{-webkit-mask-image:radial-gradient(ellipse 75% 85% at 50% 40%,#000 35%,transparent 100%);mask-image:radial-gradient(ellipse 75% 85% at 50% 40%,#000 35%,transparent 100%)}
+  .how > .field{-webkit-mask-image:linear-gradient(transparent,#000 12%,#000 88%,transparent);mask-image:linear-gradient(transparent,#000 12%,#000 88%,transparent)}
   .pills{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin:0 0 26px}
   .pill{display:inline-flex;align-items:center;gap:8px;font-size:.82rem;color:var(--ink-2);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 12px}
   .pill .dot{width:7px;height:7px;border-radius:50%;background:var(--amber);flex:none}
@@ -106,7 +116,7 @@
 
   /* How it works: the terminal, and the route that fans out of it. */
   .dots{background-image:radial-gradient(var(--dot) 1px,transparent 1.2px);background-size:14px 14px}
-  .how{padding-block:clamp(56px,8vw,96px)}
+  .how{position:relative;isolation:isolate;padding-block:clamp(56px,8vw,96px)}
   .how h2,.join h2{margin:0 0 10px;font-weight:400;font-size:clamp(1.7rem,3.6vw,2.4rem);letter-spacing:-.035em;line-height:1.12;text-wrap:balance}
   .how .intro{text-align:center;margin:0 auto 36px;max-width:56ch}
   .how .intro p{margin:0;color:var(--muted)}
@@ -133,8 +143,21 @@
     .col + .col{border-left:0;border-top:1px solid var(--line)}
   }
 
-  /* Join: the form, in a white panel. */
-  .join{border-top:1px solid var(--line);padding-block:clamp(56px,8vw,96px)}
+  /* Join: the form, in a white panel, above the mendr wordmark in shadow. The wordmark gets a band
+     of its own below the content (the bottom padding is sized from it), so the whole word reads; its
+     baseline sits just past the section's edge, so the letters are cropped a little at the foot. */
+  .join{--g:clamp(7rem,26vw,22rem);position:relative;isolation:isolate;overflow:hidden;border-top:1px solid var(--line);
+    padding-block:clamp(56px,8vw,96px) calc(var(--g) * .46 + clamp(20px,3vw,40px))}
+  .ghost{position:absolute;z-index:-1;left:50%;bottom:-.2em;transform:translateX(-50%);display:flex;align-items:baseline;gap:.02em;
+    font-size:var(--g);font-weight:600;letter-spacing:-.055em;line-height:1;white-space:nowrap;pointer-events:none;user-select:none;
+    color:rgba(49,92,255,.085);
+    -webkit-mask-image:linear-gradient(to bottom,#000 45%,rgba(0,0,0,.4) 100%);mask-image:linear-gradient(to bottom,#000 45%,rgba(0,0,0,.4) 100%)}
+  .ghost svg{height:.51em;width:auto;flex:none}
+  .ghost .b{fill:rgba(49,92,255,.085)}
+  .ghost .a{fill:rgba(216,137,22,.2)}
+  @keyframes surface{from{opacity:0;transform:translate(-50%,8%)}to{opacity:1;transform:translate(-50%,0)}}
+  .js .join:not([data-on]) .ghost{opacity:0}
+  .join[data-on] .ghost{animation:surface 1100ms var(--ease-out) both}
   .join .wrap{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:clamp(28px,5vw,64px);align-items:start}
   @media (max-width:820px){.join .wrap{grid-template-columns:minmax(0,1fr)}}
   .join .side p{color:var(--muted);margin:0 0 12px;max-width:42ch}
@@ -209,6 +232,8 @@
     .js .route:not([data-on]) .col{opacity:1}
     .route[data-on] .stem,.route[data-on] .span,.route[data-on] .col,.route[data-on] .col::before{animation:none}
     .msg.ok::before{animation:none}
+    .js .join:not([data-on]) .ghost{opacity:1}
+    .join[data-on] .ghost{animation:none}
     .bar i{transition:none}
     .btn:active,.opts label:active,.copy:active{transform:none}
   }
@@ -229,6 +254,7 @@
 
 <main>
   <section class="hero">
+    <canvas class="field" aria-hidden="true"></canvas>
     <div class="wrap">
       <div class="pills in" style="--i:0">
         <span class="pill">Early access · 50 builders · free</span>
@@ -286,6 +312,7 @@
   </section>
 
   <section class="how dots" id="how">
+    <canvas class="field" aria-hidden="true"></canvas>
     <div class="wrap">
       <div class="intro">
         <h2>How early access works</h2>
@@ -308,6 +335,7 @@
   </section>
 
   <section class="join" id="join" aria-labelledby="join-h">
+    <div class="ghost" aria-hidden="true"><svg viewBox="15 30 77 62"><rect class="b" x="15" y="30" width="77" height="14"/><rect class="b" x="15" y="30" width="14" height="62"/><rect class="b" x="43" y="30" width="14" height="62"/><rect class="b" x="78" y="30" width="14" height="34"/><rect class="a" x="78" y="78" width="14" height="14"/></svg>endr</div>
     <div class="wrap">
       <div class="side">
         <h2 id="join-h">Join the first 50</h2>
@@ -405,6 +433,86 @@
   const today = new Date();
   const days = Math.round((Date.UTC(2026, 9, 23) - Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())) / 86400000);
   $('days').textContent = days > 1 ? ` · in ${days} days` : days === 1 ? ' · tomorrow' : days === 0 ? ' · today' : '';
+
+  // THE DOT FIELD. On a real pointer, the hero's and how-it-works' dots answer the cursor: within
+  // reach they lean away from it, grow a little and turn mendr blue. The cursor is followed by a
+  // spring ({ duration: 0.5, bounce: 0.2 }: stiffness (2π/0.5)², damping ratio 0.8), so the field
+  // trails the hand instead of snapping to it, and settles. It draws only while its section is on
+  // screen and only until it is at rest: nothing runs when nobody is moving.
+  const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+  const field = (section) => {
+    const canvas = section.querySelector('.field');
+    const ctx = canvas && canvas.getContext('2d');
+    if (!ctx) return;
+    section.classList.add('live');
+    const GAP = 16, REACH = 150, PUSH = 7;
+    const K = Math.pow((2 * Math.PI) / 0.5, 2), C = 2 * 0.8 * Math.sqrt(K);
+    const BASE = [215, 215, 211], BLUE = [49, 92, 255];
+    let w = 0, h = 0, dpr = 1, raf = 0, last = 0, visible = false;
+    // Two springs: where the cursor is felt, and how strongly (1 inside the section, 0 outside).
+    const s = { x: -1e4, y: -1e4, vx: 0, vy: 0, tx: -1e4, ty: -1e4, k: 0, vk: 0, tk: 0 };
+
+    const size = () => {
+      const r = section.getBoundingClientRect();
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      w = r.width; h = r.height;
+      canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      draw();
+    };
+    const draw = () => {
+      ctx.clearRect(0, 0, w, h);
+      const ox = (w % GAP) / 2 + GAP / 2, oy = (h % GAP) / 2 + GAP / 2;
+      for (let y = oy; y < h; y += GAP) {
+        for (let x = ox; x < w; x += GAP) {
+          const dx = x - s.x, dy = y - s.y, d = Math.hypot(dx, dy);
+          let f = 0;
+          if (s.k > 0.001 && d < REACH) { const t = 1 - d / REACH; f = t * t * s.k; }
+          const nx = d > 0.01 ? dx / d : 0, ny = d > 0.01 ? dy / d : 0;
+          const px = x + nx * PUSH * f, py = y + ny * PUSH * f, r = 1 + f * 1.1;
+          const c = BASE.map((b, i) => Math.round(b + (BLUE[i] - b) * f));
+          ctx.fillStyle = `rgb(${c[0]},${c[1]},${c[2]})`;
+          ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+    };
+    const tick = (now) => {
+      const dt = Math.min(0.032, (now - (last || now)) / 1000 || 0.016);
+      last = now;
+      // One spring step per axis, and one for the strength.
+      const ax = K * (s.tx - s.x) - C * s.vx, ay = K * (s.ty - s.y) - C * s.vy, ak = K * (s.tk - s.k) - C * s.vk;
+      s.vx += ax * dt; s.vy += ay * dt; s.vk += ak * dt;
+      s.x += s.vx * dt; s.y += s.vy * dt; s.k = Math.max(0, Math.min(1, s.k + s.vk * dt));
+      draw();
+      const resting = Math.abs(s.tx - s.x) < 0.3 && Math.abs(s.ty - s.y) < 0.3 && Math.abs(s.vx) + Math.abs(s.vy) < 0.3 && Math.abs(s.tk - s.k) < 0.002 && Math.abs(s.vk) < 0.002;
+      raf = resting || !visible ? 0 : requestAnimationFrame(tick);
+      if (!raf) last = 0;
+    };
+    const wake = () => { if (!raf && visible) raf = requestAnimationFrame(tick); };
+
+    section.addEventListener('pointermove', (e) => {
+      const r = section.getBoundingClientRect();
+      s.tx = e.clientX - r.left; s.ty = e.clientY - r.top; s.tk = 1;
+      // Entering from rest: start where the hand is, so the field does not sweep in from a corner.
+      if (s.k < 0.01 && Math.abs(s.vk) < 0.01) { s.x = s.tx; s.y = s.ty; s.vx = s.vy = 0; }
+      wake();
+    });
+    section.addEventListener('pointerleave', () => { s.tk = 0; wake(); });
+    new ResizeObserver(size).observe(section);
+    new IntersectionObserver((entries) => { visible = entries.some((e) => e.isIntersecting); if (visible) wake(); }).observe(section);
+  };
+  if (finePointer && !reduce) document.querySelectorAll('.hero, .how').forEach(field);
+
+  // The mendr wordmark behind the form surfaces once, when the section comes into view.
+  const join = document.querySelector('.join');
+  if ('IntersectionObserver' in window) {
+    const jo = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) { join.setAttribute('data-on', ''); jo.disconnect(); }
+    }, { rootMargin: '0px 0px -20% 0px' });
+    jo.observe(join);
+  } else {
+    join.setAttribute('data-on', '');
+  }
 
   // The route draws once, the first time it is on screen.
   const route = $('route');
