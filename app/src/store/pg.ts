@@ -25,6 +25,7 @@ import {
   type RunRecord,
   type RunSummary,
   type Store,
+  type WaitlistSignupInput,
 } from './types.js';
 import { open as openField, sealForStore, type DataKeyring } from './encryption.js';
 import { sanitizeEntry } from './auditLog.js';
@@ -548,6 +549,26 @@ export class PgStore implements Store {
       out.set(s.repoId, s);
     }
     return out;
+  }
+
+  async addWaitlistSignup(input: WaitlistSignupInput): Promise<{ created: boolean; position: number }> {
+    // A repeat sign-up keeps the first one: the answers a person gave first are not overwritten,
+    // and nobody can push someone else's entry around by re-submitting their address.
+    const inserted = await this.pool.query(
+      `INSERT INTO waitlist (email, uses_llm, wants_check, note) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (email) DO NOTHING RETURNING id`,
+      [input.email, input.usesLlm, input.wantsCheck, input.note],
+    );
+    const { rows } = await this.pool.query(
+      'SELECT count(*) AS position FROM waitlist WHERE id <= (SELECT id FROM waitlist WHERE email = $1)',
+      [input.email],
+    );
+    return { created: (inserted.rowCount ?? 0) > 0, position: n((rows[0] as Row).position) };
+  }
+
+  async waitlistCount(): Promise<number> {
+    const { rows } = await this.pool.query('SELECT count(*) AS c FROM waitlist');
+    return n((rows[0] as Row).c);
   }
 }
 

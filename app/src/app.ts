@@ -16,6 +16,7 @@ import { redactSecrets } from './redact.js';
 import { APPROVAL_STAGES, approvalVersion, type Approval, type ApprovalMode, type ApprovalOutcome, type ApprovalStage, type EncryptionStatus, type Repo, type Store } from './store/types.js';
 import { credentialsPage, errorPage, homePage, installedPage, runPage, runsPage, setupPage, workflowRunsUrl } from './ui/pages.js';
 import { MENDR_MIGRATE_WORKFLOW_PATH, migrateActionsUrl, setupMigrateWorkflowUrl, setupWorkflowUrl } from './ui/workflowTemplate.js';
+import { registerWaitlist } from './waitlist.js';
 
 export interface AppDeps {
   config: AppConfig;
@@ -241,6 +242,9 @@ export function createApp(deps: AppDeps): Hono {
   // exists to avoid. Boot already proved the database (no database, no listening port), and a
   // restart cannot bring a lost database back, so the database check stays on /healthz.
   app.get('/livez', (c) => c.json({ ok: true }));
+
+  // The marketing site's early-access form (src/waitlist.ts).
+  registerWaitlist(app, { store, now, log });
 
   // Health, plus proof of encryption at rest from the outside: is a data key
   // configured, how many stored reports are sealed vs plaintext, and does the

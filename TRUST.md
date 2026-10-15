@@ -143,7 +143,8 @@ you run.
 
 ### What the App stores (data inventory)
 
-The App's database has six data tables plus an audit log, and nothing else.
+The App's database has six data tables, an audit log and an early-access
+waitlist, and nothing else.
 Every field below is used; none is speculative. Two things are deliberately
 **absent**, and that absence is the point: **no access tokens or credentials of
 any kind, and no source code**.
@@ -246,10 +247,28 @@ The App holds GitHub logins in `installations.account_login`, `runs.actor`,
 `migrations.actor`, `acknowledgements.acknowledged_by` / `cleared_by`,
 `approvals.approved_by` and `audit_log.actor`, plus the free-text
 `acknowledgements.owner` and `.note`. No email address or other profile field
-is stored; sign-in keeps only the login inside the encrypted session cookie.
-Purpose: to show who did what, and to reconstruct events in an incident.
-Everything except the audit log is deleted on uninstall; audit-log entries are
-removed on request (section 10).
+is stored for anyone who uses the App; sign-in keeps only the login inside the
+encrypted session cookie. Purpose: to show who did what, and to reconstruct
+events in an incident. Everything except the audit log is deleted on uninstall;
+audit-log entries are removed on request (section 10).
+
+**The one exception is the early-access waitlist, and only for people who sign
+up on it.** The form on the marketing site stores what it shows, and nothing
+else, in the `waitlist` table:
+
+| Field | What | Why it is kept |
+|---|---|---|
+| `email` | the address you typed | to write to you about your access |
+| `uses_llm` | your answer: does your product call an LLM provider from its own code | to know who has the problem |
+| `wants_check` | your answer: do you want your repo checked before October 23 | to know who to help first |
+| `note` | anything you chose to add, at most 500 characters | context you gave us |
+| `created_at` | when you signed up | the order spots are given in |
+
+No IP address, browser fingerprint or cookie is stored, and the table is not
+linked to any installation or repository. The address a request came from is
+used only for an in-memory rate limit and is gone when the App restarts. Email
+addresses never appear in the App's logs. To be removed, reply "remove" to any
+email from us; the row is deleted, not hidden.
 
 ### Hosting and subprocessors
 

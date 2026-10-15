@@ -19,6 +19,7 @@ import {
   type RunRecord,
   type RunSummary,
   type Store,
+  type WaitlistSignupInput,
 } from './types.js';
 import { sanitizeEntry } from './auditLog.js';
 
@@ -392,5 +393,18 @@ export class MemoryStore implements Store {
       out.set(r.repoId, summary);
     }
     return out;
+  }
+
+  private waitlist: WaitlistSignupInput[] = [];
+
+  async addWaitlistSignup(input: WaitlistSignupInput): Promise<{ created: boolean; position: number }> {
+    const existing = this.waitlist.findIndex((w) => w.email === input.email);
+    if (existing >= 0) return { created: false, position: existing + 1 };
+    this.waitlist.push({ ...input });
+    return { created: true, position: this.waitlist.length };
+  }
+
+  async waitlistCount(): Promise<number> {
+    return this.waitlist.length;
   }
 }

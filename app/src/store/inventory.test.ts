@@ -12,9 +12,15 @@ const APP_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const schema = readFileSync(join(APP_ROOT, 'schema.sql'), 'utf8');
 
 describe('stored-data inventory', () => {
-  it('defines exactly the documented tables (six data tables + the audit log)', () => {
+  it('defines exactly the documented tables (six data tables, the audit log, and the waitlist)', () => {
     const tables = [...schema.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].map((m) => m[1]).sort();
-    expect(tables).toEqual(['acknowledgements', 'approvals', 'audit_log', 'installations', 'migrations', 'repos', 'runs']);
+    expect(tables).toEqual(['acknowledgements', 'approvals', 'audit_log', 'installations', 'migrations', 'repos', 'runs', 'waitlist']);
+  });
+
+  it('the waitlist keeps an email and the form answers, and nothing that identifies a machine', () => {
+    const block = schema.slice(schema.indexOf('CREATE TABLE IF NOT EXISTS waitlist'));
+    const columns = [...block.matchAll(/^\s*([a-z_]+)\s+(BIGSERIAL|TEXT|BOOLEAN|TIMESTAMPTZ)/gim)].map((m) => m[1]);
+    expect(columns).toEqual(['id', 'email', 'uses_llm', 'wants_check', 'note', 'created_at']);
   });
 
   it('has NO column that could hold a token, secret or private key', () => {

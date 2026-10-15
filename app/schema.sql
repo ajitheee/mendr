@@ -137,3 +137,15 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 CREATE INDEX IF NOT EXISTS audit_log_at ON audit_log (at DESC);
 CREATE INDEX IF NOT EXISTS audit_log_installation ON audit_log (installation_id, at DESC);
+
+-- waitlist: people who asked for early access on the marketing site. Their email
+-- and two answers, nothing else: no IP address, no browser fingerprint, and no
+-- link to any installation or repository. Deleted on request (TRUST.md).
+CREATE TABLE IF NOT EXISTS waitlist (
+  id          BIGSERIAL PRIMARY KEY,
+  email       TEXT NOT NULL UNIQUE,
+  uses_llm    TEXT NOT NULL,
+  wants_check BOOLEAN NOT NULL,
+  note        TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);

@@ -260,6 +260,26 @@ export interface Store {
   appendAuditLog(entry: AuditLogInput): Promise<void>;
   /** Read recent events, newest first; optionally scoped to one installation. */
   listAuditLog(opts?: { installationId?: number; limit?: number }): Promise<AuditLogEntry[]>;
+  // --- early-access waitlist (the marketing site's sign-up form) ---
+  /**
+   * Add a sign-up, or leave an existing one as it is. `created` is false when the email was
+   * already on the list; `position` is its place in sign-up order either way.
+   */
+  addWaitlistSignup(input: WaitlistSignupInput): Promise<{ created: boolean; position: number }>;
+  /** How many people are on the list. */
+  waitlistCount(): Promise<number>;
+}
+
+/** One early-access sign-up: an email and two answers. No IP, no profile, no link to a repository. */
+export interface WaitlistSignupInput {
+  /** Lower-cased and trimmed by the caller. */
+  email: string;
+  /** Does their product call OpenAI, Anthropic or Google from its own code? */
+  usesLlm: 'yes' | 'no' | 'not_sure';
+  /** Do they want their repo checked before the October 23 shutdown? */
+  wantsCheck: boolean;
+  /** Optional, capped by the caller. */
+  note: string | null;
 }
 
 /** The security-relevant events the audit log records. */
