@@ -65,6 +65,39 @@ export interface RepoConfig {
   evalTimeoutMs?: number;
   /** Per-gate policy. Absent = every gate keeps its built-in default. */
   gates?: GatesConfig;
+  /**
+   * The customer-facing features ("workflows") a migration can touch, and what "still working"
+   * means for each after a deploy. mendr does not guess either: the team names the files a feature
+   * lives in and the signals that prove it healthy. See assurance/rollout.ts.
+   */
+  workflows?: WorkflowConfig[];
+}
+
+/**
+ * How far a signal may move after a deploy before the rollout check calls it a regression.
+ * Every field is optional; an absent one takes the default in assurance/rollout.ts.
+ */
+export interface WorkflowSignals {
+  /** Largest acceptable rise in error rate, as a fraction (0.005 = half a percentage point). */
+  errorRateMaxIncrease?: number;
+  /** Largest acceptable rise in p95 latency, in percent. */
+  latencyP95MaxIncreasePct?: number;
+  /** Largest acceptable rise in cost per 1,000 calls, in percent. */
+  costPer1kMaxIncreasePct?: number;
+  /** True when the team's own quality check must be reported for the rollout to count as verified. */
+  qualityRequired?: boolean;
+}
+
+/** One customer-facing feature: its name, where its code lives, and what healthy means. */
+export interface WorkflowConfig {
+  /** What the team calls it, e.g. "Answer a support question". */
+  name: string;
+  /** Repo-relative paths or globs (`src/support/**`) whose code belongs to this feature. */
+  paths: string[];
+  /** Thresholds for the rollout check. Absent = the defaults. */
+  signals?: WorkflowSignals;
+  /** Fewest calls after the deploy for a verdict; fewer is inconclusive. Absent = the default. */
+  minCalls?: number;
 }
 
 /** The gates a repo may configure. Anything else under `gates` is an error. */
@@ -143,6 +176,10 @@ export function loadRepoConfig(repoPath: string): RepoConfig {
     config.gates = parseGates(raw.gates, path);
   }
 
+  if (raw.workflows !== undefined) {
+    config.workflows = parseWorkflows(raw.workflows, path);
+  }
+
   // BOTH spellings of the eval command, disagreeing. Picking a winner silently
   // means one of the two commands the file names never runs, and the reader
   // cannot tell which from the file — so mendr refuses rather than choose.
@@ -156,6 +193,70 @@ export function loadRepoConfig(repoPath: string): RepoConfig {
   }
 
   return config;
+}
+
+const SIGNAL_FIELDS = ['errorRateMaxIncrease', 'latencyP95MaxIncreasePct', 'costPer1kMaxIncreasePct', 'qualityRequired'] as const;
+
+/**
+ * Parse the `workflows` list. Like `gates`, unknown keys throw: a misspelled threshold would
+ * leave a team believing a limit is enforced when the default is being used instead.
+ */
+function parseWorkflows(value: unknown, path: string): WorkflowConfig[] {
+  const example = '{ "workflows": [{ "name": "Answer a support question", "paths": ["src/support/**"] }] }';
+  if (!Array.isArray(value)) {
+    throw new Error(`${path}: "workflows" must be a list, for example ${example}`);
+  }
+  const names = new Set<string>();
+  return value.map((entry, i) => {
+    const at = `${path}: workflow ${i + 1}`;
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+      throw new Error(`${at} must be an object with a "name" and "paths", for example ${example}`);
+    }
+    const w = entry as Record<string, unknown>;
+    for (const key of Object.keys(w)) {
+      if (!['name', 'paths', 'signals', 'minCalls'].includes(key)) {
+        throw new Error(`${at} has an unknown field "${key}" (allowed: name, paths, signals, minCalls)`);
+      }
+    }
+    if (typeof w.name !== 'string' || w.name.trim().length === 0) {
+      throw new Error(`${at} needs a "name": what your team calls this feature`);
+    }
+    const name = w.name.trim();
+    if (names.has(name)) throw new Error(`${path}: two workflows are both named "${name}"; each name must be unique`);
+    names.add(name);
+    if (!Array.isArray(w.paths) || w.paths.length === 0 || w.paths.some((p) => typeof p !== 'string' || p.trim().length === 0)) {
+      throw new Error(`${at} ("${name}") needs "paths": a list of the files or globs its code lives in, such as ["src/support/**"]`);
+    }
+    const out: WorkflowConfig = { name, paths: (w.paths as string[]).map((p) => p.trim()) };
+    if (w.minCalls !== undefined) {
+      if (typeof w.minCalls !== 'number' || !Number.isInteger(w.minCalls) || w.minCalls < 1) {
+        throw new Error(`${at} ("${name}"): "minCalls" must be a whole number of calls, 1 or more, got ${JSON.stringify(w.minCalls)}`);
+      }
+      out.minCalls = w.minCalls;
+    }
+    if (w.signals !== undefined) {
+      if (typeof w.signals !== 'object' || w.signals === null || Array.isArray(w.signals)) {
+        throw new Error(`${at} ("${name}"): "signals" must be an object, such as { "latencyP95MaxIncreasePct": 25 }`);
+      }
+      const signals: WorkflowSignals = {};
+      for (const [field, v] of Object.entries(w.signals as Record<string, unknown>)) {
+        if (!(SIGNAL_FIELDS as readonly string[]).includes(field)) {
+          throw new Error(`${at} ("${name}"): unknown signal "${field}" (allowed: ${SIGNAL_FIELDS.join(', ')})`);
+        }
+        if (field === 'qualityRequired') {
+          if (typeof v !== 'boolean') throw new Error(`${at} ("${name}"): "signals.qualityRequired" must be true or false`);
+          signals.qualityRequired = v;
+        } else {
+          if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) {
+            throw new Error(`${at} ("${name}"): "signals.${field}" must be a number, 0 or more, got ${JSON.stringify(v)}`);
+          }
+          (signals as Record<string, number>)[field] = v;
+        }
+      }
+      out.signals = signals;
+    }
+    return out;
+  });
 }
 
 /**

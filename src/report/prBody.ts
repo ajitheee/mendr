@@ -127,6 +127,32 @@ function skippedLines(skipped: readonly SkippedItem[]): string[] {
   ];
 }
 
+// WHICH FEATURE THIS TOUCHES. Only when the repository named its workflows: otherwise there is no
+// honest way to say, and the section is left out rather than guessed.
+function workflowLines(w: MigrationResult['workflows']): string[] {
+  if (!w) return [];
+  const out = ['', '**Affected workflows** (from `mendr.config.json`)'];
+  if (w.affected.length === 0) {
+    out.push('- No workflow covers the changed files, so there is no named feature to watch after the deploy.');
+  }
+  for (const a of w.affected) out.push(`- ${a.name}: ${a.files.map((f) => `\`${f}\``).join(', ')}`);
+  if (w.affected.length > 0 && w.unlinked.length > 0) {
+    out.push(`- Not in any workflow: ${w.unlinked.map((f) => `\`${f}\``).join(', ')}`);
+  }
+  return out;
+}
+
+// WHAT TO DO IF IT GOES WRONG, dated: a revert only works while the old model still answers.
+function recoveryLines(r: MigrationResult['recovery']): string[] {
+  if (!r) return [];
+  return [
+    '',
+    `**If this goes wrong** (as of ${r.asOf})`,
+    ...r.options.map((o) => `- ${o.available ? '' : '**Not an option:** '}${o.detail}`),
+    ...r.caveats.map((c) => `- ${c}`),
+  ];
+}
+
 /**
  * Render the evidence block for a migration pull request.
  *
@@ -161,6 +187,8 @@ export function renderPrBody(result: MigrationResult): string {
     );
   }
 
+  lines.push(...workflowLines(result.workflows));
+  lines.push(...recoveryLines(result.recovery));
   lines.push(...skippedLines(result.skipped));
 
   // The behavioural ceiling is already stated above, as a blockquote, in this module's own

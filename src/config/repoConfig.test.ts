@@ -190,3 +190,32 @@ describe('loadRepoConfig: the gates block', () => {
     ).toBe('make eval');
   });
 });
+
+describe('loadRepoConfig — workflows', () => {
+  it('reads a workflow, its paths, its limits and its minimum traffic', () => {
+    const repo = makeRepo(
+      JSON.stringify({
+        workflows: [{ name: ' Answer a support question ', paths: ['src/support/**'], signals: { latencyP95MaxIncreasePct: 30, qualityRequired: true }, minCalls: 250 }],
+      }),
+    );
+    expect(loadRepoConfig(repo).workflows).toEqual([
+      { name: 'Answer a support question', paths: ['src/support/**'], signals: { latencyP95MaxIncreasePct: 30, qualityRequired: true }, minCalls: 250 },
+    ]);
+  });
+
+  it('refuses a misspelled limit rather than quietly using the default', () => {
+    const repo = makeRepo(JSON.stringify({ workflows: [{ name: 'a', paths: ['src'], signals: { latencyMaxPct: 30 } }] }));
+    expect(() => loadRepoConfig(repo)).toThrow(/unknown signal "latencyMaxPct"/);
+  });
+
+  it('says what is missing, in a sentence that names the workflow', () => {
+    expect(() => loadRepoConfig(makeRepo(JSON.stringify({ workflows: [{ name: 'Search' }] })))).toThrow(
+      /workflow 1 \("Search"\) needs "paths": a list of the files or globs its code lives in/,
+    );
+    expect(() => loadRepoConfig(makeRepo(JSON.stringify({ workflows: [{ paths: ['src'] }] })))).toThrow(/needs a "name"/);
+    expect(() => loadRepoConfig(makeRepo(JSON.stringify({ workflows: { name: 'a' } })))).toThrow(/"workflows" must be a list/);
+    expect(() =>
+      loadRepoConfig(makeRepo(JSON.stringify({ workflows: [{ name: 'a', paths: ['x'] }, { name: 'a', paths: ['y'] }] }))),
+    ).toThrow(/two workflows are both named "a"/);
+  });
+});

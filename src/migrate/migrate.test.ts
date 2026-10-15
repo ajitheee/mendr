@@ -82,6 +82,29 @@ describe('runMigration — the second, independent check (verify twice)', { time
     expect(r.verification.secondCheck.status).toBe('passed');
   });
 
+  it('links the change to the feature that owns it, and dates the recovery plan', async () => {
+    const r = await runMigration(repo({ 'src/client.ts': CALL, 'scripts/once.ts': CALL }), REG, {
+      skipVerify: true,
+      now: new Date('2026-10-15T00:00:00Z'),
+      workflows: [{ name: 'Answer a support question', paths: ['src/**'] }],
+    });
+    expect(r.workflows).toEqual({
+      affected: [{ name: 'Answer a support question', files: ['src/client.ts'] }],
+      unlinked: ['scripts/once.ts'],
+    });
+    expect(r.recovery?.options[0]).toMatchObject({ kind: 'revert', available: true });
+    expect(r.recovery?.options[0]!.detail).toContain('until 2026-10-23');
+    const text = renderMigrationReport(r).join('\n');
+    expect(text).toContain('Answer a support question: src/client.ts');
+    expect(text).toContain('If this goes wrong (as of 2026-10-15)');
+  });
+
+  it('says no revert is possible once the old model has shut down', async () => {
+    const r = await runMigration(repo({ 'client.ts': CALL }), REG, { skipVerify: true, now: new Date('2026-10-24T00:00:00Z') });
+    expect(r.recovery?.options[0]).toMatchObject({ kind: 'revert', available: false });
+    expect(r.workflows).toBeUndefined();
+  });
+
   it('does not claim a second check on a run that verified nothing', async () => {
     const skipped = await runMigration(repo({ 'client.ts': CALL }), REG, { skipVerify: true });
     expect(skipped.verification.secondCheck.status).toBe('not_run');

@@ -21,6 +21,10 @@ import { runRepoEval } from '../gates/runEval.js';
 import { runRepoBuild } from '../gates/runBuild.js';
 import type { PatchedFile } from '../gates/sandbox.js';
 import { runSecondCheck } from '../gates/secondCheck.js';
+import type { WorkflowConfig } from '../config/repoConfig.js';
+import { linkWorkflows, type WorkflowLinks } from '../assurance/workflows.js';
+import { recoveryPlan, type RecoveryPlan, type RecoverySwap } from '../assurance/recovery.js';
+import { modelIdEntries } from '../usage/llmRegistry.js';
 import { writeAllOrNothing, type PendingWrite } from '../fix/atomicWrite.js';
 
 // THE MIGRATION SANDBOX.
@@ -171,6 +175,13 @@ export interface MigrationResult {
   applied?: string[];
   /** Which registry the plan used and how current it was (absent when the caller did not say). */
   registry?: MigrationRegistryInfo;
+  /**
+   * The customer-facing features this migration touches, from mendr.config.json `workflows`.
+   * Absent when the repository names none: then nothing links a change to a feature.
+   */
+  workflows?: WorkflowLinks;
+  /** What to do if the migration goes wrong, computed from the shutdown dates (assurance/recovery.ts). */
+  recovery?: RecoveryPlan;
 }
 
 export interface MigrateOptions {
@@ -193,6 +204,16 @@ export interface MigrateOptions {
   only?: string[];
   /** Provenance of the registry the plan uses (from the fresh-registry loader); recorded in the artifact. */
   registry?: MigrationRegistryInfo;
+  /** The repository's named workflows (mendr.config.json), to link each changed file to its feature. */
+  workflows?: WorkflowConfig[];
+  /** The clock for date-dependent output (days until shutdown, the recovery plan). Tests pin it. */
+  now?: Date;
+}
+
+/** The swaps a recovery plan reads, with each old model's shutdown date from its evidence or the registry. */
+function recoverySwaps(migrations: readonly ModelMigration[], registry: LlmRegistry): RecoverySwap[] {
+  const dates = new Map(modelIdEntries(registry).map((e) => [e.deprecated, e.shutdownDate ?? null]));
+  return migrations.map((m) => ({ from: m.from, to: m.to, shutdownDate: m.evidence?.shutdownDate ?? dates.get(m.from) ?? null }));
 }
 
 /**
@@ -440,7 +461,7 @@ function registryNote(info: MigrationRegistryInfo | undefined): string[] {
 }
 
 export async function runMigration(repoPath: string, registry: LlmRegistry, opts: MigrateOptions = {}): Promise<MigrationResult> {
-  const now = new Date();
+  const now = opts.now ?? new Date();
   const base = {
     schema: MIGRATION_SCHEMA as typeof MIGRATION_SCHEMA,
     generatedBy: 'mendr' as const,
@@ -513,6 +534,7 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
         ...registryNotes,
       ],
       ...(opts.write ? { applied: [] as string[] } : {}),
+      ...assurance(planned, opts, now),
     };
   }
 
@@ -681,6 +703,15 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
     prReady,
     notes,
     ...(applied !== undefined ? { applied } : {}),
+    ...assurance(planned, opts, now),
+  };
+}
+
+/** The workflow links and the recovery plan for a migration that patched something. */
+function assurance(planned: PlannedMigration, opts: MigrateOptions, now: Date): Pick<MigrationResult, 'workflows' | 'recovery'> {
+  return {
+    ...(opts.workflows && opts.workflows.length > 0 ? { workflows: linkWorkflows(opts.workflows, planned.changedFiles) } : {}),
+    recovery: recoveryPlan(recoverySwaps(planned.migrations, planned.registry), now),
   };
 }
 
