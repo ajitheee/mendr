@@ -20,6 +20,7 @@ import { runRepoTests } from '../gates/runTests.js';
 import { runRepoEval } from '../gates/runEval.js';
 import { runRepoBuild } from '../gates/runBuild.js';
 import type { PatchedFile } from '../gates/sandbox.js';
+import { runSecondCheck } from '../gates/secondCheck.js';
 import { writeAllOrNothing, type PendingWrite } from '../fix/atomicWrite.js';
 
 // THE MIGRATION SANDBOX.
@@ -107,6 +108,12 @@ export interface MigrationVerification {
   eval: GateOutcome;
   /** True only when an eval command actually passed. Code gates never set this. */
   behavioralTested: boolean;
+  /**
+   * The second, independent check (gates/secondCheck.ts): the patch is re-read from its text, every
+   * edit must match a registry rule, and the locators are run again on the result. It runs before
+   * the sandbox gates, and a failure blocks the pull request like any failed gate.
+   */
+  secondCheck: GateOutcome;
   verdict: MigrationVerdict;
 }
 
@@ -218,6 +225,12 @@ interface PlannedMigration {
    * one it set out to fix.
    */
   tsPatchedFiles: PatchedFile[];
+  /** The Python half of `patchedFiles`, for the second check. */
+  pyPatchedFiles: PatchedFile[];
+  /** The registry the plan ran with (restricted under --only), so the second check reads the same rules. */
+  registry: LlmRegistry;
+  /** `--only`: parameter rules applied only at swapped calls. */
+  restricted: boolean;
   /** The same files with their pre-migration text, for a drift-checked --write. */
   writes: PendingWrite[];
   changedFiles: string[];
@@ -301,8 +314,6 @@ async function plan(
   restricted = false,
 ): Promise<PlannedMigration> {
   // TS/JS: a fresh baseline and a patched load (the type-check gate needs both).
-  const baselineProject = loadProject(repoPath);
-  const patchedProject = loadProject(repoPath);
   // THE SAME FILES fix-llm AND audit LOOK AT, NOT ONLY THE ONES THE TSCONFIG COMPILES.
   //
   // loadProject reads the repository's own tsconfig, and a tsconfig routinely leaves real source
@@ -315,9 +326,8 @@ async function plan(
   // adds the files it located to its gated loads. The type-check gate stays sound because it is
   // baseline-relative: a file the build never included brings the same diagnostics to both loads,
   // so only an error the patch introduces can fail it.
-  const { hits: registryFiles } = filesMatchingPrefilter(collectTsSourceFiles(repoPath), buildRegistryPrefilter(registry));
-  ensureFilesLoaded(baselineProject, registryFiles);
-  ensureFilesLoaded(patchedProject, registryFiles);
+  const baselineProject = loadForMigration(repoPath, registry);
+  const patchedProject = loadForMigration(repoPath, registry);
   // Restricted (--only): parameter rules apply only at the calls this run swaps (LlmFixOptions).
   const tsResult = applyLlmFixesToProject(patchedProject, registry, repoPath, {
     paramsOnSwappedCallsOnly: restricted,
@@ -369,6 +379,9 @@ async function plan(
   return {
     patchedFiles,
     tsPatchedFiles,
+    pyPatchedFiles,
+    registry,
+    restricted,
     writes,
     changedFiles,
     diff,
@@ -380,18 +393,35 @@ async function plan(
   };
 }
 
+/** A project loaded the way the migration loads one: the repo's tsconfig, plus every source file naming a registry token. */
+function loadForMigration(repoPath: string, registry: LlmRegistry): ReturnType<typeof loadProject> {
+  const project = loadProject(repoPath);
+  const { hits } = filesMatchingPrefilter(collectTsSourceFiles(repoPath), buildRegistryPrefilter(registry));
+  ensureFilesLoaded(project, hits);
+  return project;
+}
+
 function outcome(status: GateStatus, detail?: string, command?: string): GateOutcome {
   return command ? { status, detail, command } : { status, detail };
 }
 
 /**
- * The verdict from the four gate outcomes. A PR-ready `verified` requires a REAL
+ * The verdict from the gate outcomes. A PR-ready `verified` requires a REAL
  * sandbox run to have passed — build, tests, or eval — not just the in-memory
  * type-check (the same weak signal fix-llm already gives). Any failing gate is
  * `failed`; type-check passing while nothing executable ran is `inconclusive`.
+ *
+ * The second check can only block: it re-reads the patch, it executes nothing, so its pass is
+ * never the "real" run a verified verdict needs.
  */
-export function computeVerdict(typeCheck: GateOutcome, build: GateOutcome, tests: GateOutcome, evalOut: GateOutcome): MigrationVerdict {
-  if ([typeCheck, build, tests, evalOut].some((g) => g.status === 'failed')) return 'failed';
+export function computeVerdict(
+  typeCheck: GateOutcome,
+  build: GateOutcome,
+  tests: GateOutcome,
+  evalOut: GateOutcome,
+  secondCheck?: GateOutcome,
+): MigrationVerdict {
+  if ([typeCheck, build, tests, evalOut, secondCheck].some((g) => g?.status === 'failed')) return 'failed';
   const anyRealPass = build.status === 'passed' || tests.status === 'passed' || evalOut.status === 'passed';
   return anyRealPass && typeCheck.status !== 'failed' ? 'verified' : 'inconclusive';
 }
@@ -443,6 +473,7 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
         tests: outcome('not_run'),
         eval: outcome('not_run'),
         behavioralTested: false,
+        secondCheck: outcome('not_run'),
         verdict: held > 0 ? 'held_for_review' : 'no_migration',
       },
       prReady: false,
@@ -471,6 +502,7 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
         tests: outcome('not_run'),
         eval: outcome('not_run'),
         behavioralTested: false,
+        secondCheck: outcome('not_run'),
         verdict: 'inconclusive',
       },
       prReady: false,
@@ -483,6 +515,20 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
       ...(opts.write ? { applied: [] as string[] } : {}),
     };
   }
+
+  // --- verify twice: the independent re-check, then the sandbox ---
+
+  // It runs first because it is cheap and executes nothing. Its project is a fresh load from disk,
+  // not either of the plan's: the check reads the patch as text and nothing the writer built.
+  const second = await runSecondCheck({
+    repoPath,
+    registry: planned.registry,
+    freshTs: planned.tsPatchedFiles.length > 0 ? loadForMigration(repoPath, planned.registry) : undefined,
+    tsFiles: planned.tsPatchedFiles,
+    pyFiles: planned.pyPatchedFiles,
+    paramsOnSwappedCallsOnly: planned.restricted,
+  });
+  const secondCheck = outcome(second.status, second.detail);
 
   // --- verify in the sandbox ---
 
@@ -538,10 +584,18 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
   const evalOut = outcome(evalResult.status, evalResult.output, evalResult.command);
   const behavioralTested = evalResult.status === 'passed';
 
-  const verdict = computeVerdict(typeCheck, build, tests, evalOut);
+  const verdict = computeVerdict(typeCheck, build, tests, evalOut, secondCheck);
   const prReady = verdict === 'verified';
 
   const notes: string[] = [...onlyNote];
+  if (second.status === 'failed') {
+    const listed = second.problems.slice(0, 5).map((p) => `${p.file}:${p.line} ${p.detail}`);
+    const more = second.problems.length - listed.length;
+    notes.push(
+      `The independent re-check found ${second.problems.length} problem${second.problems.length === 1 ? '' : 's'} with this patch, so it is not a pull-request candidate however the other gates went: ` +
+        `${listed.join('; ')}${more > 0 ? `; and ${more} more` : ''}.`,
+    );
+  }
   if (!behavioralTested) {
     notes.push(
       'Behaviour was NOT verified: the throwaway copy proves the migration builds and existing tests pass, not that the replacement model matches the old one on quality, latency, cost or response shape. Pass --eval-command to test behaviour, and review the swap either way.',
@@ -623,7 +677,7 @@ export async function runMigration(repoPath: string, registry: LlmRegistry, opts
     skipped: planned.skipped,
     changedFiles: planned.changedFiles,
     diff: planned.diff,
-    verification: { typeCheck, build, tests, eval: evalOut, behavioralTested, verdict },
+    verification: { typeCheck, build, tests, eval: evalOut, behavioralTested, secondCheck, verdict },
     prReady,
     notes,
     ...(applied !== undefined ? { applied } : {}),

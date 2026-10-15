@@ -79,7 +79,10 @@ function gateLines(v: MigrationResult['verification']): string[] {
   // Every gate "not configured" means none of them RAN — a --skip-verify run, or one where
   // nothing executable could be built. Printing four identical rows invites the reader to think
   // four checks happened and found nothing to do.
-  const all = [v.typeCheck, v.build, v.tests, v.eval];
+  // The second check is optional on the type's readers' side: an artifact written before it
+  // existed has none, and must render exactly as it did.
+  const second = v.secondCheck;
+  const all = [v.typeCheck, v.build, v.tests, v.eval, ...(second ? [second] : [])];
   if (all.every((g) => g.status === 'not_run')) {
     return ['- **nothing was verified on this run** — no type-check, no build, no tests, no eval'];
   }
@@ -96,6 +99,9 @@ function gateLines(v: MigrationResult['verification']): string[] {
     row('build', v.build),
     row('your tests', v.tests),
     row('your eval', v.eval),
+    // Named for what it does, because "passed" alone would not say: the patch re-read on its own,
+    // every edit matched to a registry rule, the scan run again on the result.
+    ...(second ? [row('independent re-check (every edit matches a registry rule; nothing the scan found was missed)', second)] : []),
   ];
 }
 

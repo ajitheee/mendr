@@ -48,6 +48,46 @@ describe('computeVerdict — a PR-ready verdict needs a real run, not just a typ
     // real pass a `verified` verdict requires.
     expect(computeVerdict(g('passed'), g('skipped'), g('skipped'), g('skipped'))).toBe('inconclusive');
   });
+  it('a failed second check is failed, whatever the sandbox said', () => {
+    expect(computeVerdict(g('passed'), g('passed'), g('passed'), g('passed'), g('failed'))).toBe('failed');
+  });
+  it('a passed second check is never the real run a verified verdict needs', () => {
+    // It re-reads the patch and executes nothing, so it can block a pull request but never earn one.
+    expect(computeVerdict(g('passed'), g('not_run'), g('not_run'), g('not_run'), g('passed'))).toBe('inconclusive');
+    expect(computeVerdict(g('passed'), g('passed'), g('not_run'), g('not_run'), g('passed'))).toBe('verified');
+  });
+});
+
+describe('runMigration — the second, independent check (verify twice)', { timeout: 60_000 }, () => {
+  it('re-checks a TypeScript migration and reports it beside the four gates', async () => {
+    const r = await runMigration(repo({ 'client.ts': CALL }), REG, {});
+    expect(r.verification.secondCheck.status).toBe('passed');
+    expect(r.verification.secondCheck.detail).toContain('re-read 1 patched file independently of the patch');
+    expect(renderMigrationReport(r).join('\n')).toMatch(/ re-check +passed/);
+  });
+
+  it('re-checks a Python migration too', async () => {
+    const PY_ONLY: LlmRegistry = [
+      { provider: 'anthropic', kind: 'model_id', deprecated: 'claude-3-sonnet-20240229', replacement: 'claude-sonnet-4-6', status: 'retired', shutdownDate: '2026-07-21', verification: autoApplyVerification() },
+    ];
+    const app = [
+      'import anthropic',
+      'client = anthropic.Anthropic()',
+      'def summarize(text):',
+      '    return client.messages.create(model="claude-3-sonnet-20240229", messages=[])',
+      '',
+    ].join('\n');
+    const r = await runMigration(repo({ 'app.py': app }), PY_ONLY, {});
+    expect(r.migrations).toHaveLength(1);
+    expect(r.verification.secondCheck.status).toBe('passed');
+  });
+
+  it('does not claim a second check on a run that verified nothing', async () => {
+    const skipped = await runMigration(repo({ 'client.ts': CALL }), REG, { skipVerify: true });
+    expect(skipped.verification.secondCheck.status).toBe('not_run');
+    const clean = await runMigration(repo({ 'a.ts': 'export const x = 1;\n' }), REG, {});
+    expect(clean.verification.secondCheck.status).toBe('not_run');
+  });
 });
 
 describe('runMigration — plan without touching the working tree', () => {

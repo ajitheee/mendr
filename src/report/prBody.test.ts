@@ -50,6 +50,7 @@ const base: MigrationResult = {
     // `not_run` (there is no eval command to run), not `inconclusive` (we tried and cannot say).
     eval: { status: 'not_run' },
     behavioralTested: false,
+    secondCheck: { status: 'passed', detail: 're-read 1 patched file independently of the patch' },
     verdict: 'verified',
   },
   prReady: true,
@@ -327,5 +328,33 @@ describe('it does not say the same thing twice', () => {
 
   it('omits the section entirely when nothing survives the filter', () => {
     expect(render({ notes: ['Behaviour was NOT verified: x.'] })).not.toContain('Also worth knowing');
+  });
+});
+
+describe('the independent re-check row', () => {
+  const row = /- independent re-check \(every edit matches a registry rule; nothing the scan found was missed\): \*\*([^*]+)\*\*/;
+
+  it('names what the second check did, beside the four gates', () => {
+    expect(render()).toMatch(row);
+    expect(render().match(row)![1]).toBe('passed');
+  });
+
+  it('shouts a failure and says what it found', () => {
+    const body = render({
+      verification: {
+        ...base.verification,
+        secondCheck: { status: 'failed', detail: '1 problem in 1 patched file: src/ai.ts:9 "o1" is still here' },
+        verdict: 'failed',
+      },
+      prReady: false,
+    });
+    expect(body).toContain('**FAILED** — 1 problem in 1 patched file: src/ai.ts:9 "o1" is still here');
+  });
+
+  it('renders an artifact from before the second check existed exactly as before', () => {
+    const { secondCheck: _omit, ...older } = base.verification;
+    const body = render({ verification: older as MigrationResult['verification'] });
+    expect(body).not.toContain('independent re-check');
+    expect(body).toContain('- your eval: **not run**');
   });
 });
