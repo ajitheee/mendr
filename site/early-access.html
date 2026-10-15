@@ -18,14 +18,17 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-  /* The site's own tokens (index.html): ivory ground, carbon ink, cobalt signal, amber deadline, jade done. */
+  /* The site's own tokens (index.html): ivory ground, carbon ink, cobalt signal, amber deadline, jade done.
+     Motion: one entrance, one route drawn through the three steps, feedback on every control. Nothing loops. */
   :root{
     color-scheme: light;
     --ivory:#F4F1EA; --data:#FAF8F3; --carbon:#0B0D10; --ink-2:#33383f;
-    --grey:#666d7a; --cobalt:#315CFF; --amber:#B8730F; --amber-bg:#FBEFD9; --jade:#15805D; --jade-bg:#E2F1EA;
+    --grey:#666d7a; --cobalt:#315CFF; --cobalt-soft:#E6ECFF; --amber:#B8730F; --amber-bg:#FBEFD9; --jade:#15805D; --jade-bg:#E2F1EA;
     --red:#B0392C; --red-bg:#F7E3E0; --hair:#DED7C7;
     --sans:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
     --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--ivory);color:var(--carbon);font-family:var(--sans);font-size:17px;line-height:1.55;-webkit-font-smoothing:antialiased}
@@ -35,59 +38,105 @@
   header .wrap{display:flex;align-items:center;gap:20px;padding-block:20px}
   .mark{display:inline-flex;align-items:baseline;gap:.04em;font-weight:600;font-size:1.06rem;letter-spacing:-.01em;text-decoration:none}
   .mark svg{height:.51em;width:auto}
-  header .home{margin-left:auto;font-family:var(--mono);font-size:.84rem;color:var(--grey);text-decoration:none;border-bottom:1px solid var(--hair);padding-bottom:2px}
-  header .home:hover{color:var(--cobalt);border-color:var(--cobalt)}
+  header .home{margin-left:auto;font-family:var(--mono);font-size:.84rem;color:var(--grey);text-decoration:none;border-bottom:1px solid var(--hair);padding-bottom:2px;transition:color 150ms ease,border-color 150ms ease}
 
-  main .wrap{display:grid;grid-template-columns:1.05fr .95fr;gap:clamp(28px,5vw,64px);align-items:start;padding-block:clamp(24px,5vw,56px) 72px}
-  @media (max-width:880px){main .wrap{grid-template-columns:1fr}}
+  main .wrap{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:clamp(28px,5vw,64px);align-items:start;padding-block:clamp(24px,5vw,56px) 72px}
+  main .wrap > section{min-width:0}
+  @media (max-width:880px){main .wrap{grid-template-columns:minmax(0,1fr)}}
   .kick{font-family:var(--mono);font-size:.74rem;letter-spacing:.12em;text-transform:uppercase;color:var(--grey);margin:0 0 14px}
   .kick b{color:var(--amber);font-weight:500}
   h1{margin:0 0 18px;font-weight:500;font-size:clamp(1.9rem,4.2vw,2.9rem);line-height:1.06;letter-spacing:-.02em;text-wrap:balance;max-width:16ch}
-  .lede{color:var(--ink-2);font-size:1.08rem;max-width:52ch;margin:0 0 28px}
+  .lede{color:var(--ink-2);font-size:1.08rem;max-width:52ch;margin:0 0 30px}
   .lede code,.open code{font-family:var(--mono);font-size:.86em}
 
-  ol.get{list-style:none;margin:0 0 28px;padding:0;display:grid;gap:16px;counter-reset:g}
-  ol.get li{display:grid;grid-template-columns:1.9rem 1fr;gap:4px 10px;counter-increment:g}
-  ol.get li::before{content:counter(g);grid-row:span 2;font-family:var(--mono);font-size:.8rem;color:var(--cobalt);border:1px solid var(--cobalt);border-radius:50%;width:1.6rem;height:1.6rem;display:grid;place-items:center;margin-top:2px}
+  /* The route: three steps joined by a line, the site's signal trace in miniature. */
+  ol.get{list-style:none;margin:0 0 30px;padding:0;display:grid;gap:18px;counter-reset:g}
+  ol.get li{position:relative;display:grid;grid-template-columns:1.9rem 1fr;gap:4px 10px;counter-increment:g}
+  ol.get li::before{content:counter(g);grid-row:span 2;font-family:var(--mono);font-size:.8rem;color:var(--cobalt);background:var(--ivory);border:1px solid var(--cobalt);border-radius:50%;width:1.6rem;height:1.6rem;display:grid;place-items:center;margin-top:2px;position:relative;z-index:1}
+  ol.get li:not(:last-child)::after{content:"";position:absolute;left:calc(.8rem - .5px);top:calc(1.6rem + 6px);width:1px;height:calc(100% + 10px - 1.6rem);background:var(--cobalt);opacity:.35;transform-origin:top}
   ol.get strong{font-weight:600}
   ol.get span{color:var(--grey);font-size:.98rem}
 
   .open{border-top:1px solid var(--hair);padding-top:18px;color:var(--ink-2);font-size:.96rem;max-width:56ch}
-  .open pre{margin:10px 0 0;padding:10px 12px;background:var(--data);border:1px solid var(--hair);border-radius:8px;overflow-x:auto;font-family:var(--mono);font-size:.84rem}
+  .open p{margin:12px 0 0}
+  .cmd{display:flex;align-items:center;gap:8px;margin-top:10px;background:var(--data);border:1px solid var(--hair);border-radius:8px;padding:4px 4px 4px 12px;min-width:0}
+  .cmd code{flex:1;min-width:0;overflow-x:auto;white-space:nowrap;font-family:var(--mono);font-size:.84rem;padding:6px 0}
+  .copy{flex:none;font-family:var(--mono);font-size:.76rem;color:var(--ink-2);background:transparent;border:1px solid var(--hair);border-radius:6px;min-height:32px;padding:0 10px;cursor:pointer;display:grid;transition:transform 160ms var(--ease-out),border-color 150ms ease,color 150ms ease}
+  .copy span{grid-area:1/1;transition:opacity 150ms ease}
+  .copy .done{opacity:0;color:var(--jade)}
+  .copy[data-copied] .idle{opacity:0}
+  .copy[data-copied] .done{opacity:1}
+  .copy:active{transform:scale(.97)}
 
   .card{background:var(--data);border:1px solid var(--hair);border-radius:14px;padding:clamp(18px,3vw,28px);min-width:0}
-  .spots{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 0 6px;font-family:var(--mono);font-size:.82rem;color:var(--grey)}
-  .spots b{color:var(--carbon);font-weight:500;font-size:1.02rem}
-  .bar{height:6px;background:var(--hair);border-radius:999px;overflow:hidden;margin:0 0 6px}
-  .bar i{display:block;height:100%;width:100%;background:var(--cobalt);transform:scaleX(0);transform-origin:left;transition:transform .6s ease}
-  @media (prefers-reduced-motion:reduce){.bar i{transition:none}}
-  .when{font-size:.88rem;color:var(--grey);margin:0 0 22px}
+  .spots{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 0 8px;font-family:var(--mono);font-size:.82rem;font-weight:400;color:var(--grey)}
+  .spots b{color:var(--carbon);font-weight:500;font-size:1.02rem;font-variant-numeric:tabular-nums}
+  .bar{height:4px;background:var(--hair);border-radius:999px;overflow:hidden;margin:0 0 8px}
+  .bar i{display:block;height:100%;width:100%;background:var(--cobalt);border-radius:inherit;transform:scaleX(0);transform-origin:left;transition:transform 900ms var(--ease-out)}
+  .when{font-size:.88rem;color:var(--grey);margin:0 0 24px}
 
   form{display:grid;gap:18px}
-  label.f,fieldset{display:grid;gap:7px;border:0;padding:0;margin:0}
+  label.f,fieldset{display:grid;gap:7px;border:0;padding:0;margin:0;min-width:0}
   .lab{font-weight:600;font-size:.96rem}
   .lab small{font-weight:400;color:var(--grey)}
-  input[type=email],textarea{font:inherit;font-size:1rem;color:var(--carbon);background:#fff;border:1px solid var(--hair);border-radius:8px;padding:11px 12px;width:100%}
+  input[type=email],textarea{font:inherit;font-size:1rem;color:var(--carbon);background:#fff;border:1px solid var(--hair);border-radius:8px;padding:11px 12px;width:100%;transition:border-color 150ms ease}
   input[type=email]:focus,textarea:focus{outline:2px solid var(--cobalt);outline-offset:0;border-color:transparent}
   textarea{min-height:76px;resize:vertical}
   .opts{display:flex;flex-wrap:wrap;gap:8px}
-  .opts label{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--hair);border-radius:999px;padding:7px 14px;background:#fff;cursor:pointer;font-size:.94rem}
+  .opts label{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--hair);border-radius:999px;padding:7px 14px;background:#fff;cursor:pointer;font-size:.94rem;transition:transform 160ms var(--ease-out),border-color 150ms ease,background-color 150ms ease,color 150ms ease}
+  .opts label:active{transform:scale(.97)}
   .opts input{accent-color:var(--cobalt);margin:0}
-  .opts label:has(input:checked){border-color:var(--cobalt);color:var(--cobalt)}
+  .opts label:has(input:checked){border-color:var(--cobalt);background:var(--cobalt-soft);color:var(--cobalt)}
+  .opts label:has(input:focus-visible){outline:2px solid var(--cobalt);outline-offset:2px}
   .trap{position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden}
-  button{font:inherit;font-family:var(--mono);font-size:.92rem;font-weight:500;background:var(--carbon);color:var(--ivory);border:0;border-radius:8px;min-height:46px;padding:12px 18px;cursor:pointer}
-  button:hover{background:var(--ink-2)}
-  button:active{transform:scale(.98)}
-  button[disabled]{opacity:.6;cursor:progress}
+  .submit{font:inherit;font-family:var(--mono);font-size:.92rem;font-weight:500;background:var(--carbon);color:var(--ivory);border:0;border-radius:8px;min-height:46px;padding:12px 18px;cursor:pointer;transition:transform 160ms var(--ease-out),background-color 150ms ease,opacity 200ms ease}
+  .submit:active{transform:scale(.97)}
+  .submit[disabled]{opacity:.55;cursor:progress}
+  form[data-done] :is(input,textarea,.opts label){opacity:.55;transition:opacity 200ms ease}
+  form[data-done] .submit{background:var(--jade);opacity:1;cursor:default}
   .fine{font-size:.84rem;color:var(--grey);margin:0}
   .fine a{text-underline-offset:3px}
-  .msg{border-radius:10px;padding:12px 14px;font-size:.96rem}
+  .msg:empty{display:none}
+  .msg{border-radius:10px;padding:12px 14px;font-size:.96rem;display:flex;gap:10px;align-items:baseline}
   .msg.ok{background:var(--jade-bg);color:var(--jade)}
   .msg.err{background:var(--red-bg);color:var(--red)}
   .msg.wait{background:var(--amber-bg);color:var(--amber)}
+  .msg.ok::before{content:"✓";font-family:var(--mono);font-weight:500;flex:none;animation:tick 320ms var(--ease-out) 120ms both}
 
   footer .wrap{border-top:1px solid var(--hair);padding-block:20px 32px;font-size:.86rem;color:var(--grey);display:flex;flex-wrap:wrap;gap:8px 20px}
-  footer a{text-decoration:none;border-bottom:1px solid var(--hair)}
+  footer a{text-decoration:none;border-bottom:1px solid var(--hair);transition:color 150ms ease,border-color 150ms ease}
+
+  /* Hover only where a pointer can really hover: a tap must not leave a hover state behind. */
+  @media (hover:hover) and (pointer:fine){
+    header .home:hover,footer a:hover{color:var(--cobalt);border-color:var(--cobalt)}
+    .opts label:hover{border-color:var(--grey)}
+    .opts label:has(input:checked):hover{border-color:var(--cobalt)}
+    .submit:not([disabled]):hover{background:var(--ink-2)}
+    .copy:hover{border-color:var(--grey);color:var(--carbon)}
+  }
+
+  /* THE ENTRANCE, once: the page sets itself, left column first, the card a beat later. Stagger 60ms. */
+  @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  @keyframes draw{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+  @keyframes reach{from{color:var(--hair);border-color:var(--hair)}to{color:var(--cobalt);border-color:var(--cobalt)}}
+  @keyframes tick{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+  .in{animation:rise 640ms var(--ease-out) both;animation-delay:calc(var(--i,0) * 60ms)}
+  /* The route draws itself through the steps, and each number lights as the line reaches it. */
+  ol.get li::before{animation:reach 220ms var(--ease-out) both}
+  ol.get li:nth-child(1)::before{animation-delay:420ms}
+  ol.get li:nth-child(2)::before{animation-delay:860ms}
+  ol.get li:nth-child(3)::before{animation-delay:1300ms}
+  ol.get li:nth-child(1)::after{animation:draw 420ms var(--ease-in-out) 460ms both}
+  ol.get li:nth-child(2)::after{animation:draw 420ms var(--ease-in-out) 900ms both}
+
+  /* Reduced motion: no movement and no drawing, only quick fades that still say "this is new". */
+  @media (prefers-reduced-motion:reduce){
+    .in{animation:fade 200ms ease both;animation-delay:0ms}
+    ol.get li::before,ol.get li::after,.msg.ok::before{animation:none}
+    .bar i{transition:none}
+    .opts label:active,.submit:active,.copy:active{transform:none}
+  }
+  @keyframes fade{from{opacity:0}to{opacity:1}}
 </style>
 </head>
 <body>
@@ -102,24 +151,24 @@
 <main>
   <div class="wrap">
     <section>
-      <p class="kick">Early access · 50 builders · free · <b>OpenAI shutdown: October 23</b></p>
-      <h1>Get your code through October 23 with help.</h1>
-      <p class="lede">On October 23, OpenAI shuts down 29 model ids, including <code>gpt-4</code>, <code>gpt-3.5-turbo</code> and <code>o3-mini</code>. Calls to them stop working that day, and some replacements reject parameters the old models accepted. mendr finds those calls and prepares the fix. Early access is me helping you through it.</p>
+      <p class="kick in" style="--i:0">Early access · 50 builders · free · <b>OpenAI shutdown: October 23<span id="days"></span></b></p>
+      <h1 class="in" style="--i:1">Get your code through October 23 with help.</h1>
+      <p class="lede in" style="--i:2">On October 23, OpenAI shuts down 29 model ids, including <code>gpt-4</code>, <code>gpt-3.5-turbo</code> and <code>o3-mini</code>. Calls to them stop working that day, and some replacements reject parameters the old models accepted. mendr finds those calls and prepares the fix. Early access is me helping you through it.</p>
 
       <ol class="get">
-        <li><strong>I run mendr on your repo with you</strong><span>We find the calls to retiring models, including the ones in config, and I prepare the pull request, checked against your own build and tests. You approve it; nothing merges without you.</span></li>
-        <li><strong>Your own cases, on the old model and the new one</strong><span>Write a few real requests and what a good answer looks like. mendr sends them to both models with your key, and stops the change if the new one does worse.</span></li>
-        <li><strong>After you deploy, we check the feature together</strong><span>Errors, latency and cost before and after, from your own telemetry. And a direct line to the person building mendr: your questions decide what gets built next.</span></li>
+        <li class="in" style="--i:3"><strong>I run mendr on your repo with you</strong><span>We find the calls to retiring models, including the ones in config, and I prepare the pull request, checked against your own build and tests. You approve it; nothing merges without you.</span></li>
+        <li class="in" style="--i:4"><strong>Your own cases, on the old model and the new one</strong><span>Write a few real requests and what a good answer looks like. mendr sends them to both models with your key, and stops the change if the new one does worse.</span></li>
+        <li class="in" style="--i:5"><strong>After you deploy, we check the feature together</strong><span>Errors, latency and cost before and after, from your own telemetry. And a direct line to the person building mendr: your questions decide what gets built next.</span></li>
       </ol>
 
-      <div class="open">
+      <div class="open in" style="--i:6">
         The tool itself is open source and free, and stays that way. Anyone can run it today:
-        <pre>npx github:ajitheee/mendr#v0.5.11-alpha audit .</pre>
+        <div class="cmd"><code id="cmd">npx github:ajitheee/mendr#v0.5.11-alpha audit .</code><button type="button" class="copy" id="copy" aria-label="Copy the command"><span class="idle">Copy</span><span class="done" aria-hidden="true">Copied</span></button></div>
         <p>What's limited is the help, because it's one person. Spots go in sign-up order, starting now. Public launch: October 22.</p>
       </div>
     </section>
 
-    <section class="card" aria-labelledby="join">
+    <section class="card in" style="--i:3" aria-labelledby="join">
       <h2 id="join" class="spots"><span>Spots taken</span><b id="count">— of 50</b></h2>
       <div class="bar" aria-hidden="true"><i id="bar"></i></div>
       <p class="when" id="when">Counting…</p>
@@ -152,8 +201,8 @@
 
         <div class="trap" aria-hidden="true"><label for="website">Leave this empty</label><input id="website" name="website" type="text" tabindex="-1" autocomplete="off"></div>
 
-        <button type="submit" id="submit">Join early access</button>
-        <div id="msg" role="status" aria-live="polite"></div>
+        <button type="submit" class="submit" id="submit">Join early access</button>
+        <div id="msg" class="msg" role="status" aria-live="polite"></div>
         <p class="fine">I'll email you about your access and mendr, nothing else. Reply "remove" and your entry is deleted. What's stored is listed on the <a href="/privacy.html">privacy page</a>.</p>
       </form>
     </section>
@@ -173,20 +222,66 @@
 (() => {
   const API = 'https://mendr-app.onrender.com';
   const SPOTS = 50;
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const $ = (id) => document.getElementById(id);
   const form = $('form'), msg = $('msg'), submit = $('submit');
 
-  const show = (kind, text) => {
-    msg.className = `msg ${kind}`;
-    msg.textContent = text;
+  // The site's strong ease-out, cubic-bezier(0.23, 1, 0.32, 1), solved for the number count-up,
+  // so the digits land on the same curve as the bar beside them.
+  const easeOut = (x) => {
+    const p1x = 0.23, p1y = 1, p2x = 0.32, p2y = 1;
+    const cx = 3 * p1x, bx = 3 * (p2x - p1x) - cx, ax = 1 - cx - bx;
+    const cy = 3 * p1y, by = 3 * (p2y - p1y) - cy, ay = 1 - cy - by;
+    let t = x;
+    for (let i = 0; i < 8; i++) {
+      const f = ((ax * t + bx) * t + cx) * t - x;
+      const d = (3 * ax * t + 2 * bx) * t + cx;
+      if (Math.abs(f) < 1e-5 || d === 0) break;
+      t -= f / d;
+    }
+    return ((ay * t + by) * t + cy) * t;
   };
+
+  let shown = 0;
+  const countTo = (target, spots) => {
+    const from = shown;
+    shown = target;
+    const el = $('count');
+    if (reduce || from === target) { el.textContent = `${target} of ${spots}`; return; }
+    const start = performance.now(), ms = 900;
+    const step = (now) => {
+      const k = Math.min(1, (now - start) / ms);
+      el.textContent = `${Math.round(from + (target - from) * easeOut(k))} of ${spots}`;
+      if (k < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  };
+
   const paint = (count, spots) => {
     const taken = Math.min(count, spots);
-    $('count').textContent = `${taken} of ${spots}`;
+    countTo(taken, spots);
     $('bar').style.transform = `scaleX(${taken / spots})`;
     $('when').textContent = count >= spots
       ? `The first ${spots} spots are taken. Sign up for the next round; ${count - spots} ${count - spots === 1 ? 'person is' : 'people are'} already in it.`
       : `${spots - taken} left. Spots go in sign-up order, starting now.`;
+  };
+
+  // Days to the shutdown, in the reader's own calendar. Information, not motion: it never ticks.
+  const days = Math.round((Date.UTC(2026, 9, 23) - Date.UTC(new Date().getFullYear(), new Date().getMonth(), new Date().getDate())) / 86400000);
+  $('days').textContent = days > 1 ? ` · in ${days} days` : days === 1 ? ' · tomorrow' : days === 0 ? ' · today' : '';
+
+  // A status line enters only when its kind changes; a repeated error just updates its words,
+  // so a second click never makes the message flash.
+  const show = (kind, text) => {
+    const changed = !msg.classList.contains(kind);
+    msg.className = `msg ${kind}`;
+    msg.textContent = text;
+    if (changed && msg.animate) {
+      msg.animate(
+        reduce ? [{ opacity: 0 }, { opacity: 1 }] : [{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }],
+        { duration: reduce ? 150 : 240, easing: 'cubic-bezier(0.23, 1, 0.32, 1)' },
+      );
+    }
   };
 
   // The App sleeps when idle, so the count doubles as its wake-up call.
@@ -194,6 +289,22 @@
     .then((r) => r.json())
     .then((d) => (d && d.ok ? paint(d.count, d.spots) : ($('when').textContent = 'Spots go in sign-up order, starting now.')))
     .catch(() => { $('count').textContent = `of ${SPOTS}`; $('when').textContent = 'Spots go in sign-up order, starting now.'; });
+
+  $('copy').addEventListener('click', async () => {
+    const btn = $('copy');
+    try {
+      await navigator.clipboard.writeText($('cmd').textContent);
+      btn.setAttribute('data-copied', '');
+      btn.setAttribute('aria-label', 'Copied');
+      setTimeout(() => { btn.removeAttribute('data-copied'); btn.setAttribute('aria-label', 'Copy the command'); }, 1600);
+    } catch {
+      const range = document.createRange();
+      range.selectNodeContents($('cmd'));
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  });
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -204,6 +315,7 @@
     if (!data.get('wantsCheck')) return show('err', 'Choose whether you want your repo checked before October 23.');
 
     submit.disabled = true;
+    submit.textContent = 'Sending…';
     show('wait', 'Sending… the first sign-up after a quiet spell can take up to a minute while the server wakes.');
     try {
       const res = await fetch(`${API}/api/waitlist`, {
@@ -221,17 +333,21 @@
       if (!res.ok || !body.ok) {
         show('err', body.error || 'That did not go through. Try again in a minute.');
         submit.disabled = false;
+        submit.textContent = 'Join early access';
         return;
       }
       const place = body.inFirstRound
         ? `You're number ${body.position} of ${body.spots}.`
         : `You're number ${body.position}: the first ${body.spots} are taken, so you're in the next round.`;
       show('ok', `${body.created ? '' : 'You were already on the list. '}${place} I'll write to you at ${email}.`);
-      form.querySelectorAll('input, textarea, button').forEach((el) => { el.disabled = true; });
+      submit.textContent = "You're on the list";
+      form.setAttribute('data-done', '');
+      form.querySelectorAll('input, textarea').forEach((el) => { el.disabled = true; });
       fetch(`${API}/api/waitlist/count`).then((r) => r.json()).then((d) => d && d.ok && paint(d.count, d.spots)).catch(() => {});
     } catch {
       show('err', 'Could not reach the server. Check your connection and try again.');
       submit.disabled = false;
+      submit.textContent = 'Join early access';
     }
   });
 })();
