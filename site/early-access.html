@@ -155,6 +155,15 @@
   .ghost svg{height:.51em;width:auto;flex:none}
   .ghost .b{fill:rgba(49,92,255,.085)}
   .ghost .a{fill:rgba(216,137,22,.2)}
+  /* Lines hidden in the join section's empty space, in faint type. On a real pointer, the words near
+     the cursor turn mendr blue and hold for a moment before fading, so a drag reads them out word by
+     word. Script builds the layer, and only where a pointer can reveal it; words that would sit behind
+     the copy or the form are hidden and never light. */
+  .whisper{position:absolute;inset:0;z-index:-1;padding:clamp(16px,2vw,24px) clamp(16px,4vw,40px);overflow:hidden;
+    font-size:1.05rem;line-height:2.15;text-align:justify;color:rgba(32,32,32,.035);pointer-events:none;user-select:none}
+  .whisper span{transition:color 900ms ease}
+  .whisper span.lit{color:var(--accent);transition-duration:120ms}
+  .whisper span.x{visibility:hidden}
   @keyframes surface{from{opacity:0;transform:translate(-50%,8%)}to{opacity:1;transform:translate(-50%,0)}}
   .js .join:not([data-on]) .ghost{opacity:0}
   .join[data-on] .ghost{animation:surface 1100ms var(--ease-out) both}
@@ -513,6 +522,82 @@
   } else {
     join.setAttribute('data-on', '');
   }
+
+  // THE HIDDEN LINES. Short lines fill the join section's empty space in faint type, in a fresh
+  // order on every visit. Words within reach of the cursor turn mendr blue and hold for a moment
+  // after it moves on, so a drag reads them out word by word and leaves a short trail. Words that
+  // would sit behind the copy or the form are hidden. Built only on a real pointer.
+  const LINES = [
+    'A shutdown date is a deadline, whether or not anyone read the email.',
+    'The model id you forgot about is the one that breaks first.',
+    'Your code does not read changelogs.',
+    'Every hardcoded model name is a date you have not looked up yet.',
+    'Moving the code is the easy part. Proving it still works is the job.',
+    'A green build on the old model says nothing about the new one.',
+    'Find it. Prove it. Watch it.',
+    'Deprecations arrive quietly and leave loudly.',
+    'The cheapest outage is the one you moved out of the way.',
+    'Small pull requests get merged. Big ones get scheduled.',
+    'If it was never tested on the new model, it has not moved yet.',
+    'October 23 will not move. Your code can.',
+    'Ship the change, then check the numbers.',
+    'The call that breaks is rarely the one in the README.',
+  ];
+  const whisper = (section) => {
+    const layer = document.createElement('div');
+    layer.className = 'whisper';
+    layer.setAttribute('aria-hidden', 'true');
+    section.prepend(layer);
+    const REACH = 64, HOLD = 650;
+    const lit = new Set();
+    let words = [], timer = 0;
+
+    const add = () => {
+      const order = LINES.map((l) => [Math.random(), l]).sort((a, b) => a[0] - b[0]);
+      for (const [, line] of order) {
+        for (const word of `“${line}”`.split(' ')) {
+          const s = document.createElement('span');
+          s.textContent = word;
+          layer.append(s, ' ');
+        }
+      }
+    };
+    const measure = () => {
+      // Fill the section, then keep only the words that sit in empty space.
+      for (let i = 0; i < 12 && layer.scrollHeight <= layer.clientHeight; i++) add();
+      const box = section.getBoundingClientRect();
+      const rel = (r, px, py) => ({ l: r.left - box.left - px, t: r.top - box.top - py, r: r.right - box.left + px, b: r.bottom - box.top + py });
+      const keepOut = [...section.querySelectorAll('.side > *, .panel')].map((el) => rel(el.getBoundingClientRect(), 14, 10));
+      words = [];
+      for (const el of layer.children) {
+        const w = { el, ...rel(el.getBoundingClientRect(), 0, 0) };
+        const hidden = keepOut.some((k) => w.l < k.r && w.r > k.l && w.t < k.b && w.b > k.t);
+        el.classList.toggle('x', hidden);
+        if (!hidden) words.push(w);
+      }
+    };
+    const sweep = () => {
+      const now = performance.now();
+      for (const w of lit) if (now >= w.until) { w.el.classList.remove('lit'); lit.delete(w); }
+      timer = lit.size ? setTimeout(sweep, 90) : 0;
+    };
+
+    section.addEventListener('pointermove', (e) => {
+      const box = section.getBoundingClientRect();
+      const x = e.clientX - box.left, y = e.clientY - box.top, until = performance.now() + HOLD;
+      for (const w of words) {
+        const dx = Math.max(w.l - x, 0, x - w.r), dy = Math.max(w.t - y, 0, y - w.b);
+        if (dx * dx + dy * dy < REACH * REACH) {
+          if (!lit.has(w)) { w.el.classList.add('lit'); lit.add(w); }
+          w.until = until;
+        }
+      }
+      if (!timer && lit.size) timer = setTimeout(sweep, 90);
+    });
+    new ResizeObserver(measure).observe(section);
+    if (document.fonts) document.fonts.ready.then(measure);
+  };
+  if (finePointer) whisper(join);
 
   // The route draws once, the first time it is on screen.
   const route = $('route');
