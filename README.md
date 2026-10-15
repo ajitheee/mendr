@@ -575,6 +575,53 @@ The gates above answer *does the patched code build and pass your tests?* Before
 
 Any problem makes the run `failed`, so no pull request opens. The problems are listed in the report and the pull request body. It is not configurable: it always runs, and it can block but never verify on its own. It re-runs mendr's own scanners, so a call they cannot see is invisible to it too. `fix-llm --write` does not run it yet.
 
+## after the deploy: did the feature stay healthy? (preview)
+
+A green build can't tell you whether your feature still works for customers on the new model. Two pieces help you check, and both use only what you give them.
+
+**Name the features a migration can touch**, in `mendr.config.json`, with the limits that count as healthy:
+
+```json
+{
+  "workflows": [
+    {
+      "name": "Answer a support question",
+      "paths": ["src/support/**", "src/ai.ts"],
+      "signals": { "errorRateMaxIncrease": 0.005, "latencyP95MaxIncreasePct": 25, "costPer1kMaxIncreasePct": 50, "qualityRequired": false },
+      "minCalls": 100
+    }
+  ]
+}
+```
+
+Every limit is optional, and the values above are the defaults. `migrate` then lists the affected features in the report and the pull request, and names any changed file no feature covers. Each migration also carries a dated recovery plan: a revert works only until the old model's shutdown date, and after that the plan is to fix forward.
+
+**After you deploy**, copy the feature's numbers for the week before and the time since into a file:
+
+```json
+{
+  "workflow": "Answer a support question",
+  "deployedAt": "2026-10-20T15:00:00Z",
+  "before": { "calls": 5200, "errorRate": 0.004, "latencyP95Ms": 1800, "costPer1k": 2.1 },
+  "after":  { "calls": 4100, "errorRate": 0.005, "latencyP95Ms": 1950, "costPer1k": 2.4, "quality": "passed" }
+}
+```
+
+```sh
+mendr migrate . --json > migration.json        # when the pull request is planned
+mendr rollout numbers.json --migration migration.json --record .mendr/outcomes.jsonl --decision merged
+```
+
+`rollout` returns one of three verdicts, with its reasons:
+
+| verdict | when | exit code |
+| --- | --- | --- |
+| verified | enough calls, and every measured signal stayed inside its limit (it lists what was not measured) | 0 |
+| regression | a signal moved past its limit with enough calls behind it, or your quality check failed | 1 |
+| inconclusive | too few calls, no error rate, or a required quality check not reported | 3 |
+
+With `--migration`, it reprints the recovery plan as of today, because a revert that was safe when the pull request was opened is not safe after the shutdown date. `--record` appends one line per migration to a file you keep; mendr sends it nowhere. `rollout` reads numbers, nothing else: it does not deploy, roll back or connect to your monitoring.
+
 ## install for repeat use
 
 ```sh

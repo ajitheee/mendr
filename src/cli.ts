@@ -195,6 +195,10 @@ import {
 } from './runtime/evidence.js';
 import { decisionLines, renderAuditReport, type AuditMeta } from './report/auditReport.js';
 import { renderPrBody } from './report/prBody.js';
+import { judgeRollout, parseRolloutInput, renderRollout } from './assurance/rollout.js';
+import { recoveryPlan } from './assurance/recovery.js';
+import { appendOutcome, HUMAN_DECISIONS, outcomeRecord, type HumanDecision } from './assurance/outcome.js';
+import type { MigrationResult } from './migrate/migrate.js';
 
 const program = new Command();
 
@@ -4311,7 +4315,17 @@ program
         console.error(`mendr: registry refresh not applied — ${freshness.refresh.error ?? 'unknown reason'}`);
       }
       const cov = coverageFieldsOf(freshness);
+      // The repository's named workflows link each changed file to its feature. Read softly: migrate
+      // never read mendr.config.json before, and a run that works today must not start failing on a
+      // config error. The error is said, and the run goes on without the links.
+      let workflows: RepoConfig['workflows'];
+      try {
+        workflows = loadRepoConfig(resolved).workflows;
+      } catch (err) {
+        console.error(`mendr: workflows not linked -- ${err instanceof Error ? err.message : String(err)}`);
+      }
       const result = await runMigration(resolved, registry, {
+        workflows,
         sha: opts.sha ?? process.env.GITHUB_SHA ?? null,
         evalCommand: opts.evalCommand,
         skipVerify: opts.skipVerify,
@@ -4381,5 +4395,71 @@ program
         });
     process.stdout.write(sanitize(text, secretValuesFromEnv(process.env)));
   });
+
+program
+  .command('rollout')
+  .argument('<numbers>', "a JSON file with the feature's numbers before and after the deploy (schema in the README)")
+  .description('[preview] Judge whether a migrated feature stayed healthy after the deploy: verified, regression or inconclusive. Reads the numbers you give it; changes nothing.')
+  .option('--repo <path>', 'the repository whose mendr.config.json names the workflow and its limits', '.')
+  .option('--migration <file>', 'the mendr-migration/v1 JSON of the migration (from `migrate --json`), to recompute its recovery plan for today')
+  .option('--record <file>', 'append a mendr-outcome/v1 line for this migration to this file, such as .mendr/outcomes.jsonl')
+  .option('--decision <decision>', `what the person did with the pull request, for the record: ${HUMAN_DECISIONS.join(', ')}`)
+  .option('--note <text>', 'anything to keep with the record, such as why the pull request was edited')
+  .option('--json', 'emit the mendr-rollout/v1 result as JSON instead of the report')
+  .action(
+    (numbers: string, opts: { repo: string; migration?: string; record?: string; decision?: string; note?: string; json?: boolean }) => {
+      const fail = (message: string): never => {
+        console.error(`mendr: ${message}`);
+        process.exit(2);
+      };
+      const readJson = (path: string, what: string): unknown => {
+        try {
+          return JSON.parse(readFileSync(path, 'utf8'));
+        } catch (err) {
+          return fail(`could not read ${what} ${path}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      };
+      if (opts.decision !== undefined && !(HUMAN_DECISIONS as readonly string[]).includes(opts.decision)) {
+        fail(`--decision must be one of ${HUMAN_DECISIONS.join(', ')}, got "${opts.decision}"`);
+      }
+      let input;
+      try {
+        input = parseRolloutInput(readJson(numbers, 'the numbers file'), numbers);
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
+      let config: RepoConfig = {};
+      try {
+        config = loadRepoConfig(resolve(opts.repo));
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
+      const workflow = config.workflows?.find((w) => w.name === input.workflow);
+      let migration: MigrationResult | null = null;
+      if (opts.migration) {
+        migration = readJson(opts.migration, 'the migration file') as MigrationResult;
+        if ((migration as { schema?: unknown }).schema !== 'mendr-migration/v1' || !Array.isArray(migration.migrations)) {
+          fail(`${opts.migration} is not a mendr-migration/v1 file; write one with \`mendr migrate --json > migration.json\``);
+        }
+      }
+      // Today's plan, not the one in the artifact: a revert that was safe on the day the pull request
+      // was planned is not safe once the old model's shutdown date has passed.
+      const recovery = migration
+        ? recoveryPlan(
+            migration.migrations.map((m) => ({ from: m.from, to: m.to, shutdownDate: m.evidence?.shutdownDate ?? null })),
+            new Date(),
+          )
+        : undefined;
+      const result = judgeRollout(input, workflow, recovery);
+      if (opts.record) {
+        appendOutcome(opts.record, outcomeRecord(result, migration, (opts.decision as HumanDecision | undefined) ?? null, opts.note ?? null, new Date()));
+      }
+      if (opts.json) console.log(JSON.stringify(result, null, 2));
+      else for (const line of renderRollout(result)) console.log(line);
+      if (opts.record && !opts.json) console.log(`Recorded in ${opts.record}.`);
+      // 0 verified, 1 regression, 3 inconclusive: a script can tell "worse" from "cannot say".
+      process.exit(result.verdict === 'verified' ? 0 : result.verdict === 'regression' ? 1 : 3);
+    },
+  );
 
 program.parse();

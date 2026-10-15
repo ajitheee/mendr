@@ -331,6 +331,38 @@ describe('it does not say the same thing twice', () => {
   });
 });
 
+describe('affected workflows and the recovery plan', () => {
+  it('names the feature a reviewer should watch, and what to do if it goes wrong', () => {
+    const body = render({
+      workflows: { affected: [{ name: 'Answer a support question', files: ['src/ai.ts'] }], unlinked: ['scripts/x.ts'] },
+      recovery: {
+        asOf: '2026-10-15',
+        options: [
+          { kind: 'revert', available: true, detail: 'Revert the pull request and calls go back to `gpt-4-0613`, until 2026-10-23.' },
+          { kind: 'fix_forward', available: true, detail: 'Keep `gpt-5.6-sol` and fix forward.' },
+        ],
+        caveats: ['A revert undoes code, not what the feature already did.'],
+      },
+    });
+    expect(body).toContain('**Affected workflows** (from `mendr.config.json`)');
+    expect(body).toContain('- Answer a support question: `src/ai.ts`');
+    expect(body).toContain('- Not in any workflow: `scripts/x.ts`');
+    expect(body).toContain('**If this goes wrong** (as of 2026-10-15)');
+  });
+
+  it('marks a revert that would no longer work', () => {
+    const body = render({
+      recovery: { asOf: '2026-10-24', options: [{ kind: 'revert', available: false, detail: 'Do not revert: `gpt-4-0613` shut down on 2026-10-23.' }], caveats: [] },
+    });
+    expect(body).toContain('- **Not an option:** Do not revert');
+  });
+
+  it('leaves both sections out when the artifact has neither', () => {
+    expect(render()).not.toContain('Affected workflows');
+    expect(render()).not.toContain('If this goes wrong');
+  });
+});
+
 describe('the independent re-check row', () => {
   const row = /- independent re-check \(every edit matches a registry rule; nothing the scan found was missed\): \*\*([^*]+)\*\*/;
 

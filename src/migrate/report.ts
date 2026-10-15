@@ -80,6 +80,19 @@ export function renderMigrationReport(r: MigrationResult): string[] {
   lines.push(`Verdict: ${VERDICT_LINE[r.verification.verdict]}`);
   lines.push(`PR-ready: ${r.prReady ? 'yes' : 'no'}`);
   for (const note of r.notes) lines.push(`note: ${note}`);
+  if (r.workflows) {
+    lines.push('');
+    lines.push('Affected workflows (mendr.config.json)');
+    if (r.workflows.affected.length === 0) lines.push('  none: no workflow covers the changed files');
+    for (const a of r.workflows.affected) lines.push(`  ${a.name}: ${a.files.join(', ')}`);
+    if (r.workflows.affected.length > 0 && r.workflows.unlinked.length > 0) lines.push(`  not in any workflow: ${r.workflows.unlinked.join(', ')}`);
+  }
+  if (r.recovery) {
+    lines.push('');
+    lines.push(`If this goes wrong (as of ${r.recovery.asOf})`);
+    for (const o of r.recovery.options) lines.push(`  ${o.available ? '•' : '✗'} ${o.detail}`);
+    for (const c of r.recovery.caveats) lines.push(`  note: ${c}`);
+  }
   lines.push(...heldLines(r.skipped ?? []));
 
   if (r.diff) {

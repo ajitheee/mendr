@@ -78,3 +78,42 @@ Skills = deterministic modules: `detector + classifier + fix + tests + registryD
 - The syntactic recall gain is a projection, unproven until a retained user hands us a concrete false negative. Build it on a real report, park it if it doesn't earn its place.
 - Canary rings only catch wrongness that reproduces in canary configs. The honest claim is "blast radius bounded to a small K," not "prevented."
 - This project has shipped 12 overclaims. Everything through Phase 2 is retention with no new inference and no server. The hosted product, the SCIP graph, and any dashboard are explicitly NOT built until a payer exists.
+
+## addendum, 2026-10-14: migration assurance, component by component
+
+Two positioning memos reviewed on 2026-10-14 framed mendr as **migration assurance**. The promise:
+*when a provider changes, show whether your application is affected, prepare the PR, prove what can
+be proven before merge, and help verify the affected feature after the deploy.* The customer
+approves the merge, the deploy and any recovery.
+
+The unit of work is one external API change affecting one customer-facing feature, not a monitor on
+every PR. The components are workers under one controller; they do not chat freely. Status after
+branches `feat/verify-twice` (PR #67) and `feat/assurance`:
+
+| component | stops when | status |
+| --- | --- | --- |
+| Change watcher | the source is ambiguous or unreliable | **Built.** Registry collectors with provider sources; an unverified entry never auto-applies. |
+| Impact: code and config | it cannot trace the usage | **Built.** Untraceable calls are held for review with a reason. |
+| Impact: which customer feature | the team has not named one | **Built, customer-declared.** `workflows` in `mendr.config.json` (a name and its paths); `migrate` links each changed file to its feature and names the files no feature covers. Nothing is inferred. |
+| Plan: what "working" means | the team cannot define it | **Built, customer-declared.** Each workflow carries its limits (`errorRateMaxIncrease`, `latencyP95MaxIncreasePct`, `costPer1kMaxIncreasePct`, `qualityRequired`) and `minCalls`. |
+| Coding | it needs secrets, broad edits or a business decision | **Built, deterministic.** An AI coding agent is **not built, by decision**: invariant 2. It waits for a migration the rules cannot handle, and even then would only draft. |
+| Check 1: code, build, tests | it fails or cannot run | **Built.** "Unavailable" is never "passed" (`gates/status.ts`). |
+| Check 2: independent re-check | an edit no rule names, a missed site, an unmet parameter rule | **Built** (P2-F, `gates/secondCheck.ts`). Structural, not behavioural. |
+| Check 3: behaviour on customer cases | the team has no eval | **Built as the eval gate**, running the team's own command. mendr does not write the cases. |
+| Human approval | always | **Built.** mendr never merges or deploys. |
+| Rollout check | too little traffic or a missing signal: *inconclusive* | **Built, numbers supplied by the team.** `mendr rollout` returns *verified*, *regression* or *inconclusive* against the workflow's limits. **Telemetry adapters are not built**: they wait for a design partner's real stack. |
+| Investigation | it cannot establish a likely cause: escalate | **Deterministic part built:** which signal moved, by how much, against which limit. Correlating deploys, errors and affected users across telemetry is **not built**: it needs telemetry. |
+| Recovery | always: a person authorises | **Built.** A dated plan: revert only while the old model still answers, fix forward after its shutdown. Never picks a substitute model. Recomputed on the day `rollout` runs. |
+| Learning | never promote a rule without review and repeatable tests | **Record built:** `rollout --record` appends `mendr-outcome/v1` lines (change, checks, decision, rollout verdict). **Learning and promotion are not built:** nothing to learn from until real migrations produce records. |
+| Durable controller | n/a | **Partly built:** the App's approve flow and the migration artifact. A general workflow engine is **not built**. |
+
+**The gating rule for everything still marked not built:** it waits for a design partner who said
+yes to a real migration (`launch/OFFER-2026-10-23.md`), and is built against that partner's actual
+stack, not a guessed one. The milestone that decides whether this position is right is the memo's:
+three companies willing to let mendr handle a real migration, at least one valuing the after-deploy
+evidence, by 2026-11-22. Customers who only want the PR mean the position should be reconsidered
+before more is built.
+
+What the built pieces still cannot show, said plainly: none of them has run on a stranger's
+repository or a real production rollout. Their tests prove they do what they say on the cases the
+tests construct.
