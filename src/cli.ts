@@ -26,6 +26,7 @@ import { formatChange } from './detect/changeModel.js';
 import { checkTypes, formatDiagnostic, NO_TYPE_CHECK, unresolvedScopeNote } from './gates/typecheck.js';
 import { NO_TEST_RUNNER, runRepoTests } from './gates/runTests.js';
 import { runRepoEval, type EvalGateResult } from './gates/runEval.js';
+import { evalSwapsOf } from './gates/evalCases.js';
 import {
   loadRepoConfig,
   REPO_CONFIG_FILENAME,
@@ -1309,11 +1310,12 @@ program
       (tsTotalSites === 0 || tsTier === 'A') && (pyResult.siteCount === 0 || pyTier === 'A');
     const anyTierA =
       (tsTier === 'A' && tsTotalSites > 0) || (pyTier === 'A' && pyResult.siteCount > 0);
-    if (evalCommand && !opts.skipGates && !codeGatesPassed) {
+    const evalCases = policy.eval.cases;
+    if ((evalCommand || evalCases) && !opts.skipGates && !codeGatesPassed) {
       evalNotRunReason =
         'not started -- the code gates above did not pass, so mendr never ran your eval';
     }
-    if (evalCommand && !opts.skipGates && codeGatesPassed && anyTierA) {
+    if ((evalCommand || evalCases) && !opts.skipGates && codeGatesPassed && anyTierA) {
       // Progress goes to STDERR (an eval can take minutes, and with --json
       // stdout must carry only the document).
       //
@@ -1325,12 +1327,18 @@ program
       //   eval-command: "OPENAI_API_KEY=sk-… npm run evals"
       // printed that key to three public surfaces.
       console.error(
-        `Running your evaluation against the patched code: ${sanitize(evalCommand, secretValuesFromEnv(process.env))}`,
+        evalCommand
+          ? `Running your evaluation against the patched code: ${sanitize(evalCommand, secretValuesFromEnv(process.env))}`
+          : `Running your eval cases (${evalCases}) on the old and the new model`,
       );
       evalResult = await runRepoEval(
         resolved,
         [...tsPatchedFiles, ...pyResult.patchedFiles],
-        { command: evalCommand, timeoutMs: repoConfig.evalTimeoutMs },
+        {
+          command: evalCommand,
+          timeoutMs: repoConfig.evalTimeoutMs,
+          ...(evalCases ? { cases: { file: evalCases, swaps: evalSwapsOf([...swapMatches, ...pyResult.swapMatches], new Date()), registry } } : {}),
+        },
       );
     }
 
@@ -1894,6 +1902,7 @@ program
                 eval: {
                   required: policy.eval.required,
                   command: policy.eval.command ?? null,
+                  cases: policy.eval.cases ?? null,
                 },
               },
               outcomes: gateOutcomes,
@@ -4319,13 +4328,17 @@ program
       // never read mendr.config.json before, and a run that works today must not start failing on a
       // config error. The error is said, and the run goes on without the links.
       let workflows: RepoConfig['workflows'];
+      let evalCases: string | undefined;
       try {
-        workflows = loadRepoConfig(resolved).workflows;
+        const repoConfig = loadRepoConfig(resolved);
+        workflows = repoConfig.workflows;
+        evalCases = repoConfig.gates?.eval?.cases;
       } catch (err) {
-        console.error(`mendr: workflows not linked -- ${err instanceof Error ? err.message : String(err)}`);
+        console.error(`mendr: workflows and eval cases not read -- ${err instanceof Error ? err.message : String(err)}`);
       }
       const result = await runMigration(resolved, registry, {
         workflows,
+        ...(evalCases && !opts.evalCommand ? { evalCases } : {}),
         sha: opts.sha ?? process.env.GITHUB_SHA ?? null,
         evalCommand: opts.evalCommand,
         skipVerify: opts.skipVerify,

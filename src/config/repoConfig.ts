@@ -43,6 +43,11 @@ export interface EvalGateConfig extends GateConfig {
    * `evalCommand`, which maps onto this one.
    */
   command?: string;
+  /**
+   * A cases file (mendr-eval-cases/v1) that mendr runs itself, on the old and the new model, with
+   * the team's own API key (gates/evalCases.ts). The alternative to a command: set one or the other.
+   */
+  cases?: string;
 }
 
 /** The per-gate policy block: `{ "gates": { "tests": { "required": true } } }`. */
@@ -311,12 +316,24 @@ function parseGates(value: unknown, path: string): GatesConfig {
           );
         }
         parsed.command = fieldValue.trim();
+      } else if (field === 'cases' && name === 'eval') {
+        if (typeof fieldValue !== 'string' || fieldValue.trim().length === 0) {
+          throw new Error(
+            `${path}: "gates.eval.cases" must be the path of your cases file, such as "mendr/eval-cases.json", got ${JSON.stringify(fieldValue)}`,
+          );
+        }
+        parsed.cases = fieldValue.trim();
       } else {
         throw new Error(
           `${path}: unknown field "gates.${name}.${field}" (allowed: ` +
-            `${name === 'eval' ? 'required, command' : 'required'})`,
+            `${name === 'eval' ? 'required, command, cases' : 'required'})`,
         );
       }
+    }
+    if (parsed.command && parsed.cases) {
+      throw new Error(
+        `${path}: "gates.eval" sets both "command" and "cases" -- set one of them (your own eval command, or a cases file mendr runs)`,
+      );
     }
     gates[name as GateName] = parsed;
   }

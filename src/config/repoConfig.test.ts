@@ -191,6 +191,16 @@ describe('loadRepoConfig: the gates block', () => {
   });
 });
 
+describe('loadRepoConfig — eval cases', () => {
+  it('reads a cases file for the eval gate', () => {
+    expect(loadRepoConfig(makeRepo(JSON.stringify({ gates: { eval: { cases: ' mendr/cases.json ' } } }))).gates?.eval).toEqual({ cases: 'mendr/cases.json' });
+  });
+  it('refuses a command and a cases file together, rather than silently picking one', () => {
+    const repo = makeRepo(JSON.stringify({ gates: { eval: { command: 'npm run eval', cases: 'c.json' } } }));
+    expect(() => loadRepoConfig(repo)).toThrow(/sets both "command" and "cases" -- set one of them/);
+  });
+});
+
 describe('loadRepoConfig — workflows', () => {
   it('reads a workflow, its paths, its limits and its minimum traffic', () => {
     const repo = makeRepo(

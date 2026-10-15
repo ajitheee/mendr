@@ -39,7 +39,7 @@ export interface GateEvaluation {
 export interface ResolvedGatePolicy {
   typecheck: { required: boolean };
   tests: { required: boolean };
-  eval: { required: boolean; command?: string };
+  eval: { required: boolean; command?: string; cases?: string };
 }
 
 /**
@@ -73,6 +73,9 @@ export function resolveGatePolicy(
 ): ResolvedGatePolicy {
   const command =
     cliEvalCommand?.trim() || config.gates?.eval?.command || config.evalCommand || undefined;
+  // A cases file is the other way to configure the eval: used only when no command is in force,
+  // so --eval-command still overrides the file for one run, as it always has.
+  const cases = command ? undefined : config.gates?.eval?.cases;
   return {
     typecheck: { required: config.gates?.typecheck?.required ?? DEFAULT_GATE_REQUIRED.typecheck },
     tests: { required: config.gates?.tests?.required ?? DEFAULT_GATE_REQUIRED.tests },
@@ -82,8 +85,9 @@ export function resolveGatePolicy(
       // blocks with "not configured". A repo may legitimately demand that every
       // model migration be backed by an eval, and the honest way to enforce
       // that is to refuse the fix, not to quietly skip the demand.
-      required: config.gates?.eval?.required ?? (command ? DEFAULT_GATE_REQUIRED.eval : false),
+      required: config.gates?.eval?.required ?? (command || cases ? DEFAULT_GATE_REQUIRED.eval : false),
       ...(command ? { command } : {}),
+      ...(cases ? { cases } : {}),
     },
   };
 }
