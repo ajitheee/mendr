@@ -186,7 +186,8 @@
   .opts label:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
   .trap{position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden}
   form .btn.solid{width:100%;min-height:46px}
-  form[data-done] :is(input,textarea,.opts label){opacity:.55;transition:opacity 200ms ease}
+  /* Once a sign-up is confirmed the questions go away, so the email does not sit in the field. */
+  form[data-done] :is(label.f,fieldset){display:none}
   form[data-done] .btn.solid{background:var(--ok);opacity:1;cursor:default}
   .fine{font-size:.82rem;color:var(--muted);margin:0}
   .fine a{text-underline-offset:3px}
@@ -435,7 +436,7 @@
     countTo(taken, spots);
     $('bar').style.transform = `scaleX(${taken / spots})`;
     $('when').textContent = count >= spots
-      ? `The first ${spots} are taken; ${count - spots} ${count - spots === 1 ? 'person is' : 'people are'} in the next round.`
+      ? `All ${spots} spots are taken. You can still sign up; I'll email you to confirm.`
       : `${spots - taken} left, in sign-up order.`;
   };
 
@@ -674,11 +675,14 @@
         submit.textContent = 'Join early access';
         return;
       }
+      // Inside the 50, the page confirms the spot. Past it, the sign-up is kept but no spot is
+      // promised: the confirmation comes later, by email.
       const place = body.inFirstRound
-        ? `You're number ${body.position} of ${body.spots}.`
-        : `You're number ${body.position}: the first ${body.spots} are taken, so you're in the next round.`;
-      show('ok', `${body.created ? '' : 'You were already on the list. '}${place} I'll write to you at ${email}.`);
+        ? `You're number ${body.position} of ${body.spots}. I'll write to you at ${email}.`
+        : `${body.created ? "You're on the list. " : ''}All ${body.spots} spots are taken, so I'll email you at ${email} to confirm.`;
+      show('ok', `${body.created ? '' : 'You were already on the list. '}${place}`);
       submit.textContent = "You're on the list";
+      form.reset();
       form.setAttribute('data-done', '');
       form.querySelectorAll('input, textarea').forEach((el) => { el.disabled = true; });
       fetch(`${API}/api/waitlist/count`).then((r) => r.json()).then((d) => d && d.ok && paint(d.count, d.spots)).catch(() => {});
