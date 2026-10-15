@@ -4,6 +4,9 @@
   "installCommand": "echo no install needed",
   "buildCommand": "echo static landing page, no build",
   "outputDirectory": "site",
+  "rewrites": [
+    { "source": "/early-access", "destination": "/early-access.html" }
+  ],
   "redirects": [
     { "source": "/app", "destination": "https://mendr-app.onrender.com/", "permanent": false },
     { "source": "/app/(.*)", "destination": "https://mendr-app.onrender.com/", "permanent": false }

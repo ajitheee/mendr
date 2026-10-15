@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mendr · early access</title>
+<meta name="description" content="50 builders, free: help getting your code through OpenAI's October 23 shutdown of 29 model ids, from the person who builds mendr.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://mendr-mu.vercel.app/early-access">
+<meta property="og:title" content="mendr early access: 50 builders, free">
+<meta property="og:description" content="OpenAI shuts down 29 model ids on October 23. Get help moving your code before it breaks.">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="mendr early access: 50 builders, free">
+<meta name="twitter:description" content="OpenAI shuts down 29 model ids on October 23. Get help moving your code before it breaks.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' role='img' aria-label='mendr'><rect width='100' height='100' fill='%23F4F1EA'/><rect x='15' y='30' width='77' height='14' fill='%23315CFF'/><rect x='15' y='30' width='14' height='62' fill='%23315CFF'/><rect x='43' y='30' width='14' height='62' fill='%23315CFF'/><rect x='78' y='30' width='14' height='34' fill='%23315CFF'/><rect x='78' y='78' width='14' height='14' fill='%23D88916'/></svg>">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* The site's own tokens (index.html): ivory ground, carbon ink, cobalt signal, amber deadline, jade done. */
+  :root{
+    color-scheme: light;
+    --ivory:#F4F1EA; --data:#FAF8F3; --carbon:#0B0D10; --ink-2:#33383f;
+    --grey:#666d7a; --cobalt:#315CFF; --amber:#B8730F; --amber-bg:#FBEFD9; --jade:#15805D; --jade-bg:#E2F1EA;
+    --red:#B0392C; --red-bg:#F7E3E0; --hair:#DED7C7;
+    --sans:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ivory);color:var(--carbon);font-family:var(--sans);font-size:17px;line-height:1.55;-webkit-font-smoothing:antialiased}
+  a{color:inherit}
+  :focus-visible{outline:2px solid var(--cobalt);outline-offset:3px;border-radius:2px}
+  .wrap{max-width:1080px;margin:0 auto;padding-inline:clamp(16px,4.5vw,44px)}
+  header .wrap{display:flex;align-items:center;gap:20px;padding-block:20px}
+  .mark{display:inline-flex;align-items:baseline;gap:.04em;font-weight:600;font-size:1.06rem;letter-spacing:-.01em;text-decoration:none}
+  .mark svg{height:.51em;width:auto}
+  header .home{margin-left:auto;font-family:var(--mono);font-size:.84rem;color:var(--grey);text-decoration:none;border-bottom:1px solid var(--hair);padding-bottom:2px}
+  header .home:hover{color:var(--cobalt);border-color:var(--cobalt)}
+
+  main .wrap{display:grid;grid-template-columns:1.05fr .95fr;gap:clamp(28px,5vw,64px);align-items:start;padding-block:clamp(24px,5vw,56px) 72px}
+  @media (max-width:880px){main .wrap{grid-template-columns:1fr}}
+  .kick{font-family:var(--mono);font-size:.74rem;letter-spacing:.12em;text-transform:uppercase;color:var(--grey);margin:0 0 14px}
+  .kick b{color:var(--amber);font-weight:500}
+  h1{margin:0 0 18px;font-weight:500;font-size:clamp(1.9rem,4.2vw,2.9rem);line-height:1.06;letter-spacing:-.02em;text-wrap:balance;max-width:16ch}
+  .lede{color:var(--ink-2);font-size:1.08rem;max-width:52ch;margin:0 0 28px}
+  .lede code,.open code{font-family:var(--mono);font-size:.86em}
+
+  ol.get{list-style:none;margin:0 0 28px;padding:0;display:grid;gap:16px;counter-reset:g}
+  ol.get li{display:grid;grid-template-columns:1.9rem 1fr;gap:4px 10px;counter-increment:g}
+  ol.get li::before{content:counter(g);grid-row:span 2;font-family:var(--mono);font-size:.8rem;color:var(--cobalt);border:1px solid var(--cobalt);border-radius:50%;width:1.6rem;height:1.6rem;display:grid;place-items:center;margin-top:2px}
+  ol.get strong{font-weight:600}
+  ol.get span{color:var(--grey);font-size:.98rem}
+
+  .open{border-top:1px solid var(--hair);padding-top:18px;color:var(--ink-2);font-size:.96rem;max-width:56ch}
+  .open pre{margin:10px 0 0;padding:10px 12px;background:var(--data);border:1px solid var(--hair);border-radius:8px;overflow-x:auto;font-family:var(--mono);font-size:.84rem}
+
+  .card{background:var(--data);border:1px solid var(--hair);border-radius:14px;padding:clamp(18px,3vw,28px);min-width:0}
+  .spots{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 0 6px;font-family:var(--mono);font-size:.82rem;color:var(--grey)}
+  .spots b{color:var(--carbon);font-weight:500;font-size:1.02rem}
+  .bar{height:6px;background:var(--hair);border-radius:999px;overflow:hidden;margin:0 0 6px}
+  .bar i{display:block;height:100%;width:100%;background:var(--cobalt);transform:scaleX(0);transform-origin:left;transition:transform .6s ease}
+  @media (prefers-reduced-motion:reduce){.bar i{transition:none}}
+  .when{font-size:.88rem;color:var(--grey);margin:0 0 22px}
+
+  form{display:grid;gap:18px}
+  label.f,fieldset{display:grid;gap:7px;border:0;padding:0;margin:0}
+  .lab{font-weight:600;font-size:.96rem}
+  .lab small{font-weight:400;color:var(--grey)}
+  input[type=email],textarea{font:inherit;font-size:1rem;color:var(--carbon);background:#fff;border:1px solid var(--hair);border-radius:8px;padding:11px 12px;width:100%}
+  input[type=email]:focus,textarea:focus{outline:2px solid var(--cobalt);outline-offset:0;border-color:transparent}
+  textarea{min-height:76px;resize:vertical}
+  .opts{display:flex;flex-wrap:wrap;gap:8px}
+  .opts label{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--hair);border-radius:999px;padding:7px 14px;background:#fff;cursor:pointer;font-size:.94rem}
+  .opts input{accent-color:var(--cobalt);margin:0}
+  .opts label:has(input:checked){border-color:var(--cobalt);color:var(--cobalt)}
+  .trap{position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden}
+  button{font:inherit;font-family:var(--mono);font-size:.92rem;font-weight:500;background:var(--carbon);color:var(--ivory);border:0;border-radius:8px;min-height:46px;padding:12px 18px;cursor:pointer}
+  button:hover{background:var(--ink-2)}
+  button:active{transform:scale(.98)}
+  button[disabled]{opacity:.6;cursor:progress}
+  .fine{font-size:.84rem;color:var(--grey);margin:0}
+  .fine a{text-underline-offset:3px}
+  .msg{border-radius:10px;padding:12px 14px;font-size:.96rem}
+  .msg.ok{background:var(--jade-bg);color:var(--jade)}
+  .msg.err{background:var(--red-bg);color:var(--red)}
+  .msg.wait{background:var(--amber-bg);color:var(--amber)}
+
+  footer .wrap{border-top:1px solid var(--hair);padding-block:20px 32px;font-size:.86rem;color:var(--grey);display:flex;flex-wrap:wrap;gap:8px 20px}
+  footer a{text-decoration:none;border-bottom:1px solid var(--hair)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <a class="mark" href="/" aria-label="mendr home"><svg viewBox="15 30 77 62" aria-hidden="true"><rect x="15" y="30" width="77" height="14" fill="#315CFF"/><rect x="15" y="30" width="14" height="62" fill="#315CFF"/><rect x="43" y="30" width="14" height="62" fill="#315CFF"/><rect x="78" y="30" width="14" height="34" fill="#315CFF"/><rect x="78" y="78" width="14" height="14" fill="#D88916"/></svg>endr</a>
+    <a class="home" href="/">← what mendr does</a>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <section>
+      <p class="kick">Early access · 50 builders · free · <b>OpenAI shutdown: October 23</b></p>
+      <h1>Get your code through October 23 with help.</h1>
+      <p class="lede">On October 23, OpenAI shuts down 29 model ids, including <code>gpt-4</code>, <code>gpt-3.5-turbo</code> and <code>o3-mini</code>. Calls to them stop working that day, and some replacements reject parameters the old models accepted. mendr finds those calls and prepares the fix. Early access is me helping you through it.</p>
+
+      <ol class="get">
+        <li><strong>I run mendr on your repo with you</strong><span>We find the calls to retiring models, including the ones in config, and I prepare the pull request, checked against your own build and tests. You approve it; nothing merges without you.</span></li>
+        <li><strong>Your own cases, on the old model and the new one</strong><span>Write a few real requests and what a good answer looks like. mendr sends them to both models with your key, and stops the change if the new one does worse.</span></li>
+        <li><strong>After you deploy, we check the feature together</strong><span>Errors, latency and cost before and after, from your own telemetry. And a direct line to the person building mendr: your questions decide what gets built next.</span></li>
+      </ol>
+
+      <div class="open">
+        The tool itself is open source and free, and stays that way. Anyone can run it today:
+        <pre>npx github:ajitheee/mendr#v0.5.11-alpha audit .</pre>
+        <p>What's limited is the help, because it's one person. Spots go in sign-up order, starting now. Public launch: October 22.</p>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="join">
+      <h2 id="join" class="spots"><span>Spots taken</span><b id="count">— of 50</b></h2>
+      <div class="bar" aria-hidden="true"><i id="bar"></i></div>
+      <p class="when" id="when">Counting…</p>
+
+      <form id="form" novalidate>
+        <label class="f" for="email"><span class="lab">Email</span>
+          <input id="email" name="email" type="email" autocomplete="email" required placeholder="you@company.com">
+        </label>
+
+        <fieldset>
+          <legend class="lab">Does your product call OpenAI, Anthropic or Google from its own code?</legend>
+          <div class="opts">
+            <label><input type="radio" name="usesLlm" id="uses-yes" value="yes" required> Yes</label>
+            <label><input type="radio" name="usesLlm" id="uses-no" value="no"> No</label>
+            <label><input type="radio" name="usesLlm" id="uses-unsure" value="not_sure"> Not sure</label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend class="lab">Want me to check your repo before October 23?</legend>
+          <div class="opts">
+            <label><input type="radio" name="wantsCheck" id="check-yes" value="true" required> Yes, this week</label>
+            <label><input type="radio" name="wantsCheck" id="check-no" value="false"> Not now</label>
+          </div>
+        </fieldset>
+
+        <label class="f" for="note"><span class="lab">Anything else? <small>optional: which models, what you're building</small></span>
+          <textarea id="note" name="note" maxlength="500"></textarea>
+        </label>
+
+        <div class="trap" aria-hidden="true"><label for="website">Leave this empty</label><input id="website" name="website" type="text" tabindex="-1" autocomplete="off"></div>
+
+        <button type="submit" id="submit">Join early access</button>
+        <div id="msg" role="status" aria-live="polite"></div>
+        <p class="fine">I'll email you about your access and mendr, nothing else. Reply "remove" and your entry is deleted. What's stored is listed on the <a href="/privacy.html">privacy page</a>.</p>
+      </form>
+    </section>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>mendr · built in public by Ajith</span>
+    <a href="https://github.com/ajitheee/mendr">GitHub</a>
+    <a href="/privacy.html">Privacy</a>
+    <a href="/">Home</a>
+  </div>
+</footer>
+
+<script>
+(() => {
+  const API = 'https://mendr-app.onrender.com';
+  const SPOTS = 50;
+  const $ = (id) => document.getElementById(id);
+  const form = $('form'), msg = $('msg'), submit = $('submit');
+
+  const show = (kind, text) => {
+    msg.className = `msg ${kind}`;
+    msg.textContent = text;
+  };
+  const paint = (count, spots) => {
+    const taken = Math.min(count, spots);
+    $('count').textContent = `${taken} of ${spots}`;
+    $('bar').style.transform = `scaleX(${taken / spots})`;
+    $('when').textContent = count >= spots
+      ? `The first ${spots} spots are taken. Sign up for the next round; ${count - spots} ${count - spots === 1 ? 'person is' : 'people are'} already in it.`
+      : `${spots - taken} left. Spots go in sign-up order, starting now.`;
+  };
+
+  // The App sleeps when idle, so the count doubles as its wake-up call.
+  fetch(`${API}/api/waitlist/count`)
+    .then((r) => r.json())
+    .then((d) => (d && d.ok ? paint(d.count, d.spots) : ($('when').textContent = 'Spots go in sign-up order, starting now.')))
+    .catch(() => { $('count').textContent = `of ${SPOTS}`; $('when').textContent = 'Spots go in sign-up order, starting now.'; });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = new FormData(form);
+    const email = String(data.get('email') || '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return show('err', 'Enter the email address I should write to, such as you@company.com.');
+    if (!data.get('usesLlm')) return show('err', 'Choose whether your product calls OpenAI, Anthropic or Google from its own code.');
+    if (!data.get('wantsCheck')) return show('err', 'Choose whether you want your repo checked before October 23.');
+
+    submit.disabled = true;
+    show('wait', 'Sending… the first sign-up after a quiet spell can take up to a minute while the server wakes.');
+    try {
+      const res = await fetch(`${API}/api/waitlist`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          usesLlm: data.get('usesLlm'),
+          wantsCheck: data.get('wantsCheck') === 'true',
+          note: String(data.get('note') || ''),
+          website: String(data.get('website') || ''),
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.ok) {
+        show('err', body.error || 'That did not go through. Try again in a minute.');
+        submit.disabled = false;
+        return;
+      }
+      const place = body.inFirstRound
+        ? `You're number ${body.position} of ${body.spots}.`
+        : `You're number ${body.position}: the first ${body.spots} are taken, so you're in the next round.`;
+      show('ok', `${body.created ? '' : 'You were already on the list. '}${place} I'll write to you at ${email}.`);
+      form.querySelectorAll('input, textarea, button').forEach((el) => { el.disabled = true; });
+      fetch(`${API}/api/waitlist/count`).then((r) => r.json()).then((d) => d && d.ok && paint(d.count, d.spots)).catch(() => {});
+    } catch {
+      show('err', 'Could not reach the server. Check your connection and try again.');
+      submit.disabled = false;
+    }
+  });
+})();
+</script>
+</body>
+</html>
