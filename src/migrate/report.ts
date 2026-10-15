@@ -74,6 +74,8 @@ export function renderMigrationReport(r: MigrationResult): string[] {
   lines.push(gateRow('build', r.verification.build));
   lines.push(gateRow('tests', r.verification.tests));
   lines.push(gateRow('eval', r.verification.eval));
+  // An artifact written before the second check existed has no such field.
+  if (r.verification.secondCheck) lines.push(gateRow('re-check', r.verification.secondCheck));
   lines.push('');
   lines.push(`Verdict: ${VERDICT_LINE[r.verification.verdict]}`);
   lines.push(`PR-ready: ${r.prReady ? 'yes' : 'no'}`);

@@ -565,6 +565,16 @@ Defaults, which are exactly mendr's behavior before this block existed:
 
 `--json` carries the same records: `gates.policy` is what this run required, and `gates.outcomes` lists every gate with its `outcome`, `language`, `required` and `blocking` flags.
 
+### the second, independent check (`migrate`)
+
+The gates above answer *does the patched code build and pass your tests?* Before a `migrate` run (the path behind every fix pull request) lets them decide, it re-reads its own patch. The re-check reads the repository from disk, the patched text and the registry, and nothing else:
+
+- **in scope:** every changed token must be an edit a registry rule names: a verified model-id swap at a live model argument, a parameter renamed or removed on a model the rule covers. A comment or any other code that changed holds the patch. Whitespace is not compared.
+- **complete:** the scan runs again on the patched code. A live call still on a retiring id it would swap is a site the patch missed.
+- **parameters:** the parameter rules run again. A request still sending a key its new model renames or rejects is held.
+
+Any problem makes the run `failed`, so no pull request opens. The problems are listed in the report and the pull request body. It is not configurable: it always runs, and it can block but never verify on its own. It re-runs mendr's own scanners, so a call they cannot see is invisible to it too. `fix-llm --write` does not run it yet.
+
 ## install for repeat use
 
 ```sh

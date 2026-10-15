@@ -555,6 +555,76 @@ feeds the graph facts nobody grades.
 Not an engineering task. It needs the 10-23 retirement event plus a repository that already has
 Mendr installed, which is what Part 1 is for.
 
+## P2-F · Verify twice — a second, independent check before a fix PR opens  —  *added 2026-10-14*
+
+Today one check stands between a patch and its pull request: the swap must pass the customer's
+type-check, and a failing test suite blocks it. That check answers *does it build?* It does not
+answer *is it complete?* or *did it touch only what it should?* The board review on 2026-10-14
+named the gap exactly: a type-check cannot see a `temperature` 400, and tests often mock the API.
+
+"Verify twice" means **two different checks, not the same check run twice**. The second reads
+only the patched tree and the registry, never the patch writer's own state, and asks three
+questions:
+
+- **Complete?** Re-scan the patched files from scratch. No live call site for the same retiring
+  id may remain that the patch should have reached. (`src/fix/rename.ts` already re-scans inside
+  its edit loop. That is the writer checking itself, not a second check.)
+- **In scope?** The diff touches only the lines the findings named. Any other changed line holds
+  the PR.
+- **Parameters satisfied?** Every parameter rule for the replacement (`max_tokens` renamed, a
+  rejected `temperature`) holds in the patched request, re-derived from the registry rather than
+  taken from the writer's output.
+
+Rules:
+
+- Deterministic, like everything in the fix and gate path. Invariant 2 holds: no LLM.
+- A failure never opens a PR. The finding is held as Tier B with its own reason code.
+- The PR body and the check run name both checks and their results, so "verified" says which
+  verification.
+
+**When:** first planned to wait for an outside user's first Tier A finding. On 2026-10-14 Ajith
+chose to build it now, ahead of that evidence, on branch `feat/verify-twice`. What it still cannot
+show without that evidence is whether it ever holds a real patch on a stranger's code; the
+fixtures below prove only that it holds the cases they construct.
+
+**Done means:** three fixtures, each passing the first check and held by the second (a missed
+second call site, an unrelated edit, a violated parameter rule), plus one clean fixture where both
+pass and the PR body says so.
+
+> ### BUILT 2026-10-14 on `feat/verify-twice` — `src/gates/secondCheck.ts`, run by `migrate`
+>
+> **What it does.** Before the sandbox gates, `migrate` re-reads the patch:
+> - **In scope:** both versions of each changed file are parsed and walked side by side. Every
+>   difference must be one of three registry-named edits:
+>   - a verified swap at a site the locator calls a live model argument;
+>   - a `param_rename` pair;
+>   - a `param_removal` property, on an object whose own model the rule covers.
+>
+>   Comments must be unchanged. Whitespace is not compared.
+> - **Complete:** the patched text is loaded into a project read fresh from disk, and the
+>   locator is run again.
+> - **Parameters satisfied:** the parameter locator is run again on the same project.
+>
+> Python gets the first two, line by line. It has no parameter pass to check.
+>
+> **Where it differs from the plan above, and why:**
+> - **No new Tier B reason code.** A failure makes the run's verdict `failed`, so `prReady` is
+>   false. Each problem is listed in the re-check's detail and in a note, by kind:
+>   `out_of_scope_edit`, `missed_site` or `param_rule_unmet`. A new `TierBReason` would ripple
+>   through audit, watch, the App and four exhaustive maps, and the problem is with the patch,
+>   not with a call site.
+> - **Shown in the PR body and the `migrate` report, not a check run.** `migrate` has no check
+>   run: the App builds check runs from audit reports only. The App and the action read four named
+>   gates, so the fifth rides in the artifact and changes nothing they do.
+> - **`fix-llm --write` is not covered.** Its own write path (`cli.ts` around line 1700) still
+>   runs only the first check.
+> - **It can block, never verify.** A passed re-check is not the real run a `verified` verdict
+>   needs (`computeVerdict`).
+>
+> **What it cannot do.** The completeness and parameter checks re-run mendr's own locators. A call
+> the locator cannot see is invisible here too. It catches a patch that did not do what the
+> locator found; it does not raise recall.
+
 ---
 
 ## What we are deliberately NOT building, and why
@@ -578,6 +648,8 @@ empty on purpose.
 | Multi-repo dashboards, campaign views, burndown | Sourcegraph shipped Agentic Batch Changes GA 2026-09-14 with auto-repair of CI failures, priced per merged changeset, with Mercari and Canva shipping on it. Moderne has $30M and Walmart. This is their ground. |
 | Routing, aliasing, gateway features | Consolidating and far better funded: OpenRouter reportedly acquired by Stripe, Portkey raised $15M, Cloudflare bundles it free. |
 | Registry breadth (more providers, more languages) | A free MIT tool shipped 18+ languages and 6 providers to one GitHub star. Breadth is not what is scarce. |
+| Agents that write the patches, tests and reviews | Reviewed 2026-10-14: an "agentic migration pipeline" design with 18 agent roles, where models write the patch, write the tests and review each other. Rejected for the fix and gate path. Invariant 2 keeps that path deterministic, and that is the rule behind the zero-incorrect-verified-edits invariant (0 wrong edits across the 26 repos in the August recall audit). The one idea kept from that design is P2-F, built without an LLM. |
+| Post-merge observe, recover and learn (that design's frames 10–12) | Each runs on merged PRs, production outcomes and rejections, and Mendr has none yet. Same reason as the Rollback and Learning rows above. P2-B is the honest part of it. |
 
 ---
 
