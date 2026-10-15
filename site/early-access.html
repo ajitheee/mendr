@@ -59,7 +59,7 @@
   .spots{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 0 6px;font-family:var(--mono);font-size:.82rem;color:var(--grey)}
   .spots b{color:var(--carbon);font-weight:500;font-size:1.02rem}
   .bar{height:6px;background:var(--hair);border-radius:999px;overflow:hidden;margin:0 0 6px}
-  .bar i{display:block;height:100%;width:0;background:var(--cobalt);transition:width .6s ease}
+  .bar i{display:block;height:100%;width:100%;background:var(--cobalt);transform:scaleX(0);transform-origin:left;transition:transform .6s ease}
   @media (prefers-reduced-motion:reduce){.bar i{transition:none}}
   .when{font-size:.88rem;color:var(--grey);margin:0 0 22px}
 
@@ -183,7 +183,7 @@
   const paint = (count, spots) => {
     const taken = Math.min(count, spots);
     $('count').textContent = `${taken} of ${spots}`;
-    $('bar').style.width = `${(taken / spots) * 100}%`;
+    $('bar').style.transform = `scaleX(${taken / spots})`;
     $('when').textContent = count >= spots
       ? `The first ${spots} spots are taken. Sign up for the next round; ${count - spots} ${count - spots === 1 ? 'person is' : 'people are'} already in it.`
       : `${spots - taken} left. Spots go in sign-up order, starting now.`;
