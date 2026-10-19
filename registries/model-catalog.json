@@ -1,20 +1,20 @@
 {
   "schema": "mendr-model-catalog/v1",
-  "fetchedAt": "2026-10-05T14:23:01Z",
+  "fetchedAt": "2026-10-19T12:53:22Z",
   "sources": [
     {
       "url": "https://openrouter.ai/api/v1/models",
       "ok": true,
-      "sha256": "c6459c072e164c575c6fe4b125dcf96d2f313e98544f93c56537765147f4f1b7",
-      "contributed": 183,
-      "note": "466 models, 183 first-party"
+      "sha256": "ac1844ad52ab3ccadeb245974c486c9113c30d270aef152fcebef42b970c9db2",
+      "contributed": 189,
+      "note": "469 models, 189 first-party"
     },
     {
       "url": "https://models.dev/api.json",
       "ok": true,
-      "sha256": "fd8d2257e0f461d65db7ac8c23b00fb13dce7c97f5f886304673a69ab489ef31",
-      "contributed": 108,
-      "note": "108 first-party models"
+      "sha256": "fe64432acd053d8248d882da1ede06feaf406aa5c726a8539fdd62376b3dda34",
+      "contributed": 110,
+      "note": "110 first-party models"
     }
   ],
   "providers": {
@@ -23,6 +23,7 @@
       "claude-fable-5-1",
       "claude-haiku-4-5",
       "claude-haiku-4-5-20251001",
+      "claude-haiku-5-5",
       "claude-opus-4-5",
       "claude-opus-4-5-20251101",
       "claude-opus-4-6",
@@ -64,6 +65,7 @@
       "gemini-3.6-flash",
       "gemini-3.7-flash",
       "gemini-3.8-flash",
+      "gemini-4-argon",
       "gemini-embedding-001",
       "gemini-embedding-2",
       "gemini-flash-latest",
@@ -138,6 +140,7 @@
       "claude-fable-5.1",
       "claude-fable-latest",
       "claude-haiku-4.5",
+      "claude-haiku-5.5",
       "claude-haiku-latest",
       "claude-opus-4.1",
       "claude-opus-4.5",
@@ -146,7 +149,6 @@
       "claude-opus-4.8",
       "claude-opus-5.5",
       "claude-opus-latest",
-      "claude-sonnet-4",
       "claude-sonnet-4.5",
       "claude-sonnet-4.6",
       "claude-sonnet-5.5",
@@ -154,6 +156,7 @@
     ],
     "google": [
       "gemini-2.5-pro-preview",
+      "gemini-nano-banana-2.1",
       "gemini-pro-latest",
       "gemma-2-27b-it",
       "gemma-3-12b-it",
@@ -195,5 +198,5 @@
       "o4-mini-high"
     ]
   },
-  "count": 108
+  "count": 110
 }
