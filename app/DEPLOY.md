@@ -180,7 +180,15 @@ See [`.env.example`](.env.example). Required in production: `APP_URL`,
 from step 2. The scanner release the generated workflows pin to is compiled into
 the App (`MENDR_CLI_SPEC` in `src/config.ts`, bumped with each release) — not an
 environment variable, so a deployment can never hand out a stale pin. Optional:
-`MENDR_RETENTION_DAYS`, `MAX_RUNS_PER_REPO`.
+`MENDR_RETENTION_DAYS`, `MAX_RUNS_PER_REPO`, and the waitlist sign-up alert
+(`RESEND_API_KEY` and `WAITLIST_ALERT_TO`, both or neither).
+
+**Waitlist sign-up alert.** To be emailed about each new early-access sign-up:
+create a free Resend account with the address the alerts should go to, create an
+API key with sending access, then in Render → `mendr-app` → Environment add
+`RESEND_API_KEY` (the key) and `WAITLIST_ALERT_TO` (that address) and save. The
+boot log then says `waitlist sign-up alerts: on`; each new sign-up logs
+`waitlist: alert sent` or `waitlist: alert failed` with a status code.
 
 The App warns loudly at boot if `DATABASE_URL` (falls back to in-memory) or
 `MENDR_DATA_KEY` (plaintext storage) is missing — neither is acceptable for a

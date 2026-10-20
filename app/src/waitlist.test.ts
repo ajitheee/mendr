@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
 import { MemoryStore } from './store/memory.js';
 import { parseSignup, registerWaitlist, WAITLIST_ORIGINS, WAITLIST_SPOTS } from './waitlist.js';
+import { AlertError, type SignupAlert } from './waitlistAlert.js';
 
 // The early-access form on the marketing site. It keeps an email and two answers, counts the 50
 // spots from what is stored, and never writes an email into a log line.
@@ -9,11 +10,11 @@ import { parseSignup, registerWaitlist, WAITLIST_ORIGINS, WAITLIST_SPOTS } from 
 const SITE = WAITLIST_ORIGINS[0]!;
 const GOOD = { email: ' Dev@Example.com ', usesLlm: 'yes', wantsCheck: true, note: 'gpt-4 in our support bot' };
 
-function harness() {
+function harness(alert?: (a: SignupAlert) => Promise<void>) {
   const store = new MemoryStore();
   const logs: { m: string; extra?: Record<string, unknown> }[] = [];
   const app = new Hono();
-  registerWaitlist(app, { store, now: () => new Date(), log: (m, extra) => logs.push(extra ? { m, extra } : { m }) });
+  registerWaitlist(app, { store, now: () => new Date(), log: (m, extra) => logs.push(extra ? { m, extra } : { m }), alert });
   const post = (body: unknown, headers: Record<string, string> = {}) =>
     app.request('/api/waitlist', {
       method: 'POST',
@@ -89,5 +90,35 @@ describe('the waitlist routes', () => {
     await h.post(GOOD);
     expect(JSON.stringify(h.logs)).not.toContain('example.com');
     expect(h.logs.at(-1)).toEqual({ m: 'waitlist: sign-up', extra: { created: true, position: 1 } });
+  });
+});
+
+describe('the sign-up alert', () => {
+  // The alert is sent after the response, so let it settle before looking.
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+
+  it('emails once per new person, with the stored answers and the spot, and not for a repeat', async () => {
+    const sent: SignupAlert[] = [];
+    const h = harness(async (a) => {
+      sent.push(a);
+    });
+    await h.post(GOOD);
+    await h.post({ ...GOOD, email: 'DEV@example.com' });
+    await settle();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ signup: { email: 'dev@example.com', usesLlm: 'yes', wantsCheck: true }, position: 1, spots: WAITLIST_SPOTS });
+    expect(h.logs.filter((l) => l.m.startsWith('waitlist: alert'))).toEqual([{ m: 'waitlist: alert sent', extra: { position: 1 } }]);
+  });
+
+  it('still takes the sign-up when the alert fails, and logs the status without the email', async () => {
+    const h = harness(async () => {
+      throw new AlertError(401);
+    });
+    const res = await h.post(GOOD);
+    await settle();
+    expect(res.status).toBe(200);
+    expect(await h.store.waitlistCount()).toBe(1);
+    expect(h.logs.at(-1)).toEqual({ m: 'waitlist: alert failed', extra: { position: 1, reason: 'status 401' } });
+    expect(JSON.stringify(h.logs)).not.toContain('example.com');
   });
 });

@@ -1,6 +1,7 @@
 import type { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { Store, WaitlistSignupInput } from './store/types.js';
+import { AlertError, type SendAlert } from './waitlistAlert.js';
 
 // THE EARLY-ACCESS WAITLIST: the marketing site's sign-up form posts here.
 //
@@ -40,7 +41,10 @@ export function parseSignup(body: unknown): ParseResult & { trap?: boolean } {
   return { ok: true, input: { email, usesLlm: b.usesLlm, wantsCheck: b.wantsCheck, note } };
 }
 
-export function registerWaitlist(app: Hono, deps: { store: Store; now: () => Date; log: (m: string, extra?: Record<string, unknown>) => void }): void {
+export function registerWaitlist(
+  app: Hono,
+  deps: { store: Store; now: () => Date; log: (m: string, extra?: Record<string, unknown>) => void; alert?: SendAlert | null },
+): void {
   const recent = new Map<string, number[]>();
   const limited = (address: string): boolean => {
     const t = deps.now().getTime();
@@ -76,6 +80,16 @@ export function registerWaitlist(app: Hono, deps: { store: Store; now: () => Dat
     const { created, position } = await deps.store.addWaitlistSignup(parsed.input);
     // The log says that a sign-up happened, never who: no email in a log line.
     deps.log('waitlist: sign-up', { created, position });
+    // The maintainer hears about each new name (src/waitlistAlert.ts). Not awaited: a slow or
+    // failing mail service never delays or fails a sign-up that is already stored.
+    if (created && deps.alert) {
+      deps
+        .alert({ signup: parsed.input, position, spots: WAITLIST_SPOTS, at: deps.now() })
+        .then(() => deps.log('waitlist: alert sent', { position }))
+        .catch((err: unknown) =>
+          deps.log('waitlist: alert failed', { position, reason: err instanceof AlertError ? `status ${err.status}` : err instanceof Error ? err.name : 'error' }),
+        );
+    }
     return c.json({ ok: true, created, position, spots: WAITLIST_SPOTS, inFirstRound: position <= WAITLIST_SPOTS });
   });
 }

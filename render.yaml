@@ -66,3 +66,6 @@ services:
         sync: false
       - key: GITHUB_PRIVATE_KEY
         sync: false
+      # 4. Optional, not listed as keys here: RESEND_API_KEY and WAITLIST_ALERT_TO
+      #    email you about each new early-access sign-up. Add both in the
+      #    dashboard when you want them (app/DEPLOY.md, "Waitlist sign-up alert").
