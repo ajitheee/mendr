@@ -1,0 +1,75 @@
+name: Audit result
+description: You ran mendr's audit on your own code. Tell us what it showed you, in about two minutes.
+title: "Audit result: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for running the audit. One answer decides more than any feature: **did it show you something you didn't know?** A "no" helps as much as a "yes".
+
+        This issue is **public**. Don't paste code, keys, or the names of private repositories. Model ids and file types are fine.
+
+        Haven't run it yet? From the root of a repo that calls OpenAI, Anthropic or Google (about a minute, no account or API key; `--offline` means nothing leaves your machine, and nothing is changed):
+
+        ```sh
+        npx github:ajitheee/mendr#v0.5.11-alpha audit . --offline
+        ```
+  - type: dropdown
+    id: new
+    attributes:
+      label: Did it show you a retiring model your code calls that you didn't know about?
+      options:
+        - "Yes: it found one I didn't know about"
+        - "No: everything it found, I already knew about"
+        - "No: it found nothing, and I believe the code is clean"
+        - "No: it found nothing, but I think it missed something"
+    validations:
+      required: true
+  - type: input
+    id: models
+    attributes:
+      label: Which model ids did it report? (optional)
+      placeholder: gpt-4, o4-mini
+  - type: textarea
+    id: wrong
+    attributes:
+      label: Was anything wrong or confusing? (optional)
+      description: A finding that isn't a real call, a call it missed, or a line in the report you couldn't follow.
+  - type: dropdown
+    id: stack
+    attributes:
+      label: What does the repo mostly use?
+      options:
+        - TypeScript
+        - JavaScript
+        - Python
+        - A mix
+        - Something else
+    validations:
+      required: true
+  - type: dropdown
+    id: how
+    attributes:
+      label: How did you run it?
+      options:
+        - I typed the command myself
+        - I asked my coding agent (Claude Code, Codex, Cursor or similar)
+    validations:
+      required: true
+  - type: textarea
+    id: sentence
+    attributes:
+      label: One sentence, in your own words
+      description: What did the audit tell you, and was it worth the minute?
+    validations:
+      required: true
+  - type: dropdown
+    id: quote
+    attributes:
+      label: Can we quote that sentence?
+      options:
+        - Yes, with my GitHub username
+        - Yes, without my name
+        - "No"
+    validations:
+      required: true
