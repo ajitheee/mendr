@@ -68,6 +68,8 @@ export interface TsSurfaceVerdict {
 export const TS_MODULE_LEVEL_REASON =
   'module-level execution (fires at import); a real request, capped at review';
 export const TS_SURFACE_REASON = 'provider surface caps this call at review';
+export const TS_REQUEST_SPREAD_REASON =
+  'request object spread leaves the effective model and parameters unproven; review before a model swap';
 /**
  * The one verdict in this file that DEMOTES. Everything else here can only refuse to
  * promote; this says a call is provably not a provider request at all, so a model id
@@ -464,6 +466,22 @@ export type SurfaceClassification =
   | { position: 'usage_unverified'; reason: string }
   | { position: 'data'; purpose: 'not_provider_call'; reason: string };
 
+/** Inspect each possible request value, including fallback and conditional branches. */
+function requestHasSpread(expr: Node): boolean {
+  const value = unwrapValueWrappers(expr);
+  if (Node.isObjectLiteralExpression(value)) return value.getProperties().some(Node.isSpreadAssignment);
+  if (Node.isConditionalExpression(value)) {
+    return requestHasSpread(value.getWhenTrue()) || requestHasSpread(value.getWhenFalse());
+  }
+  if (Node.isBinaryExpression(value)) {
+    const op = value.getOperatorToken().getKind();
+    if (op === SyntaxKind.BarBarToken || op === SyntaxKind.QuestionQuestionToken) {
+      return requestHasSpread(value.getLeft()) || requestHasSpread(value.getRight());
+    }
+  }
+  return false;
+}
+
 /**
  * G1 + G4 for one call: module-level execution and any non-direct surface cap
  * at review; only a resolved first-party client inside a function reaches
@@ -487,6 +505,9 @@ export function classifyCallSurface(call: CallExpression): SurfaceClassification
       position: 'surface_capped',
       reason: `${TS_SURFACE_REASON} (client is ${v.family}, endpoint is ${wanted})`,
     };
+  }
+  if (call.getArguments().some(requestHasSpread)) {
+    return { position: 'surface_capped', reason: TS_REQUEST_SPREAD_REASON };
   }
   return { position: 'model_arg' };
 }
