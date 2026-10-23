@@ -121,6 +121,14 @@ const asNumber = (v: unknown): number => {
   return 0;
 };
 
+/** Optional measured quantities must not turn malformed evidence into zero. */
+function measuredNonnegativeNumber(v: unknown): number | null {
+  if (typeof v !== 'number' && typeof v !== 'string') return null;
+  if (typeof v === 'string' && !/^\$?\d+(?:,\d{3})*(?:\.\d+)?(?:e[+-]?\d+)?$/i.test(v.trim())) return null;
+  const n = typeof v === 'number' ? v : Number(v.trim().replace(/[$,]/g, ''));
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 /** Infer the provider from a model id when the source did not say. */
 export function inferProvider(model: string): string {
   const m = model.toLowerCase();
@@ -132,14 +140,19 @@ export function inferProvider(model: string): string {
 
 /** A failure count from either an explicit number or a status/outcome field. */
 function failuresOf(row: Row): number {
+  return measuredFailuresOf(row) ?? 0;
+}
+
+/** null means outcome evidence is absent or unrecognized, not a success. */
+function measuredFailuresOf(row: Row): number | null {
   const explicit = pick(row, FAILURE_KEYS);
-  if (explicit !== undefined) return asNumber(explicit);
+  if (explicit !== undefined) return measuredNonnegativeNumber(explicit);
   const status = asString(pick(row, ['status', 'outcome', 'result', 'http.status_code', 'status_code']));
-  if (!status) return 0;
+  if (!status) return null;
   if (/^(error|fail|failed|failure)$/i.test(status)) return 1;
-  const code = parseInt(status, 10);
-  if (Number.isFinite(code) && code >= 400) return 1;
-  return 0;
+  if (/^(ok|success|succeeded|passed)$/i.test(status)) return 0;
+  if (/^[1-5]\d{2}$/.test(status)) return Number(status) >= 400 ? 1 : 0;
+  return null;
 }
 
 /** Normalize one arbitrary row into an observation, or null when it names no model. */
@@ -165,7 +178,7 @@ export function toObservation(row: Row): RuntimeObservation | null {
     requests: requestsRaw === undefined ? 1 : asNumber(requestsRaw),
     requestsReported: requestsRaw !== undefined || true,
     failures: failuresOf(row),
-    costUsd: costRaw === undefined ? null : asNumber(costRaw),
+    costUsd: measuredNonnegativeNumber(costRaw),
   };
 }
 
@@ -309,6 +322,8 @@ export interface CallSample {
   service: string | null;
   requests: number;
   failures: number;
+  /** False when a parsed row has no usable outcome evidence. Legacy explicit samples may omit it. */
+  failuresReported?: boolean;
   /** Per-call latency in milliseconds, when the row carries one. */
   latencyMs: number | null;
   costUsd: number | null;
@@ -334,14 +349,16 @@ export function toCallSample(row: Row): CallSample {
   const latencyRaw = pick(row, LATENCY_MS_KEYS);
   const requestsRaw = pick(row, REQUEST_KEYS);
   const costRaw = pick(row, COST_KEYS);
+  const measuredFailures = measuredFailuresOf(row);
   return {
     timeMs: start ?? (Number.isNaN(parsed) ? null : parsed),
     model: asString(pick(row, MODEL_KEYS)),
     service: asString(pick(row, SERVICE_KEYS)),
     requests: requestsRaw === undefined ? 1 : asNumber(requestsRaw),
-    failures: failuresOf(row),
-    latencyMs: latencyRaw !== undefined ? asNumber(latencyRaw) : start !== null && end !== null && end >= start ? end - start : null,
-    costUsd: costRaw === undefined ? null : asNumber(costRaw),
+    failures: measuredFailures ?? 0,
+    failuresReported: measuredFailures !== null,
+    latencyMs: latencyRaw !== undefined ? measuredNonnegativeNumber(latencyRaw) : start !== null && end !== null && end >= start ? end - start : null,
+    costUsd: measuredNonnegativeNumber(costRaw),
     fields: row,
   };
 }
