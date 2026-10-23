@@ -95,7 +95,11 @@ function summarize(rows: readonly CallSample[], which: 'before' | 'after', notes
   const calls = rows.reduce((n, s) => n + s.requests, 0);
   out.calls = calls;
   if (calls === 0) return out;
-  out.errorRate = rows.reduce((n, s) => n + s.failures, 0) / calls;
+  if (rows.every((s) => s.failuresReported !== false)) {
+    out.errorRate = rows.reduce((n, s) => n + s.failures, 0) / calls;
+  } else {
+    notes.push(`Some rows ${which} the deploy have no usable outcome evidence, so error rate was not computed.`);
+  }
 
   const latencies = rows.filter((s) => s.latencyMs !== null).map((s) => s.latencyMs!).sort((x, y) => x - y);
   if (latencies.length >= MIN_LATENCY_SAMPLES) {
