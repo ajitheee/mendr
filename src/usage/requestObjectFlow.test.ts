@@ -4,7 +4,7 @@ import type { LlmRegistry } from '../types.js';
 import { autoApplyVerification } from './llmRegistry.js';
 import { findModelIdLiterals } from './scanLiterals.js';
 import { classifyOccurrenceTier } from '../report/classifyOccurrence.js';
-import { TS_REQUEST_VARIABLE_REASON } from './tsSurface.js';
+import { TS_REQUEST_SPREAD_REASON, TS_REQUEST_VARIABLE_REASON } from './tsSurface.js';
 
 // A REQUEST OBJECT BUILT IN A VARIABLE, THEN PASSED BY NAME.
 //
@@ -94,7 +94,7 @@ describe('a request object built in a variable and passed to a provider request'
       `${OPENAI}export async function ask() {\n  const base = { model: "gpt-4", messages: [] };\n  return client.chat.completions.create({ ...base, max_tokens: 10 });\n}\n`,
     );
     expect(v?.tier).toBe('B');
-    expect(v?.reason).toBe(TS_REQUEST_VARIABLE_REASON);
+    expect(v?.reason).toBe(TS_REQUEST_SPREAD_REASON);
   });
 
   it('is held when the variable is also used some other way', () => {

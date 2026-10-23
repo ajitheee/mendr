@@ -24,6 +24,7 @@ import {
   TS_MODEL_FACTORIES,
   TS_PREFIXED_REASON,
   TS_REQUEST_VARIABLE_REASON,
+  TS_REQUEST_SPREAD_REASON,
   TS_WRAPPER_CTOR_REASON,
   type TsSinkMap,
 } from './tsSurface.js';
@@ -599,6 +600,9 @@ function classifyByEnclosure(node: Node, parent: Node | undefined, sinks?: TsSin
       if (isModelLikeName(keyName) && obj && !call) {
         const flow = requestObjectFlow(obj);
         if (flow) {
+          if (Node.isObjectLiteralExpression(obj) && obj.getProperties().some(Node.isSpreadAssignment)) {
+            return { position: 'surface_capped', reason: TS_REQUEST_SPREAD_REASON };
+          }
           for (const c of flow.calls) {
             const verdict = classifyCallSurface(c);
             if (verdict.position !== 'model_arg') return verdict;
