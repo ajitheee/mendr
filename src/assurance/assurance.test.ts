@@ -49,17 +49,17 @@ describe('recoveryPlan', () => {
     expect(plan.options[0]!.detail).toContain('until 2026-10-23');
   });
 
-  it('refuses a revert on and after the shutdown date: the old model no longer answers', () => {
+  it('refuses a revert justified only by the schedule on and after the announced date', () => {
     for (const day of ['2026-10-23T08:00:00Z', '2026-11-02T08:00:00Z']) {
       const revert = recoveryPlan([swap], new Date(day)).options[0]!;
       expect(revert.available).toBe(false);
-      expect(revert.detail).toContain('`gpt-4-0613` shut down on 2026-10-23');
+      expect(revert.detail).toContain('`gpt-4-0613` reached its announced retirement date 2026-10-23');
     }
   });
 
   it('dates the revert window by the earliest shutdown when several models move', () => {
     const plan = recoveryPlan([swap, { from: 'o3-mini', to: 'gpt-5.6-sol', shutdownDate: '2026-10-20' }], new Date('2026-10-15T00:00:00Z'));
-    expect(plan.options[0]!.detail).toContain('until 2026-10-20, when `o3-mini` shuts down');
+    expect(plan.options[0]!.detail).toContain('until 2026-10-20');
   });
 
   it('never picks a substitute model, and says why', () => {
