@@ -1,20 +1,20 @@
 {
   "schema": "mendr-model-catalog/v1",
-  "fetchedAt": "2026-10-05T14:23:01Z",
+  "fetchedAt": "2026-11-09T15:57:28Z",
   "sources": [
     {
       "url": "https://openrouter.ai/api/v1/models",
       "ok": true,
-      "sha256": "c6459c072e164c575c6fe4b125dcf96d2f313e98544f93c56537765147f4f1b7",
-      "contributed": 183,
-      "note": "466 models, 183 first-party"
+      "sha256": "ecf9b97fc7265d15972d3a65a49a8e9585833ae4550165b96a54c011b467dd25",
+      "contributed": 182,
+      "note": "461 models, 182 first-party"
     },
     {
       "url": "https://models.dev/api.json",
       "ok": true,
-      "sha256": "fd8d2257e0f461d65db7ac8c23b00fb13dce7c97f5f886304673a69ab489ef31",
-      "contributed": 108,
-      "note": "108 first-party models"
+      "sha256": "06e84728d3e478d73fe1c1bdd85f6be4b8d502b78b492301ad53b78aa165c464",
+      "contributed": 104,
+      "note": "104 first-party models"
     }
   ],
   "providers": {
@@ -23,6 +23,7 @@
       "claude-fable-5-1",
       "claude-haiku-4-5",
       "claude-haiku-4-5-20251001",
+      "claude-haiku-5-5",
       "claude-opus-4-5",
       "claude-opus-4-5-20251101",
       "claude-opus-4-6",
@@ -48,9 +49,7 @@
       "gemini-2.5-pro-preview-tts",
       "gemini-3-flash-preview",
       "gemini-3-pro-image",
-      "gemini-3-pro-image-preview",
       "gemini-3.1-flash-image",
-      "gemini-3.1-flash-image-preview",
       "gemini-3.1-flash-lite",
       "gemini-3.1-flash-lite-image",
       "gemini-3.1-flash-lite-preview",
@@ -64,18 +63,17 @@
       "gemini-3.6-flash",
       "gemini-3.7-flash",
       "gemini-3.8-flash",
+      "gemini-4-argon",
       "gemini-embedding-001",
       "gemini-embedding-2",
       "gemini-flash-latest",
       "gemini-flash-lite-latest",
       "gemini-omni-flash-preview",
+      "gemini-pro-latest",
       "gemma-4-26b-a4b-it",
       "gemma-4-31b-it",
       "lyria-3-clip-preview",
-      "lyria-3-pro-preview",
-      "veo-3.1-fast-generate-preview",
-      "veo-3.1-generate-preview",
-      "veo-3.1-lite-generate-preview"
+      "lyria-3-pro-preview"
     ],
     "openai": [
       "chatgpt-image-latest",
@@ -96,9 +94,7 @@
       "gpt-5-pro",
       "gpt-5.1",
       "gpt-5.2",
-      "gpt-5.2-chat-latest",
       "gpt-5.2-pro",
-      "gpt-5.3-chat-latest",
       "gpt-5.3-codex",
       "gpt-5.3-codex-spark",
       "gpt-5.4",
@@ -115,9 +111,9 @@
       "gpt-6-luna",
       "gpt-6-sol",
       "gpt-6.1-sol",
+      "gpt-6.1-terra",
       "gpt-daybreak-blue-latest",
       "gpt-daybreak-red-latest",
-      "gpt-image-1",
       "gpt-image-1-mini",
       "gpt-image-1.5",
       "gpt-image-2",
@@ -138,6 +134,7 @@
       "claude-fable-5.1",
       "claude-fable-latest",
       "claude-haiku-4.5",
+      "claude-haiku-5.5",
       "claude-haiku-latest",
       "claude-opus-4.1",
       "claude-opus-4.5",
@@ -146,7 +143,6 @@
       "claude-opus-4.8",
       "claude-opus-5.5",
       "claude-opus-latest",
-      "claude-sonnet-4",
       "claude-sonnet-4.5",
       "claude-sonnet-4.6",
       "claude-sonnet-5.5",
@@ -154,7 +150,11 @@
     ],
     "google": [
       "gemini-2.5-pro-preview",
-      "gemini-pro-latest",
+      "gemini-3-pro-image-preview",
+      "gemini-3.1-flash-image-preview",
+      "gemini-nano-banana-2.1",
+      "gemini-omni-1.1-flash",
+      "gemini-omni-1.2-flash",
       "gemma-2-27b-it",
       "gemma-3-12b-it",
       "gemma-3-27b-it",
@@ -163,7 +163,6 @@
     "openai": [
       "gpt-3.5-turbo-0613",
       "gpt-3.5-turbo-16k",
-      "gpt-3.5-turbo-instruct",
       "gpt-4o-mini-2024-07-18",
       "gpt-5-image",
       "gpt-5-image-mini",
@@ -180,6 +179,7 @@
       "gpt-6-luna-pro",
       "gpt-6-sol-pro",
       "gpt-6.1-sol-pro",
+      "gpt-6.1-terra-pro",
       "gpt-astra-latest",
       "gpt-audio",
       "gpt-audio-mini",
@@ -190,10 +190,8 @@
       "gpt-oss-20b",
       "gpt-oss-safeguard-20b",
       "gpt-sol-latest",
-      "gpt-terra-latest",
-      "o3-mini-high",
-      "o4-mini-high"
+      "gpt-terra-latest"
     ]
   },
-  "count": 108
+  "count": 104
 }
