@@ -59,6 +59,13 @@ export interface AppConfig {
    */
   deployCommit: string | null;
   deployInstance: string | null;
+  /**
+   * Email the maintainer about each new early-access sign-up, through Resend (src/waitlistAlert.ts).
+   * Both are needed (RESEND_API_KEY, WAITLIST_ALERT_TO); without them the sign-up is still stored
+   * and nobody is emailed.
+   */
+  resendApiKey: string | null;
+  waitlistAlertTo: string | null;
 }
 
 /** `commit@instance`, for one legible field on a record. `unknown` when the host says nothing. */
@@ -126,6 +133,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     // credential, which is why they are safe to put on a persisted record.
     deployCommit: opt(env.RENDER_GIT_COMMIT) ?? opt(env.GIT_COMMIT) ?? opt(env.SOURCE_COMMIT),
     deployInstance: opt(env.RENDER_INSTANCE_ID) ?? opt(env.INSTANCE_ID) ?? opt(env.HOSTNAME),
+    resendApiKey: opt(env.RESEND_API_KEY),
+    waitlistAlertTo: opt(env.WAITLIST_ALERT_TO),
   };
 }
 

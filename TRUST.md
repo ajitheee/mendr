@@ -270,13 +270,23 @@ used only for an in-memory rate limit and is gone when the App restarts. Email
 addresses never appear in the App's logs. To be removed, reply "remove" to any
 email from us; the row is deleted, not hidden.
 
+When a new sign-up is stored, the App emails the same fields to the maintainer
+through Resend, an email delivery service, so each sign-up is answered the day
+it arrives. The message goes to the maintainer only, with Reply-To set to the
+address you gave; nothing else is sent to Resend, and a repeat sign-up sends
+nothing. If the send fails, the sign-up still stands and the log records a
+status code, not an address. The alert is off unless the operator sets
+`RESEND_API_KEY` and `WAITLIST_ALERT_TO`.
+
 ### Hosting and subprocessors
 
 The hosted App (`mendr-app.onrender.com`, Hono) runs as a Render web service.
 Its Postgres database is on Neon, in AWS US East 2 (Ohio). The marketing site is
 static on Vercel. GitHub provides OAuth sign-in, the App installation, check
-runs and the OIDC tokens that authenticate uploads. No other third party
-processes customer data; the App has no analytics SDK and no trackers. Mendr
+runs and the OIDC tokens that authenticate uploads. Resend delivers the one
+email per new waitlist sign-up described above, and sees only that entry. No
+other third party processes customer data; the App has no analytics SDK and no
+trackers. Mendr
 does not assert a disk-level encryption claim for the hosts beyond what Render
 and Neon document; the field-level layer below does not depend on it.
 

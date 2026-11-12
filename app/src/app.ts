@@ -17,6 +17,7 @@ import { APPROVAL_STAGES, approvalVersion, type Approval, type ApprovalMode, typ
 import { credentialsPage, errorPage, homePage, installedPage, runPage, runsPage, setupPage, workflowRunsUrl } from './ui/pages.js';
 import { MENDR_MIGRATE_WORKFLOW_PATH, migrateActionsUrl, setupMigrateWorkflowUrl, setupWorkflowUrl } from './ui/workflowTemplate.js';
 import { registerWaitlist } from './waitlist.js';
+import type { SendAlert } from './waitlistAlert.js';
 
 export interface AppDeps {
   config: AppConfig;
@@ -36,6 +37,8 @@ export interface AppDeps {
    * Defaults to UPLOAD_LOOKUP_BUDGET_MS (src/github/installRecovery.ts); overridden in tests.
    */
   installLookupTimeoutMs?: number;
+  /** Emails the maintainer about each new waitlist sign-up (src/waitlistAlert.ts); absent = no alert. */
+  waitlistAlert?: SendAlert | null;
 }
 
 const SETUP_STATE_COOKIE = 'mendr_setup_state';
@@ -244,7 +247,7 @@ export function createApp(deps: AppDeps): Hono {
   app.get('/livez', (c) => c.json({ ok: true }));
 
   // The marketing site's early-access form (src/waitlist.ts).
-  registerWaitlist(app, { store, now, log });
+  registerWaitlist(app, { store, now, log, alert: deps.waitlistAlert ?? null });
 
   // Health, plus proof of encryption at rest from the outside: is a data key
   // configured, how many stored reports are sealed vs plaintext, and does the
