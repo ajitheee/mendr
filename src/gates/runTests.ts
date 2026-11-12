@@ -57,6 +57,7 @@ export interface TestGateResult {
  *   jest    `Tests:       1 failed, 117 passed, 118 total`
  *   mocha   `117 passing` / `2 failing`
  *   pytest  `1 failed, 5 passed in 0.12s`
+ *   node    `ℹ pass 2` / `ℹ fail 0` (spec), `# pass 2` / `# fail 0` (TAP)
  * Returns undefined when no recognizable summary is present — the caller then
  * reports the un-measurable status honestly instead of inventing numbers.
  */
@@ -65,6 +66,10 @@ export function parseTestCounts(output: string): TestCounts | undefined {
   // their surrounding output also carries per-FILE counts ("Test Files  17
   // passed") that would otherwise be mistaken for test totals.
   const testsLine = /^\s*Tests:?\s+(.+)$/m.exec(output)?.[1];
+  if (testsLine === undefined) {
+    const nodeCounts = parseNodeTestSummary(output);
+    if (nodeCounts) return nodeCounts;
+  }
   const scope = testsLine ?? output;
   const passed = /(\d+)\s+pass(?:ed|ing)\b/.exec(scope);
   const failed = /(\d+)\s+fail(?:ed|ing)\b/.exec(scope);
@@ -73,6 +78,38 @@ export function parseTestCounts(output: string): TestCounts | undefined {
     passed: passed ? Number(passed[1]) : 0,
     failed: failed ? Number(failed[1]) : 0,
   };
+}
+
+/**
+ * One line of node:test's run summary. It prints the WORD FIRST, one total per
+ * line, behind a marker: `ℹ pass 2` from the spec reporter (the default from
+ * Node 23, and on a TTY before that) and `# pass 2` from TAP (the default for
+ * piped output on Node 20 and 22 — which is what this gate's subprocess is).
+ *
+ * Every other runner above puts the number first, so none of their patterns
+ * matched, and a passing `node --test` suite came back `inconclusive` with "no
+ * test results could be parsed" (ajitheee/mendr-demo, from 2026-09-28).
+ *
+ * Anchored at the start of a line, so a test NAMED "3 failed requests" is not
+ * read as a total. The optional SGR prefix is the colour the spec reporter adds
+ * when FORCE_COLOR reaches the subprocess: `\x1b[34mℹ pass 2\x1b[39m`.
+ */
+const NODE_TEST_SUMMARY_LINE = /^(?:\x1b\[[\d;]*m)*[ℹ#][ \t]+(pass|fail)[ \t]+(\d+)\b/gm;
+
+/**
+ * The node:test totals in `output`, or undefined when it holds no node:test
+ * summary. SUMMED over every summary present, because `node --test test/unit
+ * && node --test test/e2e` prints one per invocation and the first alone would
+ * under-count the run.
+ */
+function parseNodeTestSummary(output: string): TestCounts | undefined {
+  let counts: TestCounts | undefined;
+  for (const [, word, n] of output.matchAll(NODE_TEST_SUMMARY_LINE)) {
+    counts ??= { passed: 0, failed: 0 };
+    if (word === 'pass') counts.passed += Number(n);
+    else counts.failed += Number(n);
+  }
+  return counts;
 }
 
 const TEST_TIMEOUT_MS = 120_000;
