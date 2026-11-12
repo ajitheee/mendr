@@ -1,18 +1,12 @@
 <p><img src="brand/mendr-lockup.png" alt="mendr" height="44"></p>
 
-# mendr
+# mendr: the model-retirement CLI
+
+> This is mendr's first tool. It still works and is kept here as it was. For what mendr is now, see the [README](README.md).
 
 **Find every retiring AI model your repo still calls, before the provider shuts it off.**
 
 One command scans TypeScript, TSX, JavaScript, Python and config files, joins a dated retirement registry for OpenAI, Anthropic and Google, and tells you what breaks, where, and by when. No API key. Nothing is changed.
-
-> **Help test it before October 23.** OpenAI shuts down 29 model ids that day. Run the audit on one repo of yours (about a minute, no account or key, nothing leaves your machine), then [tell me in one sentence](https://github.com/ajitheee/mendr/issues/new?template=audit-result.yml) whether it showed you a retiring model you didn't know about. A "no" helps as much as a "yes".
->
-> ```sh
-> npx github:ajitheee/mendr#v0.5.11-alpha audit . --offline
-> ```
->
-> Or ask your coding agent: *Run `npx github:ajitheee/mendr#v0.5.11-alpha audit . --offline` in this repo and tell me which AI model ids the code calls that are being shut down, and when.*
 
 **Beta partner?** Start with [BETA-ONBOARDING.md](BETA-ONBOARDING.md): connect in five minutes, what you will see, what leaves your CI, troubleshooting.
 
