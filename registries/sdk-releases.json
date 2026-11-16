@@ -1,24 +1,24 @@
 {
   "schema": "mendr-sdk-releases/v1",
-  "fetchedAt": "2026-10-05T14:23:02Z",
+  "fetchedAt": "2026-11-16T15:31:49Z",
   "sources": [
     {
       "url": "https://registry.npmjs.org/openai",
       "ok": true,
-      "sha256": "ca65c605a18783100275dc3ea7ebbfdf6c266b606f8e8ac9733202f7ccb0fcfd",
-      "note": "openai 7.28.0 (398 releases)"
+      "sha256": "bc6b99062bdb538c3b2240b97037565d2631faa86e151002f3597a5fbc4ad289",
+      "note": "openai 7.57.0 (428 releases)"
     },
     {
       "url": "https://registry.npmjs.org/@anthropic-ai%2Fsdk",
       "ok": true,
-      "sha256": "efec7d588e6549f9ee2b2d65ed3a3dd71bf2c63d165859114dc9ce32583a9303",
-      "note": "@anthropic-ai/sdk 0.131.0 (211 releases)"
+      "sha256": "0628474cb381a8f0139f84a6cdd9da142e92dccf2b18ad865fbe9c614072ca8b",
+      "note": "@anthropic-ai/sdk 1.8.0 (227 releases)"
     },
     {
       "url": "https://registry.npmjs.org/@google%2Fgenai",
       "ok": true,
-      "sha256": "5fbf93811f3ad9d67ef13417a0b549cc3b20e2290d5db70088afa2dfee89891c",
-      "note": "@google/genai 2.27.0 (104 releases)"
+      "sha256": "62e150c87cabf1e4d748773ef64faf647e48bfcf507a68c0253444518bc8f6ad",
+      "note": "@google/genai 3.3.0 (114 releases)"
     },
     {
       "url": "https://registry.npmjs.org/@google%2Fgenerative-ai",
@@ -29,20 +29,20 @@
     {
       "url": "https://pypi.org/pypi/openai/json",
       "ok": true,
-      "sha256": "c5a31806bcc0465ca9f1b8e9bbf5a8e74ae4e358602d6c4ad0d571a09290c528",
-      "note": "openai 3.24.0 (441 releases)"
+      "sha256": "46d6694b9259b53832408ff1bad8eaecf6472a0b0e7063bd1b7abe311dbc51a1",
+      "note": "openai 3.51.0 (471 releases)"
     },
     {
       "url": "https://pypi.org/pypi/anthropic/json",
       "ok": true,
-      "sha256": "00866c11f432332651d9c7199fc5ec10905fbdd847e701cdfcb2a553712e2789",
-      "note": "anthropic 1.11.0 (223 releases)"
+      "sha256": "060532e869ea342aa7584c3182baf9bf7c4b3db2689a2515ba858af4cc046255",
+      "note": "anthropic 2.8.0 (239 releases)"
     },
     {
       "url": "https://pypi.org/pypi/google-genai/json",
       "ok": true,
-      "sha256": "82bdc1a55269afe38f3041396bbbb029c622dd228205690c4fdee23485ab65d6",
-      "note": "google-genai 2.28.0 (128 releases)"
+      "sha256": "47844ea4185ebfd687e9cecf915d83355ee816e5c5e0200375670eb0a935b9f2",
+      "note": "google-genai 3.3.0 (139 releases)"
     },
     {
       "url": "https://pypi.org/pypi/google-generativeai/json",
@@ -56,25 +56,27 @@
       "ecosystem": "npm",
       "name": "@anthropic-ai/sdk",
       "provider": "anthropic",
-      "latest": "0.131.0",
-      "latestMajor": 0,
+      "latest": "1.8.0",
+      "latestMajor": 1,
       "majorsFirstSeen": {
-        "0": "2023-01-31T15:44:00.296Z"
+        "0": "2023-01-31T15:44:00.296Z",
+        "1": "2026-10-21T16:00:53.043Z"
       },
-      "releaseCount": 211
+      "releaseCount": 227
     },
     {
       "ecosystem": "npm",
       "name": "@google/genai",
       "provider": "google",
-      "latest": "2.27.0",
-      "latestMajor": 2,
+      "latest": "3.3.0",
+      "latestMajor": 3,
       "majorsFirstSeen": {
         "0": "2025-03-11T00:45:27.001Z",
         "1": "2025-05-19T22:26:30.471Z",
-        "2": "2026-05-07T20:13:20.123Z"
+        "2": "2026-05-07T20:13:20.123Z",
+        "3": "2026-11-06T04:34:38.221Z"
       },
-      "releaseCount": 104
+      "releaseCount": 114
     },
     {
       "ecosystem": "npm",
@@ -91,7 +93,7 @@
       "ecosystem": "npm",
       "name": "openai",
       "provider": "openai",
-      "latest": "7.28.0",
+      "latest": "7.57.0",
       "latestMajor": 7,
       "majorsFirstSeen": {
         "0": "2020-07-09T13:31:41.493Z",
@@ -103,32 +105,34 @@
         "6": "2025-09-30T16:35:32.100Z",
         "7": "2026-07-27T21:56:56.615Z"
       },
-      "releaseCount": 398
+      "releaseCount": 428
     },
     {
       "ecosystem": "pypi",
       "name": "anthropic",
       "provider": "anthropic",
-      "latest": "1.11.0",
-      "latestMajor": 1,
+      "latest": "2.8.0",
+      "latestMajor": 2,
       "majorsFirstSeen": {
         "0": "2023-02-09T06:19:01.733591Z",
-        "1": "2026-08-20T19:58:58.725997Z"
+        "1": "2026-08-20T19:58:58.725997Z",
+        "2": "2026-10-21T15:51:54.549615Z"
       },
-      "releaseCount": 223
+      "releaseCount": 239
     },
     {
       "ecosystem": "pypi",
       "name": "google-genai",
       "provider": "google",
-      "latest": "2.28.0",
-      "latestMajor": 2,
+      "latest": "3.3.0",
+      "latestMajor": 3,
       "majorsFirstSeen": {
         "0": "2024-12-10T19:42:33.488897Z",
         "1": "2025-02-04T23:38:30.369451Z",
-        "2": "2026-05-07T20:12:21.508563Z"
+        "2": "2026-05-07T20:12:21.508563Z",
+        "3": "2026-11-06T02:29:05.297388Z"
       },
-      "releaseCount": 128
+      "releaseCount": 139
     },
     {
       "ecosystem": "pypi",
@@ -145,7 +149,7 @@
       "ecosystem": "pypi",
       "name": "openai",
       "provider": "openai",
-      "latest": "3.24.0",
+      "latest": "3.51.0",
       "latestMajor": 3,
       "majorsFirstSeen": {
         "0": "2020-02-18T19:41:36.681685Z",
@@ -153,7 +157,7 @@
         "2": "2025-09-30T17:35:54.695224Z",
         "3": "2026-08-12T01:55:48.678603Z"
       },
-      "releaseCount": 441
+      "releaseCount": 471
     }
   ],
   "count": 8
